@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:memorizar/core/layout/responsive.dart';
 import 'package:memorizar/core/theme/app_colors.dart';
 import 'package:memorizar/features/decks/data/models/deck.dart';
 import 'package:memorizar/features/decks/presentation/providers/decks_provider.dart';
@@ -13,34 +14,52 @@ class DecksScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final decks = ref.watch(decksProvider);
     final theme = Theme.of(context);
+    final isWide = Responsive.isWide(context);
+    final crossCount = isWide ? 3 : 2;
 
     return Scaffold(
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
-                child: Text('Mis Decks', style: theme.textTheme.headlineMedium),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              sliver: SliverGrid(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 0.85,
+        child: ContentWidth(
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(isWide ? 24 : 20, 24, isWide ? 24 : 20, 16),
+                  child: Row(
+                    children: [
+                      Text('Mis Decks', style: theme.textTheme.headlineMedium),
+                      const Spacer(),
+                      FilledButton.icon(
+                        onPressed: () {},
+                        icon: const Icon(Icons.add_rounded, size: 18),
+                        label: const Text('Nuevo deck'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          textStyle: GoogleFonts.dmSans(fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                delegate: SliverChildBuilderDelegate(
-                  (context, i) => _DeckCard(deck: decks[i]),
-                  childCount: decks.length,
+              ),
+              SliverPadding(
+                padding: EdgeInsets.symmetric(horizontal: isWide ? 24 : 20),
+                sliver: SliverGrid(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: crossCount,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: isWide ? 1.1 : 0.85,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, i) => _DeckCard(deck: decks[i]),
+                    childCount: decks.length,
+                  ),
                 ),
               ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
-          ],
+              const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            ],
+          ),
         ),
       ),
     );
@@ -77,16 +96,14 @@ class _DeckCard extends StatelessWidget {
                 Text(deck.emoji ?? '📚', style: const TextStyle(fontSize: 28)),
                 if (deck.dueToday > 0)
                   Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: accent,
-                      shape: BoxShape.circle,
-                    ),
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
                     child: Center(
                       child: Text(
                         '${deck.dueToday}',
-                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
                       ),
                     ),
                   ),
@@ -95,10 +112,7 @@ class _DeckCard extends StatelessWidget {
             const Spacer(),
             Text(deck.name, style: theme.textTheme.titleSmall),
             const SizedBox(height: 2),
-            Text(
-              '${deck.totalItems} tarjetas',
-              style: theme.textTheme.bodySmall,
-            ),
+            Text('${deck.totalItems} tarjetas', style: theme.textTheme.bodySmall),
             const SizedBox(height: 10),
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
@@ -112,7 +126,8 @@ class _DeckCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               '${(progress * 100).toInt()}% dominado',
-              style: GoogleFonts.dmSans(fontSize: 11, color: accent, fontWeight: FontWeight.w600),
+              style: GoogleFonts.dmSans(
+                  fontSize: 11, color: accent, fontWeight: FontWeight.w600),
             ),
           ],
         ),

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -115,7 +116,10 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen>
         ),
       ),
       body: SafeArea(
-        child: Padding(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
             children: [
@@ -156,6 +160,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen>
               ),
               const SizedBox(height: 12),
             ],
+          ),
+        ),
           ),
         ),
       ),
@@ -342,88 +348,251 @@ class _RatingButtons extends StatelessWidget {
   }
 }
 
-class _RatingButton extends StatelessWidget {
+class _RatingButton extends StatefulWidget {
   const _RatingButton({required this.rating, required this.onTap});
   final ReviewRating rating;
   final VoidCallback onTap;
 
-  Color get _color => switch (rating) {
-    ReviewRating.again => AppColors.ratingAgain,
-    ReviewRating.hard => AppColors.ratingHard,
-    ReviewRating.good => AppColors.ratingGood,
-    ReviewRating.easy => AppColors.ratingEasy,
-  };
+  @override
+  State<_RatingButton> createState() => _RatingButtonState();
+}
+
+class _RatingButtonState extends State<_RatingButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pressCtrl;
+  late final Animation<double> _scaleAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _pressCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 100));
+    _scaleAnim = Tween<double>(begin: 1.0, end: 0.93)
+        .animate(CurvedAnimation(parent: _pressCtrl, curve: Curves.easeOut));
+  }
+
+  @override
+  void dispose() {
+    _pressCtrl.dispose();
+    super.dispose();
+  }
+
+  Color get _color => switch (widget.rating) {
+        ReviewRating.again => AppColors.ratingAgain,
+        ReviewRating.hard => AppColors.ratingHard,
+        ReviewRating.good => AppColors.ratingGood,
+        ReviewRating.easy => AppColors.ratingEasy,
+      };
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        height: 54,
-        decoration: BoxDecoration(
-          color: _color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _color.withValues(alpha: 0.3)),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              rating.label,
-              style: GoogleFonts.dmSans(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: _color,
+    return GestureDetector(
+      onTapDown: (_) => _pressCtrl.forward(),
+      onTapUp: (_) {
+        _pressCtrl.reverse();
+        HapticFeedback.lightImpact();
+        widget.onTap();
+      },
+      onTapCancel: () => _pressCtrl.reverse(),
+      child: ScaleTransition(
+        scale: _scaleAnim,
+        child: Container(
+          height: 56,
+          decoration: BoxDecoration(
+            color: _color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _color.withValues(alpha: 0.35)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                widget.rating.label,
+                style: GoogleFonts.dmSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: _color,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _FinishedScreen extends StatelessWidget {
+class _FinishedScreen extends StatefulWidget {
   const _FinishedScreen({required this.completed, required this.deckName, required this.onBack});
   final int completed;
   final String deckName;
   final VoidCallback onBack;
 
   @override
+  State<_FinishedScreen> createState() => _FinishedScreenState();
+}
+
+class _FinishedScreenState extends State<_FinishedScreen>
+    with TickerProviderStateMixin {
+  late final AnimationController _scaleCtrl;
+  late final AnimationController _fadeCtrl;
+  late final List<AnimationController> _particleCtrl;
+  late final Animation<double> _scaleAnim;
+  late final Animation<double> _fadeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _scaleCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
+    _fadeCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
+    _scaleAnim = CurvedAnimation(parent: _scaleCtrl, curve: Curves.elasticOut);
+    _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+    _particleCtrl = List.generate(
+      6,
+      (i) => AnimationController(
+        vsync: this,
+        duration: Duration(milliseconds: 1000 + i * 200),
+      ),
+    );
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        _scaleCtrl.forward();
+        _fadeCtrl.forward();
+        for (final c in _particleCtrl) {
+          Future.delayed(Duration(milliseconds: _particleCtrl.indexOf(c) * 150), () {
+            if (mounted) c.repeat(reverse: true);
+          });
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _scaleCtrl.dispose();
+    _fadeCtrl.dispose();
+    for (final c in _particleCtrl) { c.dispose(); }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    final emojis = ['🎉', '⭐', '✨', '🌟', '💫', '🎊'];
+    final offsets = [
+      const Offset(-120, -80),
+      const Offset(120, -100),
+      const Offset(-100, 60),
+      const Offset(130, 50),
+      const Offset(-60, -140),
+      const Offset(80, -130),
+    ];
+
     return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('🎉', style: TextStyle(fontSize: 72)),
-              const SizedBox(height: 24),
-              Text(
-                '¡Sesión completada!',
-                style: theme.textTheme.headlineSmall,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Repasaste $completed tarjetas de $deckName',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: FadeTransition(
+                opacity: _fadeAnim,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Animated emoji with particles
+                    SizedBox(
+                      width: 200,
+                      height: 200,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          // Floating particles
+                          ...List.generate(6, (i) {
+                            return AnimatedBuilder(
+                              animation: _particleCtrl[i],
+                              builder: (context, child) {
+                                final t = _particleCtrl[i].value;
+                                return Transform.translate(
+                                  offset: offsets[i] * 0.3 +
+                                      Offset(0, -20 * math.sin(t * math.pi)),
+                                  child: Opacity(
+                                    opacity: 0.4 + 0.6 * t,
+                                    child: Text(emojis[i],
+                                        style: TextStyle(fontSize: 16 + 8 * t)),
+                                  ),
+                                );
+                              },
+                            );
+                          }),
+                          // Main emoji
+                          ScaleTransition(
+                            scale: _scaleAnim,
+                            child: Container(
+                              width: 100,
+                              height: 100,
+                              decoration: BoxDecoration(
+                                color: AppColors.indigo.withValues(alpha: 0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Center(
+                                child: Text('🎉', style: TextStyle(fontSize: 52)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      '¡Sesión completada!',
+                      style: theme.textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Repasaste ${widget.completed} tarjetas de ${widget.deckName}',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: cs.onSurface.withValues(alpha: 0.6),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '🔥 Racha mantenida',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 40),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: FilledButton(
+                        onPressed: widget.onBack,
+                        style: FilledButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: const Text('Volver al deck'),
+                      ),
+                    ),
+                  ],
                 ),
-                textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 48),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: onBack,
-                  child: const Text('Volver al deck'),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),

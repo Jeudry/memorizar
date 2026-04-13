@@ -25,7 +25,10 @@ class DeckDetailScreen extends ConsumerWidget {
     final accent = AppColors.deckAccents[deck.accentColorIndex % AppColors.deckAccents.length];
 
     return Scaffold(
-      body: CustomScrollView(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 860),
+          child: CustomScrollView(
         slivers: [
           SliverAppBar(
             expandedHeight: 180,
@@ -114,6 +117,8 @@ class DeckDetailScreen extends ConsumerWidget {
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
+      ),
+        ),
       ),
     );
   }
