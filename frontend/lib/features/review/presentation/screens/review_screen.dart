@@ -59,8 +59,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen>
   }
 
   void _rate(ReviewSessionNotifier notifier, ReviewRating rating) {
-    _slideController.reverse().then((_) {
-      notifier.rate(rating);
+    _slideController.reverse().then((_) async {
+      await notifier.rate(rating);
       _flipController.reset();
       _slideController.forward();
     });
@@ -70,9 +70,13 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen>
   Widget build(BuildContext context) {
     final session = ref.watch(reviewSessionProvider(widget.deckId));
     final notifier = ref.read(reviewSessionProvider(widget.deckId).notifier);
-    final deck = ref.watch(deckByIdProvider(widget.deckId));
+    final deck = ref.watch(deckByIdProvider(widget.deckId)).valueOrNull;
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+
+    if (session.isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     if (session.isFinished) {
       return _FinishedScreen(

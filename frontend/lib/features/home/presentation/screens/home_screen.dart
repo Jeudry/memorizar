@@ -15,9 +15,9 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final decks = ref.watch(decksProvider);
-    final totalDue = ref.watch(totalDueTodayProvider);
-    final streak = ref.watch(streakProvider);
+    final decks = ref.watch(decksProvider).valueOrNull ?? [];
+    final totalDue = ref.watch(totalDueTodayProvider).valueOrNull ?? 0;
+    final streak = ref.watch(streakProvider).valueOrNull ?? 0;
     final theme = Theme.of(context);
     final isWide = Responsive.isWide(context);
 

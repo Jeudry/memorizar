@@ -3,7 +3,7 @@
 part of 'app_database.dart';
 
 // ignore_for_file: type=lint
-class $DecksTable extends Decks with TableInfo<$DecksTable, Deck> {
+class $DecksTable extends Decks with TableInfo<$DecksTable, DeckRow> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
@@ -96,7 +96,7 @@ class $DecksTable extends Decks with TableInfo<$DecksTable, Deck> {
   static const String $name = 'decks';
   @override
   VerificationContext validateIntegrity(
-    Insertable<Deck> instance, {
+    Insertable<DeckRow> instance, {
     bool isInserting = false,
   }) {
     final context = VerificationContext();
@@ -160,9 +160,9 @@ class $DecksTable extends Decks with TableInfo<$DecksTable, Deck> {
   @override
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
-  Deck map(Map<String, dynamic> data, {String? tablePrefix}) {
+  DeckRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return Deck(
+    return DeckRow(
       id: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}id'],
@@ -200,7 +200,7 @@ class $DecksTable extends Decks with TableInfo<$DecksTable, Deck> {
   }
 }
 
-class Deck extends DataClass implements Insertable<Deck> {
+class DeckRow extends DataClass implements Insertable<DeckRow> {
   final String id;
   final String name;
   final String description;
@@ -208,7 +208,7 @@ class Deck extends DataClass implements Insertable<Deck> {
   final int accentColorIndex;
   final String? emoji;
   final DateTime createdAt;
-  const Deck({
+  const DeckRow({
     required this.id,
     required this.name,
     required this.description,
@@ -246,12 +246,12 @@ class Deck extends DataClass implements Insertable<Deck> {
     );
   }
 
-  factory Deck.fromJson(
+  factory DeckRow.fromJson(
     Map<String, dynamic> json, {
     ValueSerializer? serializer,
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return Deck(
+    return DeckRow(
       id: serializer.fromJson<String>(json['id']),
       name: serializer.fromJson<String>(json['name']),
       description: serializer.fromJson<String>(json['description']),
@@ -275,7 +275,7 @@ class Deck extends DataClass implements Insertable<Deck> {
     };
   }
 
-  Deck copyWith({
+  DeckRow copyWith({
     String? id,
     String? name,
     String? description,
@@ -283,7 +283,7 @@ class Deck extends DataClass implements Insertable<Deck> {
     int? accentColorIndex,
     Value<String?> emoji = const Value.absent(),
     DateTime? createdAt,
-  }) => Deck(
+  }) => DeckRow(
     id: id ?? this.id,
     name: name ?? this.name,
     description: description ?? this.description,
@@ -292,8 +292,8 @@ class Deck extends DataClass implements Insertable<Deck> {
     emoji: emoji.present ? emoji.value : this.emoji,
     createdAt: createdAt ?? this.createdAt,
   );
-  Deck copyWithCompanion(DecksCompanion data) {
-    return Deck(
+  DeckRow copyWithCompanion(DecksCompanion data) {
+    return DeckRow(
       id: data.id.present ? data.id.value : this.id,
       name: data.name.present ? data.name.value : this.name,
       description: data.description.present
@@ -310,7 +310,7 @@ class Deck extends DataClass implements Insertable<Deck> {
 
   @override
   String toString() {
-    return (StringBuffer('Deck(')
+    return (StringBuffer('DeckRow(')
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('description: $description, ')
@@ -335,7 +335,7 @@ class Deck extends DataClass implements Insertable<Deck> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is Deck &&
+      (other is DeckRow &&
           other.id == this.id &&
           other.name == this.name &&
           other.description == this.description &&
@@ -345,7 +345,7 @@ class Deck extends DataClass implements Insertable<Deck> {
           other.createdAt == this.createdAt);
 }
 
-class DecksCompanion extends UpdateCompanion<Deck> {
+class DecksCompanion extends UpdateCompanion<DeckRow> {
   final Value<String> id;
   final Value<String> name;
   final Value<String> description;
@@ -377,7 +377,7 @@ class DecksCompanion extends UpdateCompanion<Deck> {
        name = Value(name),
        description = Value(description),
        type = Value(type);
-  static Insertable<Deck> custom({
+  static Insertable<DeckRow> custom({
     Expression<String>? id,
     Expression<String>? name,
     Expression<String>? description,
@@ -467,7 +467,7 @@ class DecksCompanion extends UpdateCompanion<Deck> {
   }
 }
 
-class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
+class $ItemsTable extends Items with TableInfo<$ItemsTable, ItemRow> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
@@ -621,7 +621,7 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
   static const String $name = 'items';
   @override
   VerificationContext validateIntegrity(
-    Insertable<Item> instance, {
+    Insertable<ItemRow> instance, {
     bool isInserting = false,
   }) {
     final context = VerificationContext();
@@ -718,9 +718,9 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
   @override
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
-  Item map(Map<String, dynamic> data, {String? tablePrefix}) {
+  ItemRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return Item(
+    return ItemRow(
       id: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}id'],
@@ -778,7 +778,7 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
   }
 }
 
-class Item extends DataClass implements Insertable<Item> {
+class ItemRow extends DataClass implements Insertable<ItemRow> {
   final String id;
   final String deckId;
   final String front;
@@ -791,7 +791,7 @@ class Item extends DataClass implements Insertable<Item> {
   final String? book;
   final int? chapter;
   final int? verse;
-  const Item({
+  const ItemRow({
     required this.id,
     required this.deckId,
     required this.front,
@@ -858,12 +858,12 @@ class Item extends DataClass implements Insertable<Item> {
     );
   }
 
-  factory Item.fromJson(
+  factory ItemRow.fromJson(
     Map<String, dynamic> json, {
     ValueSerializer? serializer,
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return Item(
+    return ItemRow(
       id: serializer.fromJson<String>(json['id']),
       deckId: serializer.fromJson<String>(json['deckId']),
       front: serializer.fromJson<String>(json['front']),
@@ -897,7 +897,7 @@ class Item extends DataClass implements Insertable<Item> {
     };
   }
 
-  Item copyWith({
+  ItemRow copyWith({
     String? id,
     String? deckId,
     String? front,
@@ -910,7 +910,7 @@ class Item extends DataClass implements Insertable<Item> {
     Value<String?> book = const Value.absent(),
     Value<int?> chapter = const Value.absent(),
     Value<int?> verse = const Value.absent(),
-  }) => Item(
+  }) => ItemRow(
     id: id ?? this.id,
     deckId: deckId ?? this.deckId,
     front: front ?? this.front,
@@ -926,8 +926,8 @@ class Item extends DataClass implements Insertable<Item> {
     chapter: chapter.present ? chapter.value : this.chapter,
     verse: verse.present ? verse.value : this.verse,
   );
-  Item copyWithCompanion(ItemsCompanion data) {
-    return Item(
+  ItemRow copyWithCompanion(ItemsCompanion data) {
+    return ItemRow(
       id: data.id.present ? data.id.value : this.id,
       deckId: data.deckId.present ? data.deckId.value : this.deckId,
       front: data.front.present ? data.front.value : this.front,
@@ -953,7 +953,7 @@ class Item extends DataClass implements Insertable<Item> {
 
   @override
   String toString() {
-    return (StringBuffer('Item(')
+    return (StringBuffer('ItemRow(')
           ..write('id: $id, ')
           ..write('deckId: $deckId, ')
           ..write('front: $front, ')
@@ -988,7 +988,7 @@ class Item extends DataClass implements Insertable<Item> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is Item &&
+      (other is ItemRow &&
           other.id == this.id &&
           other.deckId == this.deckId &&
           other.front == this.front &&
@@ -1003,7 +1003,7 @@ class Item extends DataClass implements Insertable<Item> {
           other.verse == this.verse);
 }
 
-class ItemsCompanion extends UpdateCompanion<Item> {
+class ItemsCompanion extends UpdateCompanion<ItemRow> {
   final Value<String> id;
   final Value<String> deckId;
   final Value<String> front;
@@ -1050,7 +1050,7 @@ class ItemsCompanion extends UpdateCompanion<Item> {
        deckId = Value(deckId),
        front = Value(front),
        back = Value(back);
-  static Insertable<Item> custom({
+  static Insertable<ItemRow> custom({
     Expression<String>? id,
     Expression<String>? deckId,
     Expression<String>? front,
@@ -1685,10 +1685,10 @@ typedef $$DecksTableUpdateCompanionBuilder =
     });
 
 final class $$DecksTableReferences
-    extends BaseReferences<_$AppDatabase, $DecksTable, Deck> {
+    extends BaseReferences<_$AppDatabase, $DecksTable, DeckRow> {
   $$DecksTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static MultiTypedResultKey<$ItemsTable, List<Item>> _itemsRefsTable(
+  static MultiTypedResultKey<$ItemsTable, List<ItemRow>> _itemsRefsTable(
     _$AppDatabase db,
   ) => MultiTypedResultKey.fromTable(
     db.items,
@@ -1955,14 +1955,14 @@ class $$DecksTableTableManager
         RootTableManager<
           _$AppDatabase,
           $DecksTable,
-          Deck,
+          DeckRow,
           $$DecksTableFilterComposer,
           $$DecksTableOrderingComposer,
           $$DecksTableAnnotationComposer,
           $$DecksTableCreateCompanionBuilder,
           $$DecksTableUpdateCompanionBuilder,
-          (Deck, $$DecksTableReferences),
-          Deck,
+          (DeckRow, $$DecksTableReferences),
+          DeckRow,
           PrefetchHooks Function({bool itemsRefs, bool reviewLogsRefs})
         > {
   $$DecksTableTableManager(_$AppDatabase db, $DecksTable table)
@@ -2033,7 +2033,7 @@ class $$DecksTableTableManager
               getPrefetchedDataCallback: (items) async {
                 return [
                   if (itemsRefs)
-                    await $_getPrefetchedData<Deck, $DecksTable, Item>(
+                    await $_getPrefetchedData<DeckRow, $DecksTable, ItemRow>(
                       currentTable: table,
                       referencedTable: $$DecksTableReferences._itemsRefsTable(
                         db,
@@ -2045,7 +2045,7 @@ class $$DecksTableTableManager
                       typedResults: items,
                     ),
                   if (reviewLogsRefs)
-                    await $_getPrefetchedData<Deck, $DecksTable, ReviewLog>(
+                    await $_getPrefetchedData<DeckRow, $DecksTable, ReviewLog>(
                       currentTable: table,
                       referencedTable: $$DecksTableReferences
                           ._reviewLogsRefsTable(db),
@@ -2067,14 +2067,14 @@ typedef $$DecksTableProcessedTableManager =
     ProcessedTableManager<
       _$AppDatabase,
       $DecksTable,
-      Deck,
+      DeckRow,
       $$DecksTableFilterComposer,
       $$DecksTableOrderingComposer,
       $$DecksTableAnnotationComposer,
       $$DecksTableCreateCompanionBuilder,
       $$DecksTableUpdateCompanionBuilder,
-      (Deck, $$DecksTableReferences),
-      Deck,
+      (DeckRow, $$DecksTableReferences),
+      DeckRow,
       PrefetchHooks Function({bool itemsRefs, bool reviewLogsRefs})
     >;
 typedef $$ItemsTableCreateCompanionBuilder =
@@ -2111,7 +2111,7 @@ typedef $$ItemsTableUpdateCompanionBuilder =
     });
 
 final class $$ItemsTableReferences
-    extends BaseReferences<_$AppDatabase, $ItemsTable, Item> {
+    extends BaseReferences<_$AppDatabase, $ItemsTable, ItemRow> {
   $$ItemsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static $DecksTable _deckIdTable(_$AppDatabase db) =>
@@ -2454,14 +2454,14 @@ class $$ItemsTableTableManager
         RootTableManager<
           _$AppDatabase,
           $ItemsTable,
-          Item,
+          ItemRow,
           $$ItemsTableFilterComposer,
           $$ItemsTableOrderingComposer,
           $$ItemsTableAnnotationComposer,
           $$ItemsTableCreateCompanionBuilder,
           $$ItemsTableUpdateCompanionBuilder,
-          (Item, $$ItemsTableReferences),
-          Item,
+          (ItemRow, $$ItemsTableReferences),
+          ItemRow,
           PrefetchHooks Function({bool deckId, bool reviewLogsRefs})
         > {
   $$ItemsTableTableManager(_$AppDatabase db, $ItemsTable table)
@@ -2580,7 +2580,7 @@ class $$ItemsTableTableManager
               getPrefetchedDataCallback: (items) async {
                 return [
                   if (reviewLogsRefs)
-                    await $_getPrefetchedData<Item, $ItemsTable, ReviewLog>(
+                    await $_getPrefetchedData<ItemRow, $ItemsTable, ReviewLog>(
                       currentTable: table,
                       referencedTable: $$ItemsTableReferences
                           ._reviewLogsRefsTable(db),
@@ -2602,14 +2602,14 @@ typedef $$ItemsTableProcessedTableManager =
     ProcessedTableManager<
       _$AppDatabase,
       $ItemsTable,
-      Item,
+      ItemRow,
       $$ItemsTableFilterComposer,
       $$ItemsTableOrderingComposer,
       $$ItemsTableAnnotationComposer,
       $$ItemsTableCreateCompanionBuilder,
       $$ItemsTableUpdateCompanionBuilder,
-      (Item, $$ItemsTableReferences),
-      Item,
+      (ItemRow, $$ItemsTableReferences),
+      ItemRow,
       PrefetchHooks Function({bool deckId, bool reviewLogsRefs})
     >;
 typedef $$ReviewLogsTableCreateCompanionBuilder =

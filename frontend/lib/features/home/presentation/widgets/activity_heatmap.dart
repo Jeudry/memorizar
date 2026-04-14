@@ -9,9 +9,9 @@ class ActivityHeatmap extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final activity = ref.watch(activityProvider);
-    final streak = ref.watch(streakProvider);
-    final totalReviews = ref.watch(totalReviewsProvider);
+    final activity = ref.watch(activityProvider).valueOrNull ?? {};
+    final streak = ref.watch(streakProvider).valueOrNull ?? 0;
+    final totalReviews = ref.watch(totalReviewsProvider).valueOrNull ?? 0;
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 

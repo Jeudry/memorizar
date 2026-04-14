@@ -12,7 +12,7 @@ class DecksScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final decks = ref.watch(decksProvider);
+    final decks = ref.watch(decksProvider).valueOrNull ?? [];
     final theme = Theme.of(context);
     final isWide = Responsive.isWide(context);
     final crossCount = isWide ? 3 : 2;

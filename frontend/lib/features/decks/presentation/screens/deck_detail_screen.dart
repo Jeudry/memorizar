@@ -12,12 +12,12 @@ class DeckDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final deck = ref.watch(deckByIdProvider(deckId));
-    final items = ref.watch(itemsForDeckProvider(deckId));
-    final dueItems = ref.watch(dueItemsProvider(deckId));
+    final deck = ref.watch(deckByIdProvider(deckId)).valueOrNull;
+    final items = ref.watch(itemsForDeckProvider(deckId)).valueOrNull ?? [];
+    final dueItems = ref.watch(dueItemsProvider(deckId)).valueOrNull ?? [];
 
     if (deck == null) {
-      return const Scaffold(body: Center(child: Text('Deck no encontrado')));
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     final theme = Theme.of(context);
