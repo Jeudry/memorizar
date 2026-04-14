@@ -2,6 +2,8 @@ import 'package:go_router/go_router.dart';
 import 'package:memorizar/features/home/presentation/screens/home_screen.dart';
 import 'package:memorizar/features/decks/presentation/screens/decks_screen.dart';
 import 'package:memorizar/features/decks/presentation/screens/deck_detail_screen.dart';
+import 'package:memorizar/features/decks/presentation/screens/deck_form_screen.dart';
+import 'package:memorizar/features/decks/presentation/screens/item_form_screen.dart';
 import 'package:memorizar/features/review/presentation/screens/review_screen.dart';
 import 'package:memorizar/features/onboarding/presentation/screens/onboarding_screen.dart';
 import 'package:memorizar/features/shell/app_shell.dart';
@@ -29,10 +31,21 @@ final appRouter = GoRouter(
       ],
     ),
     GoRoute(
+      path: '/decks/new',
+      builder: (context, state) => const DeckFormScreen(),
+    ),
+    GoRoute(
       path: '/decks/:deckId',
       builder: (context, state) {
         final deckId = state.pathParameters['deckId']!;
         return DeckDetailScreen(deckId: deckId);
+      },
+    ),
+    GoRoute(
+      path: '/decks/:deckId/items/new',
+      builder: (context, state) {
+        final deckId = state.pathParameters['deckId']!;
+        return ItemFormScreen(deckId: deckId);
       },
     ),
     GoRoute(

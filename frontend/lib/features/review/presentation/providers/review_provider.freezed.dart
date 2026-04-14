@@ -22,6 +22,7 @@ mixin _$ReviewSessionState {
   bool get isRevealed => throw _privateConstructorUsedError;
   List<Item> get completed => throw _privateConstructorUsedError;
   bool get isFinished => throw _privateConstructorUsedError;
+  bool get isLoading => throw _privateConstructorUsedError;
 
   /// Create a copy of ReviewSessionState
   /// with the given fields replaced by the non-null parameter values.
@@ -43,6 +44,7 @@ abstract class $ReviewSessionStateCopyWith<$Res> {
     bool isRevealed,
     List<Item> completed,
     bool isFinished,
+    bool isLoading,
   });
 }
 
@@ -66,6 +68,7 @@ class _$ReviewSessionStateCopyWithImpl<$Res, $Val extends ReviewSessionState>
     Object? isRevealed = null,
     Object? completed = null,
     Object? isFinished = null,
+    Object? isLoading = null,
   }) {
     return _then(
       _value.copyWith(
@@ -89,6 +92,10 @@ class _$ReviewSessionStateCopyWithImpl<$Res, $Val extends ReviewSessionState>
                 ? _value.isFinished
                 : isFinished // ignore: cast_nullable_to_non_nullable
                       as bool,
+            isLoading: null == isLoading
+                ? _value.isLoading
+                : isLoading // ignore: cast_nullable_to_non_nullable
+                      as bool,
           )
           as $Val,
     );
@@ -110,6 +117,7 @@ abstract class _$$ReviewSessionStateImplCopyWith<$Res>
     bool isRevealed,
     List<Item> completed,
     bool isFinished,
+    bool isLoading,
   });
 }
 
@@ -132,6 +140,7 @@ class __$$ReviewSessionStateImplCopyWithImpl<$Res>
     Object? isRevealed = null,
     Object? completed = null,
     Object? isFinished = null,
+    Object? isLoading = null,
   }) {
     return _then(
       _$ReviewSessionStateImpl(
@@ -155,6 +164,10 @@ class __$$ReviewSessionStateImplCopyWithImpl<$Res>
             ? _value.isFinished
             : isFinished // ignore: cast_nullable_to_non_nullable
                   as bool,
+        isLoading: null == isLoading
+            ? _value.isLoading
+            : isLoading // ignore: cast_nullable_to_non_nullable
+                  as bool,
       ),
     );
   }
@@ -169,6 +182,7 @@ class _$ReviewSessionStateImpl implements _ReviewSessionState {
     required this.isRevealed,
     required final List<Item> completed,
     required this.isFinished,
+    required this.isLoading,
   }) : _queue = queue,
        _completed = completed;
 
@@ -194,10 +208,12 @@ class _$ReviewSessionStateImpl implements _ReviewSessionState {
 
   @override
   final bool isFinished;
+  @override
+  final bool isLoading;
 
   @override
   String toString() {
-    return 'ReviewSessionState(queue: $queue, currentIndex: $currentIndex, isRevealed: $isRevealed, completed: $completed, isFinished: $isFinished)';
+    return 'ReviewSessionState(queue: $queue, currentIndex: $currentIndex, isRevealed: $isRevealed, completed: $completed, isFinished: $isFinished, isLoading: $isLoading)';
   }
 
   @override
@@ -215,7 +231,9 @@ class _$ReviewSessionStateImpl implements _ReviewSessionState {
               _completed,
             ) &&
             (identical(other.isFinished, isFinished) ||
-                other.isFinished == isFinished));
+                other.isFinished == isFinished) &&
+            (identical(other.isLoading, isLoading) ||
+                other.isLoading == isLoading));
   }
 
   @override
@@ -226,6 +244,7 @@ class _$ReviewSessionStateImpl implements _ReviewSessionState {
     isRevealed,
     const DeepCollectionEquality().hash(_completed),
     isFinished,
+    isLoading,
   );
 
   /// Create a copy of ReviewSessionState
@@ -247,6 +266,7 @@ abstract class _ReviewSessionState implements ReviewSessionState {
     required final bool isRevealed,
     required final List<Item> completed,
     required final bool isFinished,
+    required final bool isLoading,
   }) = _$ReviewSessionStateImpl;
 
   @override
@@ -259,6 +279,8 @@ abstract class _ReviewSessionState implements ReviewSessionState {
   List<Item> get completed;
   @override
   bool get isFinished;
+  @override
+  bool get isLoading;
 
   /// Create a copy of ReviewSessionState
   /// with the given fields replaced by the non-null parameter values.

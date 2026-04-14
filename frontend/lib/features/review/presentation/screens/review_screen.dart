@@ -70,9 +70,14 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen>
   Widget build(BuildContext context) {
     final session = ref.watch(reviewSessionProvider(widget.deckId));
     final notifier = ref.read(reviewSessionProvider(widget.deckId).notifier);
-    final deck = ref.watch(deckByIdProvider(widget.deckId));
+    final deckAsync = ref.watch(deckByIdProvider(widget.deckId));
+    final deck = deckAsync.valueOrNull;
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+
+    if (session.isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     if (session.isFinished) {
       return _FinishedScreen(
@@ -82,7 +87,9 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen>
       );
     }
 
-    final item = session.currentItem!;
+    final item = session.currentItem;
+    if (item == null) return const Scaffold(body: Center(child: Text('No hay tarjetas')));
+
     final accent = deck != null
         ? AppColors.deckAccents[deck.accentColorIndex % AppColors.deckAccents.length]
         : AppColors.indigo;

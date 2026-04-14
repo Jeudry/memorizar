@@ -14,6 +14,7 @@ class ReviewSessionState with _$ReviewSessionState {
     required bool isRevealed,
     required List<Item> completed,
     required bool isFinished,
+    required bool isLoading,
   }) = _ReviewSessionState;
 }
 
@@ -24,14 +25,26 @@ extension ReviewSessionStateX on ReviewSessionState {
 }
 
 class ReviewSessionNotifier extends StateNotifier<ReviewSessionState> {
-  ReviewSessionNotifier(List<Item> items)
-      : super(ReviewSessionState(
-          queue: List.from(items),
+  ReviewSessionNotifier()
+      : super(const ReviewSessionState(
+          queue: [],
           currentIndex: 0,
           isRevealed: false,
           completed: [],
-          isFinished: items.isEmpty,
+          isFinished: false,
+          isLoading: true,
         ));
+
+  void loadItems(List<Item> items) {
+    state = ReviewSessionState(
+      queue: List.from(items),
+      currentIndex: 0,
+      isRevealed: false,
+      completed: [],
+      isFinished: items.isEmpty,
+      isLoading: false,
+    );
+  }
 
   void reveal() {
     state = state.copyWith(isRevealed: true);
@@ -64,7 +77,6 @@ class ReviewSessionNotifier extends StateNotifier<ReviewSessionState> {
     int reps;
 
     if (q < 3) {
-      // Failed — reset
       interval = 1;
       reps = 0;
     } else {
@@ -88,10 +100,13 @@ class ReviewSessionNotifier extends StateNotifier<ReviewSessionState> {
   }
 }
 
-final reviewSessionProvider = StateNotifierProvider.family
-    .autoDispose<ReviewSessionNotifier, ReviewSessionState, String>(
+final reviewSessionProvider = StateNotifierProvider.autoDispose
+    .family<ReviewSessionNotifier, ReviewSessionState, String>(
   (ref, deckId) {
-    final items = ref.watch(dueItemsProvider(deckId));
-    return ReviewSessionNotifier(items);
+    final notifier = ReviewSessionNotifier();
+    final dueItemsAsync = ref.watch(dueItemsProvider(deckId));
+    final items = dueItemsAsync.valueOrNull ?? [];
+    notifier.loadItems(items);
+    return notifier;
   },
 );

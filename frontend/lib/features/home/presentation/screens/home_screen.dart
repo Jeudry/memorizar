@@ -15,11 +15,15 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final decks = ref.watch(decksProvider);
-    final totalDue = ref.watch(totalDueTodayProvider);
-    final streak = ref.watch(streakProvider);
+    final decksAsync = ref.watch(decksProvider);
+    final totalDueAsync = ref.watch(totalDueTodayProvider);
+    final streakAsync = ref.watch(streakProvider);
     final theme = Theme.of(context);
     final isWide = Responsive.isWide(context);
+
+    final decks = decksAsync.valueOrNull ?? [];
+    final totalDue = totalDueAsync.valueOrNull ?? 0;
+    final streak = streakAsync.valueOrNull ?? 0;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -110,9 +114,9 @@ class _NarrowLayout extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
           child: _StreakBanner(totalDue: totalDue, streak: streak),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-          child: const ActivityHeatmap(),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
+          child: ActivityHeatmap(),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),

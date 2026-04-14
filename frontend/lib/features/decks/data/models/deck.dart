@@ -16,6 +16,13 @@ class Deck with _$Deck {
     required int learned,
     required DateTime createdAt,
     String? emoji,
+    // SRS breakdown
+    @Default(0) int newCount,
+    @Default(0) int learningCount,
+    @Default(0) int reviewCount,
+    // Retention stats
+    @Default(0) int totalReviews,
+    @Default(0.0) double averageEase,
   }) = _Deck;
 
   factory Deck.fromJson(Map<String, dynamic> json) => _$DeckFromJson(json);

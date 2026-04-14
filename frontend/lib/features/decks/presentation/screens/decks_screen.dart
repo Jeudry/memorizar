@@ -12,7 +12,7 @@ class DecksScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final decks = ref.watch(decksProvider);
+    final decksAsync = ref.watch(decksProvider);
     final theme = Theme.of(context);
     final isWide = Responsive.isWide(context);
     final crossCount = isWide ? 3 : 2;
@@ -20,45 +20,49 @@ class DecksScreen extends ConsumerWidget {
     return Scaffold(
       body: SafeArea(
         child: ContentWidth(
-          child: CustomScrollView(
-            slivers: [
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(isWide ? 24 : 20, 24, isWide ? 24 : 20, 16),
-                  child: Row(
-                    children: [
-                      Text('Mis Decks', style: theme.textTheme.headlineMedium),
-                      const Spacer(),
-                      FilledButton.icon(
-                        onPressed: () {},
-                        icon: const Icon(Icons.add_rounded, size: 18),
-                        label: const Text('Nuevo deck'),
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          textStyle: GoogleFonts.dmSans(fontSize: 13, fontWeight: FontWeight.w600),
+          child: decksAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(child: Text('Error: $e')),
+            data: (decks) => CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(isWide ? 24 : 20, 24, isWide ? 24 : 20, 16),
+                    child: Row(
+                      children: [
+                        Text('Mis Decks', style: theme.textTheme.headlineMedium),
+                        const Spacer(),
+                        FilledButton.icon(
+                          onPressed: () => context.push('/decks/new'),
+                          icon: const Icon(Icons.add_rounded, size: 18),
+                          label: const Text('Nuevo deck'),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            textStyle: GoogleFonts.dmSans(fontSize: 13, fontWeight: FontWeight.w600),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              SliverPadding(
-                padding: EdgeInsets.symmetric(horizontal: isWide ? 24 : 20),
-                sliver: SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: crossCount,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: isWide ? 1.1 : 0.85,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) => _DeckCard(deck: decks[i]),
-                    childCount: decks.length,
+                SliverPadding(
+                  padding: EdgeInsets.symmetric(horizontal: isWide ? 24 : 20),
+                  sliver: SliverGrid(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: crossCount,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: isWide ? 1.1 : 0.85,
+                    ),
+                    delegate: SliverChildBuilderDelegate(
+                      (context, i) => _DeckCard(deck: decks[i]),
+                      childCount: decks.length,
+                    ),
                   ),
                 ),
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: 24)),
-            ],
+                const SliverToBoxAdapter(child: SizedBox(height: 24)),
+              ],
+            ),
           ),
         ),
       ),

@@ -12,13 +12,21 @@ class DeckDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final deck = ref.watch(deckByIdProvider(deckId));
-    final items = ref.watch(itemsForDeckProvider(deckId));
-    final dueItems = ref.watch(dueItemsProvider(deckId));
+    final deckAsync = ref.watch(deckByIdProvider(deckId));
+    final itemsAsync = ref.watch(itemsForDeckProvider(deckId));
+    final dueItemsAsync = ref.watch(dueItemsProvider(deckId));
 
+    final deck = deckAsync.valueOrNull;
     if (deck == null) {
-      return const Scaffold(body: Center(child: Text('Deck no encontrado')));
+      return deckAsync.when(
+        loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+        error: (e, _) => Scaffold(body: Center(child: Text('Error: $e'))),
+        data: (_) => const Scaffold(body: Center(child: Text('Deck no encontrado'))),
+      );
     }
+
+    final items = itemsAsync.valueOrNull ?? [];
+    final dueItems = dueItemsAsync.valueOrNull ?? [];
 
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
@@ -76,13 +84,25 @@ class DeckDetailScreen extends ConsumerWidget {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.all(20),
-              child: Row(
+              child: Column(
                 children: [
-                  _StatChip(label: 'Total', value: '${deck.totalItems}', color: cs.primary),
-                  const SizedBox(width: 10),
-                  _StatChip(label: 'Hoy', value: '${dueItems.length}', color: AppColors.warning),
-                  const SizedBox(width: 10),
-                  _StatChip(label: 'Dominadas', value: '${deck.learned}', color: AppColors.success),
+                  Row(
+                    children: [
+                      _StatChip(label: 'Nuevas', value: '${deck.newCount}', color: cs.primary),
+                      const SizedBox(width: 8),
+                      _StatChip(label: 'Aprendiendo', value: '${deck.learningCount}', color: AppColors.warning),
+                      const SizedBox(width: 8),
+                      _StatChip(label: 'Dominadas', value: '${deck.reviewCount}', color: AppColors.success),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      _StatChip(label: 'Ease avg', value: deck.averageEase.toStringAsFixed(1), color: cs.tertiary),
+                      const SizedBox(width: 8),
+                      _StatChip(label: 'Total repasos', value: '${deck.totalReviews}', color: cs.secondary),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -106,7 +126,19 @@ class DeckDetailScreen extends ConsumerWidget {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-              child: Text('Todas las tarjetas', style: theme.textTheme.titleSmall),
+              child: Row(
+                children: [
+                  Text('Todas las tarjetas (${items.length})', style: theme.textTheme.titleSmall),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => context.push('/decks/$deckId/items/new'),
+                    icon: Icon(Icons.add_rounded, color: accent),
+                    style: IconButton.styleFrom(
+                      backgroundColor: accent.withValues(alpha: 0.12),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           SliverList(
@@ -142,7 +174,7 @@ class _StatChip extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Text(value, style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.w700, color: color)),
+            Text(value, style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: color)),
             Text(label, style: theme.textTheme.labelSmall?.copyWith(color: color.withValues(alpha: 0.8))),
           ],
         ),

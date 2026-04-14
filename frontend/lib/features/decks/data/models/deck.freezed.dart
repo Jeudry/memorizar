@@ -30,7 +30,12 @@ mixin _$Deck {
   int get dueToday => throw _privateConstructorUsedError;
   int get learned => throw _privateConstructorUsedError;
   DateTime get createdAt => throw _privateConstructorUsedError;
-  String? get emoji => throw _privateConstructorUsedError;
+  String? get emoji => throw _privateConstructorUsedError; // SRS breakdown
+  int get newCount => throw _privateConstructorUsedError;
+  int get learningCount => throw _privateConstructorUsedError;
+  int get reviewCount => throw _privateConstructorUsedError; // Retention stats
+  int get totalReviews => throw _privateConstructorUsedError;
+  double get averageEase => throw _privateConstructorUsedError;
 
   /// Serializes this Deck to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -57,6 +62,11 @@ abstract class $DeckCopyWith<$Res> {
     int learned,
     DateTime createdAt,
     String? emoji,
+    int newCount,
+    int learningCount,
+    int reviewCount,
+    int totalReviews,
+    double averageEase,
   });
 }
 
@@ -85,6 +95,11 @@ class _$DeckCopyWithImpl<$Res, $Val extends Deck>
     Object? learned = null,
     Object? createdAt = null,
     Object? emoji = freezed,
+    Object? newCount = null,
+    Object? learningCount = null,
+    Object? reviewCount = null,
+    Object? totalReviews = null,
+    Object? averageEase = null,
   }) {
     return _then(
       _value.copyWith(
@@ -128,6 +143,26 @@ class _$DeckCopyWithImpl<$Res, $Val extends Deck>
                 ? _value.emoji
                 : emoji // ignore: cast_nullable_to_non_nullable
                       as String?,
+            newCount: null == newCount
+                ? _value.newCount
+                : newCount // ignore: cast_nullable_to_non_nullable
+                      as int,
+            learningCount: null == learningCount
+                ? _value.learningCount
+                : learningCount // ignore: cast_nullable_to_non_nullable
+                      as int,
+            reviewCount: null == reviewCount
+                ? _value.reviewCount
+                : reviewCount // ignore: cast_nullable_to_non_nullable
+                      as int,
+            totalReviews: null == totalReviews
+                ? _value.totalReviews
+                : totalReviews // ignore: cast_nullable_to_non_nullable
+                      as int,
+            averageEase: null == averageEase
+                ? _value.averageEase
+                : averageEase // ignore: cast_nullable_to_non_nullable
+                      as double,
           )
           as $Val,
     );
@@ -153,6 +188,11 @@ abstract class _$$DeckImplCopyWith<$Res> implements $DeckCopyWith<$Res> {
     int learned,
     DateTime createdAt,
     String? emoji,
+    int newCount,
+    int learningCount,
+    int reviewCount,
+    int totalReviews,
+    double averageEase,
   });
 }
 
@@ -178,6 +218,11 @@ class __$$DeckImplCopyWithImpl<$Res>
     Object? learned = null,
     Object? createdAt = null,
     Object? emoji = freezed,
+    Object? newCount = null,
+    Object? learningCount = null,
+    Object? reviewCount = null,
+    Object? totalReviews = null,
+    Object? averageEase = null,
   }) {
     return _then(
       _$DeckImpl(
@@ -221,6 +266,26 @@ class __$$DeckImplCopyWithImpl<$Res>
             ? _value.emoji
             : emoji // ignore: cast_nullable_to_non_nullable
                   as String?,
+        newCount: null == newCount
+            ? _value.newCount
+            : newCount // ignore: cast_nullable_to_non_nullable
+                  as int,
+        learningCount: null == learningCount
+            ? _value.learningCount
+            : learningCount // ignore: cast_nullable_to_non_nullable
+                  as int,
+        reviewCount: null == reviewCount
+            ? _value.reviewCount
+            : reviewCount // ignore: cast_nullable_to_non_nullable
+                  as int,
+        totalReviews: null == totalReviews
+            ? _value.totalReviews
+            : totalReviews // ignore: cast_nullable_to_non_nullable
+                  as int,
+        averageEase: null == averageEase
+            ? _value.averageEase
+            : averageEase // ignore: cast_nullable_to_non_nullable
+                  as double,
       ),
     );
   }
@@ -240,6 +305,11 @@ class _$DeckImpl implements _Deck {
     required this.learned,
     required this.createdAt,
     this.emoji,
+    this.newCount = 0,
+    this.learningCount = 0,
+    this.reviewCount = 0,
+    this.totalReviews = 0,
+    this.averageEase = 0.0,
   });
 
   factory _$DeckImpl.fromJson(Map<String, dynamic> json) =>
@@ -265,10 +335,27 @@ class _$DeckImpl implements _Deck {
   final DateTime createdAt;
   @override
   final String? emoji;
+  // SRS breakdown
+  @override
+  @JsonKey()
+  final int newCount;
+  @override
+  @JsonKey()
+  final int learningCount;
+  @override
+  @JsonKey()
+  final int reviewCount;
+  // Retention stats
+  @override
+  @JsonKey()
+  final int totalReviews;
+  @override
+  @JsonKey()
+  final double averageEase;
 
   @override
   String toString() {
-    return 'Deck(id: $id, name: $name, description: $description, type: $type, accentColorIndex: $accentColorIndex, totalItems: $totalItems, dueToday: $dueToday, learned: $learned, createdAt: $createdAt, emoji: $emoji)';
+    return 'Deck(id: $id, name: $name, description: $description, type: $type, accentColorIndex: $accentColorIndex, totalItems: $totalItems, dueToday: $dueToday, learned: $learned, createdAt: $createdAt, emoji: $emoji, newCount: $newCount, learningCount: $learningCount, reviewCount: $reviewCount, totalReviews: $totalReviews, averageEase: $averageEase)';
   }
 
   @override
@@ -290,7 +377,17 @@ class _$DeckImpl implements _Deck {
             (identical(other.learned, learned) || other.learned == learned) &&
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt) &&
-            (identical(other.emoji, emoji) || other.emoji == emoji));
+            (identical(other.emoji, emoji) || other.emoji == emoji) &&
+            (identical(other.newCount, newCount) ||
+                other.newCount == newCount) &&
+            (identical(other.learningCount, learningCount) ||
+                other.learningCount == learningCount) &&
+            (identical(other.reviewCount, reviewCount) ||
+                other.reviewCount == reviewCount) &&
+            (identical(other.totalReviews, totalReviews) ||
+                other.totalReviews == totalReviews) &&
+            (identical(other.averageEase, averageEase) ||
+                other.averageEase == averageEase));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -307,6 +404,11 @@ class _$DeckImpl implements _Deck {
     learned,
     createdAt,
     emoji,
+    newCount,
+    learningCount,
+    reviewCount,
+    totalReviews,
+    averageEase,
   );
 
   /// Create a copy of Deck
@@ -335,6 +437,11 @@ abstract class _Deck implements Deck {
     required final int learned,
     required final DateTime createdAt,
     final String? emoji,
+    final int newCount,
+    final int learningCount,
+    final int reviewCount,
+    final int totalReviews,
+    final double averageEase,
   }) = _$DeckImpl;
 
   factory _Deck.fromJson(Map<String, dynamic> json) = _$DeckImpl.fromJson;
@@ -358,7 +465,17 @@ abstract class _Deck implements Deck {
   @override
   DateTime get createdAt;
   @override
-  String? get emoji;
+  String? get emoji; // SRS breakdown
+  @override
+  int get newCount;
+  @override
+  int get learningCount;
+  @override
+  int get reviewCount; // Retention stats
+  @override
+  int get totalReviews;
+  @override
+  double get averageEase;
 
   /// Create a copy of Deck
   /// with the given fields replaced by the non-null parameter values.

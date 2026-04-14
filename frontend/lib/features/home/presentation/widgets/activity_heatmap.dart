@@ -9,13 +9,16 @@ class ActivityHeatmap extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final activity = ref.watch(activityProvider);
-    final streak = ref.watch(streakProvider);
-    final totalReviews = ref.watch(totalReviewsProvider);
+    final activityAsync = ref.watch(activityProvider);
+    final streakAsync = ref.watch(streakProvider);
+    final totalReviewsAsync = ref.watch(totalReviewsProvider);
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
-    // Build 9 weeks × 7 days grid (63 days), newest = bottom-right
+    final activity = activityAsync.valueOrNull ?? {};
+    final streak = streakAsync.valueOrNull ?? 0;
+    final totalReviews = totalReviewsAsync.valueOrNull ?? 0;
+
     const weeks = 9;
     const days = 7;
     const total = weeks * days;
