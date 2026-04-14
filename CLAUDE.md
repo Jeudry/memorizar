@@ -113,3 +113,10 @@ El deck "Biblia" tiene metadatos extra: `book`, `chapter`, `verse`.
 - Rama principal: `main`
 - Naming: `feature/MM-{número}_{descripción}`
 - Repo: `https://github.com/Jeudry/memorizar` (público)
+
+### Regla de ramas
+
+**SIEMPRE usar `/create-branch` para cada cambio.** No trabajar directamente en `main` ni hacer commit sin rama nueva. Cada feature/tarea/refactor debe tener su propia rama antes de tocar código.
+
+- Rama base: `main` (siempre crear desde main — no preguntar)
+- Naming: `feature/MM-{número}_{descripción}`
