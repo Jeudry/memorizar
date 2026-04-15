@@ -2,18 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:memorizar/core/prefs_provider.dart';
 import 'package:memorizar/core/theme/app_colors.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _kOnboardingKey = 'memorizar_onboarding_done';
 
-final onboardingDoneProvider = FutureProvider<bool>((ref) async {
-  final prefs = await SharedPreferences.getInstance();
-  return prefs.getBool(_kOnboardingKey) ?? false;
-});
-
-Future<void> markOnboardingDone() async {
-  final prefs = await SharedPreferences.getInstance();
+Future<void> markOnboardingDone(SharedPreferences prefs) async {
   await prefs.setBool(_kOnboardingKey, true);
 }
 
@@ -82,7 +77,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   }
 
   Future<void> _finish() async {
-    await markOnboardingDone();
+    final prefs = ref.read(sharedPreferencesProvider);
+    await markOnboardingDone(prefs);
     if (mounted) context.go('/home');
   }
 

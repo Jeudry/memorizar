@@ -70,7 +70,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen>
   Widget build(BuildContext context) {
     final session = ref.watch(reviewSessionProvider(widget.deckId));
     final notifier = ref.read(reviewSessionProvider(widget.deckId).notifier);
-    final deck = ref.watch(deckByIdProvider(widget.deckId));
+    final deckAsync = ref.watch(deckByIdProvider(widget.deckId));
+    final deck = deckAsync.valueOrNull;
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 

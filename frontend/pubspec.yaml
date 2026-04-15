@@ -26,6 +26,7 @@ dependencies:
 
   # Local DB (offline-first)
   drift: ^2.22.1
+  sqlite3: ^2.9.4
   sqlite3_flutter_libs: ^0.5.29
   path_provider: ^2.1.5
   path: ^1.9.1
@@ -36,6 +37,11 @@ dependencies:
   # UI
   google_fonts: ^6.2.1
   cupertino_icons: ^1.0.8
+  flutter_tts: ^4.2.3
+  record: ^5.2.1
+  audioplayers: ^6.1.0
+  speech_to_text: ^7.0.0
+  diacritic: ^0.1.6
 
   # Persistence
   shared_preferences: ^2.3.5
@@ -60,3 +66,4 @@ flutter:
 
   assets:
     - assets/data/
+    - google_fonts/

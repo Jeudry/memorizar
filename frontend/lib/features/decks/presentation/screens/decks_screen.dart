@@ -12,7 +12,8 @@ class DecksScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final decks = ref.watch(decksProvider);
+    final decksAsync = ref.watch(decksProvider);
+    final decks = decksAsync.valueOrNull ?? [];
     final theme = Theme.of(context);
     final isWide = Responsive.isWide(context);
     final crossCount = isWide ? 3 : 2;
@@ -30,7 +31,7 @@ class DecksScreen extends ConsumerWidget {
                       Text('Mis Decks', style: theme.textTheme.headlineMedium),
                       const Spacer(),
                       FilledButton.icon(
-                        onPressed: () {},
+                        onPressed: () => context.push('/decks/new'),
                         icon: const Icon(Icons.add_rounded, size: 18),
                         label: const Text('Nuevo deck'),
                         style: FilledButton.styleFrom(

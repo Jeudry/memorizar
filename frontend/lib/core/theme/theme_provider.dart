@@ -13,6 +13,8 @@ class ThemeModeNotifier extends StateNotifier<ThemeMode> {
     _load();
   }
 
+  ThemeModeNotifier.test(super.initial);
+
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     final stored = prefs.getString(_kThemeKey);
