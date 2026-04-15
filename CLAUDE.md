@@ -113,3 +113,31 @@ El deck "Biblia" tiene metadatos extra: `book`, `chapter`, `verse`.
 - Rama principal: `main`
 - Naming: `feature/MM-{número}_{descripción}`
 - Repo: `https://github.com/Jeudry/memorizar` (público)
+
+---
+
+## Workflow para features
+
+Antes de marcar algo como completo, siempre verificar:
+
+1. `flutter analyze` → 0 errores
+2. `flutter test` → todos pasan
+3. Revisar que la navegación/rutas estén conectadas en `app_router.dart`
+4. Revisar que dark mode esté conectado al `MaterialApp` via `themeModeProvider`
+5. Commitear cambios en la rama feature对应
+
+Si un feature está incompleto o roto → crear rama separada, terminarlo, mergeear, y subir.
+
+Ejemplo de flujo por feature:
+```bash
+# Feature listo en la rama actual → commit y push directo
+git add ... && git commit -m "feat: description" && git push
+
+# Feature incompleto → rama separada
+git checkout -b feature/MM-{n}_nombre
+#trabajar...
+git push origin feature/MM-{n}_nombre
+# merge via PR o direct merge
+```
+
+**Siempre subir al remote después de cada commit en rama feature.**
