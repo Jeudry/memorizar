@@ -1,4 +1,4 @@
-# memorizar
+# frontend
 
 A new Flutter project.
 
