@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'core/app_state.dart';
 import 'core/theme.dart';
-import 'features/home/presentation/ui_screens.dart';
+import 'core/router/app_routes.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

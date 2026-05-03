@@ -234,6 +234,10 @@ class AppStore extends ChangeNotifier {
         .toList();
   }
 
+  int verseCountFor(String book, int chapter) {
+    return versesFor(book, chapter).length;
+  }
+
   List<BibleVerseData> searchBible(String rawQuery) {
     final query = rawQuery.toLowerCase().trim();
     if (query.isEmpty) return const [];

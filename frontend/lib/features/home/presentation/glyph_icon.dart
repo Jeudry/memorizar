@@ -67,6 +67,8 @@ class GlyphIcon extends StatelessWidget {
         return Icon(Icons.spa_rounded, size: size, color: iconColor);
       case '🫁':
         return Icon(Icons.air_rounded, size: size, color: iconColor);
+      case '👆':
+        return Icon(Icons.touch_app_outlined, size: size, color: iconColor);
       default:
         return Icon(Icons.auto_stories_rounded, size: size, color: iconColor);
     }
