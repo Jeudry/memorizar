@@ -9,7 +9,6 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
-import 'dart:io';
 
 import '../../../core/app_state.dart';
 import '../../../core/theme.dart';
@@ -77,6 +76,7 @@ class AppRoutes {
     cooperativoLogrado: (_) => const CooperativoSuccessScreen(),
     ejercicios: (_) => ExerciseFlowScreen(data: flowScreens.first),
     flashcards: (_) => const FlashcardsScreen(),
+    '$flow/progress-tree': (_) => const _ProgressTreeScreen(),
     for (final screen in flowScreens)
       '$flow/${screen.slug}': (_) => ExerciseFlowScreen(data: screen),
   };
@@ -248,14 +248,24 @@ class ReferencePage extends StatelessWidget {
           SafeArea(
             child: scrollable
                 ? SingleChildScrollView(
-                    padding: EdgeInsets.fromLTRB(18, 4, 18, showBottomNav ? 118 : 28),
+                    padding: EdgeInsets.fromLTRB(
+                      18,
+                      4,
+                      18,
+                      showBottomNav ? 118 : 28,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [child],
                     ),
                   )
                 : Padding(
-                    padding: EdgeInsets.fromLTRB(18, 4, 18, showBottomNav ? 118 : 28),
+                    padding: EdgeInsets.fromLTRB(
+                      18,
+                      4,
+                      18,
+                      showBottomNav ? 118 : 28,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [Expanded(child: child)],
@@ -931,7 +941,13 @@ class _BibliaScreenState extends State<BibliaScreen> {
             const SizedBox(height: 14),
             const _ThemesBrowse(),
             const SizedBox(height: 16),
-            _Cta('Siguiente →', onTap: _finishBibleSelection),
+            _ActionCta(
+              label: store.selectedBibleVerses.isEmpty
+                  ? 'Selecciona al menos un versículo'
+                  : 'Siguiente →',
+              enabled: store.selectedBibleVerses.isNotEmpty,
+              onTap: _finishBibleSelection,
+            ),
           ],
         ],
       ),
@@ -1459,11 +1475,14 @@ class _VersePickerState extends State<_VersePicker> {
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
     final verses = store.versesFor(widget.selectedBook, widget.selectedChapter);
-    final canonicalBook = verses.isEmpty ? widget.selectedBook : verses.first.book;
+    final canonicalBook = verses.isEmpty
+        ? widget.selectedBook
+        : verses.first.book;
     final selectedInStore = store.selectedBibleVerses
         .where(
           (verse) =>
-              verse.book == canonicalBook && verse.chapter == widget.selectedChapter,
+              verse.book == canonicalBook &&
+              verse.chapter == widget.selectedChapter,
         )
         .map((verse) => verse.verse)
         .toSet();
@@ -1631,9 +1650,7 @@ bool _isPassiveStep(String slug) {
   return slug == '01-escuchar' ||
       slug == '02-lectura-frag' ||
       slug == '03-leer-voz' ||
-      slug == '04-escuchar-voz' ||
-      slug == '08-voz-guiada' ||
-      slug == '12-voz-final';
+      slug == '04-escuchar-voz';
 }
 
 List<String> _orderedBlocks(String text) {
@@ -1644,11 +1661,6 @@ List<String> _orderedBlocks(String text) {
     blocks.add(words.skip(i).take(size).join(' '));
   }
   return blocks.take(5).toList();
-}
-
-List<String> _rotatedBlocks(List<String> blocks) {
-  if (blocks.length < 2) return blocks;
-  return [...blocks.skip(1), blocks.first];
 }
 
 String _targetWord(String text, {required bool level2}) {
@@ -1662,31 +1674,79 @@ String _targetWord(String text, {required bool level2}) {
   return words[(level2 ? words.length ~/ 2 : 0).clamp(0, words.length - 1)];
 }
 
-String _maskedOneWord(String text, String target) {
-  return _studyWords(
-    text,
-  ).map((word) => word == target ? '____' : word).join(' ');
+List<String> _completionTargetsFor(String text, {required bool level2}) {
+  final candidates = _studyWords(text)
+      .where(
+        (word) =>
+            word.replaceAll(RegExp(r'[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]'), '').length > 3,
+      )
+      .toList();
+  final source = candidates.isEmpty ? _studyWords(text) : candidates;
+  if (source.isEmpty) return [];
+  final targetCount = (level2 ? 3 : 2).clamp(1, source.length);
+  final indexes = <int>{
+    if (source.isNotEmpty) 0,
+    if (source.length > 2) source.length ~/ 2,
+    if (level2 && source.length > 3) source.length - 1,
+  }.where((index) => index >= 0 && index < source.length).toList();
+  final targets = <String>[];
+  for (final index in indexes) {
+    final word = source[index];
+    if (!targets.any((target) => _sameAnswer(target, word))) targets.add(word);
+    if (targets.length >= targetCount) break;
+  }
+  for (final word in source) {
+    if (!targets.any((target) => _sameAnswer(target, word))) targets.add(word);
+    if (targets.length >= targetCount) break;
+  }
+  return targets;
 }
 
-List<String> _completionOptions(String text, String target) {
-  final options = <String>[target];
-  for (final word in _studyWords(text)) {
+List<String> _completionOptions(
+  String text,
+  String target, {
+  int offset = 0,
+  int seed = 0,
+}) {
+  final pool = <String>[];
+  final words = _studyWords(text);
+  for (final word in words) {
     final clean = word.replaceAll(RegExp(r'[^\wÁÉÍÓÚÜÑáéíóúüñ]'), '');
-    if (clean.length > 3 && !options.contains(clean)) options.add(clean);
-    if (options.length >= 5) break;
+    if (clean.length > 3 &&
+        !_sameAnswer(clean, target) &&
+        !pool.any((p) => _sameAnswer(p, clean))) {
+      pool.add(clean);
+    }
   }
+  final rng = math.Random(
+    seed == 0 ? DateTime.now().microsecondsSinceEpoch : seed,
+  );
+  pool.shuffle(rng);
+  final distractors = pool.take(4).toList();
+  final options = <String>[target, ...distractors];
+  options.shuffle(rng);
   return options;
 }
 
 String _firstLetterAnswer(String text, {required bool level2}) {
-  final words = _studyWords(text).skip(level2 ? 1 : 3).take(level2 ? 6 : 4);
+  final words = _firstLetterTargets(text, level2: level2);
   return words.map((word) => word.substring(0, 1)).join('');
+}
+
+List<String> _firstLetterTargets(String text, {required bool level2}) {
+  return _studyWords(text).skip(level2 ? 1 : 3).take(level2 ? 6 : 4).toList();
 }
 
 bool _sameAnswer(String a, String b) {
   String normalize(String value) {
     const accents = {
-      'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ü': 'u', 'ñ': 'n',
+      'á': 'a',
+      'é': 'e',
+      'í': 'i',
+      'ó': 'o',
+      'ú': 'u',
+      'ü': 'u',
+      'ñ': 'n',
     };
     var text = value.toLowerCase();
     for (final entry in accents.entries) {
@@ -1694,6 +1754,7 @@ bool _sameAnswer(String a, String b) {
     }
     return text.replaceAll(RegExp(r'[^a-z]'), '');
   }
+
   return normalize(a) == normalize(b);
 }
 
@@ -6360,6 +6421,8 @@ class _ExerciseOption extends StatelessWidget {
   final String title;
   final String? tip;
   final bool selected;
+  final bool correct;
+  final bool wrong;
   final VoidCallback? onTap;
 
   const _ExerciseOption({
@@ -6367,45 +6430,62 @@ class _ExerciseOption extends StatelessWidget {
     required this.title,
     this.tip,
     this.selected = false,
+    this.correct = false,
+    this.wrong = false,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final accent = correct
+        ? RefColors.lime
+        : wrong
+        ? RefColors.urgent
+        : selected
+        ? RefColors.cyan
+        : RefColors.border;
     return GestureDetector(
       onTap: onTap,
       child: _Glass(
         radius: 16,
         padding: const EdgeInsets.all(16),
-        color: selected
-            ? RefColors.cyan.withValues(alpha: .14)
+        color: (correct || wrong || selected)
+            ? accent.withValues(alpha: .14)
             : RefColors.glass,
-        border: Border.all(
-          color: selected
-              ? RefColors.cyan.withValues(alpha: .5)
-              : RefColors.border,
-        ),
+        border: Border.all(color: accent.withValues(alpha: .5)),
         child: Row(
           children: [
             Container(
               width: 32,
               height: 32,
               decoration: BoxDecoration(
-                color: selected ? RefColors.cyan : RefColors.glassSoft,
+                color: (correct || wrong || selected)
+                    ? accent
+                    : RefColors.glassSoft,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: selected ? Colors.transparent : RefColors.border,
+                  color: (correct || wrong || selected)
+                      ? Colors.transparent
+                      : RefColors.border,
                 ),
               ),
               child: Center(
-                child: Text(
-                  letter,
-                  style: TextStyle(
-                    color: selected ? const Color(0xFF003A4A) : RefColors.ink,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+                child: correct || wrong
+                    ? Icon(
+                        correct ? Icons.check_rounded : Icons.close_rounded,
+                        color: correct ? const Color(0xFF153A18) : Colors.white,
+                        size: 18,
+                      )
+                    : Text(
+                        letter,
+                        style: TextStyle(
+                          color: selected
+                              ? const Color(0xFF003A4A)
+                              : RefColors.ink,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
               ),
             ),
             const SizedBox(width: 14),
@@ -6538,16 +6618,25 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   int? _selected;
   bool _checked = false;
   int _fragmentVisibleWords = 8;
-  final List<String> _chosenBlocks = [];
-  final TextEditingController _answerController = TextEditingController();
-  final TextEditingController _letterController = TextEditingController();
+  String? _blockOrderCardId;
+  List<int> _blockOrderIndexes = [];
+  int? _selectedBlockPosition;
+  String? _completionCardId;
+  bool _completionLevel2 = false;
+  List<String> _completionTargets = [];
+  List<String?> _completionAnswers = [];
+  int _activeCompletionIndex = 0;
+  int _completionMistakes = 0;
+  int _completionSeed = 1;
+  String? _letterCardId;
+  bool _letterLevel2 = false;
+  List<String> _letterTargets = [];
+  List<String?> _letterAnswers = [];
+  int _activeLetterIndex = 0;
+  int _letterMistakes = 0;
 
   @override
-  void dispose() {
-    _answerController.dispose();
-    _letterController.dispose();
-    super.dispose();
-  }
+  void dispose() => super.dispose();
 
   void _revealFragment(String slug, int totalWords) {
     if (totalWords <= 0) return;
@@ -6557,6 +6646,187 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         AppScope.of(context).markExerciseStepCompleted(slug);
       }
     });
+  }
+
+  bool _completionCorrect(String slug, MemoryCardData card) {
+    _ensureCompletionState(card.id, card.back, slug == '10-completar-n2');
+    return _completionComplete();
+  }
+
+  bool _letterCorrect(String slug, MemoryCardData card) {
+    _ensureLetterState(card.id, card.back, slug == '11-primera-letra-n2');
+    return _letterComplete();
+  }
+
+  bool _hasCompletionInput() => _completionAnswers.any(
+    (answer) => answer != null && answer.trim().isNotEmpty,
+  );
+
+  bool _hasLetterInput() => _letterAnswers.any((answer) => answer != null);
+
+  bool _quizCorrect(MemoryCardData card, MemoryDeckData deck) {
+    final options = _quizOptions(deck, card);
+    return _selected != null && options[_selected!].id == card.id;
+  }
+
+  bool _canAdvanceAnsweredStep(
+    String slug,
+    MemoryCardData card,
+    MemoryDeckData deck,
+  ) {
+    if (slug == '05-bloques') return _blocksAreCorrect();
+    if (slug == '06-completar-n1' || slug == '10-completar-n2') {
+      return _completionCorrect(slug, card);
+    }
+    if (slug == '07-primera-letra-n1' || slug == '11-primera-letra-n2') {
+      return _letterCorrect(slug, card);
+    }
+    if (slug == '09-quiz') return _selected != null;
+    return true;
+  }
+
+  void _ensureBlockOrder(String cardId, List<String> blocks) {
+    if (_blockOrderCardId == cardId &&
+        _blockOrderIndexes.length == blocks.length) {
+      return;
+    }
+    _blockOrderCardId = cardId;
+    _blockOrderIndexes = blocks.length < 2
+        ? List.generate(blocks.length, (index) => index)
+        : [for (var index = 1; index < blocks.length; index++) index, 0];
+    _selectedBlockPosition = null;
+    _checked = false;
+  }
+
+  void _moveBlock(int oldIndex, int newIndex) {
+    setState(() {
+      if (oldIndex < newIndex) newIndex -= 1;
+      final movedIndex = _blockOrderIndexes.removeAt(oldIndex);
+      _blockOrderIndexes.insert(newIndex, movedIndex);
+      _selectedBlockPosition = null;
+      _checked = true;
+    });
+  }
+
+  void _selectBlockDestination(int targetIndex) {
+    final selectedPosition = _selectedBlockPosition;
+    if (selectedPosition == null) return;
+    _moveBlock(selectedPosition, targetIndex);
+  }
+
+  void _toggleSelectedBlock(int index) {
+    setState(() {
+      _selectedBlockPosition = _selectedBlockPosition == index ? null : index;
+    });
+  }
+
+  int _correctBlockCount() {
+    var count = 0;
+    for (var index = 0; index < _blockOrderIndexes.length; index++) {
+      if (_blockOrderIndexes[index] == index) count += 1;
+    }
+    return count;
+  }
+
+  bool _blocksAreCorrect() {
+    return _blockOrderIndexes.isNotEmpty &&
+        _correctBlockCount() == _blockOrderIndexes.length;
+  }
+
+  void _ensureCompletionState(String cardId, String text, bool level2) {
+    if (_completionCardId == cardId && _completionLevel2 == level2) return;
+    _completionCardId = cardId;
+    _completionLevel2 = level2;
+    _completionTargets = _completionTargetsFor(text, level2: level2);
+    _completionAnswers = List<String?>.filled(_completionTargets.length, null);
+    _activeCompletionIndex = 0;
+    _completionMistakes = 0;
+    _completionSeed = DateTime.now().microsecondsSinceEpoch;
+    _checked = false;
+  }
+
+  bool _completionComplete() {
+    if (_completionTargets.isEmpty) return false;
+    for (var index = 0; index < _completionTargets.length; index++) {
+      final answer = _completionAnswers[index];
+      if (answer == null || !_sameAnswer(answer, _completionTargets[index])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void _selectCompletionWord(String word) {
+    if (_completionTargets.isEmpty || _completionComplete()) return;
+    final currentIndex = _activeCompletionIndex.clamp(
+      0,
+      _completionTargets.length - 1,
+    );
+    final correct = _sameAnswer(word, _completionTargets[currentIndex]);
+    setState(() {
+      _checked = true;
+      _completionSeed = DateTime.now().microsecondsSinceEpoch;
+      if (correct) {
+        _completionAnswers[currentIndex] = word;
+        final nextIndex = _completionAnswers.indexWhere(
+          (answer) => answer == null || answer.trim().isEmpty,
+        );
+        if (nextIndex >= 0) _activeCompletionIndex = nextIndex;
+      } else {
+        _completionMistakes += 1;
+      }
+    });
+  }
+
+  void _activateCompletionBlank(int index) {
+    if (index < 0 || index >= _completionTargets.length) return;
+    if (_completionAnswers[index] != null) return;
+    setState(() => _activeCompletionIndex = index);
+  }
+
+  void _ensureLetterState(String cardId, String text, bool level2) {
+    if (_letterCardId == cardId && _letterLevel2 == level2) return;
+    _letterCardId = cardId;
+    _letterLevel2 = level2;
+    _letterTargets = _firstLetterTargets(text, level2: level2);
+    _letterAnswers = List<String?>.filled(_letterTargets.length, null);
+    _activeLetterIndex = 0;
+    _letterMistakes = 0;
+    _checked = false;
+  }
+
+  bool _letterComplete() {
+    if (_letterTargets.isEmpty) return false;
+    for (var index = 0; index < _letterTargets.length; index++) {
+      final answer = _letterAnswers[index];
+      if (answer == null || !_sameAnswer(answer, _letterTargets[index])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void _selectFirstLetter(String letter) {
+    if (_letterTargets.isEmpty || _letterComplete()) return;
+    final currentIndex = _activeLetterIndex.clamp(0, _letterTargets.length - 1);
+    final target = _letterTargets[currentIndex];
+    final correct = _sameAnswer(letter, target.substring(0, 1));
+    setState(() {
+      _checked = true;
+      if (correct) {
+        _letterAnswers[currentIndex] = target;
+        final nextIndex = _letterAnswers.indexWhere((answer) => answer == null);
+        if (nextIndex >= 0) _activeLetterIndex = nextIndex;
+      } else {
+        _letterMistakes += 1;
+      }
+    });
+  }
+
+  void _activateLetterBlank(int index) {
+    if (index < 0 || index >= _letterTargets.length) return;
+    if (_letterAnswers[index] != null) return;
+    setState(() => _activeLetterIndex = index);
   }
 
   @override
@@ -6574,7 +6844,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     }
     return ReferencePage(
       showBottomNav: false,
-      scrollable: slug != '01-escuchar', // Make 'escuchar' expand
+      scrollable: slug != '01-escuchar' &&
+    slug != '08-voz-guiada' &&
+    slug != '12-voz-final', // Allow voice/listen steps to expand
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -6583,7 +6855,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             title: _realStepTitle(slug),
             progress: step.clamp(1, 12),
           ),
-          if (slug == '01-escuchar')
+          if (slug == '01-escuchar' ||
+              slug == '08-voz-guiada' ||
+              slug == '12-voz-final')
             Expanded(child: _realExerciseBody(context, store, card, deck, slug))
           else
             _realExerciseBody(context, store, card, deck, slug),
@@ -6666,27 +6940,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _CompleteStatsCard(
-            level2: hidden,
-            firstValue: hidden ? '0/7' : '3/7',
-            firstLabel: 'PALABRAS',
-            secondValue: '2',
-            secondLabel: 'INTENTOS',
-            timeValue: hidden ? '00:30' : '00:45',
-          ),
+          Expanded(child: _VoiceHiddenWordsCard(finalMode: hidden)),
           const SizedBox(height: 14),
-          _VoiceHiddenWordsCard(finalMode: hidden),
-          const SizedBox(height: 14),
-          _ListeningHud(
+          _VoiceRecitationPracticeCard(
+            targetText: card.back,
             colorMode: hidden
                 ? _ListeningColorMode.pink
                 : _ListeningColorMode.blue,
-          ),
-          const SizedBox(height: 14),
-          _FlowHintCard(
-            icon: '🎤',
-            text:
-                'Recítalo completo y marca honestamente si salió literal. Aquí la app simula la práctica de voz hasta integrar grabación real.',
+            onCompleted: (passed) {
+              store.markExerciseStepCompleted(slug);
+              if (hidden) store.answerCurrentCard(passed);
+            },
           ),
         ],
       );
@@ -6694,8 +6958,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
     if (slug == '05-bloques') {
       final blocks = _orderedBlocks(card.back);
-      final shuffled = _rotatedBlocks(blocks);
-      final selectedCount = _chosenBlocks.length;
+      _ensureBlockOrder(card.id, blocks);
+      final correctCount = _correctBlockCount();
+      final allCorrect = _blocksAreCorrect();
+      final selectingDestination = _selectedBlockPosition != null;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -6708,14 +6974,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   TextSpan(
                     children: [
                       TextSpan(
-                        text: '$selectedCount / ${blocks.length}',
+                        text: '$correctCount / ${blocks.length}',
                         style: const TextStyle(
                           color: RefColors.ink,
                           fontSize: 14,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      const TextSpan(text: ' seleccionados'),
+                      const TextSpan(text: ' correctos'),
                     ],
                   ),
                   style: const TextStyle(
@@ -6725,49 +6991,78 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   ),
                 ),
                 const Spacer(),
-                _Chip(_checked ? 'Comprobado' : 'Intento 1/3', dense: true),
+                _Chip(
+                  allCorrect
+                      ? 'Correcto'
+                      : selectingDestination
+                      ? 'Elige destino'
+                      : 'Toca un bloque',
+                  dense: true,
+                ),
               ],
             ),
           ),
           const SizedBox(height: 14),
           _Glass(
             padding: const EdgeInsets.all(14),
-            child: Column(
-              children: [
-                for (var i = 0; i < shuffled.length; i++) ...[
-                  GestureDetector(
-                    onTap: _chosenBlocks.contains(shuffled[i])
-                        ? null
-                        : () => setState(() {
-                            _chosenBlocks.add(shuffled[i]);
-                            _checked = false;
-                          }),
-                    child: _VerseBlock(
-                      '${i + 1}',
-                      shuffled[i],
-                      correct:
-                          _chosenBlocks.contains(shuffled[i]) &&
-                          blocks.indexOf(shuffled[i]) ==
-                              _chosenBlocks.indexOf(shuffled[i]),
-                      moving: _chosenBlocks.contains(shuffled[i]) && !_checked,
-                      wrong:
-                          _checked &&
-                          _chosenBlocks.contains(shuffled[i]) &&
-                          blocks.indexOf(shuffled[i]) !=
-                              _chosenBlocks.indexOf(shuffled[i]),
+            child: ReorderableListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              buildDefaultDragHandles: false,
+              proxyDecorator: (child, index, animation) {
+                return AnimatedBuilder(
+                  animation: animation,
+                  builder: (context, _) {
+                    final t = Curves.easeOutCubic.transform(animation.value);
+                    return Transform.scale(
+                      scale: 1 + 0.06 * t,
+                      child: Material(
+                        color: Colors.transparent,
+                        elevation: 12 * t,
+                        shadowColor: RefColors.pink.withValues(alpha: .55),
+                        borderRadius: BorderRadius.circular(16),
+                        child: child,
+                      ),
+                    );
+                  },
+                );
+              },
+              itemCount: _blockOrderIndexes.length,
+              itemBuilder: (context, index) {
+                final blockText = blocks[_blockOrderIndexes[index]];
+                return ReorderableDragStartListener(
+                  key: ValueKey('block-$index-${_blockOrderIndexes[index]}'),
+                  index: index,
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      bottom: index == _blockOrderIndexes.length - 1 ? 0 : 8,
+                    ),
+                    child: GestureDetector(
+                      onTap: () => _toggleSelectedBlock(index),
+                      child: _VerseBlock(
+                        blockText,
+                        correct: _blockOrderIndexes[index] == index,
+                        selected: _selectedBlockPosition == index,
+                        wrong: _checked && _blockOrderIndexes[index] != index,
+                      ),
                     ),
                   ),
-                  if (i != shuffled.length - 1) const SizedBox(height: 8),
-                ],
-              ],
+                );
+              },
+              onReorder: (oldIndex, newIndex) {
+                _moveBlock(oldIndex, newIndex);
+              },
             ),
           ),
-          if (_checked)
+          if (_checked || allCorrect || selectingDestination)
             _InlineResult(
-              correct: _chosenBlocks.join(' ') == blocks.join(' '),
-              text: _chosenBlocks.join(' ') == blocks.join(' ')
+              correct: allCorrect,
+              neutral: !allCorrect,
+              text: allCorrect
                   ? 'Orden correcto.'
-                  : 'Orden esperado: ${blocks.join(' ')}',
+                  : selectingDestination
+                  ? 'Ahora toca una línea de destino para colocar ese bloque ahí.'
+                  : 'Toca un bloque, elige una posición y acomódalo hasta que todo quede verde.',
             ),
         ],
       );
@@ -6775,82 +7070,129 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
     if (slug == '06-completar-n1' || slug == '10-completar-n2') {
       final level2 = slug == '10-completar-n2';
-      final target = _targetWord(card.back, level2: level2);
-      final words = _completionOptions(card.back, target);
+      _ensureCompletionState(card.id, card.back, level2);
+      final activeTarget = _completionTargets.isEmpty
+          ? _targetWord(card.back, level2: level2)
+          : _completionTargets[_activeCompletionIndex.clamp(
+              0,
+              _completionTargets.length - 1,
+            )];
+      final words = _completionOptions(
+        card.back,
+        activeTarget,
+        seed: _completionSeed,
+      );
+      final hasInput = _hasCompletionInput();
+      final complete = _completionComplete();
+      final remainingAttempts = (3 - _completionMistakes).clamp(0, 3);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _CompleteStatsCard(
             level2: level2,
-            firstValue: level2 ? '1/5' : '1/3',
+            firstValue:
+                '${_completionAnswers.where((answer) => answer != null).length}/${_completionTargets.length}',
             firstLabel: 'HUECOS',
-            secondValue: _checked ? '1/2' : '2/2',
+            secondValue: '$remainingAttempts/3',
             secondLabel: 'INTENTOS',
             timeValue: level2 ? '00:45' : '00:45',
           ),
           const SizedBox(height: 14),
-          _StudyPromptCard(
+          _CompletionPromptCard(
             label: card.front,
-            text: _maskedOneWord(card.back, target),
+            text: card.back,
+            targets: _completionTargets,
+            answers: _completionAnswers,
+            activeIndex: _activeCompletionIndex,
+            onBlankTap: _activateCompletionBlank,
           ),
           const SizedBox(height: 14),
-          _Glass(
-            padding: const EdgeInsets.all(14),
-            color: RefColors.glassSoft,
-            child: Column(
-              children: [
-                const Text(
-                  'ELIGE LA PALABRA CORRECTA',
-                  style: TextStyle(
-                    color: RefColors.muted,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.4,
+          if (complete)
+            _Glass(
+              padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+              color: RefColors.lime.withValues(alpha: .14),
+              border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
+              child: Column(
+                children: const [
+                  Icon(Icons.check_circle_rounded,
+                      color: RefColors.lime, size: 36),
+                  SizedBox(height: 10),
+                  Text(
+                    '¡Completado!',
+                    style: TextStyle(
+                      color: RefColors.lime,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    for (final word in words)
-                      GestureDetector(
-                        onTap: () => setState(() {
-                          _answerController.text = word;
-                          _checked = false;
-                        }),
-                        child: _WordChip(word),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _answerController,
-            onChanged: (_) => setState(() => _checked = false),
-            style: const TextStyle(
-              color: RefColors.ink,
-              fontWeight: FontWeight.w800,
-            ),
-            decoration: InputDecoration(
-              hintText: 'Escribe o toca la palabra que falta',
-              hintStyle: const TextStyle(color: RefColors.dim),
-              filled: true,
-              fillColor: RefColors.glassSoft,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+                  SizedBox(height: 4),
+                  Text(
+                    'Todos los huecos están correctos.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: RefColors.ink,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ),
-          if (_checked)
-            _InlineResult(
-              correct: _sameAnswer(_answerController.text, target),
-              text: _sameAnswer(_answerController.text, target)
-                  ? 'Correcto.'
-                  : 'La palabra era: $target',
+            )
+          else
+            _Glass(
+              padding: const EdgeInsets.all(14),
+              color: RefColors.glassSoft,
+              child: Column(
+                children: [
+                  const Text(
+                    'ELIGE LA PALABRA CORRECTA',
+                    style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      for (final word in words)
+                        GestureDetector(
+                          onTap: remainingAttempts == 0
+                              ? null
+                              : () => _selectCompletionWord(word),
+                          child: _WordChip(word, active: false),
+                        ),
+                    ],
+                  ),
+                  if (hasInput && !complete && remainingAttempts > 0) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Si fallas, las opciones se barajan de nuevo.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: RefColors.muted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                  if (remainingAttempts == 0 && !complete) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'Sin intentos restantes.',
+                      style: TextStyle(
+                        color: RefColors.urgent,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
         ],
       );
@@ -6858,48 +7200,79 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
     if (slug == '07-primera-letra-n1' || slug == '11-primera-letra-n2') {
       final level2 = slug == '11-primera-letra-n2';
-      final answer = _firstLetterAnswer(card.back, level2: level2);
+      _ensureLetterState(card.id, card.back, level2);
+      final hasInput = _hasLetterInput();
+      final complete = _letterComplete();
+      final remainingAttempts = (3 - _letterMistakes).clamp(0, 3);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _CompleteStatsCard(
             level2: level2,
-            firstValue: level2 ? '1/5' : '1/3',
+            firstValue:
+                '${_letterAnswers.where((answer) => answer != null).length}/${_letterTargets.length}',
             firstLabel: 'LETRAS',
-            secondValue: _checked ? '1/2' : '2/2',
+            secondValue: '$remainingAttempts/3',
             secondLabel: 'INTENTOS',
           ),
           const SizedBox(height: 12),
-          _FirstLetterSentence(level: level2 ? 2 : 1),
-          const SizedBox(height: 14),
-          TextField(
-            controller: _letterController,
-            onChanged: (_) => setState(() => _checked = false),
-            style: const TextStyle(
-              color: RefColors.ink,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
-            ),
-            decoration: InputDecoration(
-              hintText:
-                  'Escribe las iniciales: ${answer.replaceAll(RegExp(r'[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]'), '•')}',
-              hintStyle: const TextStyle(color: RefColors.dim),
-              filled: true,
-              fillColor: RefColors.glassSoft,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
+          _FirstLetterSentence(
+            text: card.back,
+            level: level2 ? 2 : 1,
+            targets: _letterTargets,
+            answers: _letterAnswers,
+            activeIndex: _activeLetterIndex,
+            onBlankTap: _activateLetterBlank,
           ),
           const SizedBox(height: 14),
-          const _KeyboardCard(),
-          if (_checked)
-            _InlineResult(
-              correct: _sameAnswer(_letterController.text, answer),
-              text: _sameAnswer(_letterController.text, answer)
-                  ? 'Iniciales correctas.'
-                  : 'Iniciales esperadas: $answer',
+          if (complete)
+            _Glass(
+              padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+              color: RefColors.lime.withValues(alpha: .14),
+              border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
+              child: Column(
+                children: const [
+                  Icon(Icons.check_circle_rounded,
+                      color: RefColors.lime, size: 36),
+                  SizedBox(height: 10),
+                  Text(
+                    '¡Completado!',
+                    style: TextStyle(
+                      color: RefColors.lime,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Todas las palabras fueron reveladas.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: RefColors.ink,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else ...[
+            _KeyboardCard(
+              onLetterTap: remainingAttempts == 0 ? null : _selectFirstLetter,
             ),
+            if (hasInput && !complete && remainingAttempts == 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Sin intentos restantes.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: RefColors.urgent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ],
         ],
       );
     }
@@ -6923,14 +7296,16 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             title: options[i].back,
             tip: options[i].front,
             selected: _selected == i,
+            correct: _selected != null && options[i].id == card.id,
+            wrong: _selected == i && !isCorrect,
             onTap: () => setState(() {
               _selected = i;
-              _checked = false;
+              _checked = true;
             }),
           ),
           const SizedBox(height: 10),
         ],
-        if (_checked)
+        if (_selected != null)
           _InlineResult(
             correct: isCorrect,
             text: isCorrect ? 'Correcto.' : 'Respuesta correcta: ${card.back}',
@@ -6975,11 +7350,40 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     }
     if (slug == '01-escuchar' ||
         slug == '03-leer-voz' ||
-        slug == '04-escuchar-voz') {
-      return _ActionCta(
+        slug == '04-escuchar-voz' ||
+        slug == '08-voz-guiada' ||
+        slug == '12-voz-final') {
+      final showSkip = slug == '03-leer-voz' ||
+          slug == '04-escuchar-voz' ||
+          slug == '08-voz-guiada' ||
+          slug == '12-voz-final';
+      final cta = _ActionCta(
         label: _footerLabel(slug, checked: _checked, completed: completed),
         enabled: completed,
-        onTap: () => Navigator.pushNamed(context, '${AppRoutes.flow}/$next'),
+        onTap: () => Navigator.pushNamed(
+          context,
+          '${AppRoutes.flow}/progress-tree',
+        ),
+      );
+      if (!showSkip) return cta;
+      return Row(
+        children: [
+          SizedBox(
+            width: 118,
+            child: _GhostButton(
+              'Saltar',
+              onTap: () {
+                store.markExerciseStepCompleted(slug);
+                Navigator.pushNamed(
+                  context,
+                  '${AppRoutes.flow}/progress-tree',
+                );
+              },
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: cta),
+        ],
       );
     }
     return Row(
@@ -7025,11 +7429,28 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 return;
               }
               if (!_checked) {
+                if (slug == '05-bloques') {
+                  if (_blocksAreCorrect()) {
+                    store.markExerciseStepCompleted(slug);
+                    Navigator.pushNamed(context, '${AppRoutes.flow}/$next');
+                    return;
+                  }
+                  setState(() => _checked = true);
+                  return;
+                }
                 setState(() => _checked = true);
                 return;
               }
               final correct = _currentStepCorrect(slug, card, deck);
-              if (slug == '09-quiz' || slug == '12-voz-final') {
+              if (!correct && slug != '09-quiz') {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Corrige el ejercicio para avanzar.'),
+                  ),
+                );
+                return;
+              }
+              if (slug == '09-quiz') {
                 store.answerCurrentCard(correct);
               }
               store.markExerciseStepCompleted(slug);
@@ -7047,24 +7468,16 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     MemoryDeckData deck,
   ) {
     if (slug == '05-bloques') {
-      final blocks = _orderedBlocks(card.back);
-      return _chosenBlocks.join(' ') == blocks.join(' ');
+      return _blocksAreCorrect();
     }
     if (slug == '06-completar-n1' || slug == '10-completar-n2') {
-      return _sameAnswer(
-        _answerController.text,
-        _targetWord(card.back, level2: slug == '10-completar-n2'),
-      );
+      return _completionCorrect(slug, card);
     }
     if (slug == '07-primera-letra-n1' || slug == '11-primera-letra-n2') {
-      return _sameAnswer(
-        _letterController.text,
-        _firstLetterAnswer(card.back, level2: slug == '11-primera-letra-n2'),
-      );
+      return _letterCorrect(slug, card);
     }
     if (slug == '09-quiz') {
-      final options = _quizOptions(deck, card);
-      return _selected != null && options[_selected!].id == card.id;
+      return _quizCorrect(card, deck);
     }
     return true;
   }
@@ -7083,6 +7496,24 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '04-escuchar-voz') {
       return completed ? 'Siguiente →' : 'Escucha tu lectura para continuar';
     }
+    if (slug == '08-voz-guiada') {
+      return completed ? 'Siguiente →' : 'Recita para continuar';
+    }
+    if (slug == '12-voz-final') {
+      return completed ? 'Review final →' : 'Recita final para cerrar';
+    }
+    if (slug == '05-bloques') {
+      return _blocksAreCorrect() ? 'Siguiente →' : 'Ordena para continuar';
+    }
+    if (slug == '06-completar-n1' || slug == '10-completar-n2') {
+      return _completionComplete() ? 'Completado →' : 'Completa los huecos';
+    }
+    if (slug == '07-primera-letra-n1' || slug == '11-primera-letra-n2') {
+      return _letterComplete() ? 'Completado →' : 'Elige primeras letras';
+    }
+    if (slug == '09-quiz') {
+      return checked ? 'Registrar respuesta →' : 'Elige una opción';
+    }
     if (_isPassiveStep(slug)) {
       return completed ? 'Siguiente →' : 'Marcar terminado';
     }
@@ -7096,18 +7527,67 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }) {
     if (slug == '01-escuchar') return completed;
     if (slug == '04-escuchar-voz') return completed;
+    if (slug == '05-bloques' ||
+        slug == '06-completar-n1' ||
+        slug == '07-primera-letra-n1' ||
+        slug == '09-quiz' ||
+        slug == '10-completar-n2' ||
+        slug == '11-primera-letra-n2') {
+      return _canAdvanceAnsweredStep(
+        slug,
+        AppScope.of(context).activeCard,
+        AppScope.of(context).activeDeck,
+      );
+    }
     return true;
   }
 }
 
-class _StudyPromptCard extends StatelessWidget {
+class _CompletionPromptCard extends StatelessWidget {
   final String label;
   final String text;
+  final List<String> targets;
+  final List<String?> answers;
+  final int activeIndex;
+  final ValueChanged<int> onBlankTap;
 
-  const _StudyPromptCard({required this.label, required this.text});
+  const _CompletionPromptCard({
+    required this.label,
+    required this.text,
+    required this.targets,
+    required this.answers,
+    required this.activeIndex,
+    required this.onBlankTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final usedTargetIndexes = <int>{};
+    final spans = <InlineSpan>[];
+    for (final word in _studyWords(text)) {
+      final targetIndex = _matchingUnusedTargetIndex(word, usedTargetIndexes);
+      if (targetIndex == null) {
+        spans.add(TextSpan(text: '$word '));
+        continue;
+      }
+      usedTargetIndexes.add(targetIndex);
+      spans.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: Padding(
+            padding: const EdgeInsets.only(right: 6, bottom: 4),
+            child: _CompletionBlank(
+              answer: answers[targetIndex],
+              active:
+                  activeIndex == targetIndex && answers[targetIndex] == null,
+              complete: answers[targetIndex] != null,
+              wordLength: targets[targetIndex].length,
+              onTap: () => onBlankTap(targetIndex),
+            ),
+          ),
+        ),
+      );
+    }
     return _Glass(
       padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
       gradient: LinearGradient(
@@ -7128,15 +7608,75 @@ class _StudyPromptCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          Text(
-            text,
-            style: const TextStyle(
-              fontSize: 20,
-              height: 1.45,
-              fontWeight: FontWeight.w900,
+          RichText(
+            text: TextSpan(
+              style: const TextStyle(
+                color: RefColors.ink,
+                fontSize: 20,
+                height: 1.6,
+                fontWeight: FontWeight.w900,
+                fontFamily: 'Outfit',
+              ),
+              children: spans,
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  int? _matchingUnusedTargetIndex(String word, Set<int> usedTargetIndexes) {
+    for (var index = 0; index < targets.length; index++) {
+      if (usedTargetIndexes.contains(index)) continue;
+      if (_sameAnswer(word, targets[index])) return index;
+    }
+    return null;
+  }
+}
+
+class _CompletionBlank extends StatelessWidget {
+  final String? answer;
+  final bool active;
+  final bool complete;
+  final int wordLength;
+  final VoidCallback onTap;
+
+  const _CompletionBlank({
+    required this.answer,
+    required this.active,
+    required this.complete,
+    required this.wordLength,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = complete
+        ? RefColors.lime
+        : active
+        ? RefColors.cyan
+        : RefColors.border;
+    final length = wordLength.clamp(1, 14);
+    return GestureDetector(
+      onTap: complete ? null : onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        constraints: BoxConstraints(minWidth: (length * 10.0).clamp(28, 160)),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        decoration: BoxDecoration(
+          color: accent.withValues(alpha: complete || active ? .16 : .08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: accent.withValues(alpha: .62), width: 1.5),
+        ),
+        child: Text(
+          answer ?? '_' * length,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: complete ? RefColors.lime : RefColors.ink,
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
       ),
     );
   }
@@ -7162,28 +7702,36 @@ class _ActionCta extends StatelessWidget {
 
 class _InlineResult extends StatelessWidget {
   final bool correct;
+  final bool neutral;
   final String text;
 
-  const _InlineResult({required this.correct, required this.text});
+  const _InlineResult({
+    required this.correct,
+    required this.text,
+    this.neutral = false,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final color = neutral
+        ? RefColors.cyan
+        : correct
+        ? RefColors.lime
+        : RefColors.urgent;
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: _Glass(
         padding: const EdgeInsets.all(12),
-        color: (correct ? RefColors.lime : RefColors.urgent).withValues(
-          alpha: .12,
-        ),
-        border: Border.all(
-          color: (correct ? RefColors.lime : RefColors.urgent).withValues(
-            alpha: .45,
-          ),
-        ),
+        color: color.withValues(alpha: .12),
+        border: Border.all(color: color.withValues(alpha: .45)),
         child: Text(
-          '${correct ? '✓' : '×'} $text',
+          '${neutral
+              ? '•'
+              : correct
+              ? '✓'
+              : '×'} $text',
           style: TextStyle(
-            color: correct ? RefColors.lime : RefColors.urgent,
+            color: color,
             fontSize: 12,
             fontWeight: FontWeight.w900,
           ),
@@ -9086,7 +9634,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
       _listening = true;
       _status = 'Escuchando... lee el texto completo.';
     });
-    
+
     try {
       await _speech.listen(
         localeId: 'es_ES',
@@ -9109,7 +9657,8 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
     if (await _audioRecorder.hasPermission()) {
       try {
         final dir = await getTemporaryDirectory();
-        final path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        final path =
+            '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
         await _audioRecorder.start(const RecordConfig(), path: path);
         _recordedPath = path;
       } catch (e) {
@@ -9140,7 +9689,6 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
     widget.onCompleted(recognized, _recordedPath);
   }
 
-
   void _grade(String recognized) {
     final score = _speechSimilarity(recognized, widget.targetText);
     final passed = score >= _passScore;
@@ -9154,7 +9702,6 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
     });
     if (passed) _stopAndComplete(recognized);
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -9286,7 +9833,6 @@ class _ListenOwnVoicePracticeCard extends StatefulWidget {
     required this.source,
     this.audioPath,
     required this.onCompleted,
-    super.key,
   });
 
   @override
@@ -9314,7 +9860,6 @@ class _ListenOwnVoicePracticeCardState
       if (mounted) {
         setState(() {
           _playing = state == PlayerState.playing;
-          if (!_playing) _highlightedCount = 0;
         });
       }
     });
@@ -9325,9 +9870,13 @@ class _ListenOwnVoicePracticeCardState
 
     _audioPlayer.onPositionChanged.listen((position) {
       if (mounted && _audioDuration.inMilliseconds > 0 && _playing) {
-        final progress = position.inMilliseconds / _audioDuration.inMilliseconds;
+        final progress =
+            position.inMilliseconds / _audioDuration.inMilliseconds;
         setState(() {
-          _highlightedCount = (progress * _currentText.length).toInt().clamp(0, _currentText.length);
+          _highlightedCount = (progress * _currentText.length).toInt().clamp(
+            0,
+            _currentText.length,
+          );
         });
       }
     });
@@ -9345,7 +9894,7 @@ class _ListenOwnVoicePracticeCardState
     _tts.setStartHandler(() {
       if (mounted) setState(() => _playing = true);
     });
-    
+
     _tts.setProgressHandler((text, start, end, word) {
       if (mounted) {
         setState(() {
@@ -9405,7 +9954,12 @@ class _ListenOwnVoicePracticeCardState
     }
 
     if (_tab == 1 && widget.audioPath != null) {
+      await _audioPlayer.setPlaybackRate(1);
       await _audioPlayer.play(DeviceFileSource(widget.audioPath!));
+      final duration = await _audioPlayer.getDuration();
+      if (mounted && duration != null) {
+        setState(() => _audioDuration = duration);
+      }
     } else {
       await _tts.setLanguage('es-ES');
       await _tts.setSpeechRate(_tab == 0 ? 0.44 : 0.48);
@@ -9452,15 +10006,15 @@ class _ListenOwnVoicePracticeCardState
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _VoiceTab(
-                    'Original',
-                    active: _tab == 0,
-                    onTap: () => _switchTab(0),
-                  ),
-                  const SizedBox(width: 4),
-                  _VoiceTab(
                     'Tuyo',
                     active: _tab == 1,
                     onTap: () => _switchTab(1),
+                  ),
+                  const SizedBox(width: 4),
+                  _VoiceTab(
+                    'Original',
+                    active: _tab == 0,
+                    onTap: () => _switchTab(0),
                   ),
                 ],
               ),
@@ -9488,7 +10042,9 @@ class _ListenOwnVoicePracticeCardState
             child: RichText(
               text: TextSpan(
                 style: TextStyle(
-                  color: _tab == 1 && !hasVoice ? RefColors.dim : RefColors.ink.withValues(alpha: 0.4),
+                  color: _tab == 1 && !hasVoice
+                      ? RefColors.dim
+                      : RefColors.ink.withValues(alpha: 0.4),
                   fontSize: 18,
                   height: 1.38,
                   fontWeight: FontWeight.w900,
@@ -9500,9 +10056,7 @@ class _ListenOwnVoicePracticeCardState
                       text: _currentText.substring(0, _highlightedCount),
                       style: const TextStyle(color: RefColors.ink),
                     ),
-                  TextSpan(
-                    text: _currentText.substring(_highlightedCount),
-                  ),
+                  TextSpan(text: _currentText.substring(_highlightedCount)),
                 ],
               ),
             ),
@@ -10449,10 +11003,9 @@ class _BlocksListCard extends StatelessWidget {
         children: [
           for (var i = 0; i < blocks.length; i++) ...[
             _VerseBlock(
-              '${i + 1}',
               blocks[i],
               correct: i < 2,
-              moving: i == 2,
+              selected: i == 2,
               wrong: i == 3,
             ),
             if (i != blocks.length - 1) const SizedBox(height: 8),
@@ -10464,17 +11017,15 @@ class _BlocksListCard extends StatelessWidget {
 }
 
 class _VerseBlock extends StatelessWidget {
-  final String index;
   final String text;
   final bool correct;
-  final bool moving;
+  final bool selected;
   final bool wrong;
 
   const _VerseBlock(
-    this.index,
     this.text, {
     this.correct = false,
-    this.moving = false,
+    this.selected = false,
     this.wrong = false,
   });
 
@@ -10484,20 +11035,20 @@ class _VerseBlock extends StatelessWidget {
         ? RefColors.lime
         : wrong
         ? RefColors.urgent
-        : moving
+        : selected
         ? RefColors.pink
         : RefColors.border;
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
       decoration: BoxDecoration(
         color: correct
             ? RefColors.lime.withValues(alpha: .12)
             : wrong
-                ? RefColors.urgent.withValues(alpha: .12)
-                : moving
-                    ? Colors.transparent
-                    : RefColors.glassSoft,
-        gradient: moving
+            ? RefColors.urgent.withValues(alpha: .12)
+            : selected
+            ? Colors.transparent
+            : RefColors.glassSoft,
+        gradient: selected
             ? LinearGradient(
                 colors: [
                   RefColors.pink.withValues(alpha: .2),
@@ -10509,43 +11060,28 @@ class _VerseBlock extends StatelessWidget {
             : null,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: moving ? RefColors.pink : accent.withValues(alpha: .48),
+          color: selected ? RefColors.pink : accent.withValues(alpha: .48),
           width: 1.5,
         ),
-        boxShadow: moving
+        boxShadow: selected
             ? [
                 BoxShadow(
                   color: RefColors.pink.withValues(alpha: .3),
                   blurRadius: 20,
                   offset: const Offset(0, 8),
-                )
+                ),
               ]
             : null,
       ),
       child: Row(
         children: [
-          const Text('⋮⋮', style: TextStyle(color: RefColors.muted)),
-          const SizedBox(width: 10),
-          Text(
-            index,
-            style: const TextStyle(
-              color: RefColors.muted,
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(width: 14),
           Expanded(
             child: Text(
               text,
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
             ),
           ),
-          if (moving) ...[
-            _MiniSquare(Icons.arrow_upward_rounded),
-            const SizedBox(width: 4),
-            _MiniSquare(Icons.arrow_downward_rounded),
-          ] else
+          if (correct || wrong)
             Icon(
               correct ? Icons.check_rounded : Icons.close_rounded,
               color: correct ? RefColors.lime : RefColors.urgent,
@@ -10557,22 +11093,62 @@ class _VerseBlock extends StatelessWidget {
   }
 }
 
-class _MiniSquare extends StatelessWidget {
-  final IconData icon;
+class _BlockMoveTarget extends StatelessWidget {
+  final bool visible;
+  final bool active;
+  final VoidCallback onTap;
+  final ValueChanged<int> onAccept;
 
-  const _MiniSquare(this.icon);
+  const _BlockMoveTarget({
+    required this.visible,
+    required this.active,
+    required this.onTap,
+    required this.onAccept,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 28,
-      height: 28,
-      decoration: BoxDecoration(
-        color: HtmlRefColors.glassStrong,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: HtmlRefColors.glassBorder),
-      ),
-      child: Icon(icon, size: 15, color: RefColors.ink),
+    return DragTarget<int>(
+      onWillAcceptWithDetails: (details) => active,
+      onAcceptWithDetails: (details) => onAccept(details.data),
+      builder: (context, candidateData, rejectedData) {
+        final highlighted = candidateData.isNotEmpty;
+        final shown = visible || highlighted;
+        return GestureDetector(
+          onTap: active ? onTap : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            height: shown ? 34 : 6,
+            margin: EdgeInsets.symmetric(vertical: shown ? 6 : 2),
+            padding: shown
+                ? const EdgeInsets.symmetric(horizontal: 12, vertical: 7)
+                : EdgeInsets.zero,
+            decoration: BoxDecoration(
+              color: RefColors.cyan.withValues(alpha: highlighted ? .20 : .10),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: RefColors.cyan.withValues(
+                  alpha: shown ? (highlighted ? .72 : .42) : 0,
+                ),
+              ),
+            ),
+            child: shown
+                ? Center(
+                    child: Text(
+                      'Mover aquí',
+                      style: TextStyle(
+                        color: active
+                            ? RefColors.cyan
+                            : RefColors.cyan.withValues(alpha: .45),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        );
+      },
     );
   }
 }
@@ -10690,39 +11266,76 @@ class _WordBankCard extends StatelessWidget {
 
 class _WordChip extends StatelessWidget {
   final String label;
+  final bool active;
+  final bool correct;
 
-  const _WordChip(this.label);
+  const _WordChip(this.label, {this.active = false, this.correct = false});
 
   @override
   Widget build(BuildContext context) {
+    final accent = correct
+        ? RefColors.lime
+        : active
+        ? RefColors.cyan
+        : RefColors.border;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: RefColors.glassStrong,
+        color: (active || correct)
+            ? accent.withValues(alpha: .14)
+            : RefColors.glassStrong,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: RefColors.border),
+        border: Border.all(color: accent.withValues(alpha: .55)),
       ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (correct) ...[
+            const Icon(
+              Icons.check_circle_rounded,
+              size: 15,
+              color: RefColors.lime,
+            ),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            label,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+          ),
+        ],
       ),
     );
   }
 }
 
 class _FirstLetterSentence extends StatelessWidget {
+  final String? text;
   final int level;
+  final List<String>? targets;
+  final List<String?>? answers;
+  final int activeIndex;
+  final ValueChanged<int>? onBlankTap;
 
-  const _FirstLetterSentence({required this.level});
+  const _FirstLetterSentence({
+    this.text,
+    required this.level,
+    this.targets,
+    this.answers,
+    this.activeIndex = 0,
+    this.onBlankTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final isLevel2 = level == 2;
-    final words = _studyWords(_cardStudyText(context));
-    final visible = isLevel2
-        ? words.take(1).join(' ')
-        : words.take(3).join(' ');
-    final tail = words.skip(isLevel2 ? 1 : 3).take(3).toList();
+    final sourceText = text ?? _cardStudyText(context);
+    final words = _studyWords(sourceText);
+    final targetWords =
+        targets ?? _firstLetterTargets(sourceText, level2: isLevel2);
+    final answerWords =
+        answers ?? List<String?>.filled(targetWords.length, null);
+    final visibleWords = isLevel2 ? 1 : 3;
+    final usedTargetIndexes = <int>{};
     return _Glass(
       padding: const EdgeInsets.fromLTRB(18, 32, 18, 32),
       gradient: LinearGradient(
@@ -10740,12 +11353,16 @@ class _FirstLetterSentence extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           alignment: WrapAlignment.center,
           children: [
-            _LetterWord(visible),
-            for (var i = 0; i < tail.length; i++)
-              _LetterBlank(
-                width: (tail[i].length * 14).clamp(58, 142).toDouble(),
-                active: i == 0,
-              ),
+            for (var wordIndex = 0; wordIndex < words.length; wordIndex++)
+              if (wordIndex < visibleWords)
+                _LetterWord(words[wordIndex])
+              else
+                _letterWidget(
+                  words[wordIndex],
+                  usedTargetIndexes,
+                  targetWords,
+                  answerWords,
+                ),
             const Text(
               '.',
               style: TextStyle(fontSize: 23, fontWeight: FontWeight.w900),
@@ -10754,6 +11371,39 @@ class _FirstLetterSentence extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _letterWidget(
+    String word,
+    Set<int> usedTargetIndexes,
+    List<String> targetWords,
+    List<String?> answerWords,
+  ) {
+    final targetIndex = _matchingUnusedTargetIndex(
+      word,
+      usedTargetIndexes,
+      targetWords,
+    );
+    if (targetIndex == null) return _LetterWord(word);
+    usedTargetIndexes.add(targetIndex);
+    return _LetterBlank(
+      answer: answerWords[targetIndex],
+      active: activeIndex == targetIndex && answerWords[targetIndex] == null,
+      wordLength: word.length,
+      onTap: () => onBlankTap?.call(targetIndex),
+    );
+  }
+
+  int? _matchingUnusedTargetIndex(
+    String word,
+    Set<int> usedTargetIndexes,
+    List<String> targetWords,
+  ) {
+    for (var index = 0; index < targetWords.length; index++) {
+      if (usedTargetIndexes.contains(index)) continue;
+      if (_sameAnswer(word, targetWords[index])) return index;
+    }
+    return null;
   }
 }
 
@@ -10776,34 +11426,46 @@ class _LetterWord extends StatelessWidget {
 }
 
 class _LetterBlank extends StatelessWidget {
-  final double width;
+  final String? answer;
   final bool active;
+  final int wordLength;
+  final VoidCallback onTap;
 
-  const _LetterBlank({required this.width, this.active = false});
+  const _LetterBlank({
+    required this.answer,
+    required this.active,
+    required this.wordLength,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      height: 50,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: active
-            ? RefColors.cyan.withValues(alpha: .10)
-            : RefColors.glassSoft,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: active ? RefColors.cyan : RefColors.border,
-          width: 2,
+    final complete = answer != null;
+    final accent = complete
+        ? RefColors.lime
+        : active
+            ? RefColors.cyan
+            : RefColors.border;
+    final length = wordLength.clamp(1, 14);
+    return GestureDetector(
+      onTap: complete ? null : onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        constraints: BoxConstraints(minWidth: (length * 10.0).clamp(28, 160)),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        decoration: BoxDecoration(
+          color: accent.withValues(alpha: complete || active ? .16 : .08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: accent.withValues(alpha: .62), width: 1.5),
         ),
-      ),
-      child: Text(
-        width < 70 ? '— —' : '— — — — —',
-        style: TextStyle(
-          color: active ? RefColors.cyan : RefColors.dim,
-          fontSize: 18,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 4,
+        child: Text(
+          answer ?? '_' * length,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: complete ? RefColors.lime : RefColors.ink,
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
         ),
       ),
     );
@@ -10811,7 +11473,9 @@ class _LetterBlank extends StatelessWidget {
 }
 
 class _KeyboardCard extends StatelessWidget {
-  const _KeyboardCard();
+  final ValueChanged<String>? onLetterTap;
+
+  const _KeyboardCard({this.onLetterTap});
 
   @override
   Widget build(BuildContext context) {
@@ -10822,17 +11486,29 @@ class _KeyboardCard extends StatelessWidget {
     ];
     return _Glass(
       radius: 18,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           for (var i = 0; i < rows.length; i++) ...[
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                if (i == 2) const Spacer(flex: 1),
                 for (final letter in rows[i]) ...[
-                  _KeyCap(letter),
-                  if (letter != rows[i].last) const SizedBox(width: 5),
+                  Expanded(
+                    flex: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: _KeyCap(
+                        letter,
+                        onTap: onLetterTap == null
+                            ? null
+                            : () => onLetterTap!(letter),
+                      ),
+                    ),
+                  ),
                 ],
+                if (i == 2) const Spacer(flex: 1),
               ],
             ),
             if (i < rows.length - 1) const SizedBox(height: 6),
@@ -10845,29 +11521,275 @@ class _KeyboardCard extends StatelessWidget {
 
 class _KeyCap extends StatelessWidget {
   final String label;
+  final VoidCallback? onTap;
 
-  const _KeyCap(this.label);
+  const _KeyCap(this.label, {this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 28,
-      height: 32,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: .12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withValues(alpha: .14)),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 44,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: onTap == null
+              ? Colors.white.withValues(alpha: .06)
+              : Colors.white.withValues(alpha: .15),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white.withValues(alpha: .14)),
+          boxShadow: onTap == null
+              ? null
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: .16),
+                    blurRadius: 5,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+        ),
+        child: Text(
+          label.toUpperCase(),
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+        ),
       ),
     );
   }
 }
 
 enum _ListeningColorMode { blue, pink }
+
+class _VoiceRecitationPracticeCard extends StatefulWidget {
+  final String targetText;
+  final _ListeningColorMode colorMode;
+  final void Function(bool passed) onCompleted;
+
+  const _VoiceRecitationPracticeCard({
+    required this.targetText,
+    required this.colorMode,
+    required this.onCompleted,
+  });
+
+  @override
+  State<_VoiceRecitationPracticeCard> createState() =>
+      _VoiceRecitationPracticeCardState();
+}
+
+class _VoiceRecitationPracticeCardState
+    extends State<_VoiceRecitationPracticeCard> {
+  late final stt.SpeechToText _speech;
+  bool _ready = false;
+  bool _listening = false;
+  bool _completed = false;
+  String _recognized = '';
+  int _currentWord = 0;
+  int? _lastWrongAt;
+
+  late List<String> _targetWords;
+  late List<bool> _wordSolved;
+
+  @override
+  void initState() {
+    super.initState();
+    _targetWords = _studyWords(widget.targetText);
+    _wordSolved = List<bool>.filled(_targetWords.length, false);
+    _speech = stt.SpeechToText();
+    _initSpeech();
+  }
+
+  Future<void> _initSpeech() async {
+    final available = await _speech.initialize(
+      onStatus: (status) {
+        if (!mounted) return;
+        if (status == 'done' || status == 'notListening') {
+          setState(() => _listening = false);
+        }
+      },
+      onError: (error) {
+        if (!mounted) return;
+        setState(() => _listening = false);
+      },
+    );
+    if (!mounted) return;
+    setState(() => _ready = available);
+  }
+
+  @override
+  void dispose() {
+    _speech.cancel();
+    super.dispose();
+  }
+
+  Future<void> _toggleListening() async {
+    if (!_ready) {
+      await _initSpeech();
+      return;
+    }
+    if (_listening) {
+      await _speech.stop();
+      if (mounted) setState(() => _listening = false);
+      return;
+    }
+    setState(() {
+      _recognized = '';
+      _listening = true;
+    });
+    await _speech.listen(
+      localeId: 'es_ES',
+      listenOptions: stt.SpeechListenOptions(
+        listenMode: stt.ListenMode.dictation,
+        partialResults: true,
+      ),
+      listenFor: const Duration(seconds: 60),
+      pauseFor: const Duration(seconds: 6),
+      onResult: (result) => _handleRecognition(result.recognizedWords),
+    );
+  }
+
+  void _handleRecognition(String text) {
+    if (!mounted) return;
+    setState(() => _recognized = text);
+    if (_currentWord >= _targetWords.length) return;
+    final spokenWords = _normalizeAndSplit(text);
+    if (spokenWords.isEmpty) return;
+    final lastSpoken = spokenWords.last;
+    final expected = _targetWords[_currentWord];
+    if (_sameAnswer(lastSpoken, expected)) {
+      setState(() {
+        _wordSolved[_currentWord] = true;
+        _currentWord += 1;
+        _recognized = '';
+      });
+      if (_currentWord >= _targetWords.length && !_completed) {
+        _completed = true;
+        _speech.stop();
+        widget.onCompleted(true);
+      }
+    } else if (lastSpoken.length >= 2) {
+      setState(() => _lastWrongAt = DateTime.now().millisecondsSinceEpoch);
+    }
+  }
+
+  List<String> _normalizeAndSplit(String text) {
+    return text
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^\wÁÉÍÓÚÜÑáéíóúüñ\s]'), '')
+        .split(RegExp(r'\s+'))
+        .where((w) => w.trim().isNotEmpty)
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isBlue = widget.colorMode == _ListeningColorMode.blue;
+    final accent = _completed
+        ? RefColors.lime
+        : isBlue
+            ? RefColors.cyan
+            : RefColors.pink;
+    final wrongRecent = _lastWrongAt != null &&
+        DateTime.now().millisecondsSinceEpoch - _lastWrongAt! < 1200;
+    final total = _targetWords.length;
+    return _Glass(
+      radius: 18,
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          GestureDetector(
+            onTap: _toggleListening,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: _listening ? .55 : .18),
+                shape: BoxShape.circle,
+                border: Border.all(color: accent.withValues(alpha: .85)),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: .35),
+                    blurRadius: _listening ? 28 : 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Icon(
+                _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                color: RefColors.ink,
+                size: 28,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: wrongRecent
+                    ? RefColors.urgent.withValues(alpha: .18)
+                    : HtmlRefColors.glassSoft,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: wrongRecent
+                      ? RefColors.urgent
+                      : HtmlRefColors.glassBorder,
+                ),
+              ),
+              child: Text(
+                _recognized.isEmpty
+                    ? (_listening
+                        ? 'Escuchando…'
+                        : 'Toca el mic y recita')
+                    : _recognized,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _recognized.isEmpty ? RefColors.dim : RefColors.ink,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: .18),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: accent.withValues(alpha: .6)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '$_currentWord/$total',
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  'palabras',
+                  style: TextStyle(
+                    color: accent.withValues(alpha: .85),
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _ListeningHud extends StatelessWidget {
   final _ListeningColorMode colorMode;
@@ -10941,9 +11863,9 @@ class _VoiceHiddenWordsCard extends StatelessWidget {
     final words = _studyWords(_cardStudyText(context));
     final visible = finalMode ? 0 : words.length.clamp(1, 3).toInt();
     final shown = words.take(visible).join(' ');
-    final hidden = words.skip(visible).take(finalMode ? 7 : 3).toList();
+    final hidden = words.skip(visible).toList();
     return _Glass(
-      padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
       gradient: LinearGradient(
         colors: [
           RefColors.violet.withValues(alpha: .30),
@@ -10952,32 +11874,29 @@ class _VoiceHiddenWordsCard extends StatelessWidget {
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ),
-      child: SizedBox(
-        height: finalMode ? 150 : 126,
-        child: Center(
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            alignment: WrapAlignment.center,
-            children: [
-              if (shown.isNotEmpty) _LetterWord(shown),
-              for (var i = 0; i < hidden.length; i++)
-                _HiddenWord(
-                  width: (hidden[i].length * 13).clamp(58, 142).toDouble(),
-                  active: i == 0,
-                  pink: finalMode || i == 0,
-                ),
-              const Text(
-                '.',
-                style: TextStyle(
-                  color: RefColors.muted,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                ),
+      child: SingleChildScrollView(
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 12,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          alignment: WrapAlignment.center,
+          children: [
+            if (shown.isNotEmpty) _LetterWord(shown),
+            for (var i = 0; i < hidden.length; i++)
+              _HiddenWord(
+                wordLength: hidden[i].length,
+                active: i == 0,
+                pink: finalMode || i == 0,
               ),
-            ],
-          ),
+            const Text(
+              '.',
+              style: TextStyle(
+                color: RefColors.muted,
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -10985,39 +11904,46 @@ class _VoiceHiddenWordsCard extends StatelessWidget {
 }
 
 class _HiddenWord extends StatelessWidget {
-  final double width;
+  final int wordLength;
   final bool active;
   final bool pink;
+  final bool solved;
 
   const _HiddenWord({
-    required this.width,
+    required this.wordLength,
     this.active = false,
     this.pink = false,
+    this.solved = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final accent = pink ? RefColors.pink : RefColors.border;
-    return Container(
-      width: width,
-      height: 48,
-      alignment: Alignment.center,
+    final accent = solved
+        ? RefColors.lime
+        : active
+            ? (pink ? RefColors.pink : RefColors.cyan)
+            : RefColors.border;
+    final length = wordLength.clamp(1, 14);
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      constraints: BoxConstraints(minWidth: (length * 10.0).clamp(28, 160)),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
       decoration: BoxDecoration(
-        color: active
-            ? accent.withValues(alpha: .10)
-            : RefColors.glassSoft.withValues(alpha: .75),
+        color: accent.withValues(alpha: solved || active ? .16 : .08),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: accent.withValues(alpha: .72), width: 2),
+        border: Border.all(color: accent.withValues(alpha: .62), width: 1.5),
       ),
-      child: Text(
-        width > 100 ? '— — — —' : '— —',
-        style: TextStyle(
-          color: active ? accent : RefColors.dim,
-          fontSize: 17,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 4,
-        ),
-      ),
+      child: solved
+          ? const Icon(Icons.check_rounded, color: RefColors.lime, size: 18)
+          : Text(
+              '_' * length,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: RefColors.ink,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
     );
   }
 }
@@ -11751,5 +12677,387 @@ class _FlashStat extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+class _ProgressTreeScreen extends StatelessWidget {
+  const _ProgressTreeScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final store = AppScope.of(context);
+    final steps = flowScreens.where((s) => !s.slug.contains('review')).toList();
+    final firstIncompleteIndex =
+        steps.indexWhere((s) => !store.isExerciseStepCompleted(s.slug));
+    final currentStepIndex =
+        firstIncompleteIndex < 0 ? steps.length - 1 : firstIncompleteIndex;
+
+    return ReferencePage(
+      showBottomNav: false,
+      scrollable: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: RefColors.glass,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: RefColors.border),
+                    ),
+                    child: const Icon(Icons.arrow_back_rounded, size: 20),
+                  ),
+                ),
+                const Text(
+                  'Progreso del ejercicio',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(width: 40),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(2, 2, 0, 10),
+              children: [
+                for (final group in _phaseGroups)
+                  ..._buildGroup(
+                    context: context,
+                    group: group,
+                    steps: steps,
+                    currentStepIndex: currentStepIndex,
+                    store: store,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static const _phaseGroups = [
+    ('Preparar', 0, 4),
+    ('Construir', 4, 8),
+    ('Probar', 8, 12),
+  ];
+
+  List<Widget> _buildGroup({
+    required BuildContext context,
+    required (String, int, int) group,
+    required List<ExerciseFlowData> steps,
+    required int currentStepIndex,
+    required AppStore store,
+  }) {
+    final start = group.$2.clamp(0, steps.length);
+    final end = group.$3.clamp(0, steps.length);
+    if (start >= end) return const [];
+    final groupSteps = steps.sublist(start, end);
+    final active = currentStepIndex >= start && currentStepIndex < end;
+    final completed = currentStepIndex >= end;
+    final accent = completed
+        ? RefColors.lime
+        : active
+            ? RefColors.pink
+            : RefColors.muted;
+
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(58, 6, 4, 8),
+        child: Row(
+          children: [
+            Text(
+              group.$1.toUpperCase(),
+              style: TextStyle(
+                color: accent,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.5,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Container(
+                height: 1,
+                color: accent.withValues(alpha: active ? .45 : .22),
+              ),
+            ),
+          ],
+        ),
+      ),
+      for (int local = 0; local < groupSteps.length; local++)
+        _ReferenceTimelineStep(
+          step: groupSteps[local],
+          index: start + local,
+          totalCount: steps.length,
+          currentIndex: currentStepIndex,
+          store: store,
+          isLastInGroup: local == groupSteps.length - 1,
+          onTapStep: (slug) => Navigator.pushReplacementNamed(
+            context,
+            '${AppRoutes.flow}/$slug',
+          ),
+        ),
+    ];
+  }
+}
+
+class _ReferenceTimelineStep extends StatelessWidget {
+  final ExerciseFlowData step;
+  final int index;
+  final int totalCount;
+  final int currentIndex;
+  final AppStore store;
+  final void Function(String slug) onTapStep;
+  final bool isLastInGroup;
+
+  const _ReferenceTimelineStep({
+    required this.step,
+    required this.index,
+    required this.totalCount,
+    required this.currentIndex,
+    required this.store,
+    required this.onTapStep,
+    this.isLastInGroup = false,
+  });
+
+  static const _activeCard = Color(0xFF4A3854);
+  static const _idleCard = Color(0xFF363838);
+  static const _badgeSize = 38.0;
+  static const _titleAnchor = 24.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCompleted = store.isExerciseStepCompleted(step.slug);
+    final isCurrent = index == currentIndex;
+    final isLocked = !isCompleted && index > currentIndex;
+    final isLast = isLastInGroup || index == totalCount - 1;
+    final accent = isCompleted
+        ? RefColors.lime
+        : isCurrent
+            ? RefColors.pink
+            : RefColors.muted;
+    final borderColor = isCompleted
+        ? RefColors.lime.withValues(alpha: .85)
+        : isCurrent
+            ? RefColors.pink.withValues(alpha: .82)
+            : RefColors.ink.withValues(alpha: .12);
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 6),
+      child: Opacity(
+        opacity: isLocked ? 0.42 : 1.0,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: 56,
+                child: Stack(
+                  children: [
+                    if (!isLast)
+                      Positioned(
+                        top: _titleAnchor + _badgeSize / 2,
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: Container(
+                            width: 4,
+                            decoration: BoxDecoration(
+                              color: isCompleted
+                                  ? RefColors.lime.withValues(alpha: .58)
+                                  : RefColors.muted.withValues(alpha: .38),
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                          ),
+                        ),
+                      ),
+                    Positioned(
+                      top: _titleAnchor - _badgeSize / 2,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: _TimelineIconBadge(
+                          icon: _timelineIconFor(step.slug),
+                          accent: accent,
+                          active: isCurrent,
+                          completed: isCompleted,
+                          locked: isLocked,
+                          size: _badgeSize,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: GestureDetector(
+                  onTap: isLocked ? null : () => onTapStep(step.slug),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 14, 12),
+                    decoration: BoxDecoration(
+                      color: isCurrent ? _activeCard : _idleCard,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: borderColor,
+                        width: isCurrent || isCompleted ? 1.6 : 1,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                step.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: isLocked
+                                      ? RefColors.muted
+                                      : RefColors.ink,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            if (isLocked)
+                              Icon(
+                                Icons.lock_rounded,
+                                color: RefColors.muted.withValues(alpha: .68),
+                                size: 22,
+                              )
+                            else if (isCompleted)
+                              const Icon(Icons.check_circle_rounded,
+                                  color: RefColors.lime, size: 22)
+                            else
+                              Icon(
+                                isCurrent
+                                    ? Icons.chevron_right_rounded
+                                    : Icons.play_arrow_rounded,
+                                color: isCurrent
+                                    ? RefColors.pink
+                                    : RefColors.muted,
+                                size: 26,
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          step.subtitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: isLocked
+                                ? RefColors.muted
+                                : RefColors.ink.withValues(alpha: .82),
+                            fontSize: 12,
+                            height: 1.26,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TimelineIconBadge extends StatelessWidget {
+  final IconData icon;
+  final Color accent;
+  final bool active;
+  final bool completed;
+  final bool locked;
+  final double size;
+
+  const _TimelineIconBadge({
+    required this.icon,
+    required this.accent,
+    required this.active,
+    required this.completed,
+    required this.locked,
+    required this.size,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: active
+            ? RefColors.pink.withValues(alpha: .72)
+            : completed
+                ? RefColors.lime.withValues(alpha: .18)
+                : RefColors.glassStrong,
+        border: Border.all(
+          color: active
+              ? RefColors.pink.withValues(alpha: .95)
+              : completed
+                  ? RefColors.lime.withValues(alpha: .85)
+                  : RefColors.ink.withValues(alpha: .14),
+          width: active || completed ? 1.6 : 1,
+        ),
+      ),
+      child: Icon(
+        icon,
+        color: active
+            ? RefColors.ink
+            : locked
+                ? RefColors.muted
+                : completed
+                    ? RefColors.lime
+                    : accent,
+        size: size * .55,
+      ),
+    );
+  }
+}
+
+IconData _timelineIconFor(String slug) {
+  switch (slug) {
+    case '01-escuchar':
+    case '02-lectura-frag':
+      return Icons.menu_book_rounded;
+    case '03-leer-voz':
+    case '08-voz-guiada':
+    case '12-voz-final':
+      return Icons.mic_rounded;
+    case '04-escuchar-voz':
+      return Icons.headphones_rounded;
+    case '05-bloques':
+      return Icons.segment_rounded;
+    case '06-completar-n1':
+    case '10-completar-n2':
+      return Icons.keyboard_alt_rounded;
+    case '07-primera-letra-n1':
+    case '11-primera-letra-n2':
+      return Icons.short_text_rounded;
+    case '09-quiz':
+      return Icons.help_outline_rounded;
+    default:
+      return Icons.radio_button_unchecked_rounded;
   }
 }
