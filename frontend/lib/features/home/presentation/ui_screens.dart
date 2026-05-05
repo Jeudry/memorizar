@@ -554,31 +554,42 @@ class _StatusChip extends StatelessWidget {
 class _Cta extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
+  final bool disabled;
 
-  const _Cta(this.label, {this.onTap});
+  const _Cta(this.label, {this.onTap, this.disabled = false});
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
-        decoration: BoxDecoration(
-          gradient: RefColors.primary,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: RefColors.pink.withValues(alpha: .4),
-              blurRadius: 30,
-              offset: const Offset(0, 10),
+    final isDisabled = disabled || onTap == null;
+    return Opacity(
+      opacity: isDisabled ? .45 : 1,
+      child: GestureDetector(
+        onTap: isDisabled ? null : onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
+          decoration: BoxDecoration(
+            gradient: isDisabled ? null : RefColors.primary,
+            color: isDisabled ? RefColors.glass : null,
+            borderRadius: BorderRadius.circular(18),
+            border: isDisabled
+                ? Border.all(color: RefColors.border)
+                : null,
+            boxShadow: isDisabled
+                ? null
+                : [
+                    BoxShadow(
+                      color: RefColors.pink.withValues(alpha: .4),
+                      blurRadius: 30,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
             ),
-          ],
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
           ),
         ),
       ),
@@ -1555,7 +1566,10 @@ class _VersePickerState extends State<_VersePicker> {
           const SizedBox(height: 10),
           _Cta(
             verses.isEmpty ? 'Volver a capítulos' : 'Confirmar versículos →',
-            onTap: verses.isEmpty ? widget.onBack : widget.onConfirm,
+            onTap: verses.isEmpty
+                ? widget.onBack
+                : (effectiveSelected.isEmpty ? null : widget.onConfirm),
+            disabled: verses.isNotEmpty && effectiveSelected.isEmpty,
           ),
         ],
       ),
@@ -1589,10 +1603,10 @@ List<String> _studyWords(String text) {
 }
 
 List<MemoryCardData> _quizOptions(MemoryDeckData deck, MemoryCardData correct) {
-  final distractors = deck.cards
-      .where((item) => item.id != correct.id)
-      .take(3)
-      .toList();
+  final pool = deck.cards.where((item) => item.id != correct.id).toList();
+  final rng = math.Random(correct.id.hashCode);
+  pool.shuffle(rng);
+  final distractors = pool.take(3).toList();
   if (distractors.length < 3) {
     distractors.addAll([
       MemoryCardData(
@@ -1612,8 +1626,8 @@ List<MemoryCardData> _quizOptions(MemoryDeckData deck, MemoryCardData correct) {
     ]);
   }
   final options = [correct, ...distractors.take(3)];
-  final shift = correct.front.length % options.length;
-  return [...options.skip(shift), ...options.take(shift)];
+  options.shuffle(rng);
+  return options;
 }
 
 String _firstWords(String text, int count) {
@@ -1675,31 +1689,34 @@ String _targetWord(String text, {required bool level2}) {
 }
 
 List<String> _completionTargetsFor(String text, {required bool level2}) {
-  final candidates = _studyWords(text)
-      .where(
-        (word) =>
-            word.replaceAll(RegExp(r'[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]'), '').length > 3,
-      )
-      .toList();
-  final source = candidates.isEmpty ? _studyWords(text) : candidates;
-  if (source.isEmpty) return [];
-  final targetCount = (level2 ? 3 : 2).clamp(1, source.length);
-  final indexes = <int>{
-    if (source.isNotEmpty) 0,
-    if (source.length > 2) source.length ~/ 2,
-    if (level2 && source.length > 3) source.length - 1,
-  }.where((index) => index >= 0 && index < source.length).toList();
-  final targets = <String>[];
-  for (final index in indexes) {
-    final word = source[index];
-    if (!targets.any((target) => _sameAnswer(target, word))) targets.add(word);
-    if (targets.length >= targetCount) break;
+  final words = _studyWords(text);
+  final candidateIndexes = <int>[];
+  for (var i = 0; i < words.length; i++) {
+    final clean =
+        words[i].replaceAll(RegExp(r'[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]'), '');
+    if (clean.length > 2) candidateIndexes.add(i);
   }
-  for (final word in source) {
-    if (!targets.any((target) => _sameAnswer(target, word))) targets.add(word);
-    if (targets.length >= targetCount) break;
+  final sourceIndexes = candidateIndexes.isEmpty
+      ? List<int>.generate(words.length, (i) => i)
+      : candidateIndexes;
+  if (sourceIndexes.isEmpty) return [];
+  final targetCount = (level2 ? 4 : 3).clamp(1, sourceIndexes.length);
+  final rng = math.Random();
+  final pickPool = List<int>.from(sourceIndexes);
+  pickPool.shuffle(rng);
+  final picked = <int>{};
+  for (final idx in pickPool) {
+    final word = words[idx];
+    final alreadyPicked = picked.any(
+      (existing) => _sameAnswer(words[existing], word),
+    );
+    if (alreadyPicked) continue;
+    picked.add(idx);
+    if (picked.length >= targetCount) break;
   }
-  return targets;
+  // Return targets in text order, not shuffle order.
+  final ordered = picked.toList()..sort();
+  return ordered.map((i) => words[i]).toList();
 }
 
 List<String> _completionOptions(
@@ -1734,7 +1751,18 @@ String _firstLetterAnswer(String text, {required bool level2}) {
 }
 
 List<String> _firstLetterTargets(String text, {required bool level2}) {
-  return _studyWords(text).skip(level2 ? 1 : 3).take(level2 ? 6 : 4).toList();
+  final words = _studyWords(text);
+  if (words.isEmpty) return [];
+  final targetCount = level2 ? 5 : 4;
+  final visibleWords = level2 ? 1 : 3;
+  final rng = math.Random();
+  final available = words.skip(visibleWords).toList();
+  if (available.isEmpty) return words.take(1).toList();
+  final indexes = List.generate(available.length, (i) => i);
+  indexes.shuffle(rng);
+  final selected = indexes.take(targetCount.clamp(1, available.length)).toList();
+  selected.sort();
+  return selected.map((i) => available[i]).toList();
 }
 
 bool _sameAnswer(String a, String b) {
@@ -1756,6 +1784,23 @@ bool _sameAnswer(String a, String b) {
   }
 
   return normalize(a) == normalize(b);
+}
+
+bool _similarEnoughForVoice(String spoken, String expected) {
+  final s = _normalizeSpeechText(spoken);
+  final e = _normalizeSpeechText(expected);
+  if (s == e) return true;
+  if (s.contains(e) || e.contains(s)) return true;
+  final maxLen = s.length > e.length ? s.length : e.length;
+  if (maxLen <= 1) return s == e;
+  int distance = 0;
+  final minLength = s.length < e.length ? s.length : e.length;
+  for (var i = 0; i < minLength; i++) {
+    if (s[i] != e[i]) distance++;
+  }
+  distance += (maxLen - minLength);
+  final similarity = 1 - (distance / maxLen);
+  return similarity >= 0.5;
 }
 
 String _normalizeSpeechText(String value) {
@@ -6691,11 +6736,25 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       return;
     }
     _blockOrderCardId = cardId;
-    _blockOrderIndexes = blocks.length < 2
-        ? List.generate(blocks.length, (index) => index)
-        : [for (var index = 1; index < blocks.length; index++) index, 0];
+    if (blocks.length < 2) {
+      _blockOrderIndexes = List.generate(blocks.length, (index) => index);
+    } else {
+      final rng = math.Random();
+      var shuffled = List<int>.generate(blocks.length, (i) => i);
+      do {
+        shuffled.shuffle(rng);
+      } while (_isIdentity(shuffled));
+      _blockOrderIndexes = shuffled;
+    }
     _selectedBlockPosition = null;
     _checked = false;
+  }
+
+  bool _isIdentity(List<int> order) {
+    for (var i = 0; i < order.length; i++) {
+      if (order[i] != i) return false;
+    }
+    return true;
   }
 
   void _moveBlock(int oldIndex, int newIndex) {
@@ -6937,22 +6996,16 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
     if (slug == '08-voz-guiada' || slug == '12-voz-final') {
       final hidden = slug == '12-voz-final';
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(child: _VoiceHiddenWordsCard(finalMode: hidden)),
-          const SizedBox(height: 14),
-          _VoiceRecitationPracticeCard(
-            targetText: card.back,
-            colorMode: hidden
-                ? _ListeningColorMode.pink
-                : _ListeningColorMode.blue,
-            onCompleted: (passed) {
-              store.markExerciseStepCompleted(slug);
-              if (hidden) store.answerCurrentCard(passed);
-            },
-          ),
-        ],
+      return _RecitationStep(
+        targetText: card.back,
+        finalMode: hidden,
+        colorMode: hidden
+            ? _ListeningColorMode.pink
+            : _ListeningColorMode.blue,
+        onCompleted: (passed) {
+          store.markExerciseStepCompleted(slug);
+          if (hidden) store.answerCurrentCard(passed);
+        },
       );
     }
 
@@ -7283,8 +7336,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _QuizNav(),
-        const SizedBox(height: 14),
         _ExerciseQuestionBlock(
           contextLabel: deck.isBible ? card.source : deck.title.toUpperCase(),
           question: '¿Qué texto corresponde a ${card.front}?',
@@ -7432,7 +7483,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 if (slug == '05-bloques') {
                   if (_blocksAreCorrect()) {
                     store.markExerciseStepCompleted(slug);
-                    Navigator.pushNamed(context, '${AppRoutes.flow}/$next');
+                    Navigator.pushNamed(
+                      context,
+                      '${AppRoutes.flow}/progress-tree',
+                    );
                     return;
                   }
                   setState(() => _checked = true);
@@ -7454,7 +7508,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 store.answerCurrentCard(correct);
               }
               store.markExerciseStepCompleted(slug);
-              Navigator.pushNamed(context, '${AppRoutes.flow}/$next');
+              Navigator.pushNamed(
+                context,
+                '${AppRoutes.flow}/progress-tree',
+              );
             },
           ),
         ),
@@ -11454,9 +11511,23 @@ class _LetterBlank extends StatelessWidget {
         constraints: BoxConstraints(minWidth: (length * 10.0).clamp(28, 160)),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
         decoration: BoxDecoration(
-          color: accent.withValues(alpha: complete || active ? .16 : .08),
+          color: active
+              ? accent.withValues(alpha: .35)
+              : accent.withValues(alpha: complete ? .16 : .08),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: accent.withValues(alpha: .62), width: 1.5),
+          border: Border.all(
+            color: accent.withValues(alpha: active ? 1.0 : .5),
+            width: active ? 2.4 : 1.5,
+          ),
+          boxShadow: active
+              ? [
+                  BoxShadow(
+                    color: accent.withValues(alpha: .6),
+                    blurRadius: 14,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : null,
         ),
         child: Text(
           answer ?? '_' * length,
@@ -11577,28 +11648,42 @@ class _VoiceRecitationPracticeCard extends StatefulWidget {
 
 class _VoiceRecitationPracticeCardState
     extends State<_VoiceRecitationPracticeCard> {
-  late final stt.SpeechToText _speech;
+  stt.SpeechToText? _speech;
   bool _ready = false;
   bool _listening = false;
   bool _completed = false;
   String _recognized = '';
-  int _currentWord = 0;
+  int _currentBlock = 0;
   int? _lastWrongAt;
+  int _attemptsRemaining = 5;
 
-  late List<String> _targetWords;
-  late List<bool> _wordSolved;
+  late List<String> _targetBlocks;
+  late List<bool> _blockSolved;
 
   @override
   void initState() {
     super.initState();
-    _targetWords = _studyWords(widget.targetText);
-    _wordSolved = List<bool>.filled(_targetWords.length, false);
-    _speech = stt.SpeechToText();
+    _targetBlocks = _splitIntoBlocks(widget.targetText);
+    _blockSolved = List<bool>.filled(_targetBlocks.length, false);
     _initSpeech();
   }
 
+  @override
+  void didUpdateWidget(covariant _VoiceRecitationPracticeCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.targetText != widget.targetText) {
+      _targetBlocks = _splitIntoBlocks(widget.targetText);
+      _blockSolved = List<bool>.filled(_targetBlocks.length, false);
+      _currentBlock = 0;
+      _recognized = '';
+      _attemptsRemaining = 5;
+      _completed = false;
+    }
+  }
+
   Future<void> _initSpeech() async {
-    final available = await _speech.initialize(
+    _speech = stt.SpeechToText();
+    final available = await _speech!.initialize(
       onStatus: (status) {
         if (!mounted) return;
         if (status == 'done' || status == 'notListening') {
@@ -11616,7 +11701,7 @@ class _VoiceRecitationPracticeCardState
 
   @override
   void dispose() {
-    _speech.cancel();
+    _speech?.cancel();
     super.dispose();
   }
 
@@ -11626,15 +11711,14 @@ class _VoiceRecitationPracticeCardState
       return;
     }
     if (_listening) {
-      await _speech.stop();
+      await _speech!.stop();
       if (mounted) setState(() => _listening = false);
       return;
     }
     setState(() {
-      _recognized = '';
       _listening = true;
     });
-    await _speech.listen(
+    await _speech!.listen(
       localeId: 'es_ES',
       listenOptions: stt.SpeechListenOptions(
         listenMode: stt.ListenMode.dictation,
@@ -11649,34 +11733,80 @@ class _VoiceRecitationPracticeCardState
   void _handleRecognition(String text) {
     if (!mounted) return;
     setState(() => _recognized = text);
-    if (_currentWord >= _targetWords.length) return;
-    final spokenWords = _normalizeAndSplit(text);
-    if (spokenWords.isEmpty) return;
-    final lastSpoken = spokenWords.last;
-    final expected = _targetWords[_currentWord];
-    if (_sameAnswer(lastSpoken, expected)) {
+    if (_currentBlock >= _targetBlocks.length) return;
+
+    final normalizedSpoken = _normalizeSpeechText(text);
+    final expectedBlock = _targetBlocks[_currentBlock];
+    final normalizedExpected = _normalizeSpeechText(expectedBlock);
+
+    if (_blocksMatch(normalizedSpoken, normalizedExpected)) {
       setState(() {
-        _wordSolved[_currentWord] = true;
-        _currentWord += 1;
+        _blockSolved[_currentBlock] = true;
+        _currentBlock += 1;
         _recognized = '';
       });
-      if (_currentWord >= _targetWords.length && !_completed) {
+      if (_currentBlock >= _targetBlocks.length && !_completed) {
         _completed = true;
-        _speech.stop();
+        _speech?.stop();
         widget.onCompleted(true);
       }
-    } else if (lastSpoken.length >= 2) {
-      setState(() => _lastWrongAt = DateTime.now().millisecondsSinceEpoch);
+    } else if (normalizedSpoken.length >= 3) {
+      setState(() {
+        _lastWrongAt = DateTime.now().millisecondsSinceEpoch;
+        _attemptsRemaining = (_attemptsRemaining - 1).clamp(0, 99);
+      });
+      if (_attemptsRemaining <= 0 && !_completed) {
+        _completed = true;
+        _speech?.stop();
+        widget.onCompleted(false);
+      }
     }
   }
 
-  List<String> _normalizeAndSplit(String text) {
-    return text
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^\wÁÉÍÓÚÜÑáéíóúüñ\s]'), '')
-        .split(RegExp(r'\s+'))
-        .where((w) => w.trim().isNotEmpty)
-        .toList();
+  bool _blocksMatch(String spoken, String expected) {
+    if (spoken == expected) return true;
+    if (spoken.contains(expected) || expected.contains(spoken)) return true;
+    final spokenWords = spoken.split(' ').where((w) => w.isNotEmpty).toList();
+    final expectedWords = expected.split(' ').where((w) => w.isNotEmpty).toList();
+    if (spokenWords.isEmpty || expectedWords.isEmpty) return false;
+    int matchCount = 0;
+    for (final expectedWord in expectedWords) {
+      for (final spokenWord in spokenWords) {
+        if (_wordsSimilar(spokenWord, expectedWord)) {
+          matchCount++;
+          break;
+        }
+      }
+    }
+    final matchRatio = matchCount / expectedWords.length;
+    return matchRatio >= 0.5;
+  }
+
+  bool _wordsSimilar(String a, String b) {
+    if (a == b) return true;
+    if (a.contains(b) || b.contains(a)) return true;
+    final maxLen = a.length > b.length ? a.length : b.length;
+    if (maxLen <= 1) return a == b;
+    int distance = 0;
+    final minLength = a.length < b.length ? a.length : b.length;
+    for (var i = 0; i < minLength; i++) {
+      if (a[i] != b[i]) distance++;
+    }
+    distance += (maxLen - minLength);
+    final similarity = 1 - (distance / maxLen);
+    return similarity >= 0.5;
+  }
+
+  List<String> _splitIntoBlocks(String text) {
+    final words = _studyWords(text);
+    if (words.length <= 6) return words;
+    final blockSize = (words.length / 3).round().clamp(2, 5);
+    final blocks = <String>[];
+    for (var i = 0; i < words.length; i += blockSize) {
+      final end = (i + blockSize).clamp(0, words.length);
+      blocks.add(words.sublist(i, end).join(' '));
+    }
+    return blocks;
   }
 
   @override
@@ -11689,100 +11819,178 @@ class _VoiceRecitationPracticeCardState
             : RefColors.pink;
     final wrongRecent = _lastWrongAt != null &&
         DateTime.now().millisecondsSinceEpoch - _lastWrongAt! < 1200;
-    final total = _targetWords.length;
     return _Glass(
       radius: 18,
       padding: const EdgeInsets.all(16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          GestureDetector(
-            onTap: _toggleListening,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
-              width: 58,
-              height: 58,
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: _listening ? .55 : .18),
-                shape: BoxShape.circle,
-                border: Border.all(color: accent.withValues(alpha: .85)),
-                boxShadow: [
-                  BoxShadow(
-                    color: accent.withValues(alpha: .35),
-                    blurRadius: _listening ? 28 : 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Icon(
-                _listening ? Icons.stop_rounded : Icons.mic_rounded,
-                color: RefColors.ink,
-                size: 28,
-              ),
-            ),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (var i = 0; i < _targetBlocks.length; i++)
+                _RecitationBlock(
+                  text: _targetBlocks[i],
+                  solved: _blockSolved[i],
+                  active: i == _currentBlock && !_completed,
+                  accent: accent,
+                ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: wrongRecent
-                    ? RefColors.urgent.withValues(alpha: .18)
-                    : HtmlRefColors.glassSoft,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: wrongRecent
-                      ? RefColors.urgent
-                      : HtmlRefColors.glassBorder,
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              GestureDetector(
+                onTap: _toggleListening,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: _listening ? .55 : .18),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: accent.withValues(alpha: .85)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: .35),
+                        blurRadius: _listening ? 28 : 16,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                    color: RefColors.ink,
+                    size: 28,
+                  ),
                 ),
               ),
-              child: Text(
-                _recognized.isEmpty
-                    ? (_listening
-                        ? 'Escuchando…'
-                        : 'Toca el mic y recita')
-                    : _recognized,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: _recognized.isEmpty ? RefColors.dim : RefColors.ink,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: wrongRecent
+                        ? RefColors.urgent.withValues(alpha: .18)
+                        : HtmlRefColors.glassSoft,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: wrongRecent
+                          ? RefColors.urgent
+                          : HtmlRefColors.glassBorder,
+                    ),
+                  ),
+                  child: Text(
+                    _recognized.isEmpty
+                        ? (_listening
+                            ? 'Escuchando…'
+                            : 'Toca el mic y recita')
+                        : _recognized,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _recognized.isEmpty ? RefColors.dim : RefColors.ink,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(width: 10),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: .18),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: accent.withValues(alpha: .6)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '$_attemptsRemaining',
+                      style: TextStyle(
+                        color: _attemptsRemaining <= 1
+                            ? RefColors.urgent
+                            : accent,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Text(
+                      'intentos',
+                      style: TextStyle(
+                        color: accent.withValues(alpha: .85),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.1,
+                      ),
+                    ),
+                    Text(
+                      'restantes',
+                      style: TextStyle(
+                        color: accent.withValues(alpha: .85),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: .18),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: accent.withValues(alpha: .6)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '$_currentWord/$total',
-                  style: TextStyle(
-                    color: accent,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                Text(
-                  'palabras',
-                  style: TextStyle(
-                    color: accent.withValues(alpha: .85),
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.1,
-                  ),
-                ),
-              ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RecitationBlock extends StatelessWidget {
+  final String text;
+  final bool solved;
+  final bool active;
+  final Color accent;
+
+  const _RecitationBlock({
+    required this.text,
+    required this.solved,
+    required this.active,
+    required this.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final blockColor = solved
+        ? RefColors.lime
+        : active
+            ? accent
+            : RefColors.border;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: blockColor.withValues(alpha: solved || active ? .16 : .06),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: blockColor.withValues(alpha: .6), width: 1.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (solved) ...[
+            const Icon(Icons.check_rounded, color: RefColors.lime, size: 14),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            solved ? text : '_' * text.length.clamp(3, 20),
+            style: TextStyle(
+              color: solved ? RefColors.lime : RefColors.ink,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ],
@@ -11861,11 +12069,17 @@ class _VoiceHiddenWordsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final words = _studyWords(_cardStudyText(context));
-    final visible = finalMode ? 0 : words.length.clamp(1, 3).toInt();
-    final shown = words.take(visible).join(' ');
-    final hidden = words.skip(visible).toList();
+    if (finalMode) {
+      return _buildAllHidden(words);
+    }
+    final rng = math.Random(DateTime.now().millisecondsSinceEpoch ~/ 60000);
+    final hiddenRatio = 0.35;
+    final hiddenCount = (words.length * hiddenRatio).round().clamp(1, words.length - 1);
+    final indices = List.generate(words.length, (i) => i);
+    indices.shuffle(rng);
+    final hiddenIndices = indices.take(hiddenCount).toSet();
     return _Glass(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+      padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
       gradient: LinearGradient(
         colors: [
           RefColors.violet.withValues(alpha: .30),
@@ -11874,30 +12088,84 @@ class _VoiceHiddenWordsCard extends StatelessWidget {
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ),
-      child: SingleChildScrollView(
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 12,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          alignment: WrapAlignment.center,
-          children: [
-            if (shown.isNotEmpty) _LetterWord(shown),
-            for (var i = 0; i < hidden.length; i++)
-              _HiddenWord(
-                wordLength: hidden[i].length,
-                active: i == 0,
-                pink: finalMode || i == 0,
-              ),
-            const Text(
-              '.',
-              style: TextStyle(
-                color: RefColors.muted,
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                alignment: WrapAlignment.center,
+                children: [
+                  for (var i = 0; i < words.length; i++)
+                    if (hiddenIndices.contains(i))
+                      _HiddenWord(
+                        wordLength: words[i].length,
+                        active: false,
+                        pink: false,
+                      )
+                    else
+                      _LetterWord(words[i]),
+                  const Text(
+                    '.',
+                    style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildAllHidden(List<String> words) {
+    return _Glass(
+      padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
+      gradient: LinearGradient(
+        colors: [
+          RefColors.violet.withValues(alpha: .30),
+          RefColors.sun.withValues(alpha: .28),
+        ],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                alignment: WrapAlignment.center,
+                children: [
+                  for (var i = 0; i < words.length; i++)
+                    _HiddenWord(
+                      wordLength: words[i].length,
+                      active: i == 0,
+                      pink: true,
+                    ),
+                  const Text(
+                    '.',
+                    style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -11908,12 +12176,14 @@ class _HiddenWord extends StatelessWidget {
   final bool active;
   final bool pink;
   final bool solved;
+  final String? word;
 
   const _HiddenWord({
     required this.wordLength,
     this.active = false,
     this.pink = false,
     this.solved = false,
+    this.word,
   });
 
   @override
@@ -11933,8 +12203,16 @@ class _HiddenWord extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: accent.withValues(alpha: .62), width: 1.5),
       ),
-      child: solved
-          ? const Icon(Icons.check_rounded, color: RefColors.lime, size: 18)
+      child: solved && word != null
+          ? Text(
+              word!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: RefColors.lime,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            )
           : Text(
               '_' * length,
               textAlign: TextAlign.center,
@@ -13059,5 +13337,388 @@ IconData _timelineIconFor(String slug) {
       return Icons.help_outline_rounded;
     default:
       return Icons.radio_button_unchecked_rounded;
+  }
+}
+
+class _RecitationStep extends StatefulWidget {
+  final String targetText;
+  final bool finalMode;
+  final _ListeningColorMode colorMode;
+  final void Function(bool passed) onCompleted;
+
+  const _RecitationStep({
+    required this.targetText,
+    required this.finalMode,
+    required this.colorMode,
+    required this.onCompleted,
+  });
+
+  @override
+  State<_RecitationStep> createState() => _RecitationStepState();
+}
+
+class _RecitationStepState extends State<_RecitationStep> {
+  late final stt.SpeechToText _speech;
+  bool _ready = false;
+  bool _listening = false;
+  bool _completed = false;
+  bool _userWantsListening = false;
+  String _lastSpokenWord = '';
+  int _attemptsLeft = 7;
+  int? _lastWrongAt;
+  int _processedTokenCount = 0;
+
+  late List<String> _allWords;
+  late Set<int> _hiddenIndexes; // word indexes that need to be recited
+  late List<int> _orderedHidden; // hidden indexes sorted (text order)
+  late Set<int> _solvedIndexes;
+  int _activePointer = 0; // index into _orderedHidden
+
+  @override
+  void initState() {
+    super.initState();
+    _allWords = _studyWords(widget.targetText);
+    _hiddenIndexes = _pickHiddenIndexes();
+    _orderedHidden = _hiddenIndexes.toList()..sort();
+    _solvedIndexes = <int>{};
+    _speech = stt.SpeechToText();
+    _initSpeech();
+  }
+
+  Set<int> _pickHiddenIndexes() {
+    if (widget.finalMode) {
+      return Set<int>.from(List<int>.generate(_allWords.length, (i) => i));
+    }
+    final rng = math.Random();
+    final ratio = 0.35;
+    final count = (_allWords.length * ratio).round().clamp(1, _allWords.length - 1);
+    final indices = List<int>.generate(_allWords.length, (i) => i);
+    indices.shuffle(rng);
+    return indices.take(count).toSet();
+  }
+
+  Future<void> _initSpeech() async {
+    final available = await _speech.initialize(
+      onStatus: (status) {
+        if (!mounted) return;
+        if (status == 'done' || status == 'notListening') {
+          if (_userWantsListening && !_completed) {
+            _restartListening();
+          } else {
+            setState(() => _listening = false);
+          }
+        }
+      },
+      onError: (_) {
+        if (!mounted) return;
+        if (_userWantsListening && !_completed) {
+          _restartListening();
+        } else {
+          setState(() => _listening = false);
+        }
+      },
+    );
+    if (!mounted) return;
+    setState(() => _ready = available);
+  }
+
+  Future<void> _restartListening() async {
+    if (!mounted || _completed) return;
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    if (!mounted || !_userWantsListening || _completed) return;
+    if (_speech.isListening) return;
+    _processedTokenCount = 0;
+    setState(() => _listening = true);
+    await _speech.listen(
+      localeId: 'es_ES',
+      listenOptions: stt.SpeechListenOptions(
+        listenMode: stt.ListenMode.dictation,
+        partialResults: true,
+      ),
+      listenFor: const Duration(seconds: 60),
+      pauseFor: const Duration(seconds: 6),
+      onResult: _handleRecognition,
+    );
+  }
+
+  @override
+  void dispose() {
+    _speech.cancel();
+    super.dispose();
+  }
+
+  Future<void> _toggleListening() async {
+    if (!_ready) {
+      await _initSpeech();
+      return;
+    }
+    if (_listening) {
+      _userWantsListening = false;
+      await _speech.stop();
+      if (mounted) setState(() => _listening = false);
+      return;
+    }
+    setState(() {
+      _listening = true;
+      _userWantsListening = true;
+      _processedTokenCount = 0;
+    });
+    await _speech.listen(
+      localeId: 'es_ES',
+      listenOptions: stt.SpeechListenOptions(
+        listenMode: stt.ListenMode.dictation,
+        partialResults: true,
+      ),
+      listenFor: const Duration(seconds: 60),
+      pauseFor: const Duration(seconds: 6),
+      onResult: _handleRecognition,
+    );
+  }
+
+  String _normalizeToken(String token) => token
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^\wÁÉÍÓÚÜÑáéíóúüñ]'), '');
+
+  void _handleRecognition(SpeechRecognitionResult result) {
+    if (!mounted) return;
+    final text = result.recognizedWords;
+    final isFinal = result.finalResult;
+    final rawTokens = text
+        .split(RegExp(r'\s+'))
+        .where((w) => w.trim().isNotEmpty)
+        .toList();
+    if (rawTokens.isEmpty) return;
+    if (rawTokens.last != _lastSpokenWord) {
+      setState(() => _lastSpokenWord = rawTokens.last);
+    }
+    final lockedCount = isFinal ? rawTokens.length : rawTokens.length - 1;
+    var processedNow = _processedTokenCount;
+    void processToken(String rawToken, {required bool locked}) {
+      if (_completed) return;
+      if (_activePointer >= _orderedHidden.length) return;
+      final normalized = _normalizeToken(rawToken);
+      if (normalized.isEmpty) return;
+      final expectedIdx = _orderedHidden[_activePointer];
+      final expected = _allWords[expectedIdx];
+      if (_sameAnswer(normalized, expected)) {
+        setState(() {
+          _solvedIndexes.add(expectedIdx);
+          _activePointer += 1;
+        });
+        if (_activePointer >= _orderedHidden.length && !_completed) {
+          _completed = true;
+          _userWantsListening = false;
+          _speech.stop();
+          widget.onCompleted(true);
+        }
+      } else if (locked) {
+        setState(() {
+          _lastWrongAt = DateTime.now().millisecondsSinceEpoch;
+          if (_attemptsLeft > 0) _attemptsLeft -= 1;
+        });
+        if (_attemptsLeft == 0 && !_completed) {
+          _completed = true;
+          _userWantsListening = false;
+          _speech.stop();
+          widget.onCompleted(false);
+        }
+      }
+    }
+
+    for (var i = processedNow; i < lockedCount; i++) {
+      processToken(rawTokens[i], locked: true);
+      processedNow = i + 1;
+    }
+    if (!isFinal && processedNow < rawTokens.length) {
+      final lastIdx = rawTokens.length - 1;
+      final beforeAdvance = _activePointer;
+      processToken(rawTokens[lastIdx], locked: false);
+      if (_activePointer != beforeAdvance) {
+        processedNow = lastIdx + 1;
+      }
+    }
+    _processedTokenCount = processedNow;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isBlue = widget.colorMode == _ListeningColorMode.blue;
+    final accent = _completed
+        ? RefColors.lime
+        : isBlue
+            ? RefColors.cyan
+            : RefColors.pink;
+    final wrongRecent = _lastWrongAt != null &&
+        DateTime.now().millisecondsSinceEpoch - _lastWrongAt! < 1200;
+    final activeIdx = _activePointer < _orderedHidden.length
+        ? _orderedHidden[_activePointer]
+        : -1;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: _Glass(
+            padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
+            gradient: LinearGradient(
+              colors: [
+                RefColors.violet.withValues(alpha: .30),
+                RefColors.sun.withValues(alpha: .28),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            child: LayoutBuilder(builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints:
+                      BoxConstraints(maxWidth: constraints.maxWidth),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 10,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      for (var i = 0; i < _allWords.length; i++)
+                        if (_hiddenIndexes.contains(i))
+                          _HiddenWord(
+                            wordLength: _allWords[i].length,
+                            active: i == activeIdx,
+                            pink: !isBlue,
+                            solved: _solvedIndexes.contains(i),
+                            word: _allWords[i],
+                          )
+                        else
+                          _LetterWord(_allWords[i]),
+                      const Text(
+                        '.',
+                        style: TextStyle(
+                          color: RefColors.muted,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
+        const SizedBox(height: 14),
+        _Glass(
+          radius: 18,
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              GestureDetector(
+                onTap: _toggleListening,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: _listening ? .55 : .18),
+                    shape: BoxShape.circle,
+                    border:
+                        Border.all(color: accent.withValues(alpha: .85)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: .35),
+                        blurRadius: _listening ? 28 : 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                    color: RefColors.ink,
+                    size: 26,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: wrongRecent
+                        ? RefColors.urgent.withValues(alpha: .18)
+                        : HtmlRefColors.glassSoft,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: wrongRecent
+                          ? RefColors.urgent
+                          : HtmlRefColors.glassBorder,
+                    ),
+                  ),
+                  child: Text(
+                    _lastSpokenWord.isEmpty
+                        ? (_listening
+                            ? 'Escuchando…'
+                            : 'Toca el mic y recita')
+                        : _lastSpokenWord,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _lastSpokenWord.isEmpty
+                          ? RefColors.dim
+                          : RefColors.ink,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: .18),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: accent.withValues(alpha: .6)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      'intentos',
+                      style: TextStyle(
+                        color: accent.withValues(alpha: .9),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .8,
+                      ),
+                    ),
+                    Text(
+                      'restantes',
+                      style: TextStyle(
+                        color: accent.withValues(alpha: .9),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .8,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$_attemptsLeft',
+                      style: TextStyle(
+                        color: accent,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
