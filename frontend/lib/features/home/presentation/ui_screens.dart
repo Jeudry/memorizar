@@ -40,6 +40,34 @@ class AppRoutes {
   static const bgNaranjaNocturno = '/preview/background/naranja-nocturno';
   static const bgActualSuave = '/preview/background/actual-suave';
 
+  static Route<dynamic> slideRoute(
+    String name, {
+    Offset begin = const Offset(1, 0),
+  }) {
+    final builder = routes[name];
+    if (builder == null) {
+      throw FlutterError('Unknown route: $name');
+    }
+    return PageRouteBuilder(
+      settings: RouteSettings(name: name),
+      transitionDuration: const Duration(milliseconds: 300),
+      reverseTransitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (context, animation, secondary) => builder(context),
+      transitionsBuilder: (context, animation, _, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return SlideTransition(
+          position: Tween<Offset>(begin: begin, end: Offset.zero)
+              .animate(curved),
+          child: FadeTransition(opacity: curved, child: child),
+        );
+      },
+    );
+  }
+
   static Map<String, WidgetBuilder> get routes => {
     home: (_) => const HomeScreen(),
     bgNocturnoMate: (_) =>
@@ -7392,7 +7420,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               label: completed ? 'Siguiente →' : 'Revela todo para continuar',
               enabled: completed,
               onTap: () {
-                Navigator.pushNamed(context, '${AppRoutes.flow}/$next');
+                Navigator.push(
+                  context,
+                  AppRoutes.slideRoute('${AppRoutes.flow}/$next'),
+                );
               },
             ),
           ),
@@ -7411,9 +7442,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       final cta = _ActionCta(
         label: _footerLabel(slug, checked: _checked, completed: completed),
         enabled: completed,
-        onTap: () => Navigator.pushNamed(
+        onTap: () => Navigator.push(
           context,
-          '${AppRoutes.flow}/progress-tree',
+          AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
         ),
       );
       if (!showSkip) return cta;
@@ -7425,9 +7456,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               'Saltar',
               onTap: () {
                 store.markExerciseStepCompleted(slug);
-                Navigator.pushNamed(
+                Navigator.push(
                   context,
-                  '${AppRoutes.flow}/progress-tree',
+                  AppRoutes.slideRoute(
+                    '${AppRoutes.flow}/progress-tree',
+                  ),
                 );
               },
             ),
@@ -7476,16 +7509,21 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   return;
                 }
                 if (slug == '12-voz-final') store.answerCurrentCard(true);
-                Navigator.pushNamed(context, '${AppRoutes.flow}/$next');
+                Navigator.push(
+                  context,
+                  AppRoutes.slideRoute('${AppRoutes.flow}/$next'),
+                );
                 return;
               }
               if (!_checked) {
                 if (slug == '05-bloques') {
                   if (_blocksAreCorrect()) {
                     store.markExerciseStepCompleted(slug);
-                    Navigator.pushNamed(
+                    Navigator.push(
                       context,
-                      '${AppRoutes.flow}/progress-tree',
+                      AppRoutes.slideRoute(
+                        '${AppRoutes.flow}/progress-tree',
+                      ),
                     );
                     return;
                   }
@@ -7508,9 +7546,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 store.answerCurrentCard(correct);
               }
               store.markExerciseStepCompleted(slug);
-              Navigator.pushNamed(
+              Navigator.push(
                 context,
-                '${AppRoutes.flow}/progress-tree',
+                AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
               );
             },
           ),
@@ -12218,13 +12256,21 @@ class _HiddenWord extends StatelessWidget {
         ),
       ),
       child: solved && word != null
-          ? Text(
-              word!,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: filledColor,
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
+          ? TweenAnimationBuilder<double>(
+              key: ValueKey('solved-$word-$skipped'),
+              tween: Tween(begin: 0.55, end: 1.0),
+              duration: const Duration(milliseconds: 360),
+              curve: Curves.elasticOut,
+              builder: (context, scale, child) =>
+                  Transform.scale(scale: scale, child: child),
+              child: Text(
+                word!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: filledColor,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             )
           : Text(
@@ -13371,8 +13417,10 @@ class _RecitationStep extends StatefulWidget {
   State<_RecitationStep> createState() => _RecitationStepState();
 }
 
-class _RecitationStepState extends State<_RecitationStep> {
+class _RecitationStepState extends State<_RecitationStep>
+    with SingleTickerProviderStateMixin {
   late final stt.SpeechToText _speech;
+  late final AnimationController _micPulse;
   bool _ready = false;
   bool _listening = false;
   bool _completed = false;
@@ -13393,6 +13441,10 @@ class _RecitationStepState extends State<_RecitationStep> {
   void initState() {
     super.initState();
     _speech = stt.SpeechToText();
+    _micPulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
     _resetExerciseState();
     _initSpeech();
   }
@@ -13403,6 +13455,8 @@ class _RecitationStepState extends State<_RecitationStep> {
     if (oldWidget.targetText != widget.targetText ||
         oldWidget.finalMode != widget.finalMode) {
       _userWantsListening = false;
+      _micPulse.stop();
+      _micPulse.value = 0;
       _speech.stop();
       setState(_resetExerciseState);
     }
@@ -13443,6 +13497,8 @@ class _RecitationStepState extends State<_RecitationStep> {
           if (_userWantsListening && !_completed) {
             _restartListening();
           } else {
+            _micPulse.stop();
+            _micPulse.value = 0;
             setState(() => _listening = false);
           }
         }
@@ -13452,6 +13508,8 @@ class _RecitationStepState extends State<_RecitationStep> {
         if (_userWantsListening && !_completed) {
           _restartListening();
         } else {
+          _micPulse.stop();
+          _micPulse.value = 0;
           setState(() => _listening = false);
         }
       },
@@ -13466,6 +13524,7 @@ class _RecitationStepState extends State<_RecitationStep> {
     if (!mounted || !_userWantsListening || _completed) return;
     if (_speech.isListening) return;
     _processedTokenCount = 0;
+    if (!_micPulse.isAnimating) _micPulse.repeat();
     setState(() => _listening = true);
     await _speech.listen(
       localeId: 'es_ES',
@@ -13481,6 +13540,7 @@ class _RecitationStepState extends State<_RecitationStep> {
 
   @override
   void dispose() {
+    _micPulse.dispose();
     _speech.cancel();
     super.dispose();
   }
@@ -13492,10 +13552,15 @@ class _RecitationStepState extends State<_RecitationStep> {
     }
     if (_listening) {
       _userWantsListening = false;
+      _micPulse.stop();
+      _micPulse.value = 0;
+      HapticFeedback.selectionClick();
       await _speech.stop();
       if (mounted) setState(() => _listening = false);
       return;
     }
+    HapticFeedback.lightImpact();
+    _micPulse.repeat();
     setState(() {
       _listening = true;
       _userWantsListening = true;
@@ -13521,6 +13586,7 @@ class _RecitationStepState extends State<_RecitationStep> {
     if (_completed) return;
     if (_activePointer >= _orderedHidden.length) return;
     final expectedIdx = _orderedHidden[_activePointer];
+    HapticFeedback.selectionClick();
     setState(() {
       _skippedIndexes.add(expectedIdx);
       _solvedIndexes.add(expectedIdx);
@@ -13530,6 +13596,8 @@ class _RecitationStepState extends State<_RecitationStep> {
     if (_activePointer >= _orderedHidden.length && !_completed) {
       _completed = true;
       _userWantsListening = false;
+      _micPulse.stop();
+      HapticFeedback.heavyImpact();
       _speech.stop();
       widget.onCompleted(_skippedIndexes.isEmpty);
     }
@@ -13557,6 +13625,7 @@ class _RecitationStepState extends State<_RecitationStep> {
       final expectedIdx = _orderedHidden[_activePointer];
       final expected = _allWords[expectedIdx];
       if (_sameAnswer(normalized, expected)) {
+        HapticFeedback.lightImpact();
         setState(() {
           _solvedIndexes.add(expectedIdx);
           _activePointer += 1;
@@ -13564,10 +13633,13 @@ class _RecitationStepState extends State<_RecitationStep> {
         if (_activePointer >= _orderedHidden.length && !_completed) {
           _completed = true;
           _userWantsListening = false;
+          _micPulse.stop();
+          HapticFeedback.heavyImpact();
           _speech.stop();
           widget.onCompleted(_skippedIndexes.isEmpty);
         }
       } else if (locked) {
+        HapticFeedback.mediumImpact();
         setState(() {
           _lastWrongAt = DateTime.now().millisecondsSinceEpoch;
           if (_attemptsLeft > 0) _attemptsLeft -= 1;
@@ -13575,6 +13647,8 @@ class _RecitationStepState extends State<_RecitationStep> {
         if (_attemptsLeft == 0 && !_completed) {
           _completed = true;
           _userWantsListening = false;
+          _micPulse.stop();
+          HapticFeedback.heavyImpact();
           _speech.stop();
           widget.onCompleted(false);
         }
@@ -13614,6 +13688,54 @@ class _RecitationStepState extends State<_RecitationStep> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (_completed)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.0, end: 1.0),
+              duration: const Duration(milliseconds: 480),
+              curve: Curves.easeOutBack,
+              builder: (context, t, child) => Transform.scale(
+                scale: 0.85 + 0.15 * t,
+                child: Opacity(opacity: t, child: child),
+              ),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  gradient: RefColors.success,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: RefColors.lime.withValues(alpha: .55),
+                      blurRadius: 26,
+                      spreadRadius: 2,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: const [
+                    Icon(Icons.check_circle_rounded,
+                        color: RefColors.successInk, size: 22),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        '¡Recitación completada!',
+                        style: TextStyle(
+                          color: RefColors.successInk,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Row(
@@ -13698,27 +13820,57 @@ class _RecitationStepState extends State<_RecitationStep> {
             children: [
               GestureDetector(
                 onTap: _toggleListening,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 220),
-                  width: 54,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: _listening ? .55 : .18),
-                    shape: BoxShape.circle,
-                    border:
-                        Border.all(color: accent.withValues(alpha: .85)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: accent.withValues(alpha: .35),
-                        blurRadius: _listening ? 28 : 14,
-                        offset: const Offset(0, 6),
+                child: SizedBox(
+                  width: 64,
+                  height: 64,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      if (_listening)
+                        AnimatedBuilder(
+                          animation: _micPulse,
+                          builder: (context, _) {
+                            final t = _micPulse.value;
+                            return Container(
+                              width: 56 + 14 * t,
+                              height: 56 + 14 * t,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: accent.withValues(alpha: 1 - t),
+                                  width: 2,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        width: 54,
+                        height: 54,
+                        decoration: BoxDecoration(
+                          color: accent.withValues(
+                            alpha: _listening ? .55 : .18,
+                          ),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: accent.withValues(alpha: .85),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: accent.withValues(alpha: .35),
+                              blurRadius: _listening ? 28 : 14,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                          color: RefColors.ink,
+                          size: 26,
+                        ),
                       ),
                     ],
-                  ),
-                  child: Icon(
-                    _listening ? Icons.stop_rounded : Icons.mic_rounded,
-                    color: RefColors.ink,
-                    size: 26,
                   ),
                 ),
               ),
