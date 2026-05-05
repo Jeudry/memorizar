@@ -6687,8 +6687,25 @@ class _RealExerciseFlowScreen extends StatefulWidget {
       _RealExerciseFlowScreenState();
 }
 
+enum _QuizQuestionType { frontToBack, backToFront }
+
+class _QuizRound {
+  final MemoryCardData target;
+  final _QuizQuestionType type;
+  final List<MemoryCardData> options;
+  int? selectedIdx;
+
+  _QuizRound({
+    required this.target,
+    required this.type,
+    required this.options,
+  });
+
+  bool get answered => selectedIdx != null;
+  bool get correct => selectedIdx != null && options[selectedIdx!].id == target.id;
+}
+
 class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
-  int? _selected;
   bool _checked = false;
   int _fragmentVisibleWords = 8;
   String? _blockOrderCardId;
@@ -6707,6 +6724,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   List<String?> _letterAnswers = [];
   int _activeLetterIndex = 0;
   int _letterMistakes = 0;
+
+  String? _quizCardId;
+  List<_QuizRound> _quizRounds = [];
+  int _quizRoundIndex = 0;
+  int _quizScore = 0;
 
   @override
   void dispose() => super.dispose();
@@ -6738,8 +6760,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   bool _hasLetterInput() => _letterAnswers.any((answer) => answer != null);
 
   bool _quizCorrect(MemoryCardData card, MemoryDeckData deck) {
-    final options = _quizOptions(deck, card);
-    return _selected != null && options[_selected!].id == card.id;
+    if (_quizCardId != card.id || _quizRounds.isEmpty) return false;
+    return _quizPassed;
   }
 
   bool _canAdvanceAnsweredStep(
@@ -6754,7 +6776,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '07-primera-letra-n1' || slug == '11-primera-letra-n2') {
       return _letterCorrect(slug, card);
     }
-    if (slug == '09-quiz') return _selected != null;
+    if (slug == '09-quiz') {
+      if (_quizRounds.isEmpty) return false;
+      if (!_quizFinished) {
+        return _quizRounds[_quizRoundIndex].answered;
+      }
+      return true;
+    }
     return true;
   }
 
@@ -6909,6 +6937,98 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       }
     });
   }
+
+  void _ensureQuizRounds(MemoryDeckData deck, MemoryCardData card) {
+    if (_quizCardId == card.id && _quizRounds.isNotEmpty) return;
+    _quizCardId = card.id;
+    _quizRoundIndex = 0;
+    _quizScore = 0;
+    _quizRounds = _buildQuizRounds(deck, card);
+  }
+
+  List<_QuizRound> _buildQuizRounds(
+    MemoryDeckData deck,
+    MemoryCardData activeCard,
+  ) {
+    final rng = math.Random(activeCard.id.hashCode ^
+        DateTime.now().millisecondsSinceEpoch);
+    final rounds = <_QuizRound>[];
+    final allCards = [activeCard, ...deck.cards.where((c) => c.id != activeCard.id)];
+    final usedTargets = <String>{};
+    final shuffledPool = [...allCards]..shuffle(rng);
+    final targets = <MemoryCardData>[activeCard];
+    usedTargets.add(activeCard.id);
+    for (final c in shuffledPool) {
+      if (targets.length >= 5) break;
+      if (usedTargets.contains(c.id)) continue;
+      targets.add(c);
+      usedTargets.add(c.id);
+    }
+    while (targets.length < 5) {
+      targets.add(activeCard);
+    }
+    for (var i = 0; i < 5; i++) {
+      final target = targets[i];
+      final type = i.isEven
+          ? _QuizQuestionType.frontToBack
+          : _QuizQuestionType.backToFront;
+      final distractorPool =
+          allCards.where((c) => c.id != target.id).toList()..shuffle(rng);
+      final distractors = distractorPool.take(3).toList();
+      while (distractors.length < 3) {
+        distractors.add(
+          MemoryCardData(
+            id: 'placeholder-${distractors.length}-${target.id}',
+            front: 'Opción aproximada',
+            back: _firstWords(target.back, 4),
+            source: 'Placeholder',
+            icon: target.icon,
+          ),
+        );
+      }
+      final options = [target, ...distractors]..shuffle(rng);
+      rounds.add(_QuizRound(target: target, type: type, options: options));
+    }
+    return rounds;
+  }
+
+  void _selectQuizOption(int idx) {
+    if (_quizRoundIndex >= _quizRounds.length) return;
+    final round = _quizRounds[_quizRoundIndex];
+    if (round.answered) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      round.selectedIdx = idx;
+      if (round.correct) _quizScore += 1;
+    });
+    if (round.correct) {
+      HapticFeedback.lightImpact();
+    } else {
+      HapticFeedback.mediumImpact();
+    }
+  }
+
+  void _advanceQuizRound() {
+    if (_quizRoundIndex < _quizRounds.length - 1) {
+      setState(() => _quizRoundIndex += 1);
+    }
+  }
+
+  void _resetQuiz() {
+    setState(() {
+      _quizCardId = null;
+      _quizRounds = [];
+      _quizRoundIndex = 0;
+      _quizScore = 0;
+    });
+  }
+
+  bool get _quizFinished =>
+      _quizRounds.isNotEmpty &&
+      _quizRoundIndex == _quizRounds.length - 1 &&
+      _quizRounds.last.answered;
+
+  bool get _quizPassed => _quizFinished && _quizScore >= 3;
 
   void _activateLetterBlank(int index) {
     if (index < 0 || index >= _letterTargets.length) return;
@@ -7358,37 +7478,103 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       );
     }
 
-    final options = _quizOptions(deck, card);
-    final selectedCard = _selected == null ? null : options[_selected!];
-    final isCorrect = selectedCard?.id == card.id;
+    _ensureQuizRounds(deck, card);
+    final round = _quizRounds[_quizRoundIndex];
+    final answered = round.answered;
+    final isFrontToBack = round.type == _QuizQuestionType.frontToBack;
+    final question = isFrontToBack
+        ? '¿Qué texto corresponde a ${round.target.front}?'
+        : '¿A qué referencia pertenece este texto?';
+    final contextLabel = isFrontToBack
+        ? (deck.isBible ? round.target.source : deck.title.toUpperCase())
+        : '"${_firstWords(round.target.back, 8)}…"';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Ronda ${_quizRoundIndex + 1} / ${_quizRounds.length}',
+                style: const TextStyle(
+                  color: RefColors.ink,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              Text(
+                'Puntos: $_quizScore',
+                style: const TextStyle(
+                  color: RefColors.lime,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
         _ExerciseQuestionBlock(
-          contextLabel: deck.isBible ? card.source : deck.title.toUpperCase(),
-          question: '¿Qué texto corresponde a ${card.front}?',
+          contextLabel: contextLabel,
+          question: question,
         ),
         const SizedBox(height: 14),
-        for (var i = 0; i < options.length; i++) ...[
+        for (var i = 0; i < round.options.length; i++) ...[
           _ExerciseOption(
             letter: String.fromCharCode(65 + i),
-            title: options[i].back,
-            tip: options[i].front,
-            selected: _selected == i,
-            correct: _selected != null && options[i].id == card.id,
-            wrong: _selected == i && !isCorrect,
-            onTap: () => setState(() {
-              _selected = i;
-              _checked = true;
-            }),
+            title: isFrontToBack
+                ? round.options[i].back
+                : round.options[i].front,
+            tip: isFrontToBack
+                ? round.options[i].front
+                : round.options[i].source,
+            selected: round.selectedIdx == i,
+            correct: answered && round.options[i].id == round.target.id,
+            wrong: round.selectedIdx == i && !round.correct,
+            onTap: answered ? () {} : () => _selectQuizOption(i),
           ),
           const SizedBox(height: 10),
         ],
-        if (_selected != null)
+        if (answered)
           _InlineResult(
-            correct: isCorrect,
-            text: isCorrect ? 'Correcto.' : 'Respuesta correcta: ${card.back}',
+            correct: round.correct,
+            text: round.correct
+                ? '¡Correcto!'
+                : 'Respuesta correcta: ${isFrontToBack ? round.target.back : round.target.front}',
           ),
+        if (_quizFinished) ...[
+          const SizedBox(height: 14),
+          _Glass(
+            radius: 16,
+            padding: const EdgeInsets.all(14),
+            color: (_quizPassed ? RefColors.lime : RefColors.urgent)
+                .withValues(alpha: .14),
+            border: Border.all(
+              color: (_quizPassed ? RefColors.lime : RefColors.urgent)
+                  .withValues(alpha: .55),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  _quizPassed
+                      ? '¡Quiz superado! $_quizScore / ${_quizRounds.length}'
+                      : 'Casi: $_quizScore / ${_quizRounds.length}. Necesitas 3 para avanzar.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: _quizPassed ? RefColors.lime : RefColors.urgent,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                if (!_quizPassed) ...[
+                  const SizedBox(height: 10),
+                  _GhostButton('Reintentar', onTap: _resetQuiz),
+                ],
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -7515,6 +7701,30 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 );
                 return;
               }
+              if (slug == '09-quiz') {
+                if (_quizRounds.isEmpty) return;
+                final round = _quizRounds[_quizRoundIndex];
+                if (!round.answered) return;
+                if (!_quizFinished) {
+                  _advanceQuizRound();
+                  return;
+                }
+                if (!_quizPassed) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Necesitas 3 aciertos. Reintenta.'),
+                    ),
+                  );
+                  return;
+                }
+                store.answerCurrentCard(true);
+                store.markExerciseStepCompleted(slug);
+                Navigator.push(
+                  context,
+                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
+                );
+                return;
+              }
               if (!_checked) {
                 if (slug == '05-bloques') {
                   if (_blocksAreCorrect()) {
@@ -7607,7 +7817,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       return _letterComplete() ? 'Completado →' : 'Elige primeras letras';
     }
     if (slug == '09-quiz') {
-      return checked ? 'Registrar respuesta →' : 'Elige una opción';
+      if (_quizRounds.isEmpty) return 'Cargando…';
+      final round = _quizRounds[_quizRoundIndex];
+      if (!round.answered) return 'Elige una opción';
+      if (!_quizFinished) return 'Siguiente ronda →';
+      return _quizPassed ? 'Completado →' : 'Reintenta';
     }
     if (_isPassiveStep(slug)) {
       return completed ? 'Siguiente →' : 'Marcar terminado';
