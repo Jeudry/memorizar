@@ -12176,6 +12176,8 @@ class _HiddenWord extends StatelessWidget {
   final bool active;
   final bool pink;
   final bool solved;
+  final bool skipped;
+  final bool wrongFlash;
   final String? word;
 
   const _HiddenWord({
@@ -12183,32 +12185,44 @@ class _HiddenWord extends StatelessWidget {
     this.active = false,
     this.pink = false,
     this.solved = false,
+    this.skipped = false,
+    this.wrongFlash = false,
     this.word,
   });
 
   @override
   Widget build(BuildContext context) {
-    final accent = solved
-        ? RefColors.lime
-        : active
-            ? (pink ? RefColors.pink : RefColors.cyan)
-            : RefColors.border;
+    final accent = wrongFlash
+        ? RefColors.urgent
+        : skipped
+            ? RefColors.sun
+            : solved
+                ? RefColors.lime
+                : active
+                    ? (pink ? RefColors.pink : RefColors.cyan)
+                    : RefColors.border;
+    final filledColor = skipped ? RefColors.sun : RefColors.lime;
     final length = wordLength.clamp(1, 14);
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
       constraints: BoxConstraints(minWidth: (length * 10.0).clamp(28, 160)),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
       decoration: BoxDecoration(
-        color: accent.withValues(alpha: solved || active ? .16 : .08),
+        color: accent.withValues(
+          alpha: wrongFlash ? .28 : (solved || active ? .16 : .08),
+        ),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: accent.withValues(alpha: .62), width: 1.5),
+        border: Border.all(
+          color: accent.withValues(alpha: wrongFlash ? 1 : .62),
+          width: wrongFlash ? 2 : 1.5,
+        ),
       ),
       child: solved && word != null
           ? Text(
               word!,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: RefColors.lime,
+              style: TextStyle(
+                color: filledColor,
                 fontSize: 15,
                 fontWeight: FontWeight.w900,
               ),
@@ -13372,17 +13386,41 @@ class _RecitationStepState extends State<_RecitationStep> {
   late Set<int> _hiddenIndexes; // word indexes that need to be recited
   late List<int> _orderedHidden; // hidden indexes sorted (text order)
   late Set<int> _solvedIndexes;
+  late Set<int> _skippedIndexes;
   int _activePointer = 0; // index into _orderedHidden
 
   @override
   void initState() {
     super.initState();
+    _speech = stt.SpeechToText();
+    _resetExerciseState();
+    _initSpeech();
+  }
+
+  @override
+  void didUpdateWidget(_RecitationStep oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.targetText != widget.targetText ||
+        oldWidget.finalMode != widget.finalMode) {
+      _userWantsListening = false;
+      _speech.stop();
+      setState(_resetExerciseState);
+    }
+  }
+
+  void _resetExerciseState() {
     _allWords = _studyWords(widget.targetText);
     _hiddenIndexes = _pickHiddenIndexes();
     _orderedHidden = _hiddenIndexes.toList()..sort();
     _solvedIndexes = <int>{};
-    _speech = stt.SpeechToText();
-    _initSpeech();
+    _skippedIndexes = <int>{};
+    _activePointer = 0;
+    _attemptsLeft = 7;
+    _lastSpokenWord = '';
+    _lastWrongAt = null;
+    _processedTokenCount = 0;
+    _completed = false;
+    _listening = false;
   }
 
   Set<int> _pickHiddenIndexes() {
@@ -13479,6 +13517,24 @@ class _RecitationStepState extends State<_RecitationStep> {
       .toLowerCase()
       .replaceAll(RegExp(r'[^\wÁÉÍÓÚÜÑáéíóúüñ]'), '');
 
+  void _skipCurrentWord() {
+    if (_completed) return;
+    if (_activePointer >= _orderedHidden.length) return;
+    final expectedIdx = _orderedHidden[_activePointer];
+    setState(() {
+      _skippedIndexes.add(expectedIdx);
+      _solvedIndexes.add(expectedIdx);
+      _activePointer += 1;
+      _lastSpokenWord = '';
+    });
+    if (_activePointer >= _orderedHidden.length && !_completed) {
+      _completed = true;
+      _userWantsListening = false;
+      _speech.stop();
+      widget.onCompleted(_skippedIndexes.isEmpty);
+    }
+  }
+
   void _handleRecognition(SpeechRecognitionResult result) {
     if (!mounted) return;
     final text = result.recognizedWords;
@@ -13509,7 +13565,7 @@ class _RecitationStepState extends State<_RecitationStep> {
           _completed = true;
           _userWantsListening = false;
           _speech.stop();
-          widget.onCompleted(true);
+          widget.onCompleted(_skippedIndexes.isEmpty);
         }
       } else if (locked) {
         setState(() {
@@ -13553,9 +13609,36 @@ class _RecitationStepState extends State<_RecitationStep> {
     final activeIdx = _activePointer < _orderedHidden.length
         ? _orderedHidden[_activePointer]
         : -1;
+    final solvedCount = _solvedIndexes.length;
+    final totalCount = _orderedHidden.length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Palabra ${(_activePointer + 1).clamp(1, totalCount == 0 ? 1 : totalCount)} de ${totalCount == 0 ? 1 : totalCount}',
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .6,
+                ),
+              ),
+              Text(
+                '$solvedCount/$totalCount completadas',
+                style: TextStyle(
+                  color: RefColors.muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
         Expanded(
           child: _Glass(
             padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
@@ -13585,6 +13668,8 @@ class _RecitationStepState extends State<_RecitationStep> {
                             active: i == activeIdx,
                             pink: !isBlue,
                             solved: _solvedIndexes.contains(i),
+                            skipped: _skippedIndexes.contains(i),
+                            wrongFlash: i == activeIdx && wrongRecent,
                             word: _allWords[i],
                           )
                         else
@@ -13634,6 +13719,28 @@ class _RecitationStepState extends State<_RecitationStep> {
                     _listening ? Icons.stop_rounded : Icons.mic_rounded,
                     color: RefColors.ink,
                     size: 26,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _completed || _activePointer >= _orderedHidden.length
+                    ? null
+                    : _skipCurrentWord,
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: RefColors.sun.withValues(alpha: .18),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: RefColors.sun.withValues(alpha: .65),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.skip_next_rounded,
+                    color: RefColors.ink,
+                    size: 22,
                   ),
                 ),
               ),
