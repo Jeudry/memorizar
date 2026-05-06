@@ -8,11 +8,8 @@ import 'package:memorizar/core/theme/app_colors.dart';
 import 'package:memorizar/features/cards/presentation/providers/cards_consolidations_provider.dart';
 import 'package:memorizar/features/cards/presentation/providers/cards_services_provider.dart';
 import 'package:memorizar/features/cards/services/cards_session_service.dart';
-import 'package:memorizar/features/decks/data/models/deck.dart';
 import 'package:memorizar/features/decks/data/models/item.dart';
 import 'package:memorizar/features/decks/presentation/providers/decks_provider.dart';
-import 'package:memorizar/features/practice/presentation/providers/practice_services_provider.dart';
-import 'package:memorizar/features/social/presentation/providers/social_providers.dart';
 
 class CardsSessionScreen extends ConsumerStatefulWidget {
   const CardsSessionScreen({super.key, required this.deckId});
@@ -45,7 +42,6 @@ class _CardsSessionScreenState extends ConsumerState<CardsSessionScreen> {
     final accent = deck == null
         ? AppColors.info
         : AppColors.deckAccents[deck.accentColorIndex % AppColors.deckAccents.length];
-    final supportAccent = _supportAccentFor(deck?.type, accent);
 
     if (deck == null || items.isEmpty) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -70,47 +66,11 @@ class _CardsSessionScreenState extends ConsumerState<CardsSessionScreen> {
             child: ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        accent.withValues(alpha: 0.14),
-                        supportAccent.withValues(alpha: 0.08),
-                        cs.surface,
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(color: accent.withValues(alpha: 0.2)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          _CardsInfoChip(label: deck.type.label, color: accent),
-                          _CardsInfoChip(label: _deckMoodLabel(deck.type), color: supportAccent),
-                          _CardsInfoChip(label: _cardsStepLabel(_stepIndex), color: AppColors.info),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      Text(
-                        'Llevas ${((_stepIndex + 1) / 3 * 100).round()}% del modo cards.',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 10),
-                      LinearProgressIndicator(
-                        value: (_stepIndex + 1) / 3,
-                        minHeight: 8,
-                        backgroundColor: cs.outline,
-                        valueColor: AlwaysStoppedAnimation(accent),
-                      ),
-                    ],
-                  ),
+                LinearProgressIndicator(
+                  value: (_stepIndex + 1) / 3,
+                  minHeight: 6,
+                  backgroundColor: cs.outline,
+                  valueColor: AlwaysStoppedAnimation(accent),
                 ),
                 const SizedBox(height: 18),
                 if (_stepIndex == 0)
@@ -121,7 +81,6 @@ class _CardsSessionScreenState extends ConsumerState<CardsSessionScreen> {
                     revealed: _revealed,
                     onReveal: () => setState(() => _revealed = true),
                     onNext: () {
-                      ref.read(audioPracticeServiceProvider).playProgressCue();
                       if (_flashcardIndex >= flashcards.length - 1) {
                         setState(() {
                           _stepScores['flashcards'] = 1;
@@ -141,19 +100,11 @@ class _CardsSessionScreenState extends ConsumerState<CardsSessionScreen> {
                     challenge: matching,
                     accent: accent,
                     answers: _matchingAnswers,
-                    onPick: (itemId, content) {
-                      ref.read(audioPracticeServiceProvider).playProgressCue();
-                      setState(() => _matchingAnswers[itemId] = content);
-                    },
+                    onPick: (itemId, content) => setState(() => _matchingAnswers[itemId] = content),
                     onSubmit: () {
                       final correct = matching.items
                           .where((item) => _matchingAnswers[item.id] == item.back)
                           .length;
-                      if (correct == matching.items.length) {
-                        ref.read(audioPracticeServiceProvider).playSuccessCue();
-                      } else {
-                        ref.read(audioPracticeServiceProvider).playProgressCue();
-                      }
                       setState(() {
                         _score += correct;
                         _stepScores['matching_reference'] = matching.items.isEmpty
@@ -168,10 +119,7 @@ class _CardsSessionScreenState extends ConsumerState<CardsSessionScreen> {
                     challenge: intruder,
                     accent: accent,
                     selectedIntruderId: _selectedIntruderId,
-                    onSelect: (itemId) {
-                      ref.read(audioPracticeServiceProvider).playProgressCue();
-                      setState(() => _selectedIntruderId = itemId);
-                    },
+                    onSelect: (itemId) => setState(() => _selectedIntruderId = itemId),
                     onSubmit: () => _completeSession(intruder: intruder),
                   )
                 else
@@ -212,7 +160,6 @@ class _CardsSessionScreenState extends ConsumerState<CardsSessionScreen> {
     if (intruderScore > 0) {
       _score += 1;
     }
-    ref.read(audioPracticeServiceProvider).playSuccessCue();
 
     setState(() {
       _stepScores['detect_intruder'] = intruderScore;
@@ -234,16 +181,6 @@ class _CardsSessionScreenState extends ConsumerState<CardsSessionScreen> {
           ),
         );
 
-    final deck = ref.read(deckByIdProvider(widget.deckId)).valueOrNull;
-    ref.read(socialActivityPublisherProvider).publishAchievementUnawaited(
-          code: 'cards_session_completed',
-          title: 'Sesión de cards completada',
-          description:
-              'Terminó una sesión de cards con ${(100 * _averageScore).round()}% de promedio.',
-          deckName: deck?.name,
-          emoji: deck?.emoji,
-        );
-
     ref.invalidate(recentCardsDeckConsolidationsProvider(widget.deckId));
     ref.invalidate(deckByIdProvider(widget.deckId));
     ref.invalidate(itemsForDeckProvider(widget.deckId));
@@ -254,71 +191,6 @@ class _CardsSessionScreenState extends ConsumerState<CardsSessionScreen> {
         _stepIndex = 3;
       });
     }
-  }
-}
-
-class _CardsInfoChip extends StatelessWidget {
-  const _CardsInfoChip({
-    required this.label,
-    required this.color,
-  });
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w700,
-            ),
-      ),
-    );
-  }
-}
-
-String _cardsStepLabel(int stepIndex) {
-  switch (stepIndex) {
-    case 0:
-      return 'Flashcards';
-    case 1:
-      return 'Emparejar';
-    case 2:
-      return 'Intruso';
-    default:
-      return 'Cierre';
-  }
-}
-
-Color _supportAccentFor(DeckType? type, Color accent) {
-  switch (type) {
-    case DeckType.bible:
-      return const Color(0xFFD4A017);
-    case DeckType.language:
-      return const Color(0xFF14B8A6);
-    case DeckType.general:
-      return const Color(0xFFEC4899);
-    case null:
-      return accent;
-  }
-}
-
-String _deckMoodLabel(DeckType type) {
-  switch (type) {
-    case DeckType.bible:
-      return 'Sereno';
-    case DeckType.language:
-      return 'Ágil';
-    case DeckType.general:
-      return 'Claro';
   }
 }
 

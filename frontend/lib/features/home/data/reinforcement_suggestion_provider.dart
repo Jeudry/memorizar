@@ -5,8 +5,6 @@ import 'package:memorizar/core/prefs_provider.dart';
 import 'package:memorizar/features/decks/data/models/deck.dart';
 import 'package:memorizar/features/decks/presentation/providers/decks_provider.dart';
 import 'package:memorizar/features/home/data/models/reinforcement_suggestion.dart';
-import 'package:memorizar/features/practice/data/models/practice_objective.dart';
-import 'package:memorizar/features/practice/services/practice_coach_service.dart';
 
 final reinforcementSuggestionProvider = FutureProvider<ReinforcementSuggestion?>((ref) async {
   final database = ref.watch(databaseProvider);
@@ -90,18 +88,6 @@ ReinforcementSuggestion? buildReinforcementSuggestion({
     daysSinceLastPractice: daysSinceLastPractice,
     averageScore: signal?.averageScore,
   );
-  final routeMinutes = _recommendedMinutesFor(
-    averageScore: signal?.averageScore,
-    daysSinceLastPractice: daysSinceLastPractice,
-    mode: route.primary.label,
-  );
-  final coachHint = const PracticeCoachService().buildCoachFeedback(
-    summaries: const [],
-    objective: route.primary.label == 'Modo Cards' ? PracticeObjective.quick : PracticeObjective.deep,
-    recentExerciseAverage: latestExerciseByDeck[selectedDeck.id]?.averageScore,
-    recentCardsAverage: latestCardsByDeck[selectedDeck.id]?.averageScore,
-    daysSincePractice: daysSinceLastPractice,
-  );
 
   return ReinforcementSuggestion(
     deckId: selectedDeck.id,
@@ -110,10 +96,6 @@ ReinforcementSuggestion? buildReinforcementSuggestion({
     reason: reason,
     ctaLabel: 'Empezar por ${route.primary.label.toLowerCase()}',
     primaryRoute: route.primary,
-    coachHint: coachHint,
-    recommendedMinutes: routeMinutes,
-    reminderBody:
-        '${route.primary.label} en ${selectedDeck.name}: ${weakest == null ? 'haz una vuelta corta para mantener ritmo' : 'empieza reforzando $weakest'}. Te tomará unos $routeMinutes min.',
     secondaryRoute: route.secondary,
     weakestExerciseLabel: weakest,
     daysSinceLastPractice: daysSinceLastPractice,
@@ -264,18 +246,6 @@ String _buildReason({
     return 'Tu punto más débil reciente fue $weakestLabel con ${(averageScore * 100).round()}% promedio.';
   }
   return 'Te conviene reforzar $deckName con una sesión corta para mantener el progreso.';
-}
-
-int _recommendedMinutesFor({
-  required double? averageScore,
-  required int? daysSinceLastPractice,
-  required String mode,
-}) {
-  if ((daysSinceLastPractice ?? 0) >= 5) return 6;
-  if (mode == 'Modo Cards') return (averageScore ?? 1) < 0.65 ? 7 : 5;
-  if ((averageScore ?? 1) < 0.62) return 12;
-  if ((averageScore ?? 0) > 0.88) return 8;
-  return 10;
 }
 
 _BuiltRoute _buildRoute({

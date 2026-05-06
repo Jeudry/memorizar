@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:memorizar/core/theme/app_colors.dart';
-import 'package:memorizar/features/decks/data/models/deck.dart';
 import 'package:memorizar/features/cards/presentation/providers/cards_consolidations_provider.dart';
 import 'package:memorizar/features/decks/presentation/providers/decks_provider.dart';
 
@@ -24,7 +23,6 @@ class CardsSetupScreen extends ConsumerWidget {
     final accent = deck == null
         ? AppColors.info
         : AppColors.deckAccents[deck.accentColorIndex % AppColors.deckAccents.length];
-    final supportAccent = _supportAccentFor(deck?.type, accent);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Modo Cards')),
@@ -39,11 +37,7 @@ class CardsSetupScreen extends ConsumerWidget {
                   padding: const EdgeInsets.all(22),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [
-                        accent.withValues(alpha: 0.22),
-                        supportAccent.withValues(alpha: 0.12),
-                        accent.withValues(alpha: 0.08),
-                      ],
+                      colors: [accent.withValues(alpha: 0.22), accent.withValues(alpha: 0.08)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
@@ -59,33 +53,14 @@ class CardsSetupScreen extends ConsumerWidget {
                         'Refuerza un conjunto completo con ejercicios ligeros y generales.',
                         style: theme.textTheme.bodyMedium?.copyWith(color: cs.onSurface.withValues(alpha: 0.72)),
                       ),
-                      if (deck != null) ...[
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            _CardsModePill(label: deck.type.label, color: supportAccent),
-                            _CardsModePill(label: _deckMoodLabel(deck.type), color: accent),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          _deckMoodDescription(deck.type),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: cs.onSurface.withValues(alpha: 0.76),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
                       const SizedBox(height: 18),
                       Wrap(
                         spacing: 12,
                         runSpacing: 12,
-                        children: [
-                          _CardsModePill(label: 'Flashcards clásicas', color: accent),
-                          _CardsModePill(label: 'Emparejar referencia', color: supportAccent),
-                          _CardsModePill(label: 'Detectar intruso', color: AppColors.warning),
+                        children: const [
+                          _CardsModePill(label: 'Flashcards clásicas'),
+                          _CardsModePill(label: 'Emparejar referencia'),
+                          _CardsModePill(label: 'Detectar intruso'),
                         ],
                       ),
                       const SizedBox(height: 20),
@@ -154,28 +129,20 @@ String? _labelForCardsExercise(String? storageValue) {
 }
 
 class _CardsModePill extends StatelessWidget {
-  const _CardsModePill({required this.label, this.color});
+  const _CardsModePill({required this.label});
 
   final String label;
-  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    final tone = color ?? Theme.of(context).colorScheme.outline;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: tone.withValues(alpha: 0.10),
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: tone.withValues(alpha: 0.35)),
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
       ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: tone,
-              fontWeight: FontWeight.w700,
-            ),
-      ),
+      child: Text(label),
     );
   }
 }
@@ -253,39 +220,4 @@ String _daysAgoLabel(DateTime date) {
   if (days <= 0) return 'hoy';
   if (days == 1) return 'hace 1 día';
   return 'hace $days días';
-}
-
-Color _supportAccentFor(DeckType? type, Color accent) {
-  switch (type) {
-    case DeckType.bible:
-      return const Color(0xFFD4A017);
-    case DeckType.language:
-      return const Color(0xFF14B8A6);
-    case DeckType.general:
-      return const Color(0xFFEC4899);
-    case null:
-      return accent;
-  }
-}
-
-String _deckMoodLabel(DeckType type) {
-  switch (type) {
-    case DeckType.bible:
-      return 'Sereno';
-    case DeckType.language:
-      return 'Ágil';
-    case DeckType.general:
-      return 'Claro';
-  }
-}
-
-String _deckMoodDescription(DeckType type) {
-  switch (type) {
-    case DeckType.bible:
-      return 'En cards conviene repasar el conjunto sin perder ritmo ni cadencia entre referencias vecinas.';
-    case DeckType.language:
-      return 'Aquí ayuda mucho reaccionar rápido y no pensarlo demasiado entre una card y otra.';
-    case DeckType.general:
-      return 'Busca estructura limpia: detectar rápido qué pertenece y qué no pertenece al bloque.';
-  }
 }

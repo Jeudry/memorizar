@@ -6,9 +6,6 @@ class ReinforcementSuggestion {
     required this.reason,
     required this.ctaLabel,
     required this.primaryRoute,
-    required this.coachHint,
-    required this.recommendedMinutes,
-    required this.reminderBody,
     this.secondaryRoute,
     this.weakestExerciseLabel,
     this.daysSinceLastPractice,
@@ -20,9 +17,6 @@ class ReinforcementSuggestion {
   final String reason;
   final String ctaLabel;
   final ReinforcementRouteStep primaryRoute;
-  final String coachHint;
-  final int recommendedMinutes;
-  final String reminderBody;
   final ReinforcementRouteStep? secondaryRoute;
   final String? weakestExerciseLabel;
   final int? daysSinceLastPractice;

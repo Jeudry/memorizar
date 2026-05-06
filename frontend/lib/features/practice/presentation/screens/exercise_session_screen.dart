@@ -1,12 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:memorizar/core/theme/app_colors.dart';
-import 'package:memorizar/features/decks/data/models/deck.dart';
 import 'package:memorizar/features/decks/data/models/item.dart';
 import 'package:memorizar/features/decks/presentation/providers/decks_provider.dart';
 import 'package:memorizar/features/practice/data/models/answer_evaluation_result.dart';
@@ -18,7 +16,6 @@ import 'package:memorizar/features/practice/data/models/exercise_step.dart';
 import 'package:memorizar/features/practice/data/models/exercise_session_state.dart';
 import 'package:memorizar/features/practice/data/models/memorization_difficulty.dart';
 import 'package:memorizar/features/practice/data/models/practice_objective.dart';
-import 'package:memorizar/features/practice/data/models/voice_analysis_result.dart';
 import 'package:memorizar/features/practice/presentation/providers/exercise_consolidations_provider.dart';
 import 'package:memorizar/features/practice/presentation/providers/exercise_session_provider.dart';
 import 'package:memorizar/features/practice/presentation/providers/practice_services_provider.dart';
@@ -48,7 +45,6 @@ class ExerciseSessionScreen extends ConsumerWidget {
     final accent = deck != null
         ? AppColors.deckAccents[deck.accentColorIndex % AppColors.deckAccents.length]
         : AppColors.indigo;
-    final supportAccent = _supportAccentFor(deck?.type, accent);
 
     if (session.isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -61,16 +57,12 @@ class ExerciseSessionScreen extends ConsumerWidget {
         performanceSummaries: session.performanceSummaries,
         completedItems: session.completedItems,
         objective: session.objective,
-        deckType: deck?.type,
-        accent: accent,
-        supportAccent: supportAccent,
         cooperativePlayers: session.cooperativePlayers,
         cooperativeMode: session.cooperativeMode,
         turnHandoffs: session.turnHandoffs,
         rescueCount: session.rescueCount,
         coachFeedback: session.coachFeedback,
         voiceFeedback: session.voiceFeedback,
-        voiceAnalysis: session.voiceAnalysis,
         duelBestScore: session.duelBestScore,
       );
     }
@@ -81,7 +73,6 @@ class ExerciseSessionScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          tooltip: 'Cerrar práctica',
           icon: const Icon(Icons.close_rounded),
           onPressed: () => context.pop(),
         ),
@@ -104,72 +95,43 @@ class ExerciseSessionScreen extends ConsumerWidget {
             child: ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                _ProgressHeader(
-                  session: session,
-                  step: step,
-                  item: item,
-                  accent: accent,
-                  supportAccent: supportAccent,
-                  deckType: deck?.type,
-                ),
+                _ProgressHeader(session: session, step: step, item: item, accent: accent),
                 const SizedBox(height: 20),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 260),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) {
-                    final offset = Tween<Offset>(
-                      begin: const Offset(0.04, 0),
-                      end: Offset.zero,
-                    ).animate(animation);
-                    return FadeTransition(
-                      opacity: animation,
-                      child: SlideTransition(position: offset, child: child),
+                if (session.lastEvaluation != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: _EvaluationBanner(result: session.lastEvaluation!, accent: accent),
+                  ),
+                _StepSwitcher(
+                  key: ValueKey('${session.currentItemIndex}_${session.currentStepIndex}_${step.type.storageValue}'),
+                  args: args,
+                  item: item,
+                  deckItems: deckItems,
+                  step: step,
+                  accent: accent,
+                  difficulty: session.difficulty,
+                  latestAudioPath: session.latestAudioPath,
+                  latestTranscript: session.latestTranscript,
+                  onComplete: ({
+                    required double score,
+                    required int mistakes,
+                    Map<String, Object?>? payload,
+                    AnswerEvaluationResult? evaluation,
+                    String? transcript,
+                    String? latestAudioPath,
+                  }) {
+                    if (notifier == null) return Future.value();
+                    return notifier.completeCurrentStep(
+                      score: score,
+                      mistakes: mistakes,
+                      payload: payload,
+                      evaluation: evaluation,
+                      transcript: transcript,
+                      latestAudioPath: latestAudioPath,
                     );
                   },
-                  child: Column(
-                    key: ValueKey(
-                      '${session.currentItemIndex}_${session.currentStepIndex}_${step.type.storageValue}_${session.lastEvaluation?.score}',
-                    ),
-                    children: [
-                      if (session.lastEvaluation != null)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: _EvaluationBanner(result: session.lastEvaluation!, accent: accent),
-                        ),
-                      _StepSwitcher(
-                        key: ValueKey('${session.currentItemIndex}_${session.currentStepIndex}_${step.type.storageValue}'),
-                        args: args,
-                        item: item,
-                        deckItems: deckItems,
-                        step: step,
-                        accent: accent,
-                        difficulty: session.difficulty,
-                        latestAudioPath: session.latestAudioPath,
-                        latestTranscript: session.latestTranscript,
-                        onComplete: ({
-                          required double score,
-                          required int mistakes,
-                          Map<String, Object?>? payload,
-                          AnswerEvaluationResult? evaluation,
-                          String? transcript,
-                          String? latestAudioPath,
-                        }) {
-                          if (notifier == null) return Future.value();
-                          return notifier.completeCurrentStep(
-                            score: score,
-                            mistakes: mistakes,
-                            payload: payload,
-                            evaluation: evaluation,
-                            transcript: transcript,
-                            latestAudioPath: latestAudioPath,
-                          );
-                        },
-                        onSaveAudio: notifier?.saveAudioClip ?? ((_, {durationMs = 0}) async {}),
-                        onSetTranscript: notifier?.setTranscript ?? (_) {},
-                      ),
-                    ],
-                  ),
+                  onSaveAudio: notifier?.saveAudioClip ?? ((_, {durationMs = 0}) async {}),
+                  onSetTranscript: notifier?.setTranscript ?? (_) {},
                 ),
               ],
             ),
@@ -180,62 +142,40 @@ class ExerciseSessionScreen extends ConsumerWidget {
   }
 }
 
-void _showSupportMessage(BuildContext context, String message) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(message)),
-  );
-}
-
 class _ProgressHeader extends StatelessWidget {
   const _ProgressHeader({
     required this.session,
     required this.step,
     required this.item,
     required this.accent,
-    required this.supportAccent,
-    required this.deckType,
   });
 
   final ExerciseSessionState session;
   final ExerciseStep step;
   final Item item;
   final Color accent;
-  final Color supportAccent;
-  final DeckType? deckType;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
-    return Semantics(
-      label:
-          'Cabecera de progreso. Item ${session.currentItemIndex + 1} de ${session.queue.length}. Paso ${session.currentStepIndex + 1} de ${session.steps.length}.',
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              accent.withValues(alpha: 0.12),
-              supportAccent.withValues(alpha: 0.08),
-              cs.surface,
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: accent.withValues(alpha: 0.22)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: accent.withValues(alpha: 0.22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Wrap(
             spacing: 10,
             runSpacing: 10,
             children: [
               _InfoChip(label: session.objective.label, color: AppColors.indigo),
               _InfoChip(label: session.difficulty.label, color: accent),
-              if (deckType != null) _InfoChip(label: _deckMoodLabel(deckType!), color: supportAccent),
               if (session.cooperativePlayers > 1)
                 _InfoChip(label: session.cooperativeMode.label, color: AppColors.warning),
               _InfoChip(label: step.type.label, color: AppColors.info),
@@ -248,33 +188,6 @@ class _ProgressHeader extends StatelessWidget {
           Text(
             step.instruction,
             style: theme.textTheme.bodyMedium?.copyWith(color: cs.onSurface.withValues(alpha: 0.72)),
-          ),
-          if (deckType != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              _deckMoodDescription(deckType!),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: cs.onSurface.withValues(alpha: 0.72),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-          const SizedBox(height: 18),
-          Semantics(
-            label:
-                'Progreso del item ${(session.itemProgress * 100).round()} por ciento y progreso general ${(session.queueProgress * 100).round()} por ciento.',
-            child: LinearProgressIndicator(
-              value: ((session.currentStepIndex + 1) / session.steps.length).clamp(0.0, 1.0),
-              minHeight: 8,
-              borderRadius: BorderRadius.circular(999),
-              backgroundColor: cs.surfaceContainerHighest,
-              valueColor: AlwaysStoppedAnimation(accent),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Llevas ${(session.queueProgress * 100).round()}% del deck y ${(session.itemProgress * 100).round()}% del item actual.',
-            style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.68)),
           ),
           const SizedBox(height: 18),
           Row(
@@ -310,7 +223,7 @@ class _ProgressHeader extends StatelessWidget {
             const SizedBox(height: 14),
             Text(
               session.rescuePending && session.cooperativeMode == CooperativeMode.rescue
-                  ? 'Rescate activo: alguien del grupo toma este mismo ejercicio para que no se rompa el ritmo.'
+                  ? 'Rescate activo: otro jugador continúa este mismo ejercicio.'
                   : session.cooperativeMode.description,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: cs.onSurface.withValues(alpha: 0.68),
@@ -318,7 +231,6 @@ class _ProgressHeader extends StatelessWidget {
             ),
           ],
         ],
-      ),
       ),
     );
   }
@@ -588,7 +500,7 @@ class _ReverseReferenceStepCardState extends ConsumerState<_ReverseReferenceStep
         children: [
           Text('Referencia inversa', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
-          _TextSegmentsPreview(text: widget.item.back),
+          Text(widget.item.back, style: theme.textTheme.bodyMedium),
           const SizedBox(height: 16),
           ..._options.map(
             (option) => Padding(
@@ -684,7 +596,7 @@ class _ThematicBlocksStepCardState extends ConsumerState<_ThematicBlocksStepCard
           const SizedBox(height: 8),
           Text('¿En qué bloque encaja mejor este contenido?', style: theme.textTheme.bodySmall),
           const SizedBox(height: 12),
-          _TextSegmentsPreview(text: widget.item.back),
+          Text(widget.item.back, style: theme.textTheme.bodyMedium),
           const SizedBox(height: 16),
           Wrap(
             spacing: 8,
@@ -1228,7 +1140,7 @@ class _CompareVersionsStepCardState extends ConsumerState<_CompareVersionsStepCa
   }
 }
 
-class _GradualHintBox extends ConsumerStatefulWidget {
+class _GradualHintBox extends StatefulWidget {
   const _GradualHintBox({
     required this.expectedText,
     required this.accent,
@@ -1240,10 +1152,10 @@ class _GradualHintBox extends ConsumerStatefulWidget {
   final List<String> focusWords;
 
   @override
-  ConsumerState<_GradualHintBox> createState() => _GradualHintBoxState();
+  State<_GradualHintBox> createState() => _GradualHintBoxState();
 }
 
-class _GradualHintBoxState extends ConsumerState<_GradualHintBox> {
+class _GradualHintBoxState extends State<_GradualHintBox> {
   int _hintLevel = 0;
 
   @override
@@ -1271,11 +1183,7 @@ class _GradualHintBoxState extends ConsumerState<_GradualHintBox> {
               OutlinedButton(
                 onPressed: _hintLevel >= hints.length
                     ? null
-                    : () {
-                        ref.read(audioPracticeServiceProvider).playHintCue();
-                        HapticFeedback.selectionClick();
-                        setState(() => _hintLevel = (_hintLevel + 1).clamp(0, hints.length));
-                      },
+                    : () => setState(() => _hintLevel = (_hintLevel + 1).clamp(0, hints.length)),
                 child: Text(_hintLevel == 0 ? 'Ver pista' : 'Otra pista'),
               ),
             ],
@@ -1308,55 +1216,6 @@ class _GradualHintBoxState extends ConsumerState<_GradualHintBox> {
       if (startPreview.isNotEmpty) 'Empieza cerca de: $startPreview',
       if (endPreview.isNotEmpty && endPreview != startPreview) 'Cierra cerca de: $endPreview',
     ];
-  }
-}
-
-class _TextSegmentsPreview extends StatelessWidget {
-  const _TextSegmentsPreview({
-    required this.text,
-    this.centered = false,
-  });
-
-  final String text;
-  final bool centered;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    final words = text.split(RegExp(r'\s+')).where((word) => word.isNotEmpty).toList();
-    final segments = <String>[
-      for (var i = 0; i < words.length; i += 10) words.skip(i).take(10).join(' '),
-    ];
-
-    if (segments.length <= 1) {
-      return Text(
-        text,
-        style: theme.textTheme.bodyMedium,
-        textAlign: centered ? TextAlign.center : TextAlign.start,
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: centered ? CrossAxisAlignment.center : CrossAxisAlignment.start,
-      children: [
-        for (final segment in segments)
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerHighest.withValues(alpha: 0.42),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Text(
-              segment,
-              style: theme.textTheme.bodyMedium,
-              textAlign: centered ? TextAlign.center : TextAlign.start,
-            ),
-          ),
-      ],
-    );
   }
 }
 
@@ -1853,11 +1712,6 @@ class _HiddenReadingVoiceStepCardState extends ConsumerState<_HiddenReadingVoice
                       );
                       if (ok) {
                         setState(() => _listening = true);
-                      } else if (context.mounted) {
-                        _showSupportMessage(
-                          context,
-                          'No pude activar el micrófono. Puedes escribir la lectura manualmente y seguir.',
-                        );
                       }
                     }
                   },
@@ -1869,15 +1723,7 @@ class _HiddenReadingVoiceStepCardState extends ConsumerState<_HiddenReadingVoice
               const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () async {
-                    final ok = await audio.speak(widget.item.back);
-                    if (!ok && context.mounted) {
-                      _showSupportMessage(
-                        context,
-                        'No pude leer la referencia en voz alta. El texto sigue visible para apoyarte.',
-                      );
-                    }
-                  },
+                  onPressed: () => audio.speak(widget.item.back),
                   icon: const Icon(Icons.volume_up_rounded),
                   label: const Text('Oír referencia'),
                 ),
@@ -1975,13 +1821,6 @@ class _IntroStepCardState extends ConsumerState<_IntroStepCard> {
               );
             },
           ),
-          if (_started) ...[
-            const SizedBox(height: 16),
-            _TextSegmentsPreview(
-              text: widget.item.back,
-              centered: true,
-            ),
-          ],
           const SizedBox(height: 24),
           Row(
             children: [
@@ -1989,13 +1828,7 @@ class _IntroStepCardState extends ConsumerState<_IntroStepCard> {
                 child: OutlinedButton.icon(
                   onPressed: () async {
                     setState(() => _started = true);
-                    final ok = await audio.speak(widget.item.back);
-                    if (!ok && context.mounted) {
-                      _showSupportMessage(
-                        context,
-                        'No pude reproducir el audio ahora mismo. Puedes seguir leyendo y continuar igual.',
-                      );
-                    }
+                    await audio.speak(widget.item.back);
                   },
                   icon: const Icon(Icons.volume_up_rounded),
                   label: Text(widget.step.type == ExerciseStepType.listen ? 'Escuchar' : 'Leer con guía'),
@@ -2070,10 +1903,7 @@ class _RecordStepCardState extends ConsumerState<_RecordStepCard> {
             style: theme.textTheme.titleMedium,
           ),
           const SizedBox(height: 10),
-          _TextSegmentsPreview(
-            text: widget.item.back,
-            centered: true,
-          ),
+          Text(widget.item.back, style: theme.textTheme.bodyLarge, textAlign: TextAlign.center),
           const SizedBox(height: 20),
           Row(
             children: [
@@ -2092,12 +1922,6 @@ class _RecordStepCardState extends ConsumerState<_RecordStepCard> {
                         await widget.onComplete(path, durationMs);
                       } else {
                         setState(() => _recording = false);
-                        if (context.mounted) {
-                          _showSupportMessage(
-                            context,
-                            'La grabación no terminó bien. Puedes intentarlo otra vez o seguir sin este paso.',
-                          );
-                        }
                       }
                     } else {
                       final path = await audio.startRecording(widget.item.id);
@@ -2106,11 +1930,6 @@ class _RecordStepCardState extends ConsumerState<_RecordStepCard> {
                           _recording = true;
                           _startedAt = DateTime.now();
                         });
-                      } else if (context.mounted) {
-                        _showSupportMessage(
-                          context,
-                          'No pude abrir el micrófono. Revisa permisos o continúa sin grabar por ahora.',
-                        );
                       }
                     }
                   },
@@ -2177,16 +1996,7 @@ class _PlaybackStepCard extends ConsumerWidget {
                                 child: Row(
                                   children: [
                                     IconButton.filledTonal(
-                                      onPressed: () async {
-                                        final ok = await audio.play(path!);
-                                        if (!sheetContext.mounted) return;
-                                        if (!ok) {
-                                          _showSupportMessage(
-                                            sheetContext,
-                                            'No pude reproducir tu grabación. Puedes cerrar este panel y seguir.',
-                                          );
-                                        }
-                                      },
+                                      onPressed: () => audio.play(path!),
                                       icon: const Icon(Icons.play_arrow_rounded),
                                     ),
                                     const SizedBox(width: 12),
@@ -2715,11 +2525,6 @@ class _VoiceMatchStepCardState extends ConsumerState<_VoiceMatchStepCard> {
                       );
                       if (ok) {
                         setState(() => _listening = true);
-                      } else if (context.mounted) {
-                        _showSupportMessage(
-                          context,
-                          'El reconocimiento de voz no respondió. Puedes escribir la recitación manualmente.',
-                        );
                       }
                     }
                   },
@@ -2732,13 +2537,7 @@ class _VoiceMatchStepCardState extends ConsumerState<_VoiceMatchStepCard> {
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () async {
-                    final ok = await audio.speak(widget.item.back);
-                    if (!ok && context.mounted) {
-                      _showSupportMessage(
-                        context,
-                        'No pude reproducir la referencia. Aun así puedes seguir recitando o editar el texto.',
-                      );
-                    }
+                    await audio.speak(widget.item.back);
                   },
                   icon: const Icon(Icons.help_outline_rounded),
                   label: const Text('Oír referencia'),
@@ -2794,7 +2593,7 @@ class _EvaluationBanner extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              '${result.feedback} Vas en ${(result.score * 100).round()}% y llevas ${result.mistakes}/${result.maxMistakes} diferencias permitidas.',
+              '${result.feedback} Puntaje ${(result.score * 100).round()}% • Fallas ${result.mistakes}/${result.maxMistakes}',
               style: TextStyle(color: cs.onSurface),
             ),
           ),
@@ -2908,16 +2707,12 @@ class _PracticeFinishedScreen extends ConsumerWidget {
     required this.performanceSummaries,
     required this.completedItems,
     required this.objective,
-    required this.deckType,
-    required this.accent,
-    required this.supportAccent,
     required this.cooperativePlayers,
     required this.cooperativeMode,
     required this.turnHandoffs,
     required this.rescueCount,
     this.coachFeedback,
     this.voiceFeedback,
-    this.voiceAnalysis,
     this.duelBestScore,
   });
 
@@ -2926,16 +2721,12 @@ class _PracticeFinishedScreen extends ConsumerWidget {
   final List<ExercisePerformanceSummary> performanceSummaries;
   final List<Item> completedItems;
   final PracticeObjective objective;
-  final DeckType? deckType;
-  final Color accent;
-  final Color supportAccent;
   final int cooperativePlayers;
   final CooperativeMode cooperativeMode;
   final int turnHandoffs;
   final int rescueCount;
   final String? coachFeedback;
   final String? voiceFeedback;
-  final VoiceAnalysisResult? voiceAnalysis;
   final double? duelBestScore;
 
   @override
@@ -2959,82 +2750,53 @@ class _PracticeFinishedScreen extends ConsumerWidget {
             child: ListView(
               padding: const EdgeInsets.all(24),
               children: [
-                TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0.92, end: 1),
-                  duration: const Duration(milliseconds: 550),
-                  curve: Curves.easeOutBack,
-                  builder: (context, value, child) {
-                    return Transform.scale(
-                      scale: value,
-                      child: Opacity(opacity: value.clamp(0.0, 1.0), child: child),
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          accent.withValues(alpha: 0.16),
-                          supportAccent.withValues(alpha: 0.10),
-                          AppColors.success.withValues(alpha: 0.12),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.09),
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(color: AppColors.success.withValues(alpha: 0.24)),
+                  ),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 92,
+                        height: 92,
+                        decoration: BoxDecoration(
+                          color: AppColors.success.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(28),
+                        ),
+                        child: const Icon(Icons.auto_awesome_rounded, color: AppColors.success, size: 48),
                       ),
-                      borderRadius: BorderRadius.circular(28),
-                      border: Border.all(color: AppColors.success.withValues(alpha: 0.24)),
-                    ),
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 92,
-                          height: 92,
-                          decoration: BoxDecoration(
-                            color: AppColors.success.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(28),
-                          ),
-                          child: const Icon(Icons.auto_awesome_rounded, color: AppColors.success, size: 48),
-                        ),
-                        const SizedBox(height: 24),
-                        Text('Sesión completada', style: theme.textTheme.headlineMedium),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Cerraste $completed items de $deckName. Ya guardamos el progreso y el SRS quedó al día.',
-                          style: theme.textTheme.bodyLarge,
-                          textAlign: TextAlign.center,
-                        ),
-                        if (deckType != null) ...[
-                          const SizedBox(height: 10),
-                          Text(
-                            _deckMoodCompletionCopy(deckType!),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.76),
+                      const SizedBox(height: 24),
+                      Text('Sesión completada', style: theme.textTheme.headlineMedium),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Terminaste $completed items de $deckName y el SRS ya fue actualizado.',
+                        style: theme.textTheme.bodyLarge,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _MetricTile(
+                              label: 'Promedio',
+                              value: '${(averageScore * 100).round()}%',
+                              color: AppColors.success,
                             ),
-                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _MetricTile(
+                              label: 'Fallas',
+                              value: '$totalMistakes',
+                              color: AppColors.warning,
+                            ),
                           ),
                         ],
-                        const SizedBox(height: 20),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _MetricTile(
-                                label: 'Promedio',
-                                value: '${(averageScore * 100).round()}%',
-                                color: AppColors.success,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _MetricTile(
-                                label: 'Fallas',
-                                value: '$totalMistakes',
-                                color: AppColors.warning,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -3042,8 +2804,8 @@ class _PracticeFinishedScreen extends ConsumerWidget {
                 const SizedBox(height: 10),
                 Text(
                   weakest.isEmpty
-                      ? 'Todavía no hubo suficiente señal para darte una recomendación más fina.'
-                      : 'Lo que más pidió refuerzo en esta vuelta fue: ${weakest.map((summary) => summary.type.label).join(', ')}.',
+                      ? 'No hubo suficientes intentos para generar recomendaciones.'
+                      : 'Tus puntos más débiles en esta sesión fueron: ${weakest.map((summary) => summary.type.label).join(', ')}.',
                   style: theme.textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 16),
@@ -3092,24 +2854,9 @@ class _PracticeFinishedScreen extends ConsumerWidget {
                   ),
                   child: Text(
                     weakest.isEmpty
-                        ? 'La próxima vuelta puede ser corta; con una sesión más ya tendremos mejor lectura de tu patrón.'
-                        : 'La siguiente sesión te conviene empezarla reforzando ${weakest.first.type.label.toLowerCase()} y luego volver al flujo mixto.',
+                        ? 'Siguiente sesión: repite una práctica rápida para generar más señal.'
+                        : 'Siguiente sesión recomendada: empieza reforzando ${weakest.first.type.label.toLowerCase()} y luego vuelve a los ejercicios mixtos.',
                     style: theme.textTheme.bodyMedium,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text('Qué haría después', style: theme.textTheme.titleLarge),
-                const SizedBox(height: 12),
-                _ActionRecommendationCard(
-                  accent: accent,
-                  title: _nextSessionTitle(
-                    averageScore: averageScore,
-                    objective: objective,
-                  ),
-                  body: _nextSessionBody(
-                    averageScore: averageScore,
-                    weakest: weakest.isEmpty ? null : weakest.first,
-                    objective: objective,
                   ),
                 ),
                 if (cooperativePlayers > 1) ...[
@@ -3203,56 +2950,7 @@ class _PracticeFinishedScreen extends ConsumerWidget {
                   const SizedBox(height: 20),
                   Text('Análisis de voz', style: theme.textTheme.titleLarge),
                   const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: AppColors.indigo.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppColors.indigo.withValues(alpha: 0.18)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(voiceFeedback!, style: theme.textTheme.bodyMedium),
-                        if (voiceAnalysis != null) ...[
-                          const SizedBox(height: 14),
-                          Wrap(
-                            spacing: 10,
-                            runSpacing: 10,
-                            children: [
-                              _MetricTile(
-                                label: 'Cobertura',
-                                value: '${(voiceAnalysis!.coverage * 100).round()}%',
-                                color: AppColors.indigo,
-                              ),
-                              _MetricTile(
-                                label: 'Confianza',
-                                value: voiceAnalysis!.confidenceLabel,
-                                color: AppColors.info,
-                              ),
-                              _MetricTile(
-                                label: 'Repeticiones',
-                                value: '${voiceAnalysis!.repeatedWordCount}',
-                                color: AppColors.warning,
-                              ),
-                            ],
-                          ),
-                          if (voiceAnalysis!.missingKeywords.isNotEmpty) ...[
-                            const SizedBox(height: 12),
-                            Text(
-                              'Palabras que más se perdieron: ${voiceAnalysis!.missingKeywords.join(', ')}',
-                              style: theme.textTheme.bodySmall,
-                            ),
-                          ],
-                          const SizedBox(height: 8),
-                          Text(
-                            'Inicio ${voiceAnalysis!.weakStart ? 'flojo' : 'firme'} • Cierre ${voiceAnalysis!.weakEnding ? 'flojo' : 'firme'}',
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
+                  Text(voiceFeedback!, style: theme.textTheme.bodyMedium),
                 ],
                 if (objective == PracticeObjective.duel && duelBestScore != null) ...[
                   const SizedBox(height: 20),
@@ -3334,114 +3032,6 @@ class _PracticeFinishedScreen extends ConsumerWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-Color _supportAccentFor(DeckType? type, Color accent) {
-  switch (type) {
-    case DeckType.bible:
-      return const Color(0xFFD4A017);
-    case DeckType.language:
-      return const Color(0xFF14B8A6);
-    case DeckType.general:
-      return const Color(0xFFEC4899);
-    case null:
-      return accent;
-  }
-}
-
-String _deckMoodLabel(DeckType type) {
-  switch (type) {
-    case DeckType.bible:
-      return 'Contemplativo';
-    case DeckType.language:
-      return 'Vivo';
-    case DeckType.general:
-      return 'Preciso';
-  }
-}
-
-String _deckMoodDescription(DeckType type) {
-  switch (type) {
-    case DeckType.bible:
-      return 'Respira el texto, cuida la cadencia y recuerda el sentido antes de forzar la velocidad.';
-    case DeckType.language:
-      return 'Aquí ayuda más soltar la voz, recuperar rápido y no trabarse demasiado en cada intento.';
-    case DeckType.general:
-      return 'Ve por estructura clara, bloques limpios y repeticiones enfocadas para fijar mejor cada idea.';
-  }
-}
-
-String _deckMoodCompletionCopy(DeckType type) {
-  switch (type) {
-    case DeckType.bible:
-      return 'Buen cierre. La idea es que el texto no solo salga, sino que también conserve peso y ritmo.';
-    case DeckType.language:
-      return 'Buen cierre. Lo importante aquí es que la memoria se vuelva ágil y usable, no rígida.';
-    case DeckType.general:
-      return 'Buen cierre. Lo importante ahora es que la estructura quede limpia para recuperarla rápido después.';
-  }
-}
-
-String _nextSessionTitle({
-  required double averageScore,
-  required PracticeObjective objective,
-}) {
-  if (averageScore >= 0.9) return 'Ya puedes subir un poco';
-  if (averageScore <= 0.62) return 'Mejor bajar fricción mañana';
-  return objective == PracticeObjective.master ? 'Conviene repetir con cabeza fría' : 'Mantén una vuelta corta mañana';
-}
-
-String _nextSessionBody({
-  required double averageScore,
-  required ExercisePerformanceSummary? weakest,
-  required PracticeObjective objective,
-}) {
-  if (averageScore >= 0.9) {
-    return 'Tu promedio salió muy bien. Mañana puedes hacer una sesión más breve o subir a una dificultad más seca para ahorrar tiempo sin perder señal.';
-  }
-  if (averageScore <= 0.62) {
-    return weakest == null
-        ? 'Mañana conviene una sesión más amable, con menos presión y más guía, para reacondicionar memoria.'
-        : 'Mañana conviene volver con una sesión más guiada y enfocarte primero en ${weakest.type.label.toLowerCase()} antes de pedir un cierre duro.';
-  }
-  if (objective == PracticeObjective.master) {
-    return 'No hace falta volver a maestro mañana. Mejor intercala una sesión profunda más limpia y luego regresas al cierre duro.';
-  }
-  return weakest == null
-      ? 'La próxima vuelta puede ser corta y estable, solo para mantener el hilo vivo.'
-      : 'La próxima vuelta puede ser corta: abre con ${weakest.type.label.toLowerCase()} y luego cierra sin alargar demasiado la sesión.';
-}
-
-class _ActionRecommendationCard extends StatelessWidget {
-  const _ActionRecommendationCard({
-    required this.accent,
-    required this.title,
-    required this.body,
-  });
-
-  final Color accent;
-  final String title;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: accent.withValues(alpha: 0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Text(body, style: Theme.of(context).textTheme.bodyMedium),
-        ],
       ),
     );
   }

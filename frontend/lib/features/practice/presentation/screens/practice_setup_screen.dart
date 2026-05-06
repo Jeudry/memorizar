@@ -2,18 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:memorizar/core/prefs_provider.dart';
 import 'package:memorizar/core/theme/app_colors.dart';
-import 'package:memorizar/features/decks/data/models/deck.dart';
-import 'package:memorizar/features/cards/presentation/providers/cards_consolidations_provider.dart';
 import 'package:memorizar/features/decks/presentation/providers/decks_provider.dart';
-import 'package:memorizar/features/decks/presentation/providers/deck_services_provider.dart';
-import 'package:memorizar/features/cards/data/models/cards_consolidation_record.dart';
-import 'package:memorizar/features/practice/data/models/adaptive_practice_recommendation.dart';
 import 'package:memorizar/features/practice/data/models/memorization_difficulty.dart';
-import 'package:memorizar/features/practice/data/models/exercise_consolidation_record.dart';
+import 'package:memorizar/features/practice/data/models/cooperative_mode.dart';
 import 'package:memorizar/features/practice/data/models/practice_objective.dart';
 import 'package:memorizar/features/practice/presentation/providers/exercise_consolidations_provider.dart';
+import 'package:memorizar/features/practice/presentation/providers/journey_planner_provider.dart';
 import 'package:memorizar/features/practice/presentation/providers/memorization_goals_provider.dart';
+import 'package:memorizar/features/practice/presentation/providers/memorization_journeys_provider.dart';
 import 'package:memorizar/features/practice/presentation/providers/memorization_plans_provider.dart';
 
 class PracticeSetupScreen extends ConsumerStatefulWidget {
@@ -22,104 +20,414 @@ class PracticeSetupScreen extends ConsumerStatefulWidget {
   final String deckId;
 
   @override
-  ConsumerState<PracticeSetupScreen> createState() =>
-      _PracticeSetupScreenState();
+  ConsumerState<PracticeSetupScreen> createState() => _PracticeSetupScreenState();
 }
 
-class _PracticeSetupScreenState extends ConsumerState<PracticeSetupScreen>
-    with SingleTickerProviderStateMixin {
+class _PracticeSetupScreenState extends ConsumerState<PracticeSetupScreen> {
   MemorizationDifficulty _difficulty = MemorizationDifficulty.beginner;
   PracticeObjective _objective = PracticeObjective.deep;
   bool _creatingPlan = false;
   bool _weakOnly = false;
-  late TabController _tabController;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
+  int _cooperativePlayers = 1;
+  CooperativeMode _cooperativeMode = CooperativeMode.solo;
 
   @override
   Widget build(BuildContext context) {
     final deckAsync = ref.watch(deckByIdProvider(widget.deckId));
     final itemsAsync = ref.watch(itemsForDeckProvider(widget.deckId));
-    final goalsAsync = ref.watch(memorizationGoalsProvider(widget.deckId));
-    final consolidationsAsync = ref.watch(
-      recentDeckConsolidationsProvider(widget.deckId),
-    );
-    final cardsConsolidationsAsync = ref.watch(
-      recentCardsDeckConsolidationsProvider(widget.deckId),
-    );
     final plansAsync = ref.watch(memorizationPlansProvider(widget.deckId));
+    final goalsAsync = ref.watch(memorizationGoalsProvider(widget.deckId));
+    final journeysAsync = ref.watch(memorizationJourneysProvider(widget.deckId));
+    final consolidationsAsync = ref.watch(recentDeckConsolidationsProvider(widget.deckId));
+    final remindersEnabled = ref.watch(smartReminderOptInProvider);
     final deck = deckAsync.valueOrNull;
-    final items = itemsAsync.valueOrNull ?? [];
-    final plans = plansAsync.valueOrNull ?? [];
-    final goals = goalsAsync.valueOrNull ?? [];
-    final consolidations =
-        consolidationsAsync.valueOrNull ?? <ExerciseConsolidationRecord>[];
-    final cardsConsolidations =
-        cardsConsolidationsAsync.valueOrNull ?? <CardsConsolidationRecord>[];
+    final items = itemsAsync.valueOrNull ?? const [];
+    final journeyOptions = ref.read(journeyPlannerProvider).buildOptions(totalItems: items.length);
+    final plans = plansAsync.valueOrNull ?? const [];
+    final goals = goalsAsync.valueOrNull ?? const [];
+    final journeys = journeysAsync.valueOrNull ?? const [];
+    final consolidations = consolidationsAsync.valueOrNull ?? const [];
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final accent = deck != null
-        ? AppColors.deckAccents[deck.accentColorIndex %
-              AppColors.deckAccents.length]
+        ? AppColors.deckAccents[deck.accentColorIndex % AppColors.deckAccents.length]
         : AppColors.indigo;
 
-    final recommendation = deck == null
-        ? null
-        : _buildRec(items.length, consolidations, cardsConsolidations);
-
     return Scaffold(
-      appBar: AppBar(
-        title: Text(deck?.name ?? 'Práctica'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'Práctica'),
-            Tab(text: 'Metas'),
-            Tab(text: 'Progreso'),
-          ],
-        ),
-      ),
+      appBar: AppBar(title: const Text('Memorizar con ejercicios')),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 880),
-            child: TabBarView(
-              controller: _tabController,
+            child: ListView(
+              padding: const EdgeInsets.all(20),
               children: [
-                _PracticeTab(
-                  deckId: widget.deckId,
-                  items: items,
-                  difficulty: _difficulty,
-                  objective: _objective,
-                  onDifficultyChanged: (d) => setState(() => _difficulty = d),
-                  onObjectiveChanged: (o) => setState(() => _objective = o),
-                  accent: accent,
-                  recommendation: recommendation,
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [accent.withValues(alpha: 0.24), accent.withValues(alpha: 0.08)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: accent.withValues(alpha: 0.24)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(deck?.name ?? 'Deck', style: theme.textTheme.headlineSmall),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Elige si quieres velocidad, profundidad, duelo o examen total. También puedes concentrarte solo en tus debilidades.',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: cs.onSurface.withValues(alpha: 0.72),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Text('Objetivo', style: theme.textTheme.titleMedium),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: PracticeObjective.values.map((objective) {
+                          final selected = objective == _objective;
+                          return ChoiceChip(
+                            label: Text(objective.label),
+                            selected: selected,
+                            onSelected: (_) => setState(() => _objective = objective),
+                            selectedColor: accent.withValues(alpha: 0.16),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(_objective.description, style: theme.textTheme.bodySmall),
+                      const SizedBox(height: 18),
+                      Text('Dificultad', style: theme.textTheme.titleMedium),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: MemorizationDifficulty.values.map((difficulty) {
+                          final selected = difficulty == _difficulty;
+                          return InkWell(
+                            onTap: () => setState(() => _difficulty = difficulty),
+                            borderRadius: BorderRadius.circular(18),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              width: 220,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: selected ? accent.withValues(alpha: 0.12) : cs.surface,
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: selected ? accent : cs.outline,
+                                  width: selected ? 1.4 : 1,
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    difficulty.label,
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w700,
+                                      color: selected ? accent : cs.onSurface,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    _descriptionFor(difficulty),
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: cs.onSurface.withValues(alpha: 0.72),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 16),
+                      SwitchListTile.adaptive(
+                        value: _weakOnly,
+                        onChanged: (value) => setState(() => _weakOnly = value),
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Reforzar solo débiles'),
+                        subtitle: const Text('Recorta la sesión a las dinámicas donde vienes cayendo más.'),
+                      ),
+                      SwitchListTile.adaptive(
+                        value: remindersEnabled,
+                        onChanged: (value) => ref.read(smartReminderOptInProvider.notifier).setEnabled(value),
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Aceptar recordatorios inteligentes'),
+                        subtitle: const Text('La app podrá sugerirte cuándo volver y con qué enfoque.'),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(Icons.groups_rounded),
+                          const SizedBox(width: 8),
+                          Text('Cooperativo local', style: theme.textTheme.titleSmall),
+                          const Spacer(),
+                          DropdownButton<int>(
+                            value: _cooperativePlayers,
+                            items: const [1, 2, 3, 4]
+                                .map((value) => DropdownMenuItem(
+                                      value: value,
+                                      child: Text(value == 1 ? 'Solo' : '$value personas'),
+                                    ))
+                                .toList(),
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() {
+                                  _cooperativePlayers = value;
+                                  if (value == 1) {
+                                    _cooperativeMode = CooperativeMode.solo;
+                                  }
+                                });
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                      if (_cooperativePlayers > 1) ...[
+                        const SizedBox(height: 10),
+                        DropdownButtonFormField<CooperativeMode>(
+                          initialValue: _cooperativeMode == CooperativeMode.solo ? CooperativeMode.relay : _cooperativeMode,
+                          decoration: const InputDecoration(
+                            labelText: 'Dinámica cooperativa',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: CooperativeMode.values
+                              .where((mode) => mode != CooperativeMode.solo)
+                              .map(
+                                (mode) => DropdownMenuItem(
+                                  value: mode,
+                                  child: Text(mode.label),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) {
+                            if (value != null) {
+                              setState(() => _cooperativeMode = value);
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          (_cooperativeMode == CooperativeMode.solo ? CooperativeMode.relay : _cooperativeMode).description,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: items.isEmpty
+                                  ? null
+                                  : () => context.push(
+                                        '/decks/${widget.deckId}/practice/session?difficulty=${_difficulty.name}&objective=${_objective.name}&weakOnly=$_weakOnly&coop=$_cooperativePlayers&coopMode=${(_cooperativePlayers == 1 ? CooperativeMode.solo : _cooperativeMode).name}',
+                                      ),
+                              icon: const Icon(Icons.auto_awesome_rounded),
+                              label: Text(_objective == PracticeObjective.quick ? 'Empezar rápido' : 'Empezar sesión'),
+                              style: FilledButton.styleFrom(backgroundColor: accent),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: items.isEmpty || _creatingPlan ? null : () => _createPlan(context, items.length),
+                              icon: _creatingPlan
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.playlist_add_rounded),
+                              label: const Text('Guardar plan'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-                _GoalsAndPlansTab(
-                  goals: goals,
-                  plans: plans,
-                  itemsLength: items.length,
-                  objective: _objective,
-                  difficulty: _difficulty,
-                  weakOnly: _weakOnly,
-                  accent: accent,
-                  onCreateGoal: _createGoal,
-                  deckId: widget.deckId,
+                const SizedBox(height: 20),
+                Text('Metas activas', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 12),
+                if (goals.isEmpty)
+                  const _EmptyCard(
+                    text: 'Todavía no hay metas. Crea una para empujar este deck hacia una fecha o cantidad concreta.',
+                  )
+                else
+                  ...goals.take(3).map(
+                        (goal) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _MetaTile(
+                            title: goal.title,
+                            subtitle:
+                                '${goal.targetItems} items${goal.targetDate == null ? '' : ' • antes de ${goal.targetDate!.day}/${goal.targetDate!.month}'}',
+                            accent: accent,
+                            icon: Icons.flag_rounded,
+                          ),
+                        ),
+                      ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: items.isEmpty ? null : () => _createGoal(targetItems: items.length.clamp(5, 60)),
+                  icon: const Icon(Icons.flag_rounded),
+                  label: const Text('Crear meta sugerida'),
                 ),
-                _ProgressTab(
-                  consolidations: consolidations,
-                  cardsConsolidations: cardsConsolidations,
-                  accent: accent,
-                ),
+                const SizedBox(height: 20),
+                Text('Journeys grandes', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 12),
+                if (journeys.isEmpty)
+                  const _EmptyCard(
+                    text: 'Planifica algo grande, como completar un deck entero en una cantidad fija de días.',
+                  )
+                else
+                  ...journeys.take(3).map(
+                        (journey) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _MetaTile(
+                            title: journey.title,
+                            subtitle:
+                                '${journey.targetDays} días • ${journey.itemsPerDay} items/día • ${journey.targetItemCount} items',
+                            accent: accent,
+                            icon: Icons.timeline_rounded,
+                          ),
+                        ),
+                      ),
+                const SizedBox(height: 12),
+                if (journeyOptions.isEmpty)
+                  const _EmptyCard(
+                    text: 'Agrega más items al deck para generar journeys grandes.',
+                  )
+                else
+                  ...journeyOptions.map(
+                    (option) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: OutlinedButton.icon(
+                        onPressed: () => _createJourney(items.length, days: option.targetDays),
+                        icon: const Icon(Icons.timeline_rounded),
+                        label: Text('${option.label} • ${option.summary}'),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 20),
+                Text('Planes guardados', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 12),
+                if (plansAsync.isLoading)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(20),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else if (plans.isEmpty)
+                  const _EmptyCard(
+                    text: 'Todavía no hay planes. Guarda uno para repetir esta misma secuencia luego.',
+                  )
+                else
+                  ...plans.map((plan) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: cs.surface,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: cs.outline),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: accent.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: Icon(Icons.library_books_rounded, color: accent),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(plan.name, style: theme.textTheme.titleMedium),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${plan.difficulty.label} • ${plan.itemCount} items',
+                                      style: theme.textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              FilledButton.tonalIcon(
+                                onPressed: () => context.push(
+                                  '/decks/${widget.deckId}/practice/session?difficulty=${plan.difficulty.name}&objective=${_objective.name}&weakOnly=$_weakOnly&planId=${plan.id}',
+                                ),
+                                icon: const Icon(Icons.play_arrow_rounded),
+                                label: const Text('Iniciar'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )),
+                const SizedBox(height: 20),
+                Text('Progreso reciente', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 12),
+                if (consolidationsAsync.isLoading)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(20),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else if (consolidations.isEmpty)
+                  const _EmptyCard(
+                    text: 'Aquí verás tus consolidaciones recientes cuando completes algunas sesiones.',
+                  )
+                else
+                  ...consolidations.take(5).map((record) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: cs.surface,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: cs.outline),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '${record.difficulty.label} • ${(record.averageScore * 100).round()}%',
+                                      style: theme.textTheme.titleMedium,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Fallas ${record.totalMistakes}'
+                                      '${record.weakestStepType == null ? '' : ' • Débil: ${record.weakestStepType!.label}'}',
+                                      style: theme.textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                record.averageScore >= 0.75 ? Icons.trending_up_rounded : Icons.track_changes_rounded,
+                                color: record.averageScore >= 0.75 ? AppColors.success : AppColors.warning,
+                              ),
+                            ],
+                          ),
+                        ),
+                      )),
               ],
             ),
           ),
@@ -128,52 +436,39 @@ class _PracticeSetupScreenState extends ConsumerState<PracticeSetupScreen>
     );
   }
 
-  AdaptivePracticeRecommendation _buildRec(
-    int totalItems,
-    List<ExerciseConsolidationRecord> exerciseConsolidations,
-    List<CardsConsolidationRecord> cardsConsolidations,
-  ) {
-    if (totalItems == 0) {
-      return AdaptivePracticeRecommendation(
-        objective: PracticeObjective.deep,
-        difficulty: MemorizationDifficulty.beginner,
-        weakOnly: false,
-        recommendedMinutes: 10,
-        targetStepCount: 8,
-        reason: 'Agrega items al deck.',
-        coachHint: 'Sesión ligera para empezar.',
-        headline: 'Primera práctica',
-      );
+  String _descriptionFor(MemorizationDifficulty difficulty) {
+    switch (difficulty) {
+      case MemorizationDifficulty.beginner:
+        return 'Recorrido completo con guía, grabación, completado, primera letra y voz.';
+      case MemorizationDifficulty.intermediate:
+        return 'Recorta pasos introductorios y sube más rápido a examen.';
+      case MemorizationDifficulty.expert:
+        return 'Va directo a completar, primera letra y recitación final.';
     }
-    final avgExercise = exerciseConsolidations.isEmpty
-        ? 0.5
-        : exerciseConsolidations
-                  .map((c) => c.averageScore)
-                  .reduce((a, b) => a + b) /
-              exerciseConsolidations.length;
-    final weak = exerciseConsolidations.any((c) => c.averageScore < 0.6);
-    return AdaptivePracticeRecommendation(
-      objective: avgExercise < 0.65
-          ? PracticeObjective.deep
-          : PracticeObjective.quick,
-      difficulty: avgExercise < 0.6
-          ? MemorizationDifficulty.beginner
-          : (avgExercise < 0.8
-                ? MemorizationDifficulty.intermediate
-                : MemorizationDifficulty.expert),
-      weakOnly: weak,
-      recommendedMinutes: (totalItems * 1.2).round(),
-      targetStepCount: totalItems.clamp(4, 12),
-      reason: 'Según ${exerciseConsolidations.length} sesiones.',
-      coachHint: 'Mantén consistencia.',
-      headline: 'Sugerencia',
+  }
+
+  Future<void> _createPlan(BuildContext context, int totalItems) async {
+    setState(() => _creatingPlan = true);
+    final items = await ref.read(itemsForDeckProvider(widget.deckId).future);
+    final service = ref.read(memorizationPlansServiceProvider);
+    final planId = await service.createQuickPlan(
+      deckId: widget.deckId,
+      difficulty: _difficulty,
+      items: items,
+    );
+    ref.invalidate(memorizationPlansProvider(widget.deckId));
+    if (!context.mounted) return;
+    setState(() => _creatingPlan = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Plan creado con $totalItems items.')),
+    );
+    context.push(
+      '/decks/${widget.deckId}/practice/session?difficulty=${_difficulty.name}&objective=${_objective.name}&weakOnly=$_weakOnly&coop=$_cooperativePlayers&coopMode=${(_cooperativePlayers == 1 ? CooperativeMode.solo : _cooperativeMode).name}&planId=$planId',
     );
   }
 
   Future<void> _createGoal({required int targetItems}) async {
-    await ref
-        .read(memorizationGoalsControllerProvider)
-        .createGoal(
+    await ref.read(memorizationGoalsControllerProvider).createGoal(
           deckId: widget.deckId,
           title: 'Dominar ${targetItems.clamp(1, 999)} items',
           objective: _objective.label,
@@ -181,426 +476,86 @@ class _PracticeSetupScreenState extends ConsumerState<PracticeSetupScreen>
           targetDate: DateTime.now().add(const Duration(days: 30)),
         );
   }
-}
 
-class _PracticeTab extends StatelessWidget {
-  const _PracticeTab({
-    required this.deckId,
-    required this.items,
-    required this.difficulty,
-    required this.objective,
-    required this.onDifficultyChanged,
-    required this.onObjectiveChanged,
-    required this.accent,
-    this.recommendation,
-  });
-
-  final String deckId;
-  final List<dynamic> items;
-  final MemorizationDifficulty difficulty;
-  final PracticeObjective objective;
-  final void Function(MemorizationDifficulty) onDifficultyChanged;
-  final void Function(PracticeObjective) onObjectiveChanged;
-  final Color accent;
-  final AdaptivePracticeRecommendation? recommendation;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    final rec = recommendation;
-
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        if (rec != null) ...[
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: accent.withValues(alpha: 0.2)),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(rec.headline, style: theme.textTheme.titleSmall),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${rec.objective.label} • ${rec.difficulty.label}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: accent,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                TextButton(
-                  onPressed: () {
-                    onObjectiveChanged(rec.objective);
-                    onDifficultyChanged(rec.difficulty);
-                  },
-                  child: const Text('Aplicar'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-        ],
-        Text(
-          'Objetivo',
-          style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: PracticeObjective.values.map((obj) {
-            final selected = obj == objective;
-            return ChoiceChip(
-              label: Text(obj.label),
-              selected: selected,
-              onSelected: (_) => onObjectiveChanged(obj),
-              selectedColor: accent.withValues(alpha: 0.16),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          objective.description,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: cs.onSurface.withValues(alpha: 0.6),
-          ),
-        ),
-        const SizedBox(height: 20),
-        Text(
-          'Dificultad',
-          style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: MemorizationDifficulty.values.map((d) {
-            final selected = d == difficulty;
-            return InkWell(
-              onTap: () => onDifficultyChanged(d),
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                width: 140,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: selected ? accent.withValues(alpha: 0.12) : cs.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: selected ? accent : cs.outline,
-                    width: selected ? 1.4 : 1,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      d.label,
-                      style: GoogleFonts.outfit(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: selected ? accent : cs.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(_shortDesc(d), style: theme.textTheme.bodySmall),
-                  ],
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 24),
-        FilledButton.icon(
-          onPressed: items.isEmpty
-              ? null
-              : () => context.push(
-                  '/decks/$deckId/practice/session?difficulty=${difficulty.name}&objective=${objective.name}&weakOnly=false',
-                ),
-          icon: const Icon(Icons.play_arrow_rounded),
-          label: const Text('Empezar'),
-          style: FilledButton.styleFrom(
-            backgroundColor: accent,
-            minimumSize: const Size.fromHeight(52),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _shortDesc(MemorizationDifficulty d) {
-    switch (d) {
-      case MemorizationDifficulty.beginner:
-        return 'Con guía completa';
-      case MemorizationDifficulty.intermediate:
-        return 'Más directo';
-      case MemorizationDifficulty.expert:
-        return 'Mínimo apoyo';
-    }
+  Future<void> _createJourney(int targetItemCount, {required int days}) async {
+    final targetDays = days;
+    final itemsPerDay = (targetItemCount / targetDays).ceil().clamp(1, 999);
+    await ref.read(memorizationJourneysControllerProvider).createJourney(
+          deckId: widget.deckId,
+          title: 'Completar en $targetDays días',
+          targetDays: targetDays,
+          itemsPerDay: itemsPerDay,
+          targetItemCount: targetItemCount,
+          objective: _objective.label,
+        );
   }
 }
 
-class _GoalsAndPlansTab extends StatelessWidget {
-  const _GoalsAndPlansTab({
-    required this.goals,
-    required this.plans,
-    required this.itemsLength,
-    required this.objective,
-    required this.difficulty,
-    required this.weakOnly,
-    required this.accent,
-    required this.onCreateGoal,
-    required this.deckId,
-  });
+class _EmptyCard extends StatelessWidget {
+  const _EmptyCard({required this.text});
 
-  final List<dynamic> goals;
-  final List<dynamic> plans;
-  final int itemsLength;
-  final PracticeObjective objective;
-  final MemorizationDifficulty difficulty;
-  final bool weakOnly;
-  final Color accent;
-  final Future<void> Function({required int targetItems}) onCreateGoal;
-  final String deckId;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Text(
-          'Metas',
-          style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 12),
-        if (goals.isEmpty)
-          _EmptyState(
-            icon: Icons.flag_outlined,
-            text: 'Sin metas activas. Crea una para darle dirección.',
-          )
-        else
-          ...goals
-              .take(5)
-              .map(
-                (goal) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _ItemCard(
-                    title: goal.title,
-                    subtitle:
-                        '${goal.targetItems} items${goal.targetDate == null ? '' : ' • ${goal.targetDate!.day}/${goal.targetDate!.month}'}',
-                    accent: accent,
-                    icon: Icons.flag_rounded,
-                  ),
-                ),
-              ),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: () => onCreateGoal(targetItems: itemsLength.clamp(5, 60)),
-          icon: const Icon(Icons.add_rounded),
-          label: const Text('Crear meta'),
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size.fromHeight(48),
-          ),
-        ),
-        const SizedBox(height: 24),
-        Text(
-          'Planes',
-          style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 12),
-        if (plans.isEmpty)
-          _EmptyState(
-            icon: Icons.library_books_outlined,
-            text: 'No hay planes guardados.',
-          )
-        else
-          ...plans.map(
-            (plan) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _ItemCard(
-                title: plan.name,
-                subtitle: '${plan.difficulty.label} • ${plan.itemCount} items',
-                accent: accent,
-                icon: Icons.library_books_rounded,
-                trailing: FilledButton.tonalIcon(
-                  onPressed: () => context.push(
-                    '/decks/$deckId/practice/session?difficulty=${plan.difficulty.name}&objective=${objective.name}&weakOnly=$weakOnly&planId=${plan.id}',
-                  ),
-                  icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                  label: const Text('Iniciar'),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _ProgressTab extends StatelessWidget {
-  const _ProgressTab({
-    required this.consolidations,
-    required this.cardsConsolidations,
-    required this.accent,
-  });
-
-  final List<ExerciseConsolidationRecord> consolidations;
-  final List<CardsConsolidationRecord> cardsConsolidations;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    final allRecords = [
-      ...consolidations.map(
-        (c) => _RecordItem(
-          label: '${c.difficulty.label} • ${(c.averageScore * 100).round()}%',
-          subtitle: '${c.totalMistakes} fallas',
-          score: c.averageScore,
-        ),
-      ),
-      ...cardsConsolidations.map(
-        (c) => _RecordItem(
-          label: 'Cards • ${(c.averageScore * 100).round()}%',
-          subtitle: '${c.totalMistakes} fallas',
-          score: c.averageScore,
-        ),
-      ),
-    ];
-
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        if (allRecords.isEmpty)
-          _EmptyState(
-            icon: Icons.insights_outlined,
-            text: 'Tu progreso aparecerá aquí después de completar sesiones.',
-          )
-        else
-          ...allRecords
-              .take(10)
-              .map(
-                (record) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _ItemCard(
-                    title: record.label,
-                    subtitle: record.subtitle,
-                    accent: accent,
-                    icon: record.score >= 0.75
-                        ? Icons.trending_up_rounded
-                        : Icons.track_changes_rounded,
-                  ),
-                ),
-              ),
-      ],
-    );
-  }
-}
-
-class _RecordItem {
-  final String label;
-  final String subtitle;
-  final double score;
-
-  _RecordItem({
-    required this.label,
-    required this.subtitle,
-    required this.score,
-  });
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.icon, required this.text});
-
-  final IconData icon;
   final String text;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: cs.surface,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: cs.outline),
       ),
-      child: Column(
-        children: [
-          Icon(icon, size: 40, color: cs.onSurface.withValues(alpha: 0.3)),
-          const SizedBox(height: 12),
-          Text(
-            text,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ],
-      ),
+      child: Text(text),
     );
   }
 }
 
-class _ItemCard extends StatelessWidget {
-  const _ItemCard({
+class _MetaTile extends StatelessWidget {
+  const _MetaTile({
     required this.title,
     required this.subtitle,
     required this.accent,
     required this.icon,
-    this.trailing,
   });
 
   final String title;
   final String subtitle;
   final Color accent;
   final IconData icon;
-  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: cs.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: cs.outline),
       ),
       child: Row(
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
               color: accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
             ),
-            child: Icon(icon, color: accent, size: 20),
+            child: Icon(icon, color: accent),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: Theme.of(context).textTheme.titleSmall),
-                const SizedBox(height: 2),
+                Text(title, style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 4),
                 Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
           ),
-          if (trailing != null) trailing!,
         ],
       ),
     );

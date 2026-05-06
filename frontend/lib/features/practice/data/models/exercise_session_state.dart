@@ -5,7 +5,6 @@ import 'package:memorizar/features/practice/data/models/exercise_performance_sum
 import 'package:memorizar/features/practice/data/models/exercise_step.dart';
 import 'package:memorizar/features/practice/data/models/memorization_difficulty.dart';
 import 'package:memorizar/features/practice/data/models/practice_objective.dart';
-import 'package:memorizar/features/practice/data/models/voice_analysis_result.dart';
 
 class ExerciseSessionState {
   const ExerciseSessionState({
@@ -33,7 +32,6 @@ class ExerciseSessionState {
     this.latestTranscript,
     this.coachFeedback,
     this.voiceFeedback,
-    this.voiceAnalysis,
     this.duelBestScore,
   });
 
@@ -61,7 +59,6 @@ class ExerciseSessionState {
   final String? latestTranscript;
   final String? coachFeedback;
   final String? voiceFeedback;
-  final VoiceAnalysisResult? voiceAnalysis;
   final double? duelBestScore;
 
   Item? get currentItem =>
@@ -98,7 +95,6 @@ class ExerciseSessionState {
     String? latestTranscript,
     String? coachFeedback,
     String? voiceFeedback,
-    VoiceAnalysisResult? voiceAnalysis,
     double? duelBestScore,
     bool clearEvaluation = false,
     bool clearAudioPath = false,
@@ -129,7 +125,6 @@ class ExerciseSessionState {
       latestTranscript: clearTranscript ? null : (latestTranscript ?? this.latestTranscript),
       coachFeedback: coachFeedback ?? this.coachFeedback,
       voiceFeedback: voiceFeedback ?? this.voiceFeedback,
-      voiceAnalysis: voiceAnalysis ?? this.voiceAnalysis,
       duelBestScore: duelBestScore ?? this.duelBestScore,
     );
   }

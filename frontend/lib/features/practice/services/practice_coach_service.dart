@@ -8,22 +8,9 @@ class PracticeCoachService {
   String buildCoachFeedback({
     required List<ExercisePerformanceSummary> summaries,
     required PracticeObjective objective,
-    double? recentExerciseAverage,
-    double? recentCardsAverage,
-    int? daysSincePractice,
   }) {
     if (summaries.isEmpty) {
-      final modeBalance = recentCardsAverage != null && recentExerciseAverage != null
-          ? recentCardsAverage < recentExerciseAverage - 0.1
-              ? 'Conviene volver un momento a cards antes de exigir cierre profundo.'
-              : recentExerciseAverage < recentCardsAverage - 0.1
-                  ? 'Conviene volver a ejercicios para que el contenido salga más limpio.'
-                  : 'Por ahora puedes sostener una sesión mixta sin problema.'
-          : 'Todavía no hay datos suficientes. Una sesión más nos dará una recomendación mejor.';
-      final recency = daysSincePractice != null && daysSincePractice >= 4
-          ? 'Llevas varios días sin practicar, así que mejor volver con una sesión corta.'
-          : 'La señal todavía es temprana, pero ya podemos sugerir una siguiente vuelta razonable.';
-      return '$modeBalance $recency';
+      return 'Todavía no hay datos suficientes. Una sesión más nos dará una recomendación mejor.';
     }
 
     final weakest = summaries.first;
@@ -36,20 +23,8 @@ class PracticeCoachService {
       PracticeObjective.master => 'rendir al máximo bajo presión',
     };
     final nextAction = _nextActionFor(weakest.type, objective);
-    final rhythmNote = daysSincePractice == null
-        ? 'Vienes con señal reciente suficiente para afinar la siguiente vuelta.'
-        : daysSincePractice >= 4
-            ? 'Además, hubo una pausa larga: conviene reacondicionar memoria antes de exigir cierre perfecto.'
-            : 'El ritmo sigue vivo, así que vale la pena apretar un poco más donde estás flojo.';
-    final modeBalance = recentCardsAverage != null && recentExerciseAverage != null
-        ? recentCardsAverage < recentExerciseAverage - 0.1
-            ? 'Tu lectura general del bloque va por detrás de tu memoria profunda.'
-            : recentExerciseAverage < recentCardsAverage - 0.1
-                ? 'Tu memoria general está mejor que tu cierre profundo.'
-                : 'Cards y ejercicios vienen bastante alineados.'
-        : 'Todavía falta más historial para comparar cards y ejercicios con precisión.';
 
-    return 'Tu foco fue $focus. Lo más flojo salió en ${weakest.type.label.toLowerCase()} y lo más sólido en ${strongest.type.label.toLowerCase()}. $modeBalance $rhythmNote Siguiente paso recomendado: $nextAction';
+    return 'Tu foco fue $focus. Lo más flojo salió en ${weakest.type.label.toLowerCase()} y lo más sólido en ${strongest.type.label.toLowerCase()}. Siguiente paso recomendado: $nextAction';
   }
 
   String buildVoiceFeedback({

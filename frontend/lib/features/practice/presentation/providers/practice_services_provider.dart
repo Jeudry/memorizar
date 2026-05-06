@@ -1,11 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:memorizar/features/practice/services/answer_evaluator_service.dart';
-import 'package:memorizar/features/practice/services/adaptive_practice_service.dart';
 import 'package:memorizar/features/practice/services/audio_practice_service.dart';
 import 'package:memorizar/features/practice/services/practice_coach_service.dart';
 import 'package:memorizar/features/practice/services/text_normalizer_service.dart';
 import 'package:memorizar/features/practice/services/understanding_exercise_service.dart';
-import 'package:memorizar/features/practice/services/voice_analysis_service.dart';
 
 final textNormalizerProvider = Provider<TextNormalizerService>((ref) {
   return const TextNormalizerService();
@@ -29,12 +27,4 @@ final understandingExerciseProvider = Provider<UnderstandingExerciseService>((re
 
 final practiceCoachProvider = Provider<PracticeCoachService>((ref) {
   return const PracticeCoachService();
-});
-
-final adaptivePracticeServiceProvider = Provider<AdaptivePracticeService>((ref) {
-  return const AdaptivePracticeService();
-});
-
-final voiceAnalysisServiceProvider = Provider<VoiceAnalysisService>((ref) {
-  return VoiceAnalysisService(ref.watch(textNormalizerProvider));
 });
