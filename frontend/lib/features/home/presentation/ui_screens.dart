@@ -12,164 +12,16 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../../core/app_state.dart';
-import '../../../core/theme.dart';
 import 'glyph_icon.dart';
 import 'home_screen.dart';
 
-class AppRoutes {
-  static const home = '/';
-  static const biblia = '/biblia';
-  static const especificar = '/especificar';
-  static const iniciar = '/iniciar';
-  static const repasar = '/repasar';
-  static const comunidad = '/comunidad';
-  static const amigos = '/amigos';
-  static const stats = '/stats';
-  static const cooperativo = '/cooperativo';
-  static const cooperativoJuego = '/cooperativo/juego';
-  static const cooperativoLogrado = '/cooperativo/logrado';
-  static const ejercicios = '/ejercicios';
-  static const flashcards = '/flashcards';
-  static const premium = '/premium';
-  static const flow = '/ejercicios-flow';
-  static const bgNocturnoMate = '/preview/background/nocturno-mate';
-  static const bgVinoAhumado = '/preview/background/vino-ahumado';
-  static const bgTintaProfunda = '/preview/background/tinta-profunda';
-  static const bgBrasaSuave = '/preview/background/brasa-suave';
-  static const bgCarbonAmbar = '/preview/background/carbon-ambar';
-  static const bgCiruelaTostada = '/preview/background/ciruela-tostada';
-  static const bgPetroleoDorado = '/preview/background/petroleo-dorado';
-  static const bgNaranjaNocturno = '/preview/background/naranja-nocturno';
-  static const bgActualSuave = '/preview/background/actual-suave';
+// Imports for the extracted shared building blocks.
+import '../../../core/router/app_routes.dart';
+import '../../../core/theme/ref_colors.dart';
+import '../../../core/ui/widgets.dart';
 
-  static Route<dynamic> slideRoute(
-    String name, {
-    Offset begin = const Offset(1, 0),
-  }) {
-    final builder = routes[name];
-    if (builder == null) {
-      throw FlutterError('Unknown route: $name');
-    }
-    return PageRouteBuilder(
-      settings: RouteSettings(name: name),
-      transitionDuration: const Duration(milliseconds: 300),
-      reverseTransitionDuration: const Duration(milliseconds: 220),
-      pageBuilder: (context, animation, secondary) => builder(context),
-      transitionsBuilder: (context, animation, _, child) {
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic,
-        );
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: begin,
-            end: Offset.zero,
-          ).animate(curved),
-          child: FadeTransition(opacity: curved, child: child),
-        );
-      },
-    );
-  }
-
-  static Map<String, WidgetBuilder> get routes => {
-    home: (_) => const HomeScreen(),
-    bgNocturnoMate: (_) =>
-        const HomeScreen(backgroundVariant: HomeBackgroundVariant.nocturnoMate),
-    bgVinoAhumado: (_) =>
-        const HomeScreen(backgroundVariant: HomeBackgroundVariant.vinoAhumado),
-    bgTintaProfunda: (_) => const HomeScreen(
-      backgroundVariant: HomeBackgroundVariant.tintaProfunda,
-    ),
-    bgBrasaSuave: (_) =>
-        const HomeScreen(backgroundVariant: HomeBackgroundVariant.brasaSuave),
-    bgCarbonAmbar: (_) =>
-        const HomeScreen(backgroundVariant: HomeBackgroundVariant.carbonAmbar),
-    bgCiruelaTostada: (_) => const HomeScreen(
-      backgroundVariant: HomeBackgroundVariant.ciruelaTostada,
-    ),
-    bgPetroleoDorado: (_) => const HomeScreen(
-      backgroundVariant: HomeBackgroundVariant.petroleoDorado,
-    ),
-    bgNaranjaNocturno: (_) => const HomeScreen(
-      backgroundVariant: HomeBackgroundVariant.naranjaNocturno,
-    ),
-    bgActualSuave: (_) =>
-        const HomeScreen(backgroundVariant: HomeBackgroundVariant.actualSuave),
-    biblia: (_) => const BibliaScreen(),
-    especificar: (_) => const EspecificarScreen(),
-    iniciar: (_) => const IniciarScreen(),
-    repasar: (_) => const RepasarScreen(),
-    comunidad: (_) => const ComunidadScreen(),
-    amigos: (_) => const AmigosScreen(),
-    stats: (_) => const StatsScreen(),
-    cooperativo: (_) => const CooperativoScreen(),
-    cooperativoJuego: (_) => const CooperativoGameScreen(),
-    cooperativoLogrado: (_) => const CooperativoSuccessScreen(),
-    ejercicios: (_) => ExerciseFlowScreen(data: flowScreens.first),
-    flashcards: (_) => const FlashcardsScreen(),
-    premium: (_) => const PremiumScreen(),
-    '$flow/progress-tree': (_) => const _ProgressTreeScreen(),
-    for (final screen in flowScreens)
-      '$flow/${screen.slug}': (_) => ExerciseFlowScreen(data: screen),
-  };
-}
-
-class RefColors {
-  static const bg = AppColors.bgBase;
-  static const glass = AppColors.glassBg;
-  static const glassStrong = AppColors.glassStrong;
-  static const glassSoft = AppColors.glassSoft;
-  static const border = AppColors.glassBorder;
-  static const inner = AppColors.glassInner;
-  static const ink = AppColors.ink;
-  static const muted = AppColors.inkMuted;
-  static const dim = AppColors.inkDim;
-  static const pink = AppColors.accentPink;
-  static const sun = AppColors.accentSun;
-  static const cyan = AppColors.accentCyan;
-  static const violet = AppColors.accentViolet;
-  static const lime = AppColors.accentLime;
-  static const urgent = AppColors.urgent;
-  static const successInk = Color(0xFF06280F);
-
-  static const primary = LinearGradient(
-    colors: [pink, sun],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-  static const cool = LinearGradient(
-    colors: [cyan, violet],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-  static const success = LinearGradient(
-    colors: [lime, Color(0xFF3ED97A)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-  static const purple = LinearGradient(
-    colors: [violet, pink],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-  static const limeGrad = LinearGradient(
-    colors: [lime, Color(0xFF5BE47D)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-}
-
-class HtmlRefColors {
-  static const glassBg = Color(0x1AFFFFFF);
-  static const glassSoft = Color(0x0FFFFFFF);
-  static const glassStrong = Color(0x29FFFFFF);
-  static const glassBorder = Color(0x2EFFFFFF);
-  static const bookSelected = Color(0x33FF3EA5);
-  static const bookPartial = Color(0x2600D4FF);
-  static const bookPartialBorder = Color(0x9900D4FF);
-}
-
+// Bible book data — used by BibliaScreen below. Kept here until the bible
+// feature is extracted to its own folder.
 class _BibleBook {
   final String name;
   final int chapters;
@@ -256,516 +108,46 @@ int _chapterCountFor(String book) {
   return 1;
 }
 
-class ReferencePage extends StatelessWidget {
-  final Widget child;
-  final bool showBottomNav;
-  final String active;
-
-  final bool scrollable;
-
-  const ReferencePage({
-    super.key,
-    required this.child,
-    this.showBottomNav = true,
-    this.active = AppRoutes.home,
-    this.scrollable = true,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: RefColors.bg,
-      body: Stack(
-        children: [
-          const AppAuroraBackground(),
-          SafeArea(
-            child: scrollable
-                ? SingleChildScrollView(
-                    padding: EdgeInsets.fromLTRB(
-                      18,
-                      4,
-                      18,
-                      showBottomNav ? 118 : 28,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [child],
-                    ),
-                  )
-                : Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      18,
-                      4,
-                      18,
-                      showBottomNav ? 118 : 28,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [Expanded(child: child)],
-                    ),
-                  ),
-          ),
-          if (showBottomNav)
-            Positioned(
-              left: 18,
-              right: 18,
-              bottom: 18,
-              child: _BottomNav(active: active),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Glass extends StatelessWidget {
-  final Widget child;
-  final EdgeInsetsGeometry padding;
-  final double radius;
-  final Color color;
-  final Border? border;
-  final Gradient? gradient;
-
-  const _Glass({
-    required this.child,
-    this.padding = const EdgeInsets.all(16),
-    this.radius = 24,
-    this.color = RefColors.glass,
-    this.border,
-    this.gradient,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(radius),
-      child: BackdropFilter(
-        filter: ImageFilter.compose(
-          outer: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-          inner: AppColors.glassSaturate,
-        ),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            color: gradient == null ? color : null,
-            gradient: gradient,
-            borderRadius: BorderRadius.circular(radius),
-            border: border ?? Border.all(color: RefColors.border),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: .2),
-                blurRadius: 32,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-}
-
-class _TopBar extends StatelessWidget {
-  final String title;
-
-  const _TopBar({required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Row(
-        children: [
-          const _BackButton(),
-          Expanded(
-            child: Center(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-          const _IconButton(icon: Icons.wb_sunny_outlined),
-        ],
-      ),
-    );
-  }
-}
-
-class _BackButton extends StatelessWidget {
-  final bool exitText;
-
-  const _BackButton({this.exitText = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        if (Navigator.canPop(context)) {
-          Navigator.pop(context);
-        } else {
-          Navigator.pushReplacementNamed(context, AppRoutes.home);
-        }
-      },
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.chevron_left_rounded, size: 24),
-          if (exitText)
-            const Text('Salir', style: TextStyle(fontWeight: FontWeight.w700)),
-        ],
-      ),
-    );
-  }
-}
-
-class _IconButton extends StatelessWidget {
-  final IconData icon;
-
-  const _IconButton({required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return _Glass(
-      radius: 14,
-      padding: EdgeInsets.zero,
-      child: SizedBox(width: 42, height: 42, child: Icon(icon, size: 20)),
-    );
-  }
-}
-
-class _BottomNav extends StatelessWidget {
-  final String active;
-
-  const _BottomNav({required this.active});
-
-  @override
-  Widget build(BuildContext context) {
-    return _Glass(
-      radius: 22,
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
-      color: RefColors.bg.withValues(alpha: .6),
-      child: Row(
-        children: const [
-          _BottomItem(Icons.home_outlined, 'Inicio', AppRoutes.home),
-          _BottomItem(Icons.rectangle_outlined, 'Mazos', AppRoutes.repasar),
-          _BottomItem(Icons.people_outline, 'Amigos', AppRoutes.amigos),
-          _BottomItem(Icons.public, 'Comunidad', AppRoutes.comunidad),
-          _BottomItem(Icons.pie_chart_outline, 'Stats', AppRoutes.stats),
-        ],
-      ),
-    );
-  }
-}
-
-class _BottomItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String route;
-
-  const _BottomItem(this.icon, this.label, this.route);
-
-  @override
-  Widget build(BuildContext context) {
-    final parent = context.findAncestorWidgetOfExactType<_BottomNav>();
-    final isActive = parent?.active == route;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          if (!isActive) Navigator.pushReplacementNamed(context, route);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-          decoration: isActive
-              ? BoxDecoration(
-                  gradient: RefColors.primary,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: RefColors.pink.withValues(alpha: .4),
-                      blurRadius: 18,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                )
-              : null,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 20,
-                color: isActive ? Colors.white : RefColors.muted,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w600,
-                  color: isActive ? Colors.white : RefColors.muted,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  final String text;
-  final bool dense;
-  final Color? color;
-  final Color? textColor;
-
-  const _Chip(this.text, {this.dense = false, this.color, this.textColor});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: dense ? 10 : 12,
-        vertical: dense ? 5 : 7,
-      ),
-      decoration: BoxDecoration(
-        color: color ?? RefColors.glassStrong,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: RefColors.border),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: textColor ?? Colors.white,
-          fontSize: dense ? 10 : 11,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusChip extends StatelessWidget {
-  final String text;
-  final Color color;
-  final Color borderColor;
-  final Color textColor;
-
-  const _StatusChip(
-    this.text, {
-    this.color = HtmlRefColors.glassStrong,
-    this.borderColor = HtmlRefColors.glassBorder,
-    this.textColor = RefColors.ink,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: borderColor),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: textColor,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-}
-
-class _Cta extends StatelessWidget {
-  final String label;
-  final VoidCallback? onTap;
-  final bool disabled;
-
-  const _Cta(this.label, {this.onTap, this.disabled = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDisabled = disabled || onTap == null;
-    return Opacity(
-      opacity: isDisabled ? .45 : 1,
-      child: GestureDetector(
-        onTap: isDisabled ? null : onTap,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
-          decoration: BoxDecoration(
-            gradient: isDisabled ? null : RefColors.primary,
-            color: isDisabled ? RefColors.glass : null,
-            borderRadius: BorderRadius.circular(18),
-            border: isDisabled ? Border.all(color: RefColors.border) : null,
-            boxShadow: isDisabled
-                ? null
-                : [
-                    BoxShadow(
-                      color: RefColors.pink.withValues(alpha: .4),
-                      blurRadius: 30,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _GhostButton extends StatelessWidget {
-  final String label;
-  final VoidCallback? onTap;
-
-  const _GhostButton(this.label, {this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: RefColors.glass,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: RefColors.border),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SectionHead extends StatelessWidget {
-  final String title;
-  final String? action;
-
-  const _SectionHead(this.title, {this.action});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 18, 4, 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-            ),
-          ),
-          if (action != null)
-            Text(
-              action!,
-              style: const TextStyle(color: RefColors.muted, fontSize: 12),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Fav extends StatelessWidget {
-  final String text;
-  final Gradient gradient;
-  final double size;
-  final bool online;
-
-  const _Fav(
-    this.text, {
-    this.gradient = RefColors.primary,
-    this.size = 38,
-    this.online = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            gradient: gradient,
-            borderRadius: BorderRadius.circular(size * .32),
-            border: Border.all(color: RefColors.border),
-          ),
-          child: Center(
-            child: Text(
-              text,
-              style: TextStyle(
-                color: text == '+' ? Colors.white : Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: size * .36,
-              ),
-            ),
-          ),
-        ),
-        if (online)
-          Positioned(
-            right: -2,
-            bottom: -2,
-            child: Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color: RefColors.lime,
-                shape: BoxShape.circle,
-                border: Border.all(color: RefColors.bg, width: 2),
-                boxShadow: const [
-                  BoxShadow(color: RefColors.lime, blurRadius: 6),
-                ],
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _Progress extends StatelessWidget {
-  final double value;
-  final Gradient gradient;
-
-  const _Progress(this.value, {this.gradient = RefColors.primary});
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        height: 8,
-        color: RefColors.glassSoft,
-        alignment: Alignment.centerLeft,
-        child: FractionallySizedBox(
-          widthFactor: value,
-          child: Container(decoration: BoxDecoration(gradient: gradient)),
-        ),
-      ),
-    );
-  }
-}
+/// Master route → builder map. Kept in this file (rather than core/router/)
+/// because it references every feature screen, all of which still live here.
+/// Once each feature lives in its own folder this can move.
+Map<String, WidgetBuilder> buildAppRoutes() => {
+  AppRoutes.home: (_) => const HomeScreen(),
+  AppRoutes.bgNocturnoMate: (_) =>
+      const HomeScreen(backgroundVariant: HomeBackgroundVariant.nocturnoMate),
+  AppRoutes.bgVinoAhumado: (_) =>
+      const HomeScreen(backgroundVariant: HomeBackgroundVariant.vinoAhumado),
+  AppRoutes.bgTintaProfunda: (_) =>
+      const HomeScreen(backgroundVariant: HomeBackgroundVariant.tintaProfunda),
+  AppRoutes.bgBrasaSuave: (_) =>
+      const HomeScreen(backgroundVariant: HomeBackgroundVariant.brasaSuave),
+  AppRoutes.bgCarbonAmbar: (_) =>
+      const HomeScreen(backgroundVariant: HomeBackgroundVariant.carbonAmbar),
+  AppRoutes.bgCiruelaTostada: (_) =>
+      const HomeScreen(backgroundVariant: HomeBackgroundVariant.ciruelaTostada),
+  AppRoutes.bgPetroleoDorado: (_) =>
+      const HomeScreen(backgroundVariant: HomeBackgroundVariant.petroleoDorado),
+  AppRoutes.bgNaranjaNocturno: (_) =>
+      const HomeScreen(backgroundVariant: HomeBackgroundVariant.naranjaNocturno),
+  AppRoutes.bgActualSuave: (_) =>
+      const HomeScreen(backgroundVariant: HomeBackgroundVariant.actualSuave),
+  AppRoutes.biblia: (_) => const BibliaScreen(),
+  AppRoutes.especificar: (_) => const EspecificarScreen(),
+  AppRoutes.iniciar: (_) => const IniciarScreen(),
+  AppRoutes.repasar: (_) => const RepasarScreen(),
+  AppRoutes.comunidad: (_) => const ComunidadScreen(),
+  AppRoutes.amigos: (_) => const AmigosScreen(),
+  AppRoutes.stats: (_) => const StatsScreen(),
+  AppRoutes.cooperativo: (_) => const CooperativoScreen(),
+  AppRoutes.cooperativoJuego: (_) => const CooperativoGameScreen(),
+  AppRoutes.cooperativoLogrado: (_) => const CooperativoSuccessScreen(),
+  AppRoutes.ejercicios: (_) => ExerciseFlowScreen(data: flowScreens.first),
+  AppRoutes.flashcards: (_) => const FlashcardsScreen(),
+  AppRoutes.premium: (_) => const PremiumScreen(),
+  '${AppRoutes.flow}/progress-tree': (_) => const _ProgressTreeScreen(),
+  for (final screen in flowScreens)
+    '${AppRoutes.flow}/${screen.slug}': (_) => ExerciseFlowScreen(data: screen),
+};
 
 class BibliaScreen extends StatefulWidget {
   const BibliaScreen({super.key});
@@ -851,9 +233,9 @@ class _BibliaScreenState extends State<BibliaScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _TopBar(title: 'Elegir de la Biblia'),
+          const RefTopBar(title: 'Elegir de la Biblia'),
           if (!confirmingSelection) ...[
-            _Glass(
+            Glass(
               radius: 18,
               color: HtmlRefColors.glassBg,
               border: Border.all(color: HtmlRefColors.glassBorder),
@@ -933,7 +315,7 @@ class _BibliaScreenState extends State<BibliaScreen> {
               onFinish: _finishBibleSelection,
             ),
           const SizedBox(height: 14),
-          _Glass(
+          Glass(
             color: HtmlRefColors.glassBg,
             border: Border.all(color: HtmlRefColors.glassBorder),
             padding: const EdgeInsets.all(12),
@@ -1036,7 +418,7 @@ class _BibleSearchResults extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        _Glass(
+        Glass(
           color: HtmlRefColors.glassBg,
           border: Border.all(color: HtmlRefColors.glassBorder),
           padding: const EdgeInsets.all(14),
@@ -1083,11 +465,11 @@ class _BibleSearchResults extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  _Cta('+ Añadir ${verse.ref}', onTap: () => onAddVerse(verse)),
+                  Cta('+ Añadir ${verse.ref}', onTap: () => onAddVerse(verse)),
                   const SizedBox(height: 12),
                 ],
               const SizedBox(height: 4),
-              _GhostButton('Cerrar búsqueda', onTap: onClear),
+              GhostButton('Cerrar búsqueda', onTap: onClear),
             ],
           ),
         ),
@@ -1183,7 +565,7 @@ class _BookPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       color: HtmlRefColors.glassBg,
       border: Border.all(color: HtmlRefColors.glassBorder),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
@@ -1198,7 +580,7 @@ class _BookPicker extends StatelessWidget {
                   style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
                 ),
               ),
-              _Chip(
+              RefChip(
                 'Toda la Biblia',
                 dense: true,
                 color: HtmlRefColors.glassSoft,
@@ -1291,7 +673,7 @@ class _StepHeader extends StatelessWidget {
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
           ),
         ),
-        _Chip(
+        RefChip(
           action,
           dense: true,
           color: HtmlRefColors.glassSoft,
@@ -1315,7 +697,7 @@ class _ChapterPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       color: HtmlRefColors.glassBg,
       border: Border.all(color: HtmlRefColors.glassBorder),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
@@ -1530,7 +912,7 @@ class _VersePickerState extends State<_VersePicker> {
         .toSet();
     final effectiveSelected = {...widget.selectedVerses, ...selectedInStore};
 
-    return _Glass(
+    return Glass(
       color: HtmlRefColors.glassBg,
       border: Border.all(color: HtmlRefColors.glassBorder),
       padding: const EdgeInsets.all(12),
@@ -1595,7 +977,7 @@ class _VersePickerState extends State<_VersePicker> {
               ),
             ),
           const SizedBox(height: 10),
-          _Cta(
+          Cta(
             verses.isEmpty ? 'Volver a capítulos' : 'Confirmar versículos →',
             onTap: verses.isEmpty
                 ? widget.onBack
@@ -2205,7 +1587,7 @@ class _ContinueSelectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       color: Colors.transparent,
       border: Border.all(color: RefColors.lime.withValues(alpha: .3)),
       gradient: LinearGradient(
@@ -2433,7 +1815,7 @@ class _ThemeChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       radius: 12,
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
       color: color.withValues(alpha: .18),
@@ -2572,13 +1954,13 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _TopBar(title: 'Nuevo contenido'),
+          const RefTopBar(title: 'Nuevo contenido'),
           const _StepIndicator(active: 0, count: 3),
           const _PageHead(
             'Pega lo que quieres memorizar',
             'La app lo segmenta en tarjetas automáticamente · puedes editarlas después',
           ),
-          _Glass(
+          Glass(
             color: Colors.transparent,
             gradient: const LinearGradient(
               colors: [Color(0x1AFFFFFF), Color(0x3DFFB400)],
@@ -2648,7 +2030,7 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
             ),
           ),
           const SizedBox(height: 14),
-          _Glass(
+          Glass(
             color: Colors.transparent,
             gradient: const LinearGradient(
               colors: [Color(0x1AFFFFFF), Color(0x24FFB400)],
@@ -2737,7 +2119,7 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
             ),
           ),
           const SizedBox(height: 22),
-          _Glass(
+          Glass(
             color: const Color(0xCC2B1852),
             border: Border.all(color: HtmlRefColors.glassBorder),
             padding: const EdgeInsets.all(14),
@@ -2810,9 +2192,9 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
           const SizedBox(height: 12),
           Row(
             children: [
-              const Expanded(child: _GhostButton('Ajustes avanzados')),
+              const Expanded(child: GhostButton('Ajustes avanzados')),
               const SizedBox(width: 10),
-              Expanded(flex: 2, child: _Cta('Siguiente →', onTap: _createDeck)),
+              Expanded(flex: 2, child: Cta('Siguiente →', onTap: _createDeck)),
             ],
           ),
         ],
@@ -3188,8 +2570,8 @@ class _IniciarScreenState extends State<IniciarScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _TopBar(title: 'Configurar sesión'),
-          _Glass(
+          const RefTopBar(title: 'Configurar sesión'),
+          Glass(
             color: Colors.transparent,
             gradient: const LinearGradient(
               colors: [Color(0x1AFFFFFF), Color(0x4DFFB400)],
@@ -3305,7 +2687,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
                 ),
                 if (_showIconPicker) ...[
                   const SizedBox(height: 12),
-                  _Glass(
+                  Glass(
                     radius: 14,
                     padding: const EdgeInsets.all(10),
                     color: HtmlRefColors.glassSoft,
@@ -3414,7 +2796,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
             onSelect: (index) => setState(() => _difficulty = index),
           ),
           const SizedBox(height: 12),
-          _Glass(
+          Glass(
             color: HtmlRefColors.glassBg,
             border: Border.all(color: HtmlRefColors.glassBorder),
             padding: const EdgeInsets.all(16),
@@ -3482,7 +2864,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
                           const SizedBox(height: 13),
                           SizedBox(
                             width: 190,
-                            child: _Progress(
+                            child: RefProgress(
                               totalCards == 0
                                   ? 0
                                   : (dailyTarget / totalCards).clamp(.12, 1.0),
@@ -3498,7 +2880,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
                         children: [
                           GestureDetector(
                             onTap: () => _setDailyTarget(1, totalCards),
-                            child: _Chip(
+                            child: RefChip(
                               '1 · breve',
                               dense: true,
                               color: dailyTarget == 1 ? RefColors.lime : null,
@@ -3513,7 +2895,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
                               _recommendedTarget(totalCards),
                               totalCards,
                             ),
-                            child: _Chip(
+                            child: RefChip(
                               '2 · recomendado',
                               dense: true,
                               color:
@@ -3529,7 +2911,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
                           const SizedBox(height: 7),
                           GestureDetector(
                             onTap: () => _setDailyTarget(4, totalCards),
-                            child: _Chip(
+                            child: RefChip(
                               '4 · intenso',
                               dense: true,
                               color: dailyTarget >= 4 ? RefColors.lime : null,
@@ -3551,7 +2933,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
             children: [
               Expanded(
                 flex: 14,
-                child: _GhostButton(
+                child: GhostButton(
                   'Guardar y empezar luego',
                   onTap: () => _saveForLater(context),
                 ),
@@ -3559,7 +2941,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
               const SizedBox(width: 10),
               Expanded(
                 flex: 10,
-                child: _Cta(
+                child: Cta(
                   '▶ Empezar',
                   onTap: () => _startSession(context, deck),
                 ),
@@ -3587,7 +2969,7 @@ class _OptionGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       color: HtmlRefColors.glassBg,
       border: Border.all(color: HtmlRefColors.glassBorder),
       padding: const EdgeInsets.all(16),
@@ -3718,12 +3100,12 @@ class RepasarScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _TopBar(title: 'Repasar'),
+          const RefTopBar(title: 'Repasar'),
           const _PageHead(
             'Memoria activa',
             'Rescata lo que ya dominaste antes de que se pierda',
           ),
-          _Glass(
+          Glass(
             padding: const EdgeInsets.all(18),
             gradient: LinearGradient(
               colors: [
@@ -3735,7 +3117,7 @@ class RepasarScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const _Chip(
+                const RefChip(
                   '⚠ EN RIESGO',
                   dense: true,
                   color: Color(0x33FF5A8A),
@@ -3778,7 +3160,7 @@ class RepasarScreen extends StatelessWidget {
                   style: TextStyle(color: RefColors.muted, fontSize: 12),
                 ),
                 const SizedBox(height: 14),
-                _Cta(
+                Cta(
                   '▶ Rescatar ahora · 5 min',
                   onTap: () =>
                       Navigator.pushNamed(context, AppRoutes.flashcards),
@@ -3787,7 +3169,7 @@ class RepasarScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          _Glass(
+          Glass(
             padding: const EdgeInsets.all(14),
             child: Row(
               children: const [
@@ -3837,7 +3219,7 @@ class RepasarScreen extends StatelessWidget {
               ],
             ),
           ),
-          const _SectionHead('⚠ Tarjetas más débiles', action: 'Ver todas'),
+          const SectionHead('⚠ Tarjetas más débiles', action: 'Ver todas'),
           for (final card in dueCards)
             _ReviewItem(
               card.icon,
@@ -3847,7 +3229,7 @@ class RepasarScreen extends StatelessWidget {
               urgent: card.retention < 60,
               onTap: () => Navigator.pushNamed(context, AppRoutes.flashcards),
             ),
-          const _SectionHead('Mazos con retención baja'),
+          const SectionHead('Mazos con retención baja'),
           for (final deck in store.decks.take(3))
             _DeckRetention(
               deck.icon,
@@ -4024,7 +3406,7 @@ class _DeckRetention extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       radius: 16,
       padding: const EdgeInsets.all(12),
       color: RefColors.glassSoft,
@@ -4045,7 +3427,7 @@ class _DeckRetention extends StatelessWidget {
                   style: const TextStyle(fontSize: 11, color: RefColors.muted),
                 ),
                 const SizedBox(height: 8),
-                _Progress(value),
+                RefProgress(value),
               ],
             ),
           ),
@@ -4067,12 +3449,12 @@ class ComunidadScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _TopBar(title: 'Comunidad'),
+          const RefTopBar(title: 'Comunidad'),
           const _PageHead(
             'Descubre mazos',
             'Creados por personas que aprenden como tú',
           ),
-          _Glass(
+          Glass(
             radius: 18,
             padding: const EdgeInsets.all(12),
             child: Row(
@@ -4108,7 +3490,7 @@ class ComunidadScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          const _SectionHead('Destacado esta semana', action: 'Ver todo'),
+          const SectionHead('Destacado esta semana', action: 'Ver todo'),
           SizedBox(
             height: 130,
             child: ListView(
@@ -4136,9 +3518,9 @@ class ComunidadScreen extends StatelessWidget {
               ],
             ),
           ),
-          const _SectionHead('Populares', action: 'Filtrar'),
+          const SectionHead('Populares', action: 'Filtrar'),
           _DeckGrid(decks: decks),
-          const _SectionHead('Creadores a seguir', action: 'Ver todos'),
+          const SectionHead('Creadores a seguir', action: 'Ver todos'),
           for (final deck in decks.take(2))
             _Creator(
               deck.title.characters.first.toUpperCase(),
@@ -4172,12 +3554,12 @@ class _Creator extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: _Glass(
+      child: Glass(
         radius: 16,
         padding: const EdgeInsets.all(12),
         child: Row(
           children: [
-            _Fav(
+            Fav(
               initial,
               gradient: cyan ? RefColors.cool : RefColors.primary,
               size: 42,
@@ -4250,7 +3632,7 @@ class _CategoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       radius: 14,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
       color: const Color(0x10FFFFFF),
@@ -4301,7 +3683,7 @@ class _FeaturedDeck extends StatelessWidget {
       child: Container(
         width: 260,
         margin: const EdgeInsets.only(right: 10),
-        child: _Glass(
+        child: Glass(
           padding: const EdgeInsets.all(16),
           gradient: gradient,
           border: Border.all(color: HtmlRefColors.glassBorder),
@@ -4336,7 +3718,7 @@ class _FeaturedDeck extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
-                  _Chip(
+                  RefChip(
                     rating,
                     dense: true,
                     color: const Color(0x22FFB400),
@@ -4376,7 +3758,7 @@ class _DeckGrid extends StatelessWidget {
             AppScope.of(context).setActiveDeck(deck.id);
             Navigator.pushNamed(context, AppRoutes.iniciar);
           },
-          child: _Glass(
+          child: Glass(
             radius: 16,
             padding: const EdgeInsets.all(8),
             color: const Color(0x10FFFFFF),
@@ -4443,7 +3825,7 @@ class AmigosScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _TopBar(title: 'Amigos'),
+          const RefTopBar(title: 'Amigos'),
           const _InviteHero(),
           const _FriendSearch(),
           const _PendingInvite(),
@@ -4527,7 +3909,7 @@ class _InviteHero extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
-      child: _Glass(
+      child: Glass(
         radius: 18,
         padding: const EdgeInsets.all(18),
         gradient: const LinearGradient(
@@ -4627,7 +4009,7 @@ class _FriendSearch extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: _Glass(
+      child: Glass(
         radius: 18,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         gradient: LinearGradient(
@@ -4684,7 +4066,7 @@ class _PendingInvite extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: _Glass(
+      child: Glass(
         radius: 18,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         color: const Color(0x18FFB400),
@@ -4752,7 +4134,7 @@ class _FriendCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: _Glass(
+      child: Glass(
         radius: 18,
         padding: const EdgeInsets.all(14),
         color: const Color(0x12FFFFFF),
@@ -4938,7 +4320,7 @@ class StatsScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _TopBar(title: 'Tu progreso'),
+          const RefTopBar(title: 'Tu progreso'),
           const _StatsPeriodTabs(),
           _StreakHeroCard(store: store),
           _Stat('🎯', '${store.averageRetention}%', 'Retención promedio'),
@@ -4957,7 +4339,7 @@ class _StatsPeriodTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
-      child: _Glass(
+      child: Glass(
         radius: 12,
         padding: const EdgeInsets.all(4),
         color: HtmlRefColors.glassSoft,
@@ -5012,7 +4394,7 @@ class _StreakHeroCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
-      child: _Glass(
+      child: Glass(
         radius: 22,
         padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
         gradient: LinearGradient(
@@ -5122,11 +4504,11 @@ class CooperativoScreen extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              const Expanded(child: _GhostButton('+ Invitar')),
+              const Expanded(child: GhostButton('+ Invitar')),
               const SizedBox(width: 8),
               Expanded(
                 flex: 2,
-                child: _Cta(
+                child: Cta(
                   'Estoy listo · Empezar →',
                   onTap: () =>
                       Navigator.pushNamed(context, AppRoutes.cooperativoJuego),
@@ -5153,7 +4535,7 @@ class CooperativoGameScreen extends StatelessWidget {
           const _CoopTopBar(center: 'EN JUEGO · 3/4', live: true),
           const _CoopTeamRow(),
           const SizedBox(height: 14),
-          const _Progress(.48),
+          const RefProgress(.48),
           const SizedBox(height: 14),
           const _CoopQuestionCard(),
           const SizedBox(height: 14),
@@ -5179,10 +4561,10 @@ class CooperativoGameScreen extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              const Expanded(child: _GhostButton('💬 Pedir ayuda')),
+              const Expanded(child: GhostButton('💬 Pedir ayuda')),
               const SizedBox(width: 8),
               Expanded(
-                child: _Cta(
+                child: Cta(
                   'Confirmar →',
                   onTap: () => Navigator.pushNamed(
                     context,
@@ -5222,7 +4604,7 @@ class CooperativoSuccessScreen extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _GhostButton(
+                child: GhostButton(
                   'Salir',
                   onTap: () =>
                       Navigator.pushReplacementNamed(context, AppRoutes.amigos),
@@ -5230,7 +4612,7 @@ class CooperativoSuccessScreen extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: _Cta(
+                child: Cta(
                   'Otra ronda →',
                   onTap: () => Navigator.pushReplacementNamed(
                     context,
@@ -5258,10 +4640,10 @@ class _CoopTopBar extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 14),
       child: Row(
         children: [
-          const _BackButton(),
+          const RefBackButton(),
           Expanded(
             child: Center(
-              child: _Chip(
+              child: RefChip(
                 center,
                 dense: true,
                 color: live
@@ -5271,7 +4653,7 @@ class _CoopTopBar extends StatelessWidget {
               ),
             ),
           ),
-          const _IconButton(icon: Icons.wb_sunny_outlined),
+          const RefIconButton(icon: Icons.wb_sunny_outlined),
         ],
       ),
     );
@@ -5284,7 +4666,7 @@ class _CoopLobbyHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final deck = AppScope.of(context).activeDeck;
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
       gradient: LinearGradient(
         colors: [
@@ -5296,7 +4678,7 @@ class _CoopLobbyHero extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _Chip(
+          RefChip(
             'SALA COOPERATIVA · ${deck.subtitle.toUpperCase()}',
             dense: true,
           ),
@@ -5490,7 +4872,7 @@ class _CoopChat extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _Fav(
+                Fav(
                   message.$1,
                   size: 24,
                   gradient: message.$1 == 'L'
@@ -5568,7 +4950,7 @@ class _CoopSettingsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final deck = AppScope.of(context).activeDeck;
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -5638,7 +5020,7 @@ class _CoopSettingRow extends StatelessWidget {
               ],
             ),
           ),
-          _Chip(value, dense: true),
+          RefChip(value, dense: true),
         ],
       ),
     );
@@ -5684,12 +5066,12 @@ class _CoopMate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       radius: 14,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: [
-          _Fav(avatar, size: 30, gradient: gradient),
+          Fav(avatar, size: 30, gradient: gradient),
           const SizedBox(width: 10),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -5726,7 +5108,7 @@ class _CoopQuestionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _Glass(
+    return const Glass(
       padding: EdgeInsets.all(22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -5775,7 +5157,7 @@ class _SharedHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       radius: 18,
       padding: const EdgeInsets.all(14),
       color: RefColors.sun.withValues(alpha: .12),
@@ -5824,7 +5206,7 @@ class _CoopOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       radius: 16,
       padding: const EdgeInsets.all(16),
       color: selected ? RefColors.cyan.withValues(alpha: .14) : RefColors.glass,
@@ -5862,7 +5244,7 @@ class _CoopOption extends StatelessWidget {
               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
             ),
           ),
-          if (voter != null) _Fav(voter!, size: 22),
+          if (voter != null) Fav(voter!, size: 22),
         ],
       ),
     );
@@ -5874,7 +5256,7 @@ class _CoopGameChat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _Glass(
+    return const Glass(
       radius: 18,
       padding: EdgeInsets.all(14),
       child: _CoopChat(
@@ -5892,7 +5274,7 @@ class _CoopCelebrateCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _Glass(
+    return const Glass(
       padding: EdgeInsets.fromLTRB(22, 24, 22, 22),
       gradient: RefColors.success,
       border: Border(),
@@ -5930,7 +5312,7 @@ class _CoopScoreCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.all(18),
       child: Row(
         children: [
@@ -6026,7 +5408,7 @@ class _CoopShareCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       radius: 18,
       padding: const EdgeInsets.all(14),
       child: Row(
@@ -6074,7 +5456,7 @@ class _CoopRecapCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _Glass(
+    return const Glass(
       padding: EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -6200,7 +5582,7 @@ class _CoopRecapItem extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                _Progress(
+                RefProgress(
                   progress,
                   gradient: warn
                       ? const LinearGradient(
@@ -6212,7 +5594,7 @@ class _CoopRecapItem extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          _StatusChip(
+          StatusChip(
             score,
             color: (warn ? RefColors.sun : RefColors.lime).withValues(
               alpha: .14,
@@ -6233,7 +5615,7 @@ class _CoopAchievements extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _Glass(
+    return const Glass(
       padding: EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -6361,9 +5743,9 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
             current: store.currentCardIndex + 1,
             total: deck.cards.length,
           ),
-          _Progress(progress),
+          RefProgress(progress),
           const SizedBox(height: 16),
-          _Glass(
+          Glass(
             padding: const EdgeInsets.all(18),
             gradient: LinearGradient(
               colors: [
@@ -6419,7 +5801,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
           Row(
             children: [
               Expanded(
-                child: _GhostButton(
+                child: GhostButton(
                   'Quiz premium',
                   onTap: () => Navigator.pushNamed(context, AppRoutes.premium),
                 ),
@@ -6427,7 +5809,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
               const SizedBox(width: 10),
               Expanded(
                 flex: 2,
-                child: _Cta(
+                child: Cta(
                   'Empezar estudio →',
                   onTap: () => Navigator.pushNamed(
                     context,
@@ -6452,7 +5834,7 @@ class _ExerciseTimerTopBar extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 14),
       child: Row(
         children: [
-          const _BackButton(),
+          const RefBackButton(),
           Expanded(
             child: Center(
               child: Container(
@@ -6489,7 +5871,7 @@ class _ExerciseTimerTopBar extends StatelessWidget {
               ),
             ),
           ),
-          const _IconButton(icon: Icons.wb_sunny_outlined),
+          const RefIconButton(icon: Icons.wb_sunny_outlined),
         ],
       ),
     );
@@ -6533,7 +5915,7 @@ class _SessionPlanCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.all(14),
       color: RefColors.glassSoft,
       child: Column(
@@ -6644,7 +6026,7 @@ class _ExerciseQuestionBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.all(22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -6704,7 +6086,7 @@ class _ExerciseOption extends StatelessWidget {
         : RefColors.border;
     return GestureDetector(
       onTap: onTap,
-      child: _Glass(
+      child: Glass(
         radius: 16,
         padding: const EdgeInsets.all(16),
         color: (correct || wrong || selected)
@@ -7703,7 +7085,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _Glass(
+          Glass(
             radius: 18,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
             child: Row(
@@ -7731,7 +7113,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   ),
                 ),
                 const Spacer(),
-                _Chip(
+                RefChip(
                   hasInteracted && allCorrect
                       ? 'Correcto'
                       : selectingDestination
@@ -7743,7 +7125,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             ),
           ),
           const SizedBox(height: 14),
-          _Glass(
+          Glass(
             padding: const EdgeInsets.all(14),
             child: ReorderableListView.builder(
               shrinkWrap: true,
@@ -7850,7 +7232,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           ),
           const SizedBox(height: 14),
           if (complete)
-            _Glass(
+            Glass(
               padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
               color: RefColors.lime.withValues(alpha: .14),
               border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
@@ -7890,7 +7272,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               onRetry: _retryCompletion,
             )
           else
-            _Glass(
+            Glass(
               padding: const EdgeInsets.all(14),
               color: RefColors.glassSoft,
               child: Column(
@@ -7979,7 +7361,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           ),
           const SizedBox(height: 14),
           if (complete)
-            _Glass(
+            Glass(
               padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
               color: RefColors.lime.withValues(alpha: .14),
               border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
@@ -8112,7 +7494,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           ),
           const SizedBox(height: 14),
           if (_bankComplete())
-            _Glass(
+            Glass(
               padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
               color: RefColors.lime.withValues(alpha: .14),
               border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
@@ -8136,7 +7518,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               ),
             )
           else
-            _Glass(
+            Glass(
               padding: const EdgeInsets.all(14),
               color: RefColors.glassSoft,
               child: Column(
@@ -8257,7 +7639,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           ),
         if (_quizFinished) ...[
           const SizedBox(height: 14),
-          _Glass(
+          Glass(
             radius: 16,
             padding: const EdgeInsets.all(14),
             color: (_quizPassed ? RefColors.lime : RefColors.urgent).withValues(
@@ -8282,7 +7664,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 ),
                 if (!_quizPassed) ...[
                   const SizedBox(height: 10),
-                  _GhostButton('Reintentar', onTap: _resetQuiz),
+                  GhostButton('Reintentar', onTap: _resetQuiz),
                 ],
               ],
             ),
@@ -8306,7 +7688,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         children: [
           SizedBox(
             width: 118,
-            child: _GhostButton(
+            child: GhostButton(
               'Reiniciar',
               onTap: () => setState(() {
                 _fragmentVisibleWords = 4;
@@ -8354,7 +7736,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         children: [
           SizedBox(
             width: 118,
-            child: _GhostButton(
+            child: GhostButton(
               'Saltar',
               onTap: () {
                 store.markExerciseStepCompleted(slug);
@@ -8374,7 +7756,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       children: [
         SizedBox(
           width: 118,
-          child: _GhostButton(
+          child: GhostButton(
             'Pista',
             onTap: () {
               if (slug == '05-bloques') {
@@ -8608,7 +7990,7 @@ class _CompletionPromptCard extends StatelessWidget {
         ),
       );
     }
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
       gradient: LinearGradient(
         colors: [
@@ -8802,8 +8184,8 @@ class _ActionCta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (enabled) return _Cta(label, onTap: onTap);
-    return Opacity(opacity: .45, child: IgnorePointer(child: _Cta(label)));
+    if (enabled) return Cta(label, onTap: onTap);
+    return Opacity(opacity: .45, child: IgnorePointer(child: Cta(label)));
   }
 }
 
@@ -8827,7 +8209,7 @@ class _InlineResult extends StatelessWidget {
         : RefColors.urgent;
     return Padding(
       padding: const EdgeInsets.only(top: 12),
-      child: _Glass(
+      child: Glass(
         padding: const EdgeInsets.all(12),
         color: color.withValues(alpha: .12),
         border: Border.all(color: color.withValues(alpha: .45)),
@@ -8867,7 +8249,7 @@ class _ProgressiveFragmentCard extends StatelessWidget {
         : _cardSourceText(context);
     return GestureDetector(
       onTap: safeVisible >= words.length ? null : onTap,
-      child: _Glass(
+      child: Glass(
         padding: const EdgeInsets.fromLTRB(22, 28, 22, 24),
         gradient: LinearGradient(
           colors: [
@@ -8936,7 +8318,7 @@ class _ProgressiveFragmentCard extends StatelessWidget {
             const SizedBox(height: 18),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: _Progress(
+              child: RefProgress(
                 words.isEmpty ? 0 : (safeVisible / words.length).clamp(.05, 1),
               ),
             ),
@@ -9008,7 +8390,7 @@ class _RealPairingReviewState extends State<_RealPairingReview> {
             ],
           ),
           const SizedBox(height: 14),
-          _Cta(
+          Cta(
             allMatched ? 'Review final →' : 'Saltar review →',
             onTap: () =>
                 Navigator.pushNamed(context, '${AppRoutes.flow}/final-review'),
@@ -9062,7 +8444,7 @@ class _PairButton extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(
         onTap: done ? null : onTap,
-        child: _Glass(
+        child: Glass(
           padding: const EdgeInsets.all(12),
           color: accent.withValues(alpha: done || active ? .12 : .04),
           border: Border.all(color: accent.withValues(alpha: .45)),
@@ -9094,7 +8476,7 @@ class _RealFinalReview extends StatelessWidget {
             title: 'Review final',
             progress: 12,
           ),
-          _Glass(
+          Glass(
             padding: const EdgeInsets.all(20),
             gradient: LinearGradient(
               colors: [
@@ -9130,7 +8512,7 @@ class _RealFinalReview extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _GhostButton(
+                child: GhostButton(
                   'Repetir',
                   onTap: () => Navigator.pushNamed(
                     context,
@@ -9141,7 +8523,7 @@ class _RealFinalReview extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 flex: 2,
-                child: _Cta(
+                child: Cta(
                   'Volver a inicio →',
                   onTap: () => Navigator.pushNamed(context, AppRoutes.home),
                 ),
@@ -9187,10 +8569,10 @@ class _ListenFlowScreen extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              const SizedBox(width: 180, child: _GhostButton('🔁 Repetir')),
+              const SizedBox(width: 180, child: GhostButton('🔁 Repetir')),
               const SizedBox(width: 10),
               Expanded(
-                child: _Cta(
+                child: Cta(
                   'Siguiente paso →',
                   onTap: () => Navigator.pushNamed(
                     context,
@@ -9229,7 +8611,7 @@ class _FragmentedReadingFlowScreen extends StatelessWidget {
           ),
           const Padding(
             padding: EdgeInsets.fromLTRB(4, 0, 4, 14),
-            child: _Progress(.66),
+            child: RefProgress(.66),
           ),
           const _FragmentedTextCard(),
           const SizedBox(height: 14),
@@ -9239,10 +8621,10 @@ class _FragmentedReadingFlowScreen extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              const SizedBox(width: 180, child: _GhostButton('← Repetir')),
+              const SizedBox(width: 180, child: GhostButton('← Repetir')),
               const SizedBox(width: 10),
               Expanded(
-                child: _Cta(
+                child: Cta(
                   'Siguiente →',
                   onTap: () => Navigator.pushNamed(
                     context,
@@ -9286,7 +8668,7 @@ class _ReadAloudFlowScreen extends StatelessWidget {
           const SizedBox(height: 42),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 54),
-            child: _Progress(.74),
+            child: RefProgress(.74),
           ),
           const SizedBox(height: 10),
           const Center(
@@ -9303,10 +8685,10 @@ class _ReadAloudFlowScreen extends StatelessWidget {
           const SizedBox(height: 48),
           Row(
             children: [
-              const SizedBox(width: 180, child: _GhostButton('Reiniciar')),
+              const SizedBox(width: 180, child: GhostButton('Reiniciar')),
               const SizedBox(width: 10),
               Expanded(
-                child: _Cta(
+                child: Cta(
                   'Finalizar grabación →',
                   onTap: () => Navigator.pushNamed(
                     context,
@@ -9351,10 +8733,10 @@ class _ListenOwnVoiceFlowScreen extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              const SizedBox(width: 180, child: _GhostButton('🔁 Regrabar')),
+              const SizedBox(width: 180, child: GhostButton('🔁 Regrabar')),
               const SizedBox(width: 10),
               Expanded(
-                child: _Cta(
+                child: Cta(
                   'Siguiente →',
                   onTap: () => Navigator.pushNamed(
                     context,
@@ -9397,10 +8779,10 @@ class _BlocksFlowScreen extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              const SizedBox(width: 112, child: _GhostButton('👁 Pista')),
+              const SizedBox(width: 112, child: GhostButton('👁 Pista')),
               const SizedBox(width: 10),
               Expanded(
-                child: _Cta(
+                child: Cta(
                   'Comprobar →',
                   onTap: () => Navigator.pushNamed(
                     context,
@@ -9445,9 +8827,9 @@ class _CompleteN1FlowScreen extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              const SizedBox(width: 112, child: _GhostButton('👁 Pista')),
+              const SizedBox(width: 112, child: GhostButton('👁 Pista')),
               const SizedBox(width: 10),
-              Expanded(child: _Cta('Siguiente →')),
+              Expanded(child: Cta('Siguiente →')),
             ],
           ),
         ],
@@ -9501,10 +8883,10 @@ class _FirstLetterFlowScreen extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              const SizedBox(width: 112, child: _GhostButton('👁 Pista')),
+              const SizedBox(width: 112, child: GhostButton('👁 Pista')),
               const SizedBox(width: 10),
               Expanded(
-                child: _Cta(
+                child: Cta(
                   'Siguiente →',
                   onTap: () => Navigator.pushNamed(
                     context,
@@ -9562,10 +8944,10 @@ class _GuidedVoiceFlowScreen extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              const SizedBox(width: 112, child: _GhostButton('🔁 Reset')),
+              const SizedBox(width: 112, child: GhostButton('🔁 Reset')),
               const SizedBox(width: 10),
               Expanded(
-                child: _Cta(
+                child: Cta(
                   'Terminé →',
                   onTap: () =>
                       Navigator.pushNamed(context, '${AppRoutes.flow}/09-quiz'),
@@ -9628,10 +9010,10 @@ class _QuizFlowScreen extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              const SizedBox(width: 140, child: _GhostButton('💡 Explicar')),
+              const SizedBox(width: 140, child: GhostButton('💡 Explicar')),
               const SizedBox(width: 10),
               Expanded(
-                child: _Cta(
+                child: Cta(
                   'Confirmar →',
                   onTap: () => Navigator.pushNamed(
                     context,
@@ -9685,10 +9067,10 @@ class _CompleteN2FlowScreen extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              const SizedBox(width: 112, child: _GhostButton('↩ Vaciar')),
+              const SizedBox(width: 112, child: GhostButton('↩ Vaciar')),
               const SizedBox(width: 10),
               Expanded(
-                child: _Cta(
+                child: Cta(
                   'Comprobar →',
                   onTap: () => Navigator.pushNamed(
                     context,
@@ -9745,9 +9127,9 @@ class _FinalVoiceFlowScreen extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              const SizedBox(width: 112, child: _GhostButton('🔁 Reset')),
+              const SizedBox(width: 112, child: GhostButton('🔁 Reset')),
               const SizedBox(width: 10),
-              Expanded(child: _Cta('Terminé →')),
+              Expanded(child: Cta('Terminé →')),
             ],
           ),
         ],
@@ -9787,9 +9169,9 @@ class _MiniReviewFlowScreen extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              const SizedBox(width: 96, child: _GhostButton('Saltar')),
+              const SizedBox(width: 96, child: GhostButton('Saltar')),
               const SizedBox(width: 10),
-              Expanded(child: _Cta('Siguiente ejercicio →')),
+              Expanded(child: Cta('Siguiente ejercicio →')),
             ],
           ),
         ],
@@ -9819,9 +9201,9 @@ class _FinalReviewFlowScreen extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              const SizedBox(width: 96, child: _GhostButton('Repetir')),
+              const SizedBox(width: 96, child: GhostButton('Repetir')),
               const SizedBox(width: 10),
-              Expanded(child: _Cta('Volver a inicio →')),
+              Expanded(child: Cta('Volver a inicio →')),
             ],
           ),
         ],
@@ -9845,9 +9227,9 @@ class _FlowTopBar extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 14),
       child: Row(
         children: [
-          const _BackButton(),
-          Expanded(child: Center(child: _Chip(dynamicChip, dense: true))),
-          const _IconButton(icon: Icons.wb_sunny_outlined),
+          const RefBackButton(),
+          Expanded(child: Center(child: RefChip(dynamicChip, dense: true))),
+          const RefIconButton(icon: Icons.wb_sunny_outlined),
         ],
       ),
     );
@@ -9874,7 +9256,7 @@ class _FlowStepHeader extends StatelessWidget {
     final store = AppScope.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
-      child: _Glass(
+      child: Glass(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
         color: RefColors.glassStrong,
         child: Column(
@@ -9882,7 +9264,7 @@ class _FlowStepHeader extends StatelessWidget {
           children: [
             Row(
               children: [
-                const _BackButton(),
+                const RefBackButton(),
                 const SizedBox(width: 10),
                 Text(
                   'PASO $step/$totalSteps',
@@ -9915,7 +9297,7 @@ class _FlowStepHeader extends StatelessWidget {
                       ),
                     ),
                   ),
-                  child: const _IconButton(icon: Icons.info_outline_rounded),
+                  child: const RefIconButton(icon: Icons.info_outline_rounded),
                 ),
               ],
             ),
@@ -9991,7 +9373,7 @@ class _MiniReviewHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       gradient: LinearGradient(
         colors: [
@@ -10110,7 +9492,7 @@ class _MiniReviewCounter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _Glass(
+    return const Glass(
       radius: 18,
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       gradient: LinearGradient(
@@ -10152,7 +9534,7 @@ class _PairMatchCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _Glass(
+    return const Glass(
       padding: EdgeInsets.fromLTRB(14, 14, 14, 16),
       color: RefColors.glassStrong,
       child: Column(
@@ -10332,7 +9714,7 @@ class _FinalScoreCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.all(18),
       gradient: LinearGradient(
         colors: [
@@ -10427,7 +9809,7 @@ class _ShareAchievementCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       radius: 18,
       padding: const EdgeInsets.all(14),
       child: Row(
@@ -10484,7 +9866,7 @@ class _FinalVersesCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _Glass(
+    return const Glass(
       padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
       color: RefColors.glassStrong,
       child: Column(
@@ -10834,7 +10216,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _Glass(
+        Glass(
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
           gradient: LinearGradient(
             colors: [
@@ -10917,7 +10299,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                           ),
                         ),
                         const SizedBox(height: 6),
-                        _Progress(_score.clamp(.02, 1.0)),
+                        RefProgress(_score.clamp(.02, 1.0)),
                         const SizedBox(height: 7),
                         Text(
                           _status,
@@ -11102,7 +10484,7 @@ class _ListenOwnVoicePracticeCardState
   @override
   Widget build(BuildContext context) {
     final hasVoice = widget.voiceText.trim().isNotEmpty;
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
       gradient: LinearGradient(
         colors: [
@@ -11375,7 +10757,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
     final current = words[safeIndex];
     final tail = words.skip(safeIndex + 1).join(' ');
     final progress = words.isEmpty ? 0.0 : ((safeIndex + 1) / words.length);
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.fromLTRB(22, 30, 22, 20),
       gradient: LinearGradient(
         colors: [
@@ -11441,7 +10823,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
           const SizedBox(height: 22),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: _Progress(progress.clamp(.03, 1.0)),
+            child: RefProgress(progress.clamp(.03, 1.0)),
           ),
           const SizedBox(height: 7),
           Row(
@@ -11485,7 +10867,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
           ),
           if (_completed) ...[
             const SizedBox(height: 12),
-            const _StatusChip(
+            const StatusChip(
               'ESCUCHA COMPLETA',
               color: Color(0x338DFD63),
               borderColor: Color(0x668DFD63),
@@ -11563,7 +10945,7 @@ class _FlowHintCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       radius: 18,
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -11597,7 +10979,7 @@ class _FragmentedTextCard extends StatelessWidget {
     final active = words.length > 3 ? words[3] : '';
     final hidden = words.skip(4).join(' ');
     final activeSplit = active.length < 2 ? active.length : 2;
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.fromLTRB(22, 28, 22, 28),
       child: SizedBox(
         height: 150,
@@ -11642,7 +11024,7 @@ class _SpeedSelectorCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.all(12),
       child: Row(
         children: [
@@ -11714,7 +11096,7 @@ class _TapPauseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       radius: 18,
       padding: const EdgeInsets.all(14),
       color: RefColors.cyan.withValues(alpha: .08),
@@ -11855,7 +11237,7 @@ class _VoiceQuoteCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       gradient: LinearGradient(
         colors: [
@@ -11880,13 +11262,13 @@ class _WaveformCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isYou = kind == _WaveKind.you;
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
           Row(
             children: [
-              _StatusChip(
+              StatusChip(
                 isYou ? 'TÚ' : 'ORIGINAL',
                 color: (isYou ? RefColors.pink : RefColors.cyan).withValues(
                   alpha: .18,
@@ -11897,7 +11279,7 @@ class _WaveformCard extends StatelessWidget {
               ),
               if (isYou) ...[
                 const SizedBox(width: 8),
-                const _StatusChip(
+                const StatusChip(
                   '3/5 REP',
                   color: RefColors.glassStrong,
                   textColor: RefColors.pink,
@@ -12079,7 +11461,7 @@ class _BlocksCounterCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _Glass(
+    return const Glass(
       padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
@@ -12104,7 +11486,7 @@ class _BlocksCounterCard extends StatelessWidget {
             ),
           ),
           Spacer(),
-          _Chip('Intento 1/3', dense: true),
+          RefChip('Intento 1/3', dense: true),
         ],
       ),
     );
@@ -12117,7 +11499,7 @@ class _BlocksListCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final blocks = _studyBlocks(context);
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.all(14),
       child: Column(
         children: [
@@ -12286,7 +11668,7 @@ class _LostPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 18),
       color: RefColors.urgent.withValues(alpha: .12),
       border: Border.all(color: RefColors.urgent.withValues(alpha: .55)),
@@ -12376,7 +11758,7 @@ class _CompleteStatsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       radius: 18,
       padding: const EdgeInsets.symmetric(vertical: 15),
       gradient: LinearGradient(
@@ -12405,7 +11787,7 @@ class _CompleteSentenceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = _maskedStudyLine(context, visibleWords: level2 ? 1 : 3);
-    return _Glass(
+    return Glass(
       padding: EdgeInsets.symmetric(
         horizontal: level2 ? 14 : 18,
         vertical: level2 ? 32 : 34,
@@ -12440,7 +11822,7 @@ class _WordBankCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final base = _studyWords(_cardStudyText(context)).take(level2 ? 8 : 5);
     final words = [...base, if (level2) 'camino' else 'guía', 'padre'];
-    return _Glass(
+    return Glass(
       radius: 18,
       padding: const EdgeInsets.all(14),
       color: RefColors.glassSoft,
@@ -12544,7 +11926,7 @@ class _FirstLetterSentence extends StatelessWidget {
       _ => 0,
     };
     final usedTargetIndexes = <int>{};
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.fromLTRB(18, 32, 18, 32),
       gradient: LinearGradient(
         colors: [
@@ -12706,7 +12088,7 @@ class _KeyboardCard extends StatelessWidget {
       ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'ñ'],
       ['z', 'x', 'c', 'v', 'b', 'n', 'm'],
     ];
-    return _Glass(
+    return Glass(
       radius: 18,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
       child: Column(
@@ -12979,7 +12361,7 @@ class _VoiceRecitationPracticeCardState
     final wrongRecent =
         _lastWrongAt != null &&
         DateTime.now().millisecondsSinceEpoch - _lastWrongAt! < 1200;
-    return _Glass(
+    return Glass(
       radius: 18,
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -13173,7 +12555,7 @@ class _ListeningHud extends StatelessWidget {
     final isBlue = colorMode == _ListeningColorMode.blue;
     final accent = isBlue ? RefColors.cyan : RefColors.pink;
     final icon = isBlue ? '🎧' : '🎤';
-    return _Glass(
+    return Glass(
       radius: 18,
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -13245,7 +12627,7 @@ class _VoiceHiddenWordsCard extends StatelessWidget {
     final indices = List.generate(words.length, (i) => i);
     indices.shuffle(rng);
     final hiddenIndices = indices.take(hiddenCount).toSet();
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
       gradient: LinearGradient(
         colors: [
@@ -13293,7 +12675,7 @@ class _VoiceHiddenWordsCard extends StatelessWidget {
   }
 
   Widget _buildAllHidden(List<String> words) {
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
       gradient: LinearGradient(
         colors: [
@@ -13420,7 +12802,7 @@ class _QuizNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       radius: 18,
       padding: const EdgeInsets.all(10),
       child: Row(
@@ -13483,7 +12865,7 @@ class _WarningCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       radius: 18,
       padding: const EdgeInsets.all(14),
       color: RefColors.pink.withValues(alpha: .10),
@@ -13520,7 +12902,7 @@ class _Stat extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: _Glass(
+      child: Glass(
         radius: 16,
         padding: const EdgeInsets.all(14),
         child: Row(
@@ -13559,9 +12941,9 @@ class _ExerciseTopBar extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 14),
       child: Row(
         children: [
-          const _BackButton(),
-          Expanded(child: Center(child: _Chip(center, dense: true))),
-          const _IconButton(icon: Icons.wb_sunny_outlined),
+          const RefBackButton(),
+          Expanded(child: Center(child: RefChip(center, dense: true))),
+          const RefIconButton(icon: Icons.wb_sunny_outlined),
         ],
       ),
     );
@@ -13585,7 +12967,7 @@ class _QuestionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _Glass(
+        Glass(
           padding: const EdgeInsets.all(22),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -13630,7 +13012,7 @@ class _QuestionCard extends StatelessWidget {
         for (final opt in options)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: _Glass(
+            child: Glass(
               radius: 16,
               padding: const EdgeInsets.all(12),
               color: opt.$3
@@ -13698,7 +13080,7 @@ class FlashcardsScreen extends StatelessWidget {
           _FlashcardsTopBar(title: deck.title),
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
-            child: _Progress(progress.clamp(.05, 1.0)),
+            child: RefProgress(progress.clamp(.05, 1.0)),
           ),
           _FlashcardDeck(deck: deck, card: card, index: store.currentCardIndex),
           const SizedBox(height: 20),
@@ -13733,8 +13115,8 @@ class PremiumScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _TopBar(title: 'Premium'),
-          _Glass(
+          const RefTopBar(title: 'Premium'),
+          Glass(
             padding: const EdgeInsets.all(20),
             gradient: LinearGradient(
               colors: [
@@ -13797,7 +13179,7 @@ class PremiumScreen extends StatelessWidget {
                 'Variantes de examen para que cada intento se sienta distinto.',
           ),
           const SizedBox(height: 16),
-          _Cta(
+          Cta(
             store.isPremium ? 'Premium activo' : 'Activar cuando esté listo',
             onTap: () {
               store.setPremiumPreview(!store.isPremium);
@@ -13841,7 +13223,7 @@ class _PremiumBenefit extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       padding: const EdgeInsets.all(14),
       color: RefColors.glass,
       border: Border.all(color: RefColors.border),
@@ -13899,7 +13281,7 @@ class _FlashcardsTopBar extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 14),
       child: Row(
         children: [
-          const _BackButton(exitText: true),
+          const RefBackButton(exitText: true),
           Expanded(
             child: Column(
               children: [
@@ -13921,7 +13303,7 @@ class _FlashcardsTopBar extends StatelessWidget {
               ],
             ),
           ),
-          const _IconButton(icon: Icons.wb_sunny_outlined),
+          const RefIconButton(icon: Icons.wb_sunny_outlined),
         ],
       ),
     );
@@ -13967,7 +13349,7 @@ class _FlashcardDeck extends StatelessWidget {
             ),
           ),
           Positioned.fill(
-            child: _Glass(
+            child: Glass(
               radius: 26,
               padding: const EdgeInsets.fromLTRB(22, 22, 22, 24),
               gradient: LinearGradient(
@@ -14224,7 +13606,7 @@ class _FlashcardAction extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: _Glass(
+      child: Glass(
         radius: 16,
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 14),
         color: accent.withValues(alpha: .10),
@@ -14263,7 +13645,7 @@ class _FlashcardStatsStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Glass(
+    return Glass(
       radius: 18,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
       color: RefColors.glassStrong,
@@ -14965,7 +14347,7 @@ class _FogStepState extends State<_FogStep>
             ],
           ),
         ),
-        _Glass(
+        Glass(
           padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
           gradient: LinearGradient(
             colors: [
@@ -14991,7 +14373,7 @@ class _FogStepState extends State<_FogStep>
         ),
         const SizedBox(height: 16),
         if (widget.finished)
-          _Glass(
+          Glass(
             padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
             color: RefColors.lime.withValues(alpha: .14),
             border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
@@ -15479,7 +14861,7 @@ class _RecitationStepState extends State<_RecitationStep>
           ),
         ),
         Expanded(
-          child: _Glass(
+          child: Glass(
             padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
             gradient: LinearGradient(
               colors: [
@@ -15530,7 +14912,7 @@ class _RecitationStepState extends State<_RecitationStep>
           ),
         ),
         const SizedBox(height: 14),
-        _Glass(
+        Glass(
           radius: 18,
           padding: const EdgeInsets.all(14),
           child: Row(
