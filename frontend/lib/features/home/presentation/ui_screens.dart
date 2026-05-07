@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -29,6 +30,7 @@ class AppRoutes {
   static const cooperativoLogrado = '/cooperativo/logrado';
   static const ejercicios = '/ejercicios';
   static const flashcards = '/flashcards';
+  static const premium = '/premium';
   static const flow = '/ejercicios-flow';
   static const bgNocturnoMate = '/preview/background/nocturno-mate';
   static const bgVinoAhumado = '/preview/background/vino-ahumado';
@@ -60,8 +62,10 @@ class AppRoutes {
           reverseCurve: Curves.easeInCubic,
         );
         return SlideTransition(
-          position: Tween<Offset>(begin: begin, end: Offset.zero)
-              .animate(curved),
+          position: Tween<Offset>(
+            begin: begin,
+            end: Offset.zero,
+          ).animate(curved),
           child: FadeTransition(opacity: curved, child: child),
         );
       },
@@ -104,6 +108,7 @@ class AppRoutes {
     cooperativoLogrado: (_) => const CooperativoSuccessScreen(),
     ejercicios: (_) => ExerciseFlowScreen(data: flowScreens.first),
     flashcards: (_) => const FlashcardsScreen(),
+    premium: (_) => const PremiumScreen(),
     '$flow/progress-tree': (_) => const _ProgressTreeScreen(),
     for (final screen in flowScreens)
       '$flow/${screen.slug}': (_) => ExerciseFlowScreen(data: screen),
@@ -600,9 +605,7 @@ class _Cta extends StatelessWidget {
             gradient: isDisabled ? null : RefColors.primary,
             color: isDisabled ? RefColors.glass : null,
             borderRadius: BorderRadius.circular(18),
-            border: isDisabled
-                ? Border.all(color: RefColors.border)
-                : null,
+            border: isDisabled ? Border.all(color: RefColors.border) : null,
             boxShadow: isDisabled
                 ? null
                 : [
@@ -926,7 +929,7 @@ class _BibliaScreenState extends State<BibliaScreen> {
               onBook: _pickBook,
               onChapter: _pickChapter,
               onVerse: _toggleVerse,
-              onConfirmVerses: () => setState(() => _step = 'continue'),
+              onConfirmVerses: _finishBibleSelection,
               onFinish: _finishBibleSelection,
             ),
           const SizedBox(height: 14),
@@ -1675,17 +1678,72 @@ String _realStepTitle(String slug) {
   if (slug == '03-leer-voz') return 'Leer en voz';
   if (slug == '04-escuchar-voz') return 'Escuchar tu voz';
   if (slug.contains('bloques')) return 'Ordena el texto';
+  if (slug == '12-completar-n3') return 'Completado';
   if (slug.contains('completar')) return 'Completa memoria';
   if (slug.contains('primera-letra')) return 'Iniciales';
   if (slug.contains('quiz')) return 'Quiz real';
+  if (slug == '15-banco-completo') return 'Banco completo';
+  if (slug == '16-niebla') return 'Niebla';
   if (slug.contains('voz')) return 'Recitación';
   return 'Estudio activo';
 }
 
-String _nextFlowSlug(String slug) {
-  final index = flowScreens.indexWhere((item) => item.slug == slug);
-  if (index < 0 || index == flowScreens.length - 1) return 'final-review';
-  return flowScreens[index + 1].slug;
+ExerciseFlowData _flowData(String slug) {
+  return flowScreens.firstWhere(
+    (item) => item.slug == slug,
+    orElse: () => ExerciseFlowData(slug, _realStepTitle(slug), 'Práctica'),
+  );
+}
+
+List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
+  final difficulty = store.sessionDifficulty.clamp(0, 2);
+  final seed = store.sessionFlowSeed;
+  final rng = math.Random(seed ^ (difficulty * 1009));
+
+  List<String> pick(List<String> pool, int count) {
+    final copy = [...pool]..shuffle(rng);
+    return copy.take(count.clamp(0, copy.length)).toList();
+  }
+
+  final intro = <String>[
+    '01-escuchar',
+    '02-lectura-frag',
+    '03-leer-voz',
+    '04-escuchar-voz',
+  ];
+  final level1 = <String>[
+    '05-bloques',
+    '06-completar-n1',
+    '07-primera-letra-n1',
+  ];
+  final level2 = <String>[
+    '08-voz-guiada',
+    '10-completar-n2',
+    '11-primera-letra-n2',
+  ];
+  final level3Optional = <String>[
+    if (store.isPremium) '09-quiz',
+    '12-completar-n3',
+    '13-primera-letra-n3',
+    '15-banco-completo',
+    '16-niebla',
+  ];
+
+  final slugs = <String>[
+    ...intro,
+    ...pick(level1, difficulty == 0 ? 2 : 3),
+    if (difficulty >= 1) ...pick(level2, difficulty == 1 ? 2 : 3),
+    if (difficulty >= 1) ...pick(level3Optional, difficulty == 1 ? 2 : 3),
+    '14-voz-final',
+  ];
+  return slugs.map(_flowData).toList();
+}
+
+String _nextFlowSlug(AppStore store, String slug) {
+  final steps = _sessionFlowSteps(store);
+  final index = steps.indexWhere((item) => item.slug == slug);
+  if (index < 0 || index == steps.length - 1) return 'final-review';
+  return steps[index + 1].slug;
 }
 
 bool _isPassiveStep(String slug) {
@@ -1695,6 +1753,41 @@ bool _isPassiveStep(String slug) {
       slug == '04-escuchar-voz';
 }
 
+bool _isCompletionSlug(String slug) => slug.contains('completar');
+
+bool _isFirstLetterSlug(String slug) => slug.contains('primera-letra');
+
+bool _isFinalVoiceSlug(String slug) => slug.endsWith('voz-final');
+
+bool _isWordBankSlug(String slug) => slug == '15-banco-completo';
+
+bool _isFogSlug(String slug) => slug == '16-niebla';
+
+int _completionLevelForSlug(String slug) {
+  if (slug.endsWith('-n3')) return 3;
+  if (slug.endsWith('-n2')) return 2;
+  return 1;
+}
+
+int _letterLevelForSlug(String slug) {
+  if (slug.endsWith('-n3')) return 3;
+  if (slug.endsWith('-n2')) return 2;
+  return 1;
+}
+
+String _phaseLabelFor(String slug) {
+  if (_flowStepNumber(slug) <= 4) return 'Preparar';
+  if (_completionLevelForSlug(slug) >= 3 ||
+      _letterLevelForSlug(slug) >= 3 ||
+      slug == '09-quiz' ||
+      _isWordBankSlug(slug) ||
+      _isFogSlug(slug) ||
+      _isFinalVoiceSlug(slug)) {
+    return 'Probar';
+  }
+  return 'Construir';
+}
+
 List<String> _orderedBlocks(String text) {
   final words = _studyWords(text);
   final size = words.length > 18 ? 4 : 3;
@@ -1702,10 +1795,10 @@ List<String> _orderedBlocks(String text) {
   for (var i = 0; i < words.length; i += size) {
     blocks.add(words.skip(i).take(size).join(' '));
   }
-  return blocks.take(5).toList();
+  return blocks;
 }
 
-String _targetWord(String text, {required bool level2}) {
+String _targetWord(String text, {required int level}) {
   final words = _studyWords(text)
       .where(
         (word) =>
@@ -1713,22 +1806,30 @@ String _targetWord(String text, {required bool level2}) {
       )
       .toList();
   if (words.isEmpty) return _studyWords(text).first;
-  return words[(level2 ? words.length ~/ 2 : 0).clamp(0, words.length - 1)];
+  final offset = switch (level) {
+    1 => 0,
+    2 => words.length ~/ 2,
+    _ => words.length - 1,
+  };
+  return words[offset.clamp(0, words.length - 1)];
 }
 
-List<String> _completionTargetsFor(String text, {required bool level2}) {
+List<String> _completionTargetsFor(String text, {required int level}) {
   final words = _studyWords(text);
   final candidateIndexes = <int>[];
   for (var i = 0; i < words.length; i++) {
-    final clean =
-        words[i].replaceAll(RegExp(r'[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]'), '');
+    final clean = words[i].replaceAll(RegExp(r'[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]'), '');
     if (clean.length > 2) candidateIndexes.add(i);
   }
   final sourceIndexes = candidateIndexes.isEmpty
       ? List<int>.generate(words.length, (i) => i)
       : candidateIndexes;
   if (sourceIndexes.isEmpty) return [];
-  final targetCount = (level2 ? 4 : 3).clamp(1, sourceIndexes.length);
+  final targetCount = switch (level) {
+    1 => 3,
+    2 => 5,
+    _ => sourceIndexes.length,
+  }.clamp(1, sourceIndexes.length).toInt();
   final rng = math.Random();
   final pickPool = List<int>.from(sourceIndexes);
   pickPool.shuffle(rng);
@@ -1753,12 +1854,14 @@ List<String> _completionOptions(
   int offset = 0,
   int seed = 0,
 }) {
+  final cleanRegex = RegExp(r'[^\wÁÉÍÓÚÜÑáéíóúüñ]');
+  final cleanTarget = target.replaceAll(cleanRegex, '');
   final pool = <String>[];
   final words = _studyWords(text);
   for (final word in words) {
-    final clean = word.replaceAll(RegExp(r'[^\wÁÉÍÓÚÜÑáéíóúüñ]'), '');
+    final clean = word.replaceAll(cleanRegex, '');
     if (clean.length > 3 &&
-        !_sameAnswer(clean, target) &&
+        !_sameAnswer(clean, cleanTarget) &&
         !pool.any((p) => _sameAnswer(p, clean))) {
       pool.add(clean);
     }
@@ -1768,27 +1871,37 @@ List<String> _completionOptions(
   );
   pool.shuffle(rng);
   final distractors = pool.take(4).toList();
-  final options = <String>[target, ...distractors];
+  final options = <String>[cleanTarget, ...distractors];
   options.shuffle(rng);
   return options;
 }
 
-String _firstLetterAnswer(String text, {required bool level2}) {
-  final words = _firstLetterTargets(text, level2: level2);
+String _firstLetterAnswer(String text, {required int level}) {
+  final words = _firstLetterTargets(text, level: level);
   return words.map((word) => word.substring(0, 1)).join('');
 }
 
-List<String> _firstLetterTargets(String text, {required bool level2}) {
+List<String> _firstLetterTargets(String text, {required int level}) {
   final words = _studyWords(text);
   if (words.isEmpty) return [];
-  final targetCount = level2 ? 5 : 4;
-  final visibleWords = level2 ? 1 : 3;
+  final targetCount = switch (level) {
+    1 => 4,
+    2 => 6,
+    _ => words.length,
+  };
+  final visibleWords = switch (level) {
+    1 => 3,
+    2 => 1,
+    _ => 0,
+  };
   final rng = math.Random();
   final available = words.skip(visibleWords).toList();
   if (available.isEmpty) return words.take(1).toList();
   final indexes = List.generate(available.length, (i) => i);
   indexes.shuffle(rng);
-  final selected = indexes.take(targetCount.clamp(1, available.length)).toList();
+  final selected = indexes
+      .take(targetCount.clamp(1, available.length).toInt())
+      .toList();
   selected.sort();
   return selected.map((i) => available[i]).toList();
 }
@@ -2983,7 +3096,8 @@ class _IniciarScreenState extends State<IniciarScreen> {
       Navigator.pushNamed(context, AppRoutes.especificar);
       return;
     }
-    Navigator.pushNamed(context, '${AppRoutes.flow}/01-escuchar');
+    AppScope.of(context).configureSession(difficulty: _difficulty);
+    Navigator.pushNamed(context, '${AppRoutes.flow}/progress-tree');
   }
 
   @override
@@ -6225,7 +6339,7 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
           const _FlowHintCard(
             icon: '🧭',
             text:
-                'Primero vas a leer y escuchar el contenido. Después vienen reconstrucción, completar palabras, iniciales, quiz y repaso final.',
+                'Primero vas a leer y escuchar el contenido. Después vienen reconstrucción, completar palabras, iniciales y repaso final.',
           ),
           const SizedBox(height: 14),
           _SessionPlanCard(total: deck.cards.length),
@@ -6234,9 +6348,8 @@ class _EjerciciosScreenState extends State<EjerciciosScreen> {
             children: [
               Expanded(
                 child: _GhostButton(
-                  'Quiz diagnóstico',
-                  onTap: () =>
-                      Navigator.pushNamed(context, '${AppRoutes.flow}/09-quiz'),
+                  'Quiz premium',
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.premium),
                 ),
               ),
               const SizedBox(width: 10),
@@ -6618,7 +6731,23 @@ const flowScreens = [
   ExerciseFlowData('09-quiz', 'Quiz', 'Elige la respuesta correcta'),
   ExerciseFlowData('10-completar-n2', 'Completar N2', 'Recuerdo más fuerte'),
   ExerciseFlowData('11-primera-letra-n2', 'Primera letra N2', 'Casi sin ayuda'),
-  ExerciseFlowData('12-voz-final', 'Voz final', 'Demuestra dominio'),
+  ExerciseFlowData('12-completar-n3', 'Completado N3', 'Más huecos visibles'),
+  ExerciseFlowData(
+    '13-primera-letra-n3',
+    'Iniciales N3',
+    'Todas las pistas ocultas',
+  ),
+  ExerciseFlowData(
+    '15-banco-completo',
+    'Banco completo',
+    'Vacía el banco eligiendo bien',
+  ),
+  ExerciseFlowData(
+    '16-niebla',
+    'Niebla',
+    'Recita mientras se nubla más',
+  ),
+  ExerciseFlowData('14-voz-final', 'Voz final', 'Demuestra dominio'),
   ExerciseFlowData('mini-review', 'Mini review', 'Cierre rápido'),
   ExerciseFlowData('final-review', 'Review final', 'Resumen de sesión'),
 ];
@@ -6630,6 +6759,9 @@ class ExerciseFlowScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (data.slug == '09-quiz' && !AppScope.of(context).isPremium) {
+      return const PremiumScreen();
+    }
     return _RealExerciseFlowScreen(data: data);
     // ignore: dead_code
     if (data.slug == '01-escuchar') return const _ListenFlowScreen();
@@ -6695,14 +6827,11 @@ class _QuizRound {
   final List<MemoryCardData> options;
   int? selectedIdx;
 
-  _QuizRound({
-    required this.target,
-    required this.type,
-    required this.options,
-  });
+  _QuizRound({required this.target, required this.type, required this.options});
 
   bool get answered => selectedIdx != null;
-  bool get correct => selectedIdx != null && options[selectedIdx!].id == target.id;
+  bool get correct =>
+      selectedIdx != null && options[selectedIdx!].id == target.id;
 }
 
 class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
@@ -6712,26 +6841,204 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   List<int> _blockOrderIndexes = [];
   int? _selectedBlockPosition;
   String? _completionCardId;
-  bool _completionLevel2 = false;
+  int _completionLevel = 1;
   List<String> _completionTargets = [];
   List<String?> _completionAnswers = [];
   int _activeCompletionIndex = 0;
   int _completionMistakes = 0;
   int _completionSeed = 1;
+  Timer? _completionTimer;
+  int _completionSecondsLeft = 0;
+  bool _completionLost = false;
   String? _letterCardId;
-  bool _letterLevel2 = false;
+  int _letterLevel = 1;
   List<String> _letterTargets = [];
   List<String?> _letterAnswers = [];
   int _activeLetterIndex = 0;
   int _letterMistakes = 0;
+  Timer? _letterTimer;
+  int _letterSecondsLeft = 0;
+  bool _letterLost = false;
 
   String? _quizCardId;
   List<_QuizRound> _quizRounds = [];
   int _quizRoundIndex = 0;
   int _quizScore = 0;
 
+  String? _bankCardId;
+  List<String> _bankTargets = [];
+  List<String?> _bankAnswers = [];
+  List<String> _bankAvailable = [];
+  int _bankActiveIndex = 0;
+  int _bankMistakes = 0;
+
+  String? _fogCardId;
+  int _fogRound = 0;
+  bool _fogFinished = false;
+
   @override
-  void dispose() => super.dispose();
+  void dispose() {
+    _completionTimer?.cancel();
+    _letterTimer?.cancel();
+    super.dispose();
+  }
+
+  static const int _completionTimeForLevel2 = 90;
+  static const int _completionTimeForLevel3 = 120;
+  static const int _letterTimeForLevel2 = 90;
+  static const int _letterTimeForLevel3 = 120;
+
+  String _formatMmSs(int totalSeconds) {
+    final s = totalSeconds.clamp(0, 9999);
+    final m = (s ~/ 60).toString().padLeft(2, '0');
+    final ss = (s % 60).toString().padLeft(2, '0');
+    return '$m:$ss';
+  }
+
+  void _startCompletionTimer(int seconds) {
+    _completionTimer?.cancel();
+    _completionSecondsLeft = seconds;
+    _completionLost = false;
+    if (seconds <= 0) return;
+    _completionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _completionSecondsLeft -= 1;
+        if (_completionSecondsLeft <= 0) {
+          _completionSecondsLeft = 0;
+          _completionLost = true;
+          timer.cancel();
+        }
+      });
+    });
+  }
+
+  void _stopCompletionTimerOnSuccess() {
+    if (_completionTimer != null) {
+      _completionTimer!.cancel();
+      _completionTimer = null;
+    }
+  }
+
+  void _retryCompletion() {
+    setState(() {
+      _completionCardId = null;
+      _completionLost = false;
+    });
+  }
+
+  void _startLetterTimer(int seconds) {
+    _letterTimer?.cancel();
+    _letterSecondsLeft = seconds;
+    _letterLost = false;
+    if (seconds <= 0) return;
+    _letterTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _letterSecondsLeft -= 1;
+        if (_letterSecondsLeft <= 0) {
+          _letterSecondsLeft = 0;
+          _letterLost = true;
+          timer.cancel();
+        }
+      });
+    });
+  }
+
+  void _stopLetterTimerOnSuccess() {
+    if (_letterTimer != null) {
+      _letterTimer!.cancel();
+      _letterTimer = null;
+    }
+  }
+
+  void _retryLetter() {
+    setState(() {
+      _letterCardId = null;
+      _letterLost = false;
+    });
+  }
+
+  void _ensureBankState(String cardId, String text) {
+    if (_bankCardId == cardId) return;
+    _bankCardId = cardId;
+    _bankTargets = _studyWords(text);
+    _bankAnswers = List<String?>.filled(_bankTargets.length, null);
+    final cleanRegex = RegExp(r'[^\wÁÉÍÓÚÜÑáéíóúüñ]');
+    final cleanWords = _bankTargets
+        .map((w) => w.replaceAll(cleanRegex, ''))
+        .where((w) => w.isNotEmpty)
+        .toList();
+    final rng = math.Random(DateTime.now().microsecondsSinceEpoch);
+    _bankAvailable = [...cleanWords]..shuffle(rng);
+    _bankActiveIndex = 0;
+    _bankMistakes = 0;
+    _checked = false;
+  }
+
+  bool _bankComplete() {
+    if (_bankTargets.isEmpty) return false;
+    for (var i = 0; i < _bankTargets.length; i++) {
+      final answer = _bankAnswers[i];
+      if (answer == null || !_sameAnswer(answer, _bankTargets[i])) return false;
+    }
+    return true;
+  }
+
+  void _selectBankWord(String word) {
+    if (_bankTargets.isEmpty || _bankComplete()) return;
+    final idx = _bankActiveIndex.clamp(0, _bankTargets.length - 1);
+    final correct = _sameAnswer(word, _bankTargets[idx]);
+    setState(() {
+      if (correct) {
+        _bankAnswers[idx] = word;
+        // Remove first matching word from bank.
+        final removeAt = _bankAvailable.indexWhere((w) => _sameAnswer(w, word));
+        if (removeAt >= 0) _bankAvailable.removeAt(removeAt);
+        final next = _bankAnswers.indexWhere((a) => a == null);
+        if (next >= 0) _bankActiveIndex = next;
+        if (_bankComplete()) {
+          HapticFeedback.heavyImpact();
+        } else {
+          HapticFeedback.lightImpact();
+        }
+      } else {
+        _bankMistakes += 1;
+        HapticFeedback.mediumImpact();
+      }
+    });
+  }
+
+  void _activateBankBlank(int index) {
+    if (index < 0 || index >= _bankTargets.length) return;
+    if (_bankAnswers[index] != null) return;
+    setState(() => _bankActiveIndex = index);
+  }
+
+  void _ensureFogState(String cardId) {
+    if (_fogCardId == cardId) return;
+    _fogCardId = cardId;
+    _fogRound = 0;
+    _fogFinished = false;
+  }
+
+  void _onFogRoundCompleted() {
+    setState(() {
+      if (_fogRound >= 2) {
+        _fogFinished = true;
+        HapticFeedback.heavyImpact();
+      } else {
+        _fogRound += 1;
+        HapticFeedback.lightImpact();
+      }
+    });
+  }
 
   void _revealFragment(String slug, int totalWords) {
     if (totalWords <= 0) return;
@@ -6744,12 +7051,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 
   bool _completionCorrect(String slug, MemoryCardData card) {
-    _ensureCompletionState(card.id, card.back, slug == '10-completar-n2');
+    _ensureCompletionState(card.id, card.back, _completionLevelForSlug(slug));
     return _completionComplete();
   }
 
   bool _letterCorrect(String slug, MemoryCardData card) {
-    _ensureLetterState(card.id, card.back, slug == '11-primera-letra-n2');
+    _ensureLetterState(card.id, card.back, _letterLevelForSlug(slug));
     return _letterComplete();
   }
 
@@ -6770,10 +7077,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     MemoryDeckData deck,
   ) {
     if (slug == '05-bloques') return _blocksAreCorrect();
-    if (slug == '06-completar-n1' || slug == '10-completar-n2') {
+    if (_isCompletionSlug(slug)) {
       return _completionCorrect(slug, card);
     }
-    if (slug == '07-primera-letra-n1' || slug == '11-primera-letra-n2') {
+    if (_isFirstLetterSlug(slug)) {
       return _letterCorrect(slug, card);
     }
     if (slug == '09-quiz') {
@@ -6783,6 +7090,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       }
       return true;
     }
+    if (_isWordBankSlug(slug)) return _bankComplete();
+    if (_isFogSlug(slug)) return _fogFinished;
     return true;
   }
 
@@ -6848,16 +7157,22 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         _correctBlockCount() == _blockOrderIndexes.length;
   }
 
-  void _ensureCompletionState(String cardId, String text, bool level2) {
-    if (_completionCardId == cardId && _completionLevel2 == level2) return;
+  void _ensureCompletionState(String cardId, String text, int level) {
+    if (_completionCardId == cardId && _completionLevel == level) return;
     _completionCardId = cardId;
-    _completionLevel2 = level2;
-    _completionTargets = _completionTargetsFor(text, level2: level2);
+    _completionLevel = level;
+    _completionTargets = _completionTargetsFor(text, level: level);
     _completionAnswers = List<String?>.filled(_completionTargets.length, null);
     _activeCompletionIndex = 0;
     _completionMistakes = 0;
     _completionSeed = DateTime.now().microsecondsSinceEpoch;
     _checked = false;
+    final seconds = level == 2
+        ? _completionTimeForLevel2
+        : level >= 3
+            ? _completionTimeForLevel3
+            : 0;
+    _startCompletionTimer(seconds);
   }
 
   bool _completionComplete() {
@@ -6873,6 +7188,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
   void _selectCompletionWord(String word) {
     if (_completionTargets.isEmpty || _completionComplete()) return;
+    if (_completionLost) return;
     final currentIndex = _activeCompletionIndex.clamp(
       0,
       _completionTargets.length - 1,
@@ -6887,6 +7203,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           (answer) => answer == null || answer.trim().isEmpty,
         );
         if (nextIndex >= 0) _activeCompletionIndex = nextIndex;
+        if (_completionComplete()) _stopCompletionTimerOnSuccess();
       } else {
         _completionMistakes += 1;
       }
@@ -6899,15 +7216,21 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     setState(() => _activeCompletionIndex = index);
   }
 
-  void _ensureLetterState(String cardId, String text, bool level2) {
-    if (_letterCardId == cardId && _letterLevel2 == level2) return;
+  void _ensureLetterState(String cardId, String text, int level) {
+    if (_letterCardId == cardId && _letterLevel == level) return;
     _letterCardId = cardId;
-    _letterLevel2 = level2;
-    _letterTargets = _firstLetterTargets(text, level2: level2);
+    _letterLevel = level;
+    _letterTargets = _firstLetterTargets(text, level: level);
     _letterAnswers = List<String?>.filled(_letterTargets.length, null);
     _activeLetterIndex = 0;
     _letterMistakes = 0;
     _checked = false;
+    final seconds = level == 2
+        ? _letterTimeForLevel2
+        : level >= 3
+            ? _letterTimeForLevel3
+            : 0;
+    _startLetterTimer(seconds);
   }
 
   bool _letterComplete() {
@@ -6923,6 +7246,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
   void _selectFirstLetter(String letter) {
     if (_letterTargets.isEmpty || _letterComplete()) return;
+    if (_letterLost) return;
     final currentIndex = _activeLetterIndex.clamp(0, _letterTargets.length - 1);
     final target = _letterTargets[currentIndex];
     final correct = _sameAnswer(letter, target.substring(0, 1));
@@ -6932,6 +7256,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         _letterAnswers[currentIndex] = target;
         final nextIndex = _letterAnswers.indexWhere((answer) => answer == null);
         if (nextIndex >= 0) _activeLetterIndex = nextIndex;
+        if (_letterComplete()) _stopLetterTimerOnSuccess();
       } else {
         _letterMistakes += 1;
       }
@@ -6950,10 +7275,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     MemoryDeckData deck,
     MemoryCardData activeCard,
   ) {
-    final rng = math.Random(activeCard.id.hashCode ^
-        DateTime.now().millisecondsSinceEpoch);
+    final rng = math.Random(
+      activeCard.id.hashCode ^ DateTime.now().millisecondsSinceEpoch,
+    );
     final rounds = <_QuizRound>[];
-    final allCards = [activeCard, ...deck.cards.where((c) => c.id != activeCard.id)];
+    final allCards = [
+      activeCard,
+      ...deck.cards.where((c) => c.id != activeCard.id),
+    ];
     final usedTargets = <String>{};
     final shuffledPool = [...allCards]..shuffle(rng);
     final targets = <MemoryCardData>[activeCard];
@@ -6972,8 +7301,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       final type = i.isEven
           ? _QuizQuestionType.frontToBack
           : _QuizQuestionType.backToFront;
-      final distractorPool =
-          allCards.where((c) => c.id != target.id).toList()..shuffle(rng);
+      final distractorPool = allCards.where((c) => c.id != target.id).toList()
+        ..shuffle(rng);
       final distractors = distractorPool.take(3).toList();
       while (distractors.length < 3) {
         distractors.add(
@@ -7045,26 +7374,31 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == 'final-review') return _RealFinalReview(store: store);
     if (slug == 'mini-review') return _RealPairingReview(store: store);
 
-    final step = _flowStepNumber(slug);
+    final steps = _sessionFlowSteps(store);
+    final stepIndex = steps.indexWhere((step) => step.slug == slug);
+    final step = stepIndex < 0 ? _flowStepNumber(slug) : stepIndex + 1;
+    final totalSteps = steps.length;
     if (slug == '02-lectura-frag' && store.isExerciseStepCompleted(slug)) {
       _fragmentVisibleWords = _studyWords(card.back).length;
     }
     return ReferencePage(
       showBottomNav: false,
-      scrollable: slug != '01-escuchar' &&
-    slug != '08-voz-guiada' &&
-    slug != '12-voz-final', // Allow voice/listen steps to expand
+      scrollable:
+          slug != '01-escuchar' &&
+          slug != '08-voz-guiada' &&
+          !_isFinalVoiceSlug(slug), // Allow voice/listen steps to expand
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _FlowStepHeader(
             step: '$step',
+            totalSteps: totalSteps,
             title: _realStepTitle(slug),
-            progress: step.clamp(1, 12),
+            progress: step.clamp(1, totalSteps),
           ),
           if (slug == '01-escuchar' ||
               slug == '08-voz-guiada' ||
-              slug == '12-voz-final')
+              _isFinalVoiceSlug(slug))
             Expanded(child: _realExerciseBody(context, store, card, deck, slug))
           else
             _realExerciseBody(context, store, card, deck, slug),
@@ -7142,14 +7476,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       );
     }
 
-    if (slug == '08-voz-guiada' || slug == '12-voz-final') {
-      final hidden = slug == '12-voz-final';
+    if (slug == '08-voz-guiada' || _isFinalVoiceSlug(slug)) {
+      final hidden = _isFinalVoiceSlug(slug);
       return _RecitationStep(
         targetText: card.back,
         finalMode: hidden,
-        colorMode: hidden
-            ? _ListeningColorMode.pink
-            : _ListeningColorMode.blue,
+        colorMode: hidden ? _ListeningColorMode.pink : _ListeningColorMode.blue,
         onCompleted: (passed) {
           store.markExerciseStepCompleted(slug);
           if (hidden) store.answerCurrentCard(passed);
@@ -7160,9 +7492,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '05-bloques') {
       final blocks = _orderedBlocks(card.back);
       _ensureBlockOrder(card.id, blocks);
-      final correctCount = _correctBlockCount();
-      final allCorrect = _blocksAreCorrect();
       final selectingDestination = _selectedBlockPosition != null;
+      final hasInteracted = _checked || selectingDestination;
+      final correctCount = hasInteracted ? _correctBlockCount() : 0;
+      final allCorrect = _blocksAreCorrect();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -7175,14 +7508,16 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   TextSpan(
                     children: [
                       TextSpan(
-                        text: '$correctCount / ${blocks.length}',
+                        text: hasInteracted
+                            ? '$correctCount / ${blocks.length}'
+                            : '${blocks.length} bloques',
                         style: const TextStyle(
                           color: RefColors.ink,
                           fontSize: 14,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      const TextSpan(text: ' correctos'),
+                      TextSpan(text: hasInteracted ? ' correctos' : ''),
                     ],
                   ),
                   style: const TextStyle(
@@ -7193,7 +7528,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 ),
                 const Spacer(),
                 _Chip(
-                  allCorrect
+                  hasInteracted && allCorrect
                       ? 'Correcto'
                       : selectingDestination
                       ? 'Elige destino'
@@ -7242,7 +7577,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                       onTap: () => _toggleSelectedBlock(index),
                       child: _VerseBlock(
                         blockText,
-                        correct: _blockOrderIndexes[index] == index,
+                        correct:
+                            hasInteracted && _blockOrderIndexes[index] == index,
                         selected: _selectedBlockPosition == index,
                         wrong: _checked && _blockOrderIndexes[index] != index,
                       ),
@@ -7255,9 +7591,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               },
             ),
           ),
-          if (_checked || allCorrect || selectingDestination)
+          if (hasInteracted)
             _InlineResult(
-              correct: allCorrect,
+              correct: hasInteracted && allCorrect,
               neutral: !allCorrect,
               text: allCorrect
                   ? 'Orden correcto.'
@@ -7269,11 +7605,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       );
     }
 
-    if (slug == '06-completar-n1' || slug == '10-completar-n2') {
-      final level2 = slug == '10-completar-n2';
-      _ensureCompletionState(card.id, card.back, level2);
+    if (_isCompletionSlug(slug)) {
+      final level = _completionLevelForSlug(slug);
+      final isHarder = level >= 2;
+      _ensureCompletionState(card.id, card.back, level);
       final activeTarget = _completionTargets.isEmpty
-          ? _targetWord(card.back, level2: level2)
+          ? _targetWord(card.back, level: level)
           : _completionTargets[_activeCompletionIndex.clamp(
               0,
               _completionTargets.length - 1,
@@ -7290,13 +7627,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _CompleteStatsCard(
-            level2: level2,
+            level2: isHarder,
             firstValue:
                 '${_completionAnswers.where((answer) => answer != null).length}/${_completionTargets.length}',
             firstLabel: 'HUECOS',
             secondValue: '$remainingAttempts/3',
             secondLabel: 'INTENTOS',
-            timeValue: level2 ? '00:45' : '00:45',
+            timeValue: _formatMmSs(_completionSecondsLeft),
           ),
           const SizedBox(height: 14),
           _CompletionPromptCard(
@@ -7315,8 +7652,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
               child: Column(
                 children: const [
-                  Icon(Icons.check_circle_rounded,
-                      color: RefColors.lime, size: 36),
+                  Icon(
+                    Icons.check_circle_rounded,
+                    color: RefColors.lime,
+                    size: 36,
+                  ),
                   SizedBox(height: 10),
                   Text(
                     '¡Completado!',
@@ -7338,6 +7678,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   ),
                 ],
               ),
+            )
+          else if (_completionLost)
+            _LostPanel(
+              title: '¡Tiempo agotado!',
+              subtitle: 'Se acabó el tiempo. Inténtalo de nuevo.',
+              onRetry: _retryCompletion,
             )
           else
             _Glass(
@@ -7399,9 +7745,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       );
     }
 
-    if (slug == '07-primera-letra-n1' || slug == '11-primera-letra-n2') {
-      final level2 = slug == '11-primera-letra-n2';
-      _ensureLetterState(card.id, card.back, level2);
+    if (_isFirstLetterSlug(slug)) {
+      final level = _letterLevelForSlug(slug);
+      final isHarder = level >= 2;
+      _ensureLetterState(card.id, card.back, level);
       final hasInput = _hasLetterInput();
       final complete = _letterComplete();
       final remainingAttempts = (3 - _letterMistakes).clamp(0, 3);
@@ -7409,17 +7756,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _CompleteStatsCard(
-            level2: level2,
+            level2: isHarder,
             firstValue:
                 '${_letterAnswers.where((answer) => answer != null).length}/${_letterTargets.length}',
             firstLabel: 'LETRAS',
             secondValue: '$remainingAttempts/3',
             secondLabel: 'INTENTOS',
+            timeValue: _formatMmSs(_letterSecondsLeft),
           ),
           const SizedBox(height: 12),
           _FirstLetterSentence(
             text: card.back,
-            level: level2 ? 2 : 1,
+            level: level,
             targets: _letterTargets,
             answers: _letterAnswers,
             activeIndex: _activeLetterIndex,
@@ -7433,8 +7781,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
               child: Column(
                 children: const [
-                  Icon(Icons.check_circle_rounded,
-                      color: RefColors.lime, size: 36),
+                  Icon(
+                    Icons.check_circle_rounded,
+                    color: RefColors.lime,
+                    size: 36,
+                  ),
                   SizedBox(height: 10),
                   Text(
                     '¡Completado!',
@@ -7457,6 +7808,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 ],
               ),
             )
+          else if (_letterLost)
+            _LostPanel(
+              title: '¡Tiempo agotado!',
+              subtitle: 'Se acabó el tiempo. Inténtalo de nuevo.',
+              onRetry: _retryLetter,
+            )
           else ...[
             _KeyboardCard(
               onLetterTap: remainingAttempts == 0 ? null : _selectFirstLetter,
@@ -7475,6 +7832,98 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             ],
           ],
         ],
+      );
+    }
+
+    if (_isWordBankSlug(slug)) {
+      _ensureBankState(card.id, card.back);
+      final filled = _bankAnswers.where((a) => a != null).length;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _CompleteStatsCard(
+            level2: false,
+            firstValue: '$filled/${_bankTargets.length}',
+            firstLabel: 'HUECOS',
+            secondValue: '$_bankMistakes',
+            secondLabel: 'FALLOS',
+          ),
+          const SizedBox(height: 14),
+          _CompletionPromptCard(
+            label: card.front,
+            text: card.back,
+            targets: _bankTargets,
+            answers: _bankAnswers,
+            activeIndex: _bankActiveIndex,
+            onBlankTap: _activateBankBlank,
+          ),
+          const SizedBox(height: 14),
+          if (_bankComplete())
+            _Glass(
+              padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+              color: RefColors.lime.withValues(alpha: .14),
+              border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
+              child: Column(
+                children: const [
+                  Icon(Icons.check_circle_rounded, color: RefColors.lime, size: 36),
+                  SizedBox(height: 10),
+                  Text('¡Banco vaciado!',
+                      style: TextStyle(
+                          color: RefColors.lime,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900)),
+                  SizedBox(height: 4),
+                  Text('Cada palabra encontró su lugar.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: RefColors.ink,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600)),
+                ],
+              ),
+            )
+          else
+            _Glass(
+              padding: const EdgeInsets.all(14),
+              color: RefColors.glassSoft,
+              child: Column(
+                children: [
+                  const Text(
+                    'BANCO DE PALABRAS',
+                    style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      for (final word in _bankAvailable)
+                        GestureDetector(
+                          onTap: () => _selectBankWord(word),
+                          child: _WordChip(word, active: false),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+        ],
+      );
+    }
+
+    if (_isFogSlug(slug)) {
+      _ensureFogState(card.id);
+      return _FogStep(
+        targetText: card.back,
+        round: _fogRound,
+        finished: _fogFinished,
+        onRoundCompleted: _onFogRoundCompleted,
       );
     }
 
@@ -7515,10 +7964,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             ],
           ),
         ),
-        _ExerciseQuestionBlock(
-          contextLabel: contextLabel,
-          question: question,
-        ),
+        _ExerciseQuestionBlock(contextLabel: contextLabel, question: question),
         const SizedBox(height: 14),
         for (var i = 0; i < round.options.length; i++) ...[
           _ExerciseOption(
@@ -7548,8 +7994,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           _Glass(
             radius: 16,
             padding: const EdgeInsets.all(14),
-            color: (_quizPassed ? RefColors.lime : RefColors.urgent)
-                .withValues(alpha: .14),
+            color: (_quizPassed ? RefColors.lime : RefColors.urgent).withValues(
+              alpha: .14,
+            ),
             border: Border.all(
               color: (_quizPassed ? RefColors.lime : RefColors.urgent)
                   .withValues(alpha: .55),
@@ -7586,7 +8033,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     MemoryDeckData deck,
     String slug,
   ) {
-    final next = _nextFlowSlug(slug);
+    final next = _nextFlowSlug(store, slug);
     final completed = store.isExerciseStepCompleted(slug);
     if (slug == '02-lectura-frag') {
       return Row(
@@ -7603,12 +8050,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: _ActionCta(
-              label: completed ? 'Siguiente →' : 'Revela todo para continuar',
+              label: completed
+                  ? 'Ver progreso →'
+                  : 'Revela todo para continuar',
               enabled: completed,
               onTap: () {
                 Navigator.push(
                   context,
-                  AppRoutes.slideRoute('${AppRoutes.flow}/$next'),
+                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
                 );
               },
             ),
@@ -7620,11 +8069,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         slug == '03-leer-voz' ||
         slug == '04-escuchar-voz' ||
         slug == '08-voz-guiada' ||
-        slug == '12-voz-final') {
-      final showSkip = slug == '03-leer-voz' ||
+        _isFinalVoiceSlug(slug)) {
+      final showSkip =
+          slug == '03-leer-voz' ||
           slug == '04-escuchar-voz' ||
           slug == '08-voz-guiada' ||
-          slug == '12-voz-final';
+          _isFinalVoiceSlug(slug);
       final cta = _ActionCta(
         label: _footerLabel(slug, checked: _checked, completed: completed),
         enabled: completed,
@@ -7644,9 +8094,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 store.markExerciseStepCompleted(slug);
                 Navigator.push(
                   context,
-                  AppRoutes.slideRoute(
-                    '${AppRoutes.flow}/progress-tree',
-                  ),
+                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
                 );
               },
             ),
@@ -7694,7 +8142,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   store.markExerciseStepCompleted(slug);
                   return;
                 }
-                if (slug == '12-voz-final') store.answerCurrentCard(true);
+                if (_isFinalVoiceSlug(slug)) store.answerCurrentCard(true);
                 Navigator.push(
                   context,
                   AppRoutes.slideRoute('${AppRoutes.flow}/$next'),
@@ -7731,9 +8179,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     store.markExerciseStepCompleted(slug);
                     Navigator.push(
                       context,
-                      AppRoutes.slideRoute(
-                        '${AppRoutes.flow}/progress-tree',
-                      ),
+                      AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
                     );
                     return;
                   }
@@ -7775,10 +8221,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '05-bloques') {
       return _blocksAreCorrect();
     }
-    if (slug == '06-completar-n1' || slug == '10-completar-n2') {
+    if (_isCompletionSlug(slug)) {
       return _completionCorrect(slug, card);
     }
-    if (slug == '07-primera-letra-n1' || slug == '11-primera-letra-n2') {
+    if (_isFirstLetterSlug(slug)) {
       return _letterCorrect(slug, card);
     }
     if (slug == '09-quiz') {
@@ -7804,16 +8250,16 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '08-voz-guiada') {
       return completed ? 'Siguiente →' : 'Recita para continuar';
     }
-    if (slug == '12-voz-final') {
+    if (_isFinalVoiceSlug(slug)) {
       return completed ? 'Review final →' : 'Recita final para cerrar';
     }
     if (slug == '05-bloques') {
       return _blocksAreCorrect() ? 'Siguiente →' : 'Ordena para continuar';
     }
-    if (slug == '06-completar-n1' || slug == '10-completar-n2') {
+    if (_isCompletionSlug(slug)) {
       return _completionComplete() ? 'Completado →' : 'Completa los huecos';
     }
-    if (slug == '07-primera-letra-n1' || slug == '11-primera-letra-n2') {
+    if (_isFirstLetterSlug(slug)) {
       return _letterComplete() ? 'Completado →' : 'Elige primeras letras';
     }
     if (slug == '09-quiz') {
@@ -7837,11 +8283,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '01-escuchar') return completed;
     if (slug == '04-escuchar-voz') return completed;
     if (slug == '05-bloques' ||
-        slug == '06-completar-n1' ||
-        slug == '07-primera-letra-n1' ||
         slug == '09-quiz' ||
-        slug == '10-completar-n2' ||
-        slug == '11-primera-letra-n2') {
+        _isCompletionSlug(slug) ||
+        _isFirstLetterSlug(slug)) {
       return _canAdvanceAnsweredStep(
         slug,
         AppScope.of(context).activeCard,
@@ -9060,12 +9504,14 @@ class _FlowStepHeader extends StatelessWidget {
   final String step;
   final String title;
   final int progress;
+  final int totalSteps;
   final String? difficulty;
 
   const _FlowStepHeader({
     required this.step,
     required this.title,
     required this.progress,
+    this.totalSteps = 12,
     this.difficulty,
   });
 
@@ -9085,7 +9531,7 @@ class _FlowStepHeader extends StatelessWidget {
                 const _BackButton(),
                 const SizedBox(width: 10),
                 Text(
-                  'PASO $step/12',
+                  'PASO $step/$totalSteps',
                   style: const TextStyle(
                     color: RefColors.muted,
                     fontSize: 11,
@@ -9111,7 +9557,7 @@ class _FlowStepHeader extends StatelessWidget {
                   onTap: () => ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
-                        '${store.activeDeck.cards.length} items · paso $step de 12 · ${store.activeDeck.title}',
+                        '${store.activeDeck.cards.length} items · paso $step de $totalSteps · ${store.activeDeck.title}',
                       ),
                     ),
                   ),
@@ -9124,7 +9570,7 @@ class _FlowStepHeader extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Row(
                 children: [
-                  for (var i = 1; i <= 12; i++) ...[
+                  for (var i = 1; i <= totalSteps; i++) ...[
                     Expanded(
                       child: Container(
                         height: 4,
@@ -9138,7 +9584,7 @@ class _FlowStepHeader extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (i < 12) const SizedBox(width: 5),
+                    if (i < totalSteps) const SizedBox(width: 5),
                   ],
                 ],
               ),
@@ -11462,6 +11908,90 @@ class _BlockMoveTarget extends StatelessWidget {
   }
 }
 
+class _LostPanel extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final VoidCallback onRetry;
+
+  const _LostPanel({
+    required this.title,
+    required this.subtitle,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _Glass(
+      padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 18),
+      color: RefColors.urgent.withValues(alpha: .12),
+      border: Border.all(color: RefColors.urgent.withValues(alpha: .55)),
+      child: Column(
+        children: [
+          const Icon(
+            Icons.timer_off_rounded,
+            color: RefColors.urgent,
+            size: 36,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: RefColors.urgent,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: RefColors.ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 14),
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.mediumImpact();
+              onRetry();
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 22,
+                vertical: 12,
+              ),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [RefColors.pink, RefColors.urgent],
+                ),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.refresh_rounded, size: 18, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text(
+                    'Reintentar',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CompleteStatsCard extends StatelessWidget {
   final bool level2;
   final String firstValue;
@@ -11636,14 +12166,18 @@ class _FirstLetterSentence extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isLevel2 = level == 2;
+    final isHarder = level >= 2;
     final sourceText = text ?? _cardStudyText(context);
     final words = _studyWords(sourceText);
     final targetWords =
-        targets ?? _firstLetterTargets(sourceText, level2: isLevel2);
+        targets ?? _firstLetterTargets(sourceText, level: level);
     final answerWords =
         answers ?? List<String?>.filled(targetWords.length, null);
-    final visibleWords = isLevel2 ? 1 : 3;
+    final visibleWords = switch (level) {
+      1 => 3,
+      2 => 1,
+      _ => 0,
+    };
     final usedTargetIndexes = <int>{};
     return _Glass(
       padding: const EdgeInsets.fromLTRB(18, 32, 18, 32),
@@ -11657,8 +12191,8 @@ class _FirstLetterSentence extends StatelessWidget {
       ),
       child: Center(
         child: Wrap(
-          spacing: isLevel2 ? 8 : 10,
-          runSpacing: isLevel2 ? 12 : 14,
+          spacing: isHarder ? 8 : 10,
+          runSpacing: isHarder ? 12 : 14,
           crossAxisAlignment: WrapCrossAlignment.center,
           alignment: WrapAlignment.center,
           children: [
@@ -11753,8 +12287,8 @@ class _LetterBlank extends StatelessWidget {
     final accent = complete
         ? RefColors.lime
         : active
-            ? RefColors.cyan
-            : RefColors.border;
+        ? RefColors.cyan
+        : RefColors.border;
     final length = wordLength.clamp(1, 14);
     return GestureDetector(
       onTap: complete ? null : onTap,
@@ -12019,7 +12553,10 @@ class _VoiceRecitationPracticeCardState
     if (spoken == expected) return true;
     if (spoken.contains(expected) || expected.contains(spoken)) return true;
     final spokenWords = spoken.split(' ').where((w) => w.isNotEmpty).toList();
-    final expectedWords = expected.split(' ').where((w) => w.isNotEmpty).toList();
+    final expectedWords = expected
+        .split(' ')
+        .where((w) => w.isNotEmpty)
+        .toList();
     if (spokenWords.isEmpty || expectedWords.isEmpty) return false;
     int matchCount = 0;
     for (final expectedWord in expectedWords) {
@@ -12067,9 +12604,10 @@ class _VoiceRecitationPracticeCardState
     final accent = _completed
         ? RefColors.lime
         : isBlue
-            ? RefColors.cyan
-            : RefColors.pink;
-    final wrongRecent = _lastWrongAt != null &&
+        ? RefColors.cyan
+        : RefColors.pink;
+    final wrongRecent =
+        _lastWrongAt != null &&
         DateTime.now().millisecondsSinceEpoch - _lastWrongAt! < 1200;
     return _Glass(
       radius: 18,
@@ -12122,8 +12660,10 @@ class _VoiceRecitationPracticeCardState
               const SizedBox(width: 12),
               Expanded(
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: wrongRecent
                         ? RefColors.urgent.withValues(alpha: .18)
@@ -12137,14 +12677,14 @@ class _VoiceRecitationPracticeCardState
                   ),
                   child: Text(
                     _recognized.isEmpty
-                        ? (_listening
-                            ? 'Escuchando…'
-                            : 'Toca el mic y recita')
+                        ? (_listening ? 'Escuchando…' : 'Toca el mic y recita')
                         : _recognized,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: _recognized.isEmpty ? RefColors.dim : RefColors.ink,
+                      color: _recognized.isEmpty
+                          ? RefColors.dim
+                          : RefColors.ink,
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
                     ),
@@ -12153,8 +12693,10 @@ class _VoiceRecitationPracticeCardState
               ),
               const SizedBox(width: 10),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: accent.withValues(alpha: .18),
                   borderRadius: BorderRadius.circular(12),
@@ -12220,8 +12762,8 @@ class _RecitationBlock extends StatelessWidget {
     final blockColor = solved
         ? RefColors.lime
         : active
-            ? accent
-            : RefColors.border;
+        ? accent
+        : RefColors.border;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -12326,7 +12868,10 @@ class _VoiceHiddenWordsCard extends StatelessWidget {
     }
     final rng = math.Random(DateTime.now().millisecondsSinceEpoch ~/ 60000);
     final hiddenRatio = 0.35;
-    final hiddenCount = (words.length * hiddenRatio).round().clamp(1, words.length - 1);
+    final hiddenCount = (words.length * hiddenRatio).round().clamp(
+      1,
+      words.length - 1,
+    );
     final indices = List.generate(words.length, (i) => i);
     indices.shuffle(rng);
     final hiddenIndices = indices.take(hiddenCount).toSet();
@@ -12447,12 +12992,12 @@ class _HiddenWord extends StatelessWidget {
     final accent = wrongFlash
         ? RefColors.urgent
         : skipped
-            ? RefColors.sun
-            : solved
-                ? RefColors.lime
-                : active
-                    ? (pink ? RefColors.pink : RefColors.cyan)
-                    : RefColors.border;
+        ? RefColors.sun
+        : solved
+        ? RefColors.lime
+        : active
+        ? (pink ? RefColors.pink : RefColors.cyan)
+        : RefColors.border;
     final filledColor = skipped ? RefColors.sun : RefColors.lime;
     final length = wordLength.clamp(1, 14);
     return AnimatedContainer(
@@ -12800,6 +13345,172 @@ class FlashcardsScreen extends StatelessWidget {
             precision: store.completedCards == 0
                 ? deck.retention
                 : ((store.correctAnswers / store.completedCards) * 100).round(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class PremiumScreen extends StatelessWidget {
+  const PremiumScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final store = AppScope.of(context);
+    return ReferencePage(
+      showBottomNav: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _TopBar(title: 'Premium'),
+          _Glass(
+            padding: const EdgeInsets.all(20),
+            gradient: LinearGradient(
+              colors: [
+                RefColors.pink.withValues(alpha: .28),
+                RefColors.sun.withValues(alpha: .30),
+                RefColors.violet.withValues(alpha: .22),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: RefColors.glassStrong,
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(color: RefColors.border),
+                  ),
+                  child: const Icon(Icons.workspace_premium_rounded),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Memorizar Premium',
+                  style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 7),
+                const Text(
+                  'Sin anuncios y con ejercicios inteligentes cuando conectemos IA real.',
+                  style: TextStyle(
+                    color: RefColors.muted,
+                    fontSize: 13,
+                    height: 1.38,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          const _PremiumBenefit(
+            icon: Icons.quiz_rounded,
+            title: 'Quizes inteligentes',
+            body:
+                'Preguntas y opciones generadas para el contenido que estás memorizando.',
+          ),
+          const SizedBox(height: 10),
+          const _PremiumBenefit(
+            icon: Icons.block_rounded,
+            title: 'Sin anuncios',
+            body: 'La sesión queda limpia y sin interrupciones.',
+          ),
+          const SizedBox(height: 10),
+          const _PremiumBenefit(
+            icon: Icons.auto_awesome_rounded,
+            title: 'Más ejercicios avanzados',
+            body:
+                'Variantes de examen para que cada intento se sienta distinto.',
+          ),
+          const SizedBox(height: 16),
+          _Cta(
+            store.isPremium ? 'Premium activo' : 'Activar cuando esté listo',
+            onTap: () {
+              store.setPremiumPreview(!store.isPremium);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    store.isPremium
+                        ? 'Preview premium activado para probar quizes.'
+                        : 'Preview premium desactivado.',
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Esto es un preview local. El cobro real se conecta luego con StoreKit/RevenueCat.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: RefColors.muted,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PremiumBenefit extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String body;
+
+  const _PremiumBenefit({
+    required this.icon,
+    required this.title,
+    required this.body,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _Glass(
+      padding: const EdgeInsets.all(14),
+      color: RefColors.glass,
+      border: Border.all(color: RefColors.border),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: RefColors.sun.withValues(alpha: .16),
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(color: RefColors.sun.withValues(alpha: .45)),
+            ),
+            child: Icon(icon, color: RefColors.sun, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  body,
+                  style: const TextStyle(
+                    color: RefColors.muted,
+                    fontSize: 12,
+                    height: 1.3,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -13232,17 +13943,43 @@ class _FlashStat extends StatelessWidget {
   }
 }
 
-class _ProgressTreeScreen extends StatelessWidget {
+class _ProgressTreeScreen extends StatefulWidget {
   const _ProgressTreeScreen();
+
+  @override
+  State<_ProgressTreeScreen> createState() => _ProgressTreeScreenState();
+}
+
+class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
+  final GlobalKey _currentStepKey = GlobalKey();
+  bool _scrolled = false;
 
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
-    final steps = flowScreens.where((s) => !s.slug.contains('review')).toList();
-    final firstIncompleteIndex =
-        steps.indexWhere((s) => !store.isExerciseStepCompleted(s.slug));
-    final currentStepIndex =
-        firstIncompleteIndex < 0 ? steps.length - 1 : firstIncompleteIndex;
+    final steps = _sessionFlowSteps(store);
+    final firstIncompleteIndex = steps.indexWhere(
+      (s) => !store.isExerciseStepCompleted(s.slug),
+    );
+    final currentStepIndex = firstIncompleteIndex < 0
+        ? steps.length - 1
+        : firstIncompleteIndex;
+
+    if (!_scrolled) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _scrolled) return;
+        final ctx = _currentStepKey.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(
+            ctx,
+            duration: const Duration(milliseconds: 420),
+            curve: Curves.easeOutCubic,
+            alignment: 0.35,
+          );
+          _scrolled = true;
+        }
+      });
+    }
 
     return ReferencePage(
       showBottomNav: false,
@@ -13280,13 +14017,14 @@ class _ProgressTreeScreen extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(2, 2, 0, 10),
               children: [
-                for (final group in _phaseGroups)
+                for (final group in _phaseGroups(steps))
                   ..._buildGroup(
                     context: context,
                     group: group,
                     steps: steps,
                     currentStepIndex: currentStepIndex,
                     store: store,
+                    currentStepKey: _currentStepKey,
                   ),
               ],
             ),
@@ -13296,11 +14034,20 @@ class _ProgressTreeScreen extends StatelessWidget {
     );
   }
 
-  static const _phaseGroups = [
-    ('Preparar', 0, 4),
-    ('Construir', 4, 8),
-    ('Probar', 8, 12),
-  ];
+  List<(String, int, int)> _phaseGroups(List<ExerciseFlowData> steps) {
+    final groups = <(String, int, int)>[];
+    var cursor = 0;
+    while (cursor < steps.length) {
+      final label = _phaseLabelFor(steps[cursor].slug);
+      var end = cursor + 1;
+      while (end < steps.length && _phaseLabelFor(steps[end].slug) == label) {
+        end++;
+      }
+      groups.add((label, cursor, end));
+      cursor = end;
+    }
+    return groups;
+  }
 
   List<Widget> _buildGroup({
     required BuildContext context,
@@ -13308,6 +14055,7 @@ class _ProgressTreeScreen extends StatelessWidget {
     required List<ExerciseFlowData> steps,
     required int currentStepIndex,
     required AppStore store,
+    required GlobalKey currentStepKey,
   }) {
     final start = group.$2.clamp(0, steps.length);
     final end = group.$3.clamp(0, steps.length);
@@ -13318,8 +14066,8 @@ class _ProgressTreeScreen extends StatelessWidget {
     final accent = completed
         ? RefColors.lime
         : active
-            ? RefColors.pink
-            : RefColors.muted;
+        ? RefColors.pink
+        : RefColors.muted;
 
     return [
       Padding(
@@ -13347,6 +14095,7 @@ class _ProgressTreeScreen extends StatelessWidget {
       ),
       for (int local = 0; local < groupSteps.length; local++)
         _ReferenceTimelineStep(
+          key: (start + local) == currentStepIndex ? currentStepKey : null,
           step: groupSteps[local],
           index: start + local,
           totalCount: steps.length,
@@ -13372,6 +14121,7 @@ class _ReferenceTimelineStep extends StatelessWidget {
   final bool isLastInGroup;
 
   const _ReferenceTimelineStep({
+    super.key,
     required this.step,
     required this.index,
     required this.totalCount,
@@ -13395,13 +14145,13 @@ class _ReferenceTimelineStep extends StatelessWidget {
     final accent = isCompleted
         ? RefColors.lime
         : isCurrent
-            ? RefColors.pink
-            : RefColors.muted;
+        ? RefColors.pink
+        : RefColors.muted;
     final borderColor = isCompleted
         ? RefColors.lime.withValues(alpha: .85)
         : isCurrent
-            ? RefColors.pink.withValues(alpha: .82)
-            : RefColors.ink.withValues(alpha: .12);
+        ? RefColors.pink.withValues(alpha: .82)
+        : RefColors.ink.withValues(alpha: .12);
 
     return Padding(
       padding: EdgeInsets.only(bottom: isLast ? 0 : 6),
@@ -13494,8 +14244,11 @@ class _ReferenceTimelineStep extends StatelessWidget {
                                 size: 22,
                               )
                             else if (isCompleted)
-                              const Icon(Icons.check_circle_rounded,
-                                  color: RefColors.lime, size: 22)
+                              const Icon(
+                                Icons.check_circle_rounded,
+                                color: RefColors.lime,
+                                size: 22,
+                              )
                             else
                               Icon(
                                 isCurrent
@@ -13562,14 +14315,14 @@ class _TimelineIconBadge extends StatelessWidget {
         color: active
             ? RefColors.pink.withValues(alpha: .72)
             : completed
-                ? RefColors.lime.withValues(alpha: .18)
-                : RefColors.glassStrong,
+            ? RefColors.lime.withValues(alpha: .18)
+            : RefColors.glassStrong,
         border: Border.all(
           color: active
               ? RefColors.pink.withValues(alpha: .95)
               : completed
-                  ? RefColors.lime.withValues(alpha: .85)
-                  : RefColors.ink.withValues(alpha: .14),
+              ? RefColors.lime.withValues(alpha: .85)
+              : RefColors.ink.withValues(alpha: .14),
           width: active || completed ? 1.6 : 1,
         ),
       ),
@@ -13578,10 +14331,10 @@ class _TimelineIconBadge extends StatelessWidget {
         color: active
             ? RefColors.ink
             : locked
-                ? RefColors.muted
-                : completed
-                    ? RefColors.lime
-                    : accent,
+            ? RefColors.muted
+            : completed
+            ? RefColors.lime
+            : accent,
         size: size * .55,
       ),
     );
@@ -13589,28 +14342,347 @@ class _TimelineIconBadge extends StatelessWidget {
 }
 
 IconData _timelineIconFor(String slug) {
+  if (_isCompletionSlug(slug)) return Icons.keyboard_alt_rounded;
+  if (_isFirstLetterSlug(slug)) return Icons.short_text_rounded;
+  if (_isFinalVoiceSlug(slug)) return Icons.mic_rounded;
   switch (slug) {
     case '01-escuchar':
     case '02-lectura-frag':
       return Icons.menu_book_rounded;
     case '03-leer-voz':
     case '08-voz-guiada':
-    case '12-voz-final':
       return Icons.mic_rounded;
     case '04-escuchar-voz':
       return Icons.headphones_rounded;
     case '05-bloques':
       return Icons.segment_rounded;
-    case '06-completar-n1':
-    case '10-completar-n2':
-      return Icons.keyboard_alt_rounded;
-    case '07-primera-letra-n1':
-    case '11-primera-letra-n2':
-      return Icons.short_text_rounded;
     case '09-quiz':
       return Icons.help_outline_rounded;
     default:
       return Icons.radio_button_unchecked_rounded;
+  }
+}
+
+class _FogStep extends StatefulWidget {
+  final String targetText;
+  final int round; // 0,1,2
+  final bool finished;
+  final VoidCallback onRoundCompleted;
+
+  const _FogStep({
+    required this.targetText,
+    required this.round,
+    required this.finished,
+    required this.onRoundCompleted,
+  });
+
+  @override
+  State<_FogStep> createState() => _FogStepState();
+}
+
+class _FogStepState extends State<_FogStep>
+    with SingleTickerProviderStateMixin {
+  stt.SpeechToText? _speech;
+  bool _ready = false;
+  bool _listening = false;
+  bool _starting = false;
+  late AnimationController _pulse;
+  late List<String> _allWords;
+  Set<int> _solved = <int>{};
+  int _processedTokenCount = 0;
+  String _lastSpoken = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+    _allWords = _studyWords(widget.targetText);
+    _initSpeech();
+  }
+
+  @override
+  void didUpdateWidget(_FogStep oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.targetText != widget.targetText) {
+      _allWords = _studyWords(widget.targetText);
+      _solved = <int>{};
+      _processedTokenCount = 0;
+    }
+    if (oldWidget.round != widget.round) {
+      _solved = <int>{};
+      _processedTokenCount = 0;
+      _lastSpoken = '';
+    }
+  }
+
+  Future<bool> _initSpeech() async {
+    await _speech?.cancel();
+    final speech = stt.SpeechToText();
+    _speech = speech;
+    final ok = await speech.initialize(
+      onStatus: (s) {
+        if (!mounted) return;
+        if (s == 'done' || s == 'notListening') {
+          _pulse.stop();
+          _pulse.value = 0;
+          setState(() => _listening = false);
+        }
+      },
+      onError: (_) {
+        if (!mounted) return;
+        _pulse.stop();
+        _pulse.value = 0;
+        setState(() {
+          _ready = false;
+          _listening = false;
+        });
+      },
+    );
+    if (!mounted) return false;
+    setState(() => _ready = ok);
+    return ok;
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    _speech?.cancel();
+    super.dispose();
+  }
+
+  String _norm(String s) => s
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^\wÁÉÍÓÚÜÑáéíóúüñ]'), '');
+
+  Future<void> _toggle() async {
+    if (_starting || widget.finished) return;
+    final speech = _speech;
+    if (_listening || (speech?.isListening ?? false)) {
+      _pulse.stop();
+      _pulse.value = 0;
+      HapticFeedback.selectionClick();
+      await speech?.stop();
+      if (mounted) setState(() => _listening = false);
+      return;
+    }
+    _starting = true;
+    try {
+      if (_speech == null || !_ready) {
+        final ok = await _initSpeech();
+        if (!mounted || !ok) return;
+      }
+      HapticFeedback.lightImpact();
+      _processedTokenCount = 0;
+      _solved = <int>{};
+      _pulse.repeat();
+      setState(() => _listening = true);
+      await _speech!.listen(
+        localeId: 'es_ES',
+        listenOptions: stt.SpeechListenOptions(
+          listenMode: stt.ListenMode.dictation,
+          partialResults: true,
+        ),
+        listenFor: const Duration(seconds: 60),
+        pauseFor: const Duration(seconds: 8),
+        onResult: _onResult,
+      );
+    } catch (_) {
+      if (mounted) {
+        _pulse.stop();
+        _pulse.value = 0;
+        setState(() {
+          _ready = false;
+          _listening = false;
+        });
+      }
+    } finally {
+      _starting = false;
+    }
+  }
+
+  void _onResult(SpeechRecognitionResult result) {
+    if (!mounted) return;
+    final text = result.recognizedWords;
+    final isFinal = result.finalResult;
+    final raw = text.split(RegExp(r'\s+')).where((w) => w.trim().isNotEmpty).toList();
+    if (raw.isEmpty) return;
+    if (raw.last != _lastSpoken) {
+      setState(() => _lastSpoken = raw.last);
+    }
+    final lockedCount = isFinal ? raw.length : raw.length - 1;
+    var processedNow = _processedTokenCount;
+    int pointer = _solved.length;
+    void process(String token) {
+      if (pointer >= _allWords.length) return;
+      final n = _norm(token);
+      if (n.isEmpty) return;
+      final expected = _norm(_allWords[pointer]);
+      if (n == expected) {
+        setState(() => _solved.add(pointer));
+        pointer += 1;
+        HapticFeedback.lightImpact();
+      }
+    }
+    for (var i = processedNow; i < lockedCount; i++) {
+      process(raw[i]);
+      processedNow = i + 1;
+    }
+    _processedTokenCount = processedNow;
+    if (_solved.length >= _allWords.length) {
+      _speech?.stop();
+      _pulse.stop();
+      _pulse.value = 0;
+      setState(() => _listening = false);
+      widget.onRoundCompleted();
+    }
+  }
+
+  double get _blurSigma {
+    if (widget.finished) return 18.0;
+    switch (widget.round) {
+      case 0:
+        return 3.0;
+      case 1:
+        return 7.0;
+      default:
+        return 14.0;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final solvedCount = _solved.length;
+    final total = _allWords.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                widget.finished
+                    ? 'Recitación completada'
+                    : 'Ronda ${widget.round + 1} / 3',
+                style: const TextStyle(
+                  color: RefColors.pink,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .8,
+                ),
+              ),
+              Text(
+                '$solvedCount / $total',
+                style: const TextStyle(
+                  color: RefColors.muted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+        _Glass(
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+          gradient: LinearGradient(
+            colors: [
+              RefColors.violet.withValues(alpha: .22),
+              RefColors.cyan.withValues(alpha: .10),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: ImageFiltered(
+              imageFilter:
+                  ImageFilter.blur(sigmaX: _blurSigma, sigmaY: _blurSigma),
+              child: Text(
+                widget.targetText,
+                style: const TextStyle(
+                  fontSize: 22,
+                  height: 1.36,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (widget.finished)
+          _Glass(
+            padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
+            color: RefColors.lime.withValues(alpha: .14),
+            border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
+            child: Column(
+              children: const [
+                Icon(Icons.check_circle_rounded,
+                    color: RefColors.lime, size: 36),
+                SizedBox(height: 10),
+                Text(
+                  '¡Niebla disipada!',
+                  style: TextStyle(
+                    color: RefColors.lime,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Recitaste el texto de memoria.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: RefColors.ink,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          GestureDetector(
+            onTap: _toggle,
+            child: AnimatedBuilder(
+              animation: _pulse,
+              builder: (_, __) => Container(
+                height: 64,
+                decoration: BoxDecoration(
+                  gradient: _listening ? RefColors.primary : null,
+                  color: _listening ? null : RefColors.glassStrong,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: _listening
+                        ? RefColors.pink
+                        : RefColors.border,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      _listening ? 'Escuchando...' : 'Recita el texto',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }
 
@@ -13633,12 +14705,12 @@ class _RecitationStep extends StatefulWidget {
 
 class _RecitationStepState extends State<_RecitationStep>
     with SingleTickerProviderStateMixin {
-  late final stt.SpeechToText _speech;
+  stt.SpeechToText? _speech;
   late final AnimationController _micPulse;
   bool _ready = false;
   bool _listening = false;
   bool _completed = false;
-  bool _userWantsListening = false;
+  bool _startingListening = false;
   String _lastSpokenWord = '';
   int _attemptsLeft = 7;
   int? _lastWrongAt;
@@ -13654,12 +14726,12 @@ class _RecitationStepState extends State<_RecitationStep>
   @override
   void initState() {
     super.initState();
-    _speech = stt.SpeechToText();
     _micPulse = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     );
     _resetExerciseState();
+    // Pre-warm STT en background para evitar cold-start en el primer tap.
     _initSpeech();
   }
 
@@ -13668,10 +14740,9 @@ class _RecitationStepState extends State<_RecitationStep>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.targetText != widget.targetText ||
         oldWidget.finalMode != widget.finalMode) {
-      _userWantsListening = false;
       _micPulse.stop();
       _micPulse.value = 0;
-      _speech.stop();
+      _speech?.cancel();
       setState(_resetExerciseState);
     }
   }
@@ -13689,6 +14760,7 @@ class _RecitationStepState extends State<_RecitationStep>
     _processedTokenCount = 0;
     _completed = false;
     _listening = false;
+    _startingListening = false;
   }
 
   Set<int> _pickHiddenIndexes() {
@@ -13697,125 +14769,100 @@ class _RecitationStepState extends State<_RecitationStep>
     }
     final rng = math.Random();
     final ratio = 0.35;
-    final count = (_allWords.length * ratio).round().clamp(1, _allWords.length - 1);
+    final count = (_allWords.length * ratio).round().clamp(
+      1,
+      _allWords.length - 1,
+    );
     final indices = List<int>.generate(_allWords.length, (i) => i);
     indices.shuffle(rng);
     return indices.take(count).toSet();
   }
 
-  Future<void> _initSpeech() async {
-    final available = await _speech.initialize(
+  Future<bool> _initSpeech() async {
+    await _speech?.cancel();
+    final speech = stt.SpeechToText();
+    _speech = speech;
+    final available = await speech.initialize(
       onStatus: (status) {
         if (!mounted) return;
         if (status == 'done' || status == 'notListening') {
-          if (_userWantsListening && !_completed) {
-            _restartListening();
-          } else {
-            _micPulse.stop();
-            _micPulse.value = 0;
-            setState(() => _listening = false);
-          }
-        }
-      },
-      onError: (_) {
-        if (!mounted) return;
-        if (_userWantsListening && !_completed) {
-          _restartListening();
-        } else {
           _micPulse.stop();
           _micPulse.value = 0;
           setState(() => _listening = false);
         }
       },
+      onError: (_) {
+        if (!mounted) return;
+        _micPulse.stop();
+        _micPulse.value = 0;
+        setState(() {
+          _ready = false;
+          _listening = false;
+        });
+      },
     );
-    if (!mounted) return;
+    if (!mounted) return false;
     setState(() => _ready = available);
-  }
-
-  Future<void> _restartListening() async {
-    if (!mounted || _completed) return;
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    if (!mounted || !_userWantsListening || _completed) return;
-    if (_speech.isListening) return;
-    _processedTokenCount = 0;
-    if (!_micPulse.isAnimating) _micPulse.repeat();
-    setState(() => _listening = true);
-    await _speech.listen(
-      localeId: 'es_ES',
-      listenOptions: stt.SpeechListenOptions(
-        listenMode: stt.ListenMode.dictation,
-        partialResults: true,
-      ),
-      listenFor: const Duration(seconds: 60),
-      pauseFor: const Duration(seconds: 6),
-      onResult: _handleRecognition,
-    );
+    return available;
   }
 
   @override
   void dispose() {
     _micPulse.dispose();
-    _speech.cancel();
+    _speech?.cancel();
     super.dispose();
   }
 
   Future<void> _toggleListening() async {
-    if (!_ready) {
-      await _initSpeech();
-      return;
-    }
-    if (_listening) {
-      _userWantsListening = false;
+    if (_startingListening || _completed) return;
+    final speech = _speech;
+    if (_listening || (speech?.isListening ?? false)) {
       _micPulse.stop();
       _micPulse.value = 0;
       HapticFeedback.selectionClick();
-      await _speech.stop();
+      await speech?.stop();
       if (mounted) setState(() => _listening = false);
       return;
     }
-    HapticFeedback.lightImpact();
-    _micPulse.repeat();
+    _startingListening = true;
     setState(() {
-      _listening = true;
-      _userWantsListening = true;
       _processedTokenCount = 0;
     });
-    await _speech.listen(
-      localeId: 'es_ES',
-      listenOptions: stt.SpeechListenOptions(
-        listenMode: stt.ListenMode.dictation,
-        partialResults: true,
-      ),
-      listenFor: const Duration(seconds: 60),
-      pauseFor: const Duration(seconds: 6),
-      onResult: _handleRecognition,
-    );
-  }
-
-  String _normalizeToken(String token) => token
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^\wÁÉÍÓÚÜÑáéíóúüñ]'), '');
-
-  void _skipCurrentWord() {
-    if (_completed) return;
-    if (_activePointer >= _orderedHidden.length) return;
-    final expectedIdx = _orderedHidden[_activePointer];
-    HapticFeedback.selectionClick();
-    setState(() {
-      _skippedIndexes.add(expectedIdx);
-      _solvedIndexes.add(expectedIdx);
-      _activePointer += 1;
-      _lastSpokenWord = '';
-    });
-    if (_activePointer >= _orderedHidden.length && !_completed) {
-      _completed = true;
-      _userWantsListening = false;
+    try {
+      // Reusar el motor caliente; solo re-inicializar si quedó marcado no-ready
+      // (error previo) o si nunca se inicializó.
+      if (_speech == null || !_ready) {
+        final available = await _initSpeech();
+        if (!mounted || !available) return;
+      }
+      HapticFeedback.lightImpact();
+      _micPulse.repeat();
+      setState(() => _listening = true);
+      await _speech!.listen(
+        localeId: 'es_ES',
+        listenOptions: stt.SpeechListenOptions(
+          listenMode: stt.ListenMode.dictation,
+          partialResults: true,
+        ),
+        listenFor: const Duration(seconds: 60),
+        pauseFor: const Duration(seconds: 10),
+        onResult: _handleRecognition,
+      );
+    } catch (_) {
+      if (!mounted) return;
       _micPulse.stop();
-      HapticFeedback.heavyImpact();
-      _speech.stop();
-      widget.onCompleted(_skippedIndexes.isEmpty);
+      _micPulse.value = 0;
+      setState(() {
+        _ready = false;
+        _listening = false;
+      });
+    } finally {
+      _startingListening = false;
     }
   }
+
+  String _normalizeToken(String token) =>
+      token.toLowerCase().replaceAll(RegExp(r'[^\wÁÉÍÓÚÜÑáéíóúüñ]'), '');
 
   void _handleRecognition(SpeechRecognitionResult result) {
     if (!mounted) return;
@@ -13846,10 +14893,9 @@ class _RecitationStepState extends State<_RecitationStep>
         });
         if (_activePointer >= _orderedHidden.length && !_completed) {
           _completed = true;
-          _userWantsListening = false;
           _micPulse.stop();
           HapticFeedback.heavyImpact();
-          _speech.stop();
+          _speech?.stop();
           widget.onCompleted(_skippedIndexes.isEmpty);
         }
       } else if (locked) {
@@ -13860,10 +14906,9 @@ class _RecitationStepState extends State<_RecitationStep>
         });
         if (_attemptsLeft == 0 && !_completed) {
           _completed = true;
-          _userWantsListening = false;
           _micPulse.stop();
           HapticFeedback.heavyImpact();
-          _speech.stop();
+          _speech?.stop();
           widget.onCompleted(false);
         }
       }
@@ -13890,9 +14935,10 @@ class _RecitationStepState extends State<_RecitationStep>
     final accent = _completed
         ? RefColors.lime
         : isBlue
-            ? RefColors.cyan
-            : RefColors.pink;
-    final wrongRecent = _lastWrongAt != null &&
+        ? RefColors.cyan
+        : RefColors.pink;
+    final wrongRecent =
+        _lastWrongAt != null &&
         DateTime.now().millisecondsSinceEpoch - _lastWrongAt! < 1200;
     final activeIdx = _activePointer < _orderedHidden.length
         ? _orderedHidden[_activePointer]
@@ -13932,8 +14978,11 @@ class _RecitationStepState extends State<_RecitationStep>
                 ),
                 child: Row(
                   children: const [
-                    Icon(Icons.check_circle_rounded,
-                        color: RefColors.successInk, size: 22),
+                    Icon(
+                      Icons.check_circle_rounded,
+                      color: RefColors.successInk,
+                      size: 22,
+                    ),
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -13986,43 +15035,44 @@ class _RecitationStepState extends State<_RecitationStep>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            child: LayoutBuilder(builder: (context, constraints) {
-              return SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints:
-                      BoxConstraints(maxWidth: constraints.maxWidth),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 10,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      for (var i = 0; i < _allWords.length; i++)
-                        if (_hiddenIndexes.contains(i))
-                          _HiddenWord(
-                            wordLength: _allWords[i].length,
-                            active: i == activeIdx,
-                            pink: !isBlue,
-                            solved: _solvedIndexes.contains(i),
-                            skipped: _skippedIndexes.contains(i),
-                            wrongFlash: i == activeIdx && wrongRecent,
-                            word: _allWords[i],
-                          )
-                        else
-                          _LetterWord(_allWords[i]),
-                      const Text(
-                        '.',
-                        style: TextStyle(
-                          color: RefColors.muted,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 10,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        for (var i = 0; i < _allWords.length; i++)
+                          if (_hiddenIndexes.contains(i))
+                            _HiddenWord(
+                              wordLength: _allWords[i].length,
+                              active: i == activeIdx,
+                              pink: !isBlue,
+                              solved: _solvedIndexes.contains(i),
+                              skipped: _skippedIndexes.contains(i),
+                              wrongFlash: i == activeIdx && wrongRecent,
+                              word: _allWords[i],
+                            )
+                          else
+                            _LetterWord(_allWords[i]),
+                        const Text(
+                          '.',
+                          style: TextStyle(
+                            color: RefColors.muted,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              );
-            }),
+                );
+              },
+            ),
           ),
         ),
         const SizedBox(height: 14),
@@ -14079,7 +15129,11 @@ class _RecitationStepState extends State<_RecitationStep>
                           ],
                         ),
                         child: Icon(
-                          _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                          _startingListening
+                              ? Icons.more_horiz_rounded
+                              : _listening
+                              ? Icons.stop_rounded
+                              : Icons.mic_rounded,
                           color: RefColors.ink,
                           size: 26,
                         ),
@@ -14088,33 +15142,13 @@ class _RecitationStepState extends State<_RecitationStep>
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: _completed || _activePointer >= _orderedHidden.length
-                    ? null
-                    : _skipCurrentWord,
-                child: Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: RefColors.sun.withValues(alpha: .18),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: RefColors.sun.withValues(alpha: .65),
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.skip_next_rounded,
-                    color: RefColors.ink,
-                    size: 22,
-                  ),
-                ),
-              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 10),
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: wrongRecent
                         ? RefColors.urgent.withValues(alpha: .18)
@@ -14128,9 +15162,7 @@ class _RecitationStepState extends State<_RecitationStep>
                   ),
                   child: Text(
                     _lastSpokenWord.isEmpty
-                        ? (_listening
-                            ? 'Escuchando…'
-                            : 'Toca el mic y recita')
+                        ? (_listening ? 'Escuchando…' : 'Toca el mic y recita')
                         : _lastSpokenWord,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -14148,7 +15180,9 @@ class _RecitationStepState extends State<_RecitationStep>
               const SizedBox(width: 10),
               Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 8),
+                  horizontal: 10,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: accent.withValues(alpha: .18),
                   borderRadius: BorderRadius.circular(12),

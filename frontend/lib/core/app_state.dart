@@ -147,6 +147,9 @@ class AppStore extends ChangeNotifier {
   int _currentCardIndex = 0;
   int _correctAnswers = 0;
   int _wrongAnswers = 0;
+  int _sessionDifficulty = 1;
+  int _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
+  bool _isPremium = false;
 
   List<MemoryDeckData> get decks => List.unmodifiable(_decks);
   List<BibleVerseData> get bibleVerses => List.unmodifiable(_bibleVerses);
@@ -174,6 +177,17 @@ class AppStore extends ChangeNotifier {
   int get currentCardIndex => _currentCardIndex;
   int get correctAnswers => _correctAnswers;
   int get wrongAnswers => _wrongAnswers;
+  int get sessionDifficulty => _sessionDifficulty;
+  int get sessionFlowSeed => _sessionFlowSeed;
+  bool get isPremium => _isPremium;
+
+  void setPremiumPreview(bool value) {
+    if (_isPremium == value) return;
+    _isPremium = value;
+    _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
+    notifyListeners();
+  }
+
   int get completedCards => _correctAnswers + _wrongAnswers;
   int get streakDays => _decks.isEmpty ? 0 : 1;
   int get totalCards =>
@@ -360,6 +374,17 @@ class AppStore extends ChangeNotifier {
     _currentCardIndex = 0;
     _correctAnswers = 0;
     _wrongAnswers = 0;
+    _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
+    notifyListeners();
+  }
+
+  void configureSession({required int difficulty}) {
+    _sessionDifficulty = difficulty.clamp(0, 2);
+    _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
+    _correctAnswers = 0;
+    _wrongAnswers = 0;
+    final deckId = activeDeck.id;
+    _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));
     notifyListeners();
   }
 
