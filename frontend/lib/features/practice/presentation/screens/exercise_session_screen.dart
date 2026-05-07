@@ -1032,7 +1032,7 @@ class _PressureRecallStepCard extends ConsumerStatefulWidget {
 
 class _PressureRecallStepCardState extends ConsumerState<_PressureRecallStepCard> {
   late final TextEditingController _controller;
-  int _secondsLeft = 20;
+  int _secondsLeft = 30;
   Timer? _timer;
 
   @override

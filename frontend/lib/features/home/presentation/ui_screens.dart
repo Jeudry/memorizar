@@ -1791,9 +1791,16 @@ String _phaseLabelFor(String slug) {
 List<String> _orderedBlocks(String text) {
   final words = _studyWords(text);
   final size = words.length > 18 ? 4 : 3;
+  final cleanRegex = RegExp(r'[^\wÁÉÍÓÚÜÑáéíóúüñ]');
   final blocks = <String>[];
   for (var i = 0; i < words.length; i += size) {
-    blocks.add(words.skip(i).take(size).join(' '));
+    final chunk = words
+        .skip(i)
+        .take(size)
+        .map((w) => w.replaceAll(cleanRegex, ''))
+        .where((w) => w.isNotEmpty)
+        .join(' ');
+    blocks.add(chunk);
   }
   return blocks;
 }
@@ -1816,6 +1823,11 @@ String _targetWord(String text, {required int level}) {
 
 List<String> _completionTargetsFor(String text, {required int level}) {
   final words = _studyWords(text);
+  if (words.isEmpty) return [];
+  // N3: hide ALL words (including very short ones like "el", "y", "la").
+  if (level >= 3) {
+    return [...words];
+  }
   final candidateIndexes = <int>[];
   for (var i = 0; i < words.length; i++) {
     final clean = words[i].replaceAll(RegExp(r'[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]'), '');
@@ -1827,7 +1839,7 @@ List<String> _completionTargetsFor(String text, {required int level}) {
   if (sourceIndexes.isEmpty) return [];
   final targetCount = switch (level) {
     1 => 3,
-    2 => 5,
+    2 => (sourceIndexes.length * 0.65).round(),
     _ => sourceIndexes.length,
   }.clamp(1, sourceIndexes.length).toInt();
   final rng = math.Random();
@@ -1886,7 +1898,7 @@ List<String> _firstLetterTargets(String text, {required int level}) {
   if (words.isEmpty) return [];
   final targetCount = switch (level) {
     1 => 4,
-    2 => 6,
+    2 => (words.length * 0.7).round(),
     _ => words.length,
   };
   final visibleWords = switch (level) {
@@ -1904,6 +1916,66 @@ List<String> _firstLetterTargets(String text, {required int level}) {
       .toList();
   selected.sort();
   return selected.map((i) => available[i]).toList();
+}
+
+int _editDistance(String a, String b) {
+  if (a == b) return 0;
+  if (a.isEmpty) return b.length;
+  if (b.isEmpty) return a.length;
+  final m = a.length;
+  final n = b.length;
+  var prev = List<int>.generate(n + 1, (i) => i);
+  var curr = List<int>.filled(n + 1, 0);
+  for (var i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (var j = 1; j <= n; j++) {
+      final cost = a.codeUnitAt(i - 1) == b.codeUnitAt(j - 1) ? 0 : 1;
+      final del = prev[j] + 1;
+      final ins = curr[j - 1] + 1;
+      final sub = prev[j - 1] + cost;
+      curr[j] = del < ins ? (del < sub ? del : sub) : (ins < sub ? ins : sub);
+    }
+    final tmp = prev;
+    prev = curr;
+    curr = tmp;
+  }
+  return prev[n];
+}
+
+String _normalizeForVoice(String s) {
+  const accents = {
+    'á': 'a',
+    'é': 'e',
+    'í': 'i',
+    'ó': 'o',
+    'ú': 'u',
+    'ü': 'u',
+    'ñ': 'n',
+  };
+  var t = s.toLowerCase();
+  for (final e in accents.entries) {
+    t = t.replaceAll(e.key, e.value);
+  }
+  return t.replaceAll(RegExp(r'[^a-z]'), '');
+}
+
+/// Match leniency for voice input. Ignores case + accents and tolerates a small
+/// number of Levenshtein edits scaled by word length so STT misreads of one
+/// vowel/consonant don't fail short words like "creo" vs "crio".
+bool _voiceMatch(String spoken, String target) {
+  final a = _normalizeForVoice(spoken);
+  final b = _normalizeForVoice(target);
+  if (a.isEmpty || b.isEmpty) return a == b;
+  if (a == b) return true;
+  // Substring match for short STT garbage (e.g. "el creo" vs "creo").
+  if (b.length >= 3 && (a.contains(b) || b.contains(a))) return true;
+  final maxLen = math.max(a.length, b.length);
+  final dist = _editDistance(a, b);
+  // Allow ~33% edits, minimum 1.
+  final allowed = (maxLen * 0.34).floor().clamp(1, 4);
+  // For very short targets (≤3), only 1 edit allowed.
+  if (b.length <= 3) return dist <= 1;
+  return dist <= allowed;
 }
 
 bool _sameAnswer(String a, String b) {
@@ -6869,8 +6941,24 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   List<String> _bankTargets = [];
   List<String?> _bankAnswers = [];
   List<String> _bankAvailable = [];
+  final Set<String> _bankRemoving = <String>{};
   int _bankActiveIndex = 0;
   int _bankMistakes = 0;
+  int _bankPartIndex = 0;
+  static const int _bankPartSize = 10;
+  static const int _bankSplitThreshold = 15;
+
+  // Shared timestamp for the most recent wrong attempt across non-voice
+  // exercises (bank/letter/completion). Used to drive a red-flash effect.
+  int? _lastNonVoiceWrongAt;
+  void _flagNonVoiceWrong() {
+    _lastNonVoiceWrongAt = DateTime.now().millisecondsSinceEpoch;
+  }
+  bool _nonVoiceWrongRecent() {
+    final ts = _lastNonVoiceWrongAt;
+    if (ts == null) return false;
+    return DateTime.now().millisecondsSinceEpoch - ts < 700;
+  }
 
   String? _fogCardId;
   int _fogRound = 0;
@@ -6883,10 +6971,30 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     super.dispose();
   }
 
-  static const int _completionTimeForLevel2 = 90;
-  static const int _completionTimeForLevel3 = 120;
-  static const int _letterTimeForLevel2 = 90;
-  static const int _letterTimeForLevel3 = 120;
+  /// Seconds-per-target for timed levels. N3 is faster (less time per hueco).
+  static const double _completionSecondsPerTargetN2 = 5.0;
+  static const double _completionSecondsPerTargetN3 = 2.8;
+  static const double _letterSecondsPerTargetN2 = 5.0;
+  static const double _letterSecondsPerTargetN3 = 2.8;
+
+  int _completionTimeFor(int level, int targetCount) {
+    if (level <= 1 || targetCount <= 0) return 0;
+    final perTarget = level >= 3
+        ? _completionSecondsPerTargetN3
+        : _completionSecondsPerTargetN2;
+    final raw = (targetCount * perTarget).round();
+    // Hard floor / ceiling so very short or very long verses stay reasonable.
+    return raw.clamp(level >= 3 ? 25 : 35, 180);
+  }
+
+  int _letterTimeFor(int level, int targetCount) {
+    if (level <= 1 || targetCount <= 0) return 0;
+    final perTarget = level >= 3
+        ? _letterSecondsPerTargetN3
+        : _letterSecondsPerTargetN2;
+    final raw = (targetCount * perTarget).round();
+    return raw.clamp(level >= 3 ? 25 : 35, 180);
+  }
 
   String _formatMmSs(int totalSeconds) {
     final s = totalSeconds.clamp(0, 9999);
@@ -6979,7 +7087,34 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     _bankAvailable = [...cleanWords]..shuffle(rng);
     _bankActiveIndex = 0;
     _bankMistakes = 0;
+    _bankPartIndex = 0;
+    _bankRemoving.clear();
     _checked = false;
+  }
+
+  bool _bankIsSplit() => _bankTargets.length > _bankSplitThreshold;
+
+  int _bankPartCount() {
+    if (!_bankIsSplit()) return 1;
+    return ((_bankTargets.length + _bankPartSize - 1) ~/ _bankPartSize);
+  }
+
+  (int, int) _bankPartRange([int? part]) {
+    final p = part ?? _bankPartIndex;
+    if (!_bankIsSplit()) return (0, _bankTargets.length);
+    final start = p * _bankPartSize;
+    final end = ((p + 1) * _bankPartSize).clamp(0, _bankTargets.length);
+    return (start, end);
+  }
+
+  bool _bankPartComplete([int? part]) {
+    final (start, end) = _bankPartRange(part);
+    if (end <= start) return false;
+    for (var i = start; i < end; i++) {
+      final answer = _bankAnswers[i];
+      if (answer == null || !_sameAnswer(answer, _bankTargets[i])) return false;
+    }
+    return true;
   }
 
   bool _bankComplete() {
@@ -6993,31 +7128,94 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
   void _selectBankWord(String word) {
     if (_bankTargets.isEmpty || _bankComplete()) return;
-    final idx = _bankActiveIndex.clamp(0, _bankTargets.length - 1);
-    final correct = _sameAnswer(word, _bankTargets[idx]);
-    setState(() {
-      if (correct) {
-        _bankAnswers[idx] = word;
-        // Remove first matching word from bank.
-        final removeAt = _bankAvailable.indexWhere((w) => _sameAnswer(w, word));
-        if (removeAt >= 0) _bankAvailable.removeAt(removeAt);
-        final next = _bankAnswers.indexWhere((a) => a == null);
-        if (next >= 0) _bankActiveIndex = next;
-        if (_bankComplete()) {
-          HapticFeedback.heavyImpact();
-        } else {
-          HapticFeedback.lightImpact();
+    if (_bankRemoving.contains(word)) return;
+    final (partStart, partEnd) = _bankPartRange();
+    // Clamp the active blank to the current part — if the active index drifted
+    // to a later part, snap it back to the first unfilled blank in this part.
+    var idx = _bankActiveIndex;
+    if (idx < partStart || idx >= partEnd || _bankAnswers[idx] != null) {
+      idx = -1;
+      for (var i = partStart; i < partEnd; i++) {
+        if (_bankAnswers[i] == null) {
+          idx = i;
+          break;
         }
-      } else {
-        _bankMistakes += 1;
-        HapticFeedback.mediumImpact();
       }
+      if (idx == -1) return;
+      _bankActiveIndex = idx;
+    }
+    final correct = _sameAnswer(word, _bankTargets[idx]);
+    if (correct) {
+      setState(() {
+        _bankAnswers[idx] = word;
+        _bankRemoving.add(word);
+        // Find next unfilled blank inside the current part.
+        var next = -1;
+        for (var i = partStart; i < partEnd; i++) {
+          if (_bankAnswers[i] == null) {
+            next = i;
+            break;
+          }
+        }
+        if (next >= 0) _bankActiveIndex = next;
+        HapticFeedback.lightImpact();
+      });
+      // Hold the chip in "removing" state long enough for the fade+shrink
+      // animation to play, then drop it from the available list.
+      Future<void>.delayed(const Duration(milliseconds: 320), () {
+        if (!mounted) return;
+        setState(() {
+          final removeAt =
+              _bankAvailable.indexWhere((w) => _sameAnswer(w, word));
+          if (removeAt >= 0) _bankAvailable.removeAt(removeAt);
+          _bankRemoving.remove(word);
+          if (_bankPartComplete()) {
+            if (_bankPartIndex + 1 < _bankPartCount()) {
+              // Advance to next part: highlight the next part's first blank.
+              _bankPartIndex += 1;
+              final (nextStart, _) = _bankPartRange();
+              _bankActiveIndex = nextStart;
+              HapticFeedback.lightImpact();
+            } else {
+              HapticFeedback.heavyImpact();
+              _autoAdvanceBank();
+            }
+          }
+        });
+      });
+    } else {
+      setState(() {
+        _bankMistakes += 1;
+        _flagNonVoiceWrong();
+        HapticFeedback.mediumImpact();
+      });
+      _scheduleFlashRebuild();
+    }
+  }
+
+  void _scheduleFlashRebuild() {
+    Future<void>.delayed(const Duration(milliseconds: 720), () {
+      if (mounted) setState(() {});
+    });
+  }
+
+  void _autoAdvanceBank() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final store = AppScope.of(context);
+      store.markExerciseStepCompleted('15-banco-completo');
+      Navigator.push(
+        context,
+        AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
+      );
     });
   }
 
   void _activateBankBlank(int index) {
     if (index < 0 || index >= _bankTargets.length) return;
     if (_bankAnswers[index] != null) return;
+    final (partStart, partEnd) = _bankPartRange();
+    if (index < partStart || index >= partEnd) return;
     setState(() => _bankActiveIndex = index);
   }
 
@@ -7167,11 +7365,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     _completionMistakes = 0;
     _completionSeed = DateTime.now().microsecondsSinceEpoch;
     _checked = false;
-    final seconds = level == 2
-        ? _completionTimeForLevel2
-        : level >= 3
-            ? _completionTimeForLevel3
-            : 0;
+    final seconds = _completionTimeFor(level, _completionTargets.length);
     _startCompletionTimer(seconds);
   }
 
@@ -7206,8 +7400,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         if (_completionComplete()) _stopCompletionTimerOnSuccess();
       } else {
         _completionMistakes += 1;
+        _flagNonVoiceWrong();
+        HapticFeedback.mediumImpact();
       }
     });
+    if (!correct) _scheduleFlashRebuild();
   }
 
   void _activateCompletionBlank(int index) {
@@ -7225,11 +7422,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     _activeLetterIndex = 0;
     _letterMistakes = 0;
     _checked = false;
-    final seconds = level == 2
-        ? _letterTimeForLevel2
-        : level >= 3
-            ? _letterTimeForLevel3
-            : 0;
+    final seconds = _letterTimeFor(level, _letterTargets.length);
     _startLetterTimer(seconds);
   }
 
@@ -7259,8 +7452,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         if (_letterComplete()) _stopLetterTimerOnSuccess();
       } else {
         _letterMistakes += 1;
+        _flagNonVoiceWrong();
+        HapticFeedback.mediumImpact();
       }
     });
+    if (!correct) _scheduleFlashRebuild();
   }
 
   void _ensureQuizRounds(MemoryDeckData deck, MemoryCardData card) {
@@ -7399,9 +7595,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           if (slug == '01-escuchar' ||
               slug == '08-voz-guiada' ||
               _isFinalVoiceSlug(slug))
-            Expanded(child: _realExerciseBody(context, store, card, deck, slug))
+            Expanded(
+              child: _RedFlash(
+                active: _nonVoiceWrongRecent(),
+                child: _realExerciseBody(context, store, card, deck, slug),
+              ),
+            )
           else
-            _realExerciseBody(context, store, card, deck, slug),
+            _RedFlash(
+              active: _nonVoiceWrongRecent(),
+              child: _realExerciseBody(context, store, card, deck, slug),
+            ),
           const SizedBox(height: 14),
           _realExerciseFooter(context, store, card, deck, slug),
         ],
@@ -7838,6 +8042,32 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_isWordBankSlug(slug)) {
       _ensureBankState(card.id, card.back);
       final filled = _bankAnswers.where((a) => a != null).length;
+      final isSplit = _bankIsSplit();
+      final partCount = _bankPartCount();
+      final (partStart, partEnd) = _bankPartRange();
+      final partTargets = _bankTargets.sublist(partStart, partEnd);
+      final partAnswers = _bankAnswers.sublist(partStart, partEnd);
+      final partText = partTargets.join(' ');
+      // Words available for the current part: take from _bankAvailable up to
+      // the multiset of still-unfilled targets in this part.
+      final cleanRegex = RegExp(r'[^\wÁÉÍÓÚÜÑáéíóúüñ]');
+      String clean(String w) => w.replaceAll(cleanRegex, '').toLowerCase();
+      final neededCounts = <String, int>{};
+      for (var i = partStart; i < partEnd; i++) {
+        if (_bankAnswers[i] != null) continue;
+        final key = clean(_bankTargets[i]);
+        neededCounts[key] = (neededCounts[key] ?? 0) + 1;
+      }
+      final partAvailable = <String>[];
+      for (final w in _bankAvailable) {
+        final key = clean(w);
+        final left = neededCounts[key] ?? 0;
+        if (left > 0) {
+          partAvailable.add(w);
+          neededCounts[key] = left - 1;
+        }
+      }
+      final partActiveIndex = (_bankActiveIndex - partStart).clamp(0, partTargets.length - 1);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -7848,14 +8078,37 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             secondValue: '$_bankMistakes',
             secondLabel: 'FALLOS',
           ),
+          if (isSplit) ...[
+            const SizedBox(height: 10),
+            _BankPartHeader(
+              partIndex: _bankPartIndex,
+              partCount: partCount,
+            ),
+          ],
           const SizedBox(height: 14),
-          _CompletionPromptCard(
-            label: card.front,
-            text: card.back,
-            targets: _bankTargets,
-            answers: _bankAnswers,
-            activeIndex: _bankActiveIndex,
-            onBlankTap: _activateBankBlank,
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 360),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, anim) {
+              final slide = Tween<Offset>(
+                begin: const Offset(0.18, 0),
+                end: Offset.zero,
+              ).animate(anim);
+              return FadeTransition(
+                opacity: anim,
+                child: SlideTransition(position: slide, child: child),
+              );
+            },
+            child: _CompletionPromptCard(
+              key: ValueKey('bank-prompt-$_bankPartIndex'),
+              label: card.front,
+              text: partText,
+              targets: partTargets,
+              answers: partAnswers,
+              activeIndex: partActiveIndex,
+              onBlankTap: (i) => _activateBankBlank(partStart + i),
+            ),
           ),
           const SizedBox(height: 14),
           if (_bankComplete())
@@ -7888,9 +8141,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               color: RefColors.glassSoft,
               child: Column(
                 children: [
-                  const Text(
-                    'BANCO DE PALABRAS',
-                    style: TextStyle(
+                  Text(
+                    isSplit
+                        ? 'BANCO · PARTE ${_bankPartIndex + 1}'
+                        : 'BANCO DE PALABRAS',
+                    style: const TextStyle(
                       color: RefColors.muted,
                       fontSize: 10,
                       fontWeight: FontWeight.w900,
@@ -7903,10 +8158,21 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     runSpacing: 8,
                     alignment: WrapAlignment.center,
                     children: [
-                      for (final word in _bankAvailable)
-                        GestureDetector(
-                          onTap: () => _selectBankWord(word),
-                          child: _WordChip(word, active: false),
+                      for (final word in partAvailable)
+                        AnimatedScale(
+                          key: ValueKey('bank-$word'),
+                          duration: const Duration(milliseconds: 280),
+                          curve: Curves.easeInBack,
+                          scale: _bankRemoving.contains(word) ? 0.0 : 1.0,
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 240),
+                            opacity:
+                                _bankRemoving.contains(word) ? 0.0 : 1.0,
+                            child: GestureDetector(
+                              onTap: () => _selectBankWord(word),
+                              child: _WordChip(word, active: false),
+                            ),
+                          ),
                         ),
                     ],
                   ),
@@ -8051,7 +8317,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           Expanded(
             child: _ActionCta(
               label: completed
-                  ? 'Ver progreso →'
+                  ? 'Siguiente →'
                   : 'Revela todo para continuar',
               enabled: completed,
               onTap: () {
@@ -8384,6 +8650,93 @@ class _CompletionPromptCard extends StatelessWidget {
       if (_sameAnswer(word, targets[index])) return index;
     }
     return null;
+  }
+}
+
+class _RedFlash extends StatelessWidget {
+  final bool active;
+  final Widget child;
+
+  const _RedFlash({required this.active, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: active
+              ? RefColors.urgent.withValues(alpha: .85)
+              : Colors.transparent,
+          width: 2,
+        ),
+        color: active
+            ? RefColors.urgent.withValues(alpha: .08)
+            : Colors.transparent,
+      ),
+      padding: const EdgeInsets.all(2),
+      child: child,
+    );
+  }
+}
+
+class _BankPartHeader extends StatelessWidget {
+  final int partIndex;
+  final int partCount;
+
+  const _BankPartHeader({required this.partIndex, required this.partCount});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 320),
+      child: Container(
+        key: ValueKey('bank-part-$partIndex'),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: RefColors.cyan.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: RefColors.cyan.withValues(alpha: .55)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.view_agenda_rounded,
+                color: RefColors.cyan, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Parte ${partIndex + 1} de $partCount',
+                style: const TextStyle(
+                  color: RefColors.cyan,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.1,
+                ),
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < partCount; i++)
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 2),
+                    width: i == partIndex ? 18 : 8,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: i <= partIndex
+                          ? RefColors.cyan
+                          : RefColors.cyan.withValues(alpha: .25),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -12533,7 +12886,7 @@ class _VoiceRecitationPracticeCardState
       });
       if (_currentBlock >= _targetBlocks.length && !_completed) {
         _completed = true;
-        _speech?.stop();
+        _stopListeningOnComplete();
         widget.onCompleted(true);
       }
     } else if (normalizedSpoken.length >= 3) {
@@ -12543,10 +12896,15 @@ class _VoiceRecitationPracticeCardState
       });
       if (_attemptsRemaining <= 0 && !_completed) {
         _completed = true;
-        _speech?.stop();
+        _stopListeningOnComplete();
         widget.onCompleted(false);
       }
     }
+  }
+
+  void _stopListeningOnComplete() {
+    _speech?.cancel();
+    if (mounted) setState(() => _listening = false);
   }
 
   bool _blocksMatch(String spoken, String expected) {
@@ -13952,7 +14310,32 @@ class _ProgressTreeScreen extends StatefulWidget {
 
 class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
   final GlobalKey _currentStepKey = GlobalKey();
-  bool _scrolled = false;
+  int _lastScrolledIndex = -1;
+
+  void _scheduleScrollToCurrent(int currentIndex, {int attempt = 0}) {
+    if (_lastScrolledIndex == currentIndex) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_lastScrolledIndex == currentIndex) return;
+      final ctx = _currentStepKey.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 420),
+          curve: Curves.easeOutCubic,
+          alignment: 0.35,
+        );
+        _lastScrolledIndex = currentIndex;
+        return;
+      }
+      // Layout not ready — retry up to ~1s.
+      if (attempt < 8) {
+        Future<void>.delayed(const Duration(milliseconds: 120), () {
+          if (mounted) _scheduleScrollToCurrent(currentIndex, attempt: attempt + 1);
+        });
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -13965,21 +14348,7 @@ class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
         ? steps.length - 1
         : firstIncompleteIndex;
 
-    if (!_scrolled) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _scrolled) return;
-        final ctx = _currentStepKey.currentContext;
-        if (ctx != null) {
-          Scrollable.ensureVisible(
-            ctx,
-            duration: const Duration(milliseconds: 420),
-            curve: Curves.easeOutCubic,
-            alignment: 0.35,
-          );
-          _scrolled = true;
-        }
-      });
-    }
+    _scheduleScrollToCurrent(currentStepIndex);
 
     return ReferencePage(
       showBottomNav: false,
@@ -14517,10 +14886,8 @@ class _FogStepState extends State<_FogStep>
     int pointer = _solved.length;
     void process(String token) {
       if (pointer >= _allWords.length) return;
-      final n = _norm(token);
-      if (n.isEmpty) return;
-      final expected = _norm(_allWords[pointer]);
-      if (n == expected) {
+      if (token.trim().isEmpty) return;
+      if (_voiceMatch(token, _allWords[pointer])) {
         setState(() => _solved.add(pointer));
         pointer += 1;
         HapticFeedback.lightImpact();
@@ -14711,10 +15078,12 @@ class _RecitationStepState extends State<_RecitationStep>
   bool _listening = false;
   bool _completed = false;
   bool _startingListening = false;
+  bool _warmingMic = false;
   String _lastSpokenWord = '';
   int _attemptsLeft = 7;
   int? _lastWrongAt;
   int _processedTokenCount = 0;
+  String _lastRawText = '';
 
   late List<String> _allWords;
   late Set<int> _hiddenIndexes; // word indexes that need to be recited
@@ -14821,33 +15190,60 @@ class _RecitationStepState extends State<_RecitationStep>
       _micPulse.value = 0;
       HapticFeedback.selectionClick();
       await speech?.stop();
-      if (mounted) setState(() => _listening = false);
+      if (mounted) {
+        setState(() {
+          _listening = false;
+          _warmingMic = false;
+        });
+      }
       return;
     }
     _startingListening = true;
     setState(() {
       _processedTokenCount = 0;
+      _lastRawText = '';
     });
     try {
-      // Reusar el motor caliente; solo re-inicializar si quedó marcado no-ready
-      // (error previo) o si nunca se inicializó.
       if (_speech == null || !_ready) {
         final available = await _initSpeech();
         if (!mounted || !available) return;
       }
       HapticFeedback.lightImpact();
       _micPulse.repeat();
-      setState(() => _listening = true);
-      await _speech!.listen(
-        localeId: 'es_ES',
-        listenOptions: stt.SpeechListenOptions(
-          listenMode: stt.ListenMode.dictation,
-          partialResults: true,
-        ),
-        listenFor: const Duration(seconds: 60),
-        pauseFor: const Duration(seconds: 10),
-        onResult: _handleRecognition,
-      );
+      // Visual "warming up": user sees 'Preparando mic...' for 450ms while the
+      // iOS audio session activates. Without this the first word always gets
+      // swallowed because capture starts a few hundred ms after listen().
+      setState(() {
+        _listening = true;
+        _warmingMic = true;
+      });
+      // Fire listen() — do NOT await its full completion (it returns when the
+      // session ends). Errors are caught and reset state.
+      _speech!
+          .listen(
+            localeId: 'es_ES',
+            listenOptions: stt.SpeechListenOptions(
+              listenMode: stt.ListenMode.dictation,
+              partialResults: true,
+              cancelOnError: false,
+            ),
+            listenFor: const Duration(seconds: 90),
+            pauseFor: const Duration(seconds: 12),
+            onResult: _handleRecognition,
+          )
+          .catchError((Object _) {
+        if (!mounted) return;
+        _micPulse.stop();
+        _micPulse.value = 0;
+        setState(() {
+          _ready = false;
+          _listening = false;
+          _warmingMic = false;
+        });
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      if (!mounted) return;
+      setState(() => _warmingMic = false);
     } catch (_) {
       if (!mounted) return;
       _micPulse.stop();
@@ -14855,6 +15251,7 @@ class _RecitationStepState extends State<_RecitationStep>
       setState(() {
         _ready = false;
         _listening = false;
+        _warmingMic = false;
       });
     } finally {
       _startingListening = false;
@@ -14873,6 +15270,11 @@ class _RecitationStepState extends State<_RecitationStep>
         .where((w) => w.trim().isNotEmpty)
         .toList();
     if (rawTokens.isEmpty) return;
+    // If iOS reset the running text (new sentence), restart processing pointer.
+    if (text.length < _lastRawText.length || _processedTokenCount > rawTokens.length) {
+      _processedTokenCount = 0;
+    }
+    _lastRawText = text;
     if (rawTokens.last != _lastSpokenWord) {
       setState(() => _lastSpokenWord = rawTokens.last);
     }
@@ -14881,24 +15283,62 @@ class _RecitationStepState extends State<_RecitationStep>
     void processToken(String rawToken, {required bool locked}) {
       if (_completed) return;
       if (_activePointer >= _orderedHidden.length) return;
-      final normalized = _normalizeToken(rawToken);
-      if (normalized.isEmpty) return;
       final expectedIdx = _orderedHidden[_activePointer];
       final expected = _allWords[expectedIdx];
-      if (_sameAnswer(normalized, expected)) {
+      // Match in expected order first (fast path).
+      if (_voiceMatch(rawToken, expected)) {
         HapticFeedback.lightImpact();
         setState(() {
           _solvedIndexes.add(expectedIdx);
-          _activePointer += 1;
+          // Advance pointer past any already-solved indexes.
+          while (_activePointer < _orderedHidden.length &&
+              _solvedIndexes.contains(_orderedHidden[_activePointer])) {
+            _activePointer += 1;
+          }
         });
         if (_activePointer >= _orderedHidden.length && !_completed) {
           _completed = true;
           _micPulse.stop();
+          _micPulse.value = 0;
           HapticFeedback.heavyImpact();
-          _speech?.stop();
+          _speech?.cancel();
+          if (mounted) setState(() => _listening = false);
           widget.onCompleted(_skippedIndexes.isEmpty);
         }
-      } else if (locked) {
+        return;
+      }
+      // Out-of-order match: user recited the full content, fill any remaining
+      // hidden slot whose word matches.
+      for (final idx in _orderedHidden) {
+        if (_solvedIndexes.contains(idx)) continue;
+        if (_voiceMatch(rawToken, _allWords[idx])) {
+          HapticFeedback.lightImpact();
+          setState(() {
+            _solvedIndexes.add(idx);
+            while (_activePointer < _orderedHidden.length &&
+                _solvedIndexes.contains(_orderedHidden[_activePointer])) {
+              _activePointer += 1;
+            }
+          });
+          if (_activePointer >= _orderedHidden.length && !_completed) {
+            _completed = true;
+            _micPulse.stop();
+            _micPulse.value = 0;
+            HapticFeedback.heavyImpact();
+            _speech?.cancel();
+            if (mounted) setState(() => _listening = false);
+            widget.onCompleted(_skippedIndexes.isEmpty);
+          }
+          return;
+        }
+      }
+      // Tokens that are part of the visible (non-hidden) content shouldn't
+      // be penalized — the user is reciting the verse around the gaps.
+      for (var i = 0; i < _allWords.length; i++) {
+        if (_hiddenIndexes.contains(i)) continue;
+        if (_voiceMatch(rawToken, _allWords[i])) return;
+      }
+      if (locked) {
         HapticFeedback.mediumImpact();
         setState(() {
           _lastWrongAt = DateTime.now().millisecondsSinceEpoch;
@@ -14907,8 +15347,10 @@ class _RecitationStepState extends State<_RecitationStep>
         if (_attemptsLeft == 0 && !_completed) {
           _completed = true;
           _micPulse.stop();
+          _micPulse.value = 0;
           HapticFeedback.heavyImpact();
-          _speech?.stop();
+          _speech?.cancel();
+          if (mounted) setState(() => _listening = false);
           widget.onCompleted(false);
         }
       }
@@ -15162,7 +15604,11 @@ class _RecitationStepState extends State<_RecitationStep>
                   ),
                   child: Text(
                     _lastSpokenWord.isEmpty
-                        ? (_listening ? 'Escuchando…' : 'Toca el mic y recita')
+                        ? (_warmingMic
+                            ? 'Preparando mic…'
+                            : _listening
+                                ? 'Escuchando…'
+                                : 'Toca el mic y recita')
                         : _lastSpokenWord,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
