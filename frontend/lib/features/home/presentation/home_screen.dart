@@ -39,6 +39,8 @@ class HomeScreen extends StatelessWidget {
                   // Memorizar algo nuevo
                   const _SectionHeader(title: 'Memorizar algo nuevo'),
                   const _MemorizarGrid(),
+                  const SizedBox(height: 12),
+                  const _PremiumHomeCard(),
                   const SizedBox(height: 18),
 
                   // De la comunidad
@@ -588,7 +590,7 @@ class _HeroSection extends StatelessWidget {
                     border: Border.all(color: AppColors.glassBorder),
                   ),
                   child: const Text(
-                    'SIN PENDIENTES',
+                    'INICIO',
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w800,
@@ -606,37 +608,17 @@ class _HeroSection extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             const Text(
-              'Empieza con contenido real',
+              'Listo para memorizar',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 6),
             const Text(
-              'Pega tu propio texto o selecciona versículos cargados localmente. Nada de mazos inventados.',
+              'Crea un mazo abajo y empieza una sesión cuando tengas contenido preparado.',
               style: TextStyle(
                 color: AppColors.inkMuted,
                 fontSize: 12,
                 height: 1.35,
               ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _HeroActionButton(
-                    label: 'Biblia',
-                    icon: '✝️',
-                    onTap: () => Navigator.pushNamed(context, '/biblia'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _HeroActionButton(
-                    label: 'Especificar',
-                    icon: '✨',
-                    onTap: () => Navigator.pushNamed(context, '/especificar'),
-                  ),
-                ),
-              ],
             ),
           ],
         ),
@@ -735,50 +717,6 @@ class _HeroSection extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _HeroActionButton extends StatelessWidget {
-  final String label;
-  final String icon;
-  final VoidCallback onTap;
-
-  const _HeroActionButton({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          gradient: AppColors.gradPrimary,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.accentPink.withValues(alpha: .18),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            GlyphIcon(icon, size: 16),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1027,6 +965,102 @@ class _MemCard extends StatelessWidget {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PremiumHomeCard extends StatelessWidget {
+  const _PremiumHomeCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final isPremium = AppScope.of(context).isPremium;
+    return GestureDetector(
+      onTap: () => Navigator.pushNamed(context, '/premium'),
+      child: GlassCard(
+        padding: const EdgeInsets.all(16),
+        color: AppColors.glassBg,
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                gradient: AppColors.gradPrimary,
+                borderRadius: BorderRadius.circular(15),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.accentPink.withValues(alpha: .22),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.workspace_premium_rounded, size: 24),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Premium',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      _SmallStatusPill(isPremium ? 'Activo' : 'Próximamente'),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Quizes inteligentes, sin anuncios y ejercicios avanzados.',
+                    style: TextStyle(
+                      color: AppColors.inkMuted,
+                      fontSize: 12,
+                      height: 1.25,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.inkMuted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SmallStatusPill extends StatelessWidget {
+  final String label;
+
+  const _SmallStatusPill(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.accentSun.withValues(alpha: .18),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.accentSun.withValues(alpha: .42)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: AppColors.accentSun,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );
