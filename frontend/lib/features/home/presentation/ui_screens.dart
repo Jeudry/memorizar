@@ -8571,6 +8571,7 @@ class _CompletionPromptCard extends StatelessWidget {
   final ValueChanged<int> onBlankTap;
 
   const _CompletionPromptCard({
+    super.key,
     required this.label,
     required this.text,
     required this.targets,
@@ -10717,9 +10718,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
   void _handleStatus(String status) {
     if (!mounted) return;
     if (status == 'done' || status == 'notListening') {
-      setState(() => _listening = false);
-      _grade(_recognized);
-      _audioRecorder.stop();
+      _finishCapture();
     }
   }
 
@@ -10729,10 +10728,9 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
       return;
     }
     if (_listening) {
+      // User tapped stop — end both capture streams and finalize.
       await _speech.stop();
-      await _audioRecorder.stop();
-      if (mounted) setState(() => _listening = false);
-      _grade(_recognized);
+      _finishCapture();
       return;
     }
     setState(() {
@@ -10743,35 +10741,39 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
       _status = 'Escuchando... lee el texto completo.';
     });
 
+    // Start the file recorder FIRST so the first words make it onto disk.
+    // The audio session is shared with speech_to_text on iOS — recording in
+    // a file via AVAudioRecorder does not collide with SFSpeechRecognizer's
+    // engine tap.
+    try {
+      if (await _audioRecorder.hasPermission()) {
+        final dir = await getTemporaryDirectory();
+        final path =
+            '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        await _audioRecorder.start(const RecordConfig(), path: path);
+        _recordedPath = path;
+      }
+    } catch (e) {
+      debugPrint('Audio Recorder Error: $e');
+    }
+
+    // Tiny breath so AVAudioSession is fully alive before SFSpeech attaches.
+    await Future.delayed(const Duration(milliseconds: 120));
+
     try {
       await _speech.listen(
         localeId: 'es_ES',
         listenOptions: stt.SpeechListenOptions(
           listenMode: stt.ListenMode.dictation,
           partialResults: true,
+          cancelOnError: false,
         ),
-        listenFor: const Duration(seconds: 60),
-        pauseFor: const Duration(seconds: 10),
+        listenFor: const Duration(seconds: 120),
+        pauseFor: const Duration(seconds: 12),
         onResult: _handleResult,
       );
     } catch (e) {
       debugPrint('STT Listen Error: $e');
-    }
-
-    // Retraso intencional para evitar choque de AVAudioSession en iOS
-    await Future.delayed(const Duration(milliseconds: 600));
-
-    // Start actual recording
-    if (await _audioRecorder.hasPermission()) {
-      try {
-        final dir = await getTemporaryDirectory();
-        final path =
-            '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-        await _audioRecorder.start(const RecordConfig(), path: path);
-        _recordedPath = path;
-      } catch (e) {
-        debugPrint('Audio Recorder Error: $e');
-      }
     }
   }
 
@@ -10785,16 +10787,25 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
       _score = score;
       if (passed) {
         _completed = true;
-        _status = '60% o más está fino. Puedes avanzar.';
+        _status = 'Vas bien — sigue leyendo o toca detener para guardar.';
       }
     });
-    if (passed) _stopAndComplete(recognized);
+    // IMPORTANT: do NOT stop on first passed result. Let the user finish.
   }
 
-  Future<void> _stopAndComplete(String recognized) async {
-    final path = await _audioRecorder.stop();
-    if (path != null) _recordedPath = path;
-    widget.onCompleted(recognized, _recordedPath);
+  bool _finalizing = false;
+  Future<void> _finishCapture() async {
+    if (_finalizing) return;
+    _finalizing = true;
+    try {
+      final path = await _audioRecorder.stop();
+      if (path != null) _recordedPath = path;
+      if (!mounted) return;
+      setState(() => _listening = false);
+      _grade(_recognized);
+    } finally {
+      _finalizing = false;
+    }
   }
 
   void _grade(String recognized) {
@@ -10808,8 +10819,9 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
           ? '60% o más está fino. Puedes avanzar.'
           : 'Se parece poco todavía. Reintenta leyendo más completo.';
     });
-    if (passed) _stopAndComplete(recognized);
+    if (passed) widget.onCompleted(recognized, _recordedPath);
   }
+
 
   @override
   Widget build(BuildContext context) {
