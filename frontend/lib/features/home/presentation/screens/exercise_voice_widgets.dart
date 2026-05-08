@@ -1,0 +1,1425 @@
+// AUTO-GENERATED extraction from ui_screens.dart (refactor PR-D).
+// Tightly-coupled exercise-flow widgets — kept in this library to
+// preserve cross-class private visibility.
+part of '../ui_screens.dart';
+
+class _ReadAloudPracticeCard extends StatefulWidget {
+  final String targetText;
+  final String source;
+  final void Function(String text, String? audioPath) onCompleted;
+
+  const _ReadAloudPracticeCard({
+    required this.targetText,
+    required this.source,
+    required this.onCompleted,
+  });
+
+  @override
+  State<_ReadAloudPracticeCard> createState() => _ReadAloudPracticeCardState();
+}
+
+class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
+  static const _passScore = .60;
+  late final stt.SpeechToText _speech;
+  bool _ready = false;
+  bool _listening = false;
+  bool _completed = false;
+  String _recognized = '';
+  String _status = 'Toca el micrófono y lee el texto.';
+  double _score = 0;
+  final _audioRecorder = AudioRecorder();
+  String? _recordedPath;
+
+  @override
+  void initState() {
+    super.initState();
+    _speech = stt.SpeechToText();
+    _initSpeech();
+  }
+
+  Future<void> _initSpeech() async {
+    final available = await _speech.initialize(
+      onStatus: _handleStatus,
+      onError: (error) {
+        if (!mounted) return;
+        setState(() {
+          _listening = false;
+          _status = 'No pude escuchar bien. Intenta otra vez.';
+        });
+      },
+    );
+    if (!mounted) return;
+    setState(() {
+      _ready = available;
+      _status = available
+          ? 'Toca el micrófono y lee el texto.'
+          : 'Activa permiso de micrófono para leer en voz.';
+    });
+  }
+
+  @override
+  void dispose() {
+    _speech.cancel();
+    _audioRecorder.stop().then((_) => _audioRecorder.dispose());
+    super.dispose();
+  }
+
+  void _handleStatus(String status) {
+    if (!mounted) return;
+    if (status == 'done' || status == 'notListening') {
+      _finishCapture();
+    }
+  }
+
+  Future<void> _toggleListening() async {
+    if (!_ready) {
+      await _initSpeech();
+      return;
+    }
+    if (_listening) {
+      // User tapped stop — end both capture streams and finalize.
+      await _speech.stop();
+      _finishCapture();
+      return;
+    }
+    setState(() {
+      _recognized = '';
+      _score = 0;
+      _completed = false;
+      _listening = true;
+      _status = 'Escuchando... lee el texto completo.';
+    });
+
+    // Start the file recorder FIRST so the first words make it onto disk.
+    // The audio session is shared with speech_to_text on iOS — recording in
+    // a file via AVAudioRecorder does not collide with SFSpeechRecognizer's
+    // engine tap.
+    try {
+      if (await _audioRecorder.hasPermission()) {
+        final dir = await getTemporaryDirectory();
+        final path =
+            '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        await _audioRecorder.start(const RecordConfig(), path: path);
+        _recordedPath = path;
+      }
+    } catch (e) {
+      debugPrint('Audio Recorder Error: $e');
+    }
+
+    // Tiny breath so AVAudioSession is fully alive before SFSpeech attaches.
+    await Future.delayed(const Duration(milliseconds: 120));
+
+    try {
+      await _speech.listen(
+        localeId: 'es_ES',
+        listenOptions: stt.SpeechListenOptions(
+          listenMode: stt.ListenMode.dictation,
+          partialResults: true,
+          cancelOnError: false,
+        ),
+        listenFor: const Duration(seconds: 120),
+        pauseFor: const Duration(seconds: 12),
+        onResult: _handleResult,
+      );
+    } catch (e) {
+      debugPrint('STT Listen Error: $e');
+    }
+  }
+
+  void _handleResult(SpeechRecognitionResult result) {
+    final recognized = result.recognizedWords;
+    final score = _speechSimilarity(recognized, widget.targetText);
+    final passed = score >= _passScore;
+    if (!mounted) return;
+    setState(() {
+      _recognized = recognized;
+      _score = score;
+      if (passed) {
+        _completed = true;
+        _status = 'Vas bien — sigue leyendo o toca detener para guardar.';
+      }
+    });
+    // IMPORTANT: do NOT stop on first passed result. Let the user finish.
+  }
+
+  bool _finalizing = false;
+  Future<void> _finishCapture() async {
+    if (_finalizing) return;
+    _finalizing = true;
+    try {
+      final path = await _audioRecorder.stop();
+      if (path != null) _recordedPath = path;
+      if (!mounted) return;
+      setState(() => _listening = false);
+      _grade(_recognized);
+    } finally {
+      _finalizing = false;
+    }
+  }
+
+  void _grade(String recognized) {
+    final score = _speechSimilarity(recognized, widget.targetText);
+    final passed = score >= _passScore;
+    if (!mounted) return;
+    setState(() {
+      _score = score;
+      _completed = passed;
+      _status = passed
+          ? '60% o más está fino. Puedes avanzar.'
+          : 'Se parece poco todavía. Reintenta leyendo más completo.';
+    });
+    if (passed) widget.onCompleted(recognized, _recordedPath);
+  }
+
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = (_score * 100).round();
+    final accent = _completed
+        ? RefColors.lime
+        : _score >= .45
+        ? RefColors.sun
+        : RefColors.pink;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Glass(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+          gradient: LinearGradient(
+            colors: [
+              RefColors.violet.withValues(alpha: .24),
+              RefColors.cyan.withValues(alpha: .10),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                widget.source,
+                style: const TextStyle(
+                  color: RefColors.pink,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.4,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                widget.targetText,
+                style: const TextStyle(
+                  fontSize: 22,
+                  height: 1.36,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Container(
+                padding: const EdgeInsets.all(13),
+                decoration: BoxDecoration(
+                  color: HtmlRefColors.glassSoft,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: HtmlRefColors.glassBorder),
+                ),
+                child: Text(
+                  _recognized.isEmpty
+                      ? 'Aquí aparecerá lo que entendió el reconocimiento de voz.'
+                      : _recognized,
+                  style: TextStyle(
+                    color: _recognized.isEmpty ? RefColors.dim : RefColors.ink,
+                    fontSize: 13,
+                    height: 1.35,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: _toggleListening,
+                    child: Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        gradient: _listening ? RefColors.primary : null,
+                        color: _listening ? null : RefColors.glassStrong,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: RefColors.border),
+                      ),
+                      child: Icon(
+                        _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                        size: 30,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '$percent% parecido',
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        RefProgress(_score.clamp(.02, 1.0)),
+                        const SizedBox(height: 7),
+                        Text(
+                          _status,
+                          style: const TextStyle(
+                            color: RefColors.muted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ListenOwnVoicePracticeCard extends StatefulWidget {
+  final String originalText;
+  final String voiceText;
+  final String source;
+  final String? audioPath;
+  final VoidCallback onCompleted;
+
+  const _ListenOwnVoicePracticeCard({
+    required this.originalText,
+    required this.voiceText,
+    required this.source,
+    this.audioPath,
+    required this.onCompleted,
+  });
+
+  @override
+  State<_ListenOwnVoicePracticeCard> createState() =>
+      _ListenOwnVoicePracticeCardState();
+}
+
+class _ListenOwnVoicePracticeCardState
+    extends State<_ListenOwnVoicePracticeCard> {
+  late final FlutterTts _tts;
+  late final AudioPlayer _audioPlayer;
+  int _tab = 1;
+  bool _playing = false;
+  bool _completed = false;
+  int _highlightedCount = 0;
+  Duration _audioDuration = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _tts = FlutterTts();
+    _audioPlayer = AudioPlayer();
+
+    _audioPlayer.onPlayerStateChanged.listen((state) {
+      if (mounted) {
+        setState(() {
+          _playing = state == PlayerState.playing;
+        });
+      }
+    });
+
+    _audioPlayer.onDurationChanged.listen((duration) {
+      if (mounted) setState(() => _audioDuration = duration);
+    });
+
+    _audioPlayer.onPositionChanged.listen((position) {
+      if (mounted && _audioDuration.inMilliseconds > 0 && _playing) {
+        final progress =
+            position.inMilliseconds / _audioDuration.inMilliseconds;
+        setState(() {
+          _highlightedCount = (progress * _currentText.length).toInt().clamp(
+            0,
+            _currentText.length,
+          );
+        });
+      }
+    });
+
+    _audioPlayer.onPlayerComplete.listen((_) {
+      if (!mounted) return;
+      setState(() {
+        _playing = false;
+        _highlightedCount = 0;
+        if (_tab == 1) _completed = true;
+      });
+      if (_tab == 1) widget.onCompleted();
+    });
+
+    _tts.setStartHandler(() {
+      if (mounted) setState(() => _playing = true);
+    });
+
+    _tts.setProgressHandler((text, start, end, word) {
+      if (mounted) {
+        setState(() {
+          _highlightedCount = end.clamp(0, _currentText.length);
+        });
+      }
+    });
+
+    _tts.setCompletionHandler(() {
+      if (!mounted) return;
+      setState(() {
+        _playing = false;
+        _highlightedCount = 0;
+        if (_tab == 1 && widget.voiceText.trim().isNotEmpty) {
+          _completed = true;
+        }
+      });
+      if (_tab == 1 && widget.voiceText.trim().isNotEmpty) {
+        widget.onCompleted();
+      }
+    });
+    _tts.setCancelHandler(() {
+      if (mounted) {
+        setState(() {
+          _playing = false;
+          _highlightedCount = 0;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tts.stop();
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  String get _currentText {
+    if (_tab == 1 && widget.voiceText.trim().isEmpty) {
+      return 'Primero completa el paso de leer en voz para guardar tu lectura.';
+    }
+    return widget.originalText;
+  }
+
+  Future<void> _play() async {
+    if (_playing) {
+      await _tts.stop();
+      await _audioPlayer.stop();
+      if (mounted) {
+        setState(() {
+          _playing = false;
+          _highlightedCount = 0;
+        });
+      }
+      return;
+    }
+
+    if (_tab == 1 && widget.audioPath != null) {
+      await _audioPlayer.setPlaybackRate(1);
+      await _audioPlayer.play(DeviceFileSource(widget.audioPath!));
+      final duration = await _audioPlayer.getDuration();
+      if (mounted && duration != null) {
+        setState(() => _audioDuration = duration);
+      }
+    } else {
+      await _tts.setLanguage('es-ES');
+      await _tts.setSpeechRate(_tab == 0 ? 0.44 : 0.48);
+      await _tts.setPitch(_tab == 0 ? 1.0 : .92);
+      await _tts.speak(_currentText);
+    }
+  }
+
+  Future<void> _switchTab(int tab) async {
+    await _tts.stop();
+    await _audioPlayer.stop();
+    if (!mounted) return;
+    setState(() {
+      _tab = tab;
+      _playing = false;
+      _highlightedCount = 0;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasVoice = widget.voiceText.trim().isNotEmpty;
+    return Glass(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+      gradient: LinearGradient(
+        colors: [
+          RefColors.violet.withValues(alpha: .25),
+          RefColors.sun.withValues(alpha: .16),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: HtmlRefColors.glassSoft,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: HtmlRefColors.glassBorder),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _VoiceTab(
+                    'Tuyo',
+                    active: _tab == 1,
+                    onTap: () => _switchTab(1),
+                  ),
+                  const SizedBox(width: 4),
+                  _VoiceTab(
+                    'Original',
+                    active: _tab == 0,
+                    onTap: () => _switchTab(0),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            widget.source,
+            style: const TextStyle(
+              color: RefColors.pink,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.4,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            constraints: const BoxConstraints(minHeight: 138),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: HtmlRefColors.glassSoft,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: HtmlRefColors.glassBorder),
+            ),
+            child: RichText(
+              text: TextSpan(
+                style: TextStyle(
+                  color: _tab == 1 && !hasVoice
+                      ? RefColors.dim
+                      : RefColors.ink.withValues(alpha: 0.4),
+                  fontSize: 18,
+                  height: 1.38,
+                  fontWeight: FontWeight.w900,
+                  fontFamily: 'Outfit',
+                ),
+                children: [
+                  if (_highlightedCount > 0)
+                    TextSpan(
+                      text: _currentText.substring(0, _highlightedCount),
+                      style: const TextStyle(color: RefColors.ink),
+                    ),
+                  TextSpan(text: _currentText.substring(_highlightedCount)),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              _PlayerMainButton(paused: _playing, onTap: _play),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  _tab == 0
+                      ? 'Escucha el original para comparar.'
+                      : hasVoice
+                      ? (_completed
+                            ? 'Ya escuchaste tu lectura. Puedes avanzar.'
+                            : 'Reproduce tu lectura para cerrar el paso.')
+                      : 'No hay lectura guardada todavía.',
+                  style: const TextStyle(
+                    color: RefColors.muted,
+                    fontSize: 12,
+                    height: 1.35,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VoiceTab extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _VoiceTab(this.label, {required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: active ? RefColors.primary : null,
+          color: active ? null : Colors.transparent,
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+            color: active ? Colors.white : RefColors.muted,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ListenAudioCard extends StatefulWidget {
+  final VoidCallback? onCompleted;
+
+  const _ListenAudioCard({this.onCompleted});
+
+  @override
+  State<_ListenAudioCard> createState() => _ListenAudioCardState();
+}
+
+class _ListenAudioCardState extends State<_ListenAudioCard> {
+  late final FlutterTts _tts;
+  final ScrollController _textScrollController = ScrollController();
+  bool _playing = false;
+  bool _completed = false;
+  int _wordIndex = 0;
+  int _ttsStartWordOffset = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _tts = FlutterTts();
+    _tts.setStartHandler(() {
+      if (mounted) setState(() => _playing = true);
+    });
+    _tts.setCompletionHandler(() {
+      if (mounted) {
+        setState(() {
+          _playing = false;
+          _completed = true;
+          _wordIndex = 0;
+        });
+        widget.onCompleted?.call();
+      }
+    });
+    _tts.setCancelHandler(() {
+      if (mounted) setState(() => _playing = false);
+    });
+    _tts.setProgressHandler((text, startOffset, endOffset, word) {
+      if (!mounted) return;
+      final before = text.substring(0, startOffset.clamp(0, text.length));
+      final index = _studyWords(
+        before,
+      ).length.clamp(0, _studyWords(text).length);
+      final absoluteIndex = (_ttsStartWordOffset + index).clamp(
+        0,
+        _studyWords(_cardStudyText(context)).length,
+      );
+      setState(() => _wordIndex = absoluteIndex);
+      _scrollToProgress(
+        absoluteIndex,
+        _studyWords(_cardStudyText(context)).length,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _tts.stop();
+    _textScrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToProgress(int index, int total) {
+    if (total <= 1) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_textScrollController.hasClients) return;
+      final max = _textScrollController.position.maxScrollExtent;
+      if (max <= 0) return;
+      final target = max * (index / (total - 1)).clamp(0.0, 1.0);
+      _textScrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  Future<void> _toggle(String text) async {
+    if (_playing) {
+      await _tts.pause();
+      if (mounted) setState(() => _playing = false);
+      return;
+    }
+    await _tts.setLanguage('es-ES');
+    await _tts.setSpeechRate(0.44);
+    await _tts.setPitch(1.0);
+    await _speakFromCurrent(text);
+  }
+
+  Future<void> _restart(String text) async {
+    await _tts.stop();
+    if (mounted) {
+      setState(() {
+        _wordIndex = 0;
+        _playing = false;
+        _completed = false;
+      });
+    }
+    await _toggle(text);
+  }
+
+  Future<void> _speakFromCurrent(String text) async {
+    final words = _studyWords(text);
+    final start = _wordIndex.clamp(0, words.length - 1);
+    _ttsStartWordOffset = start;
+    final remaining = words.skip(start).join(' ');
+    await _tts.speak(remaining);
+  }
+
+  Future<void> _skipForward(String text) async {
+    final words = _studyWords(text);
+    final nextIndex = (_wordIndex + 12).clamp(0, words.length - 1);
+    await _tts.stop();
+    if (mounted) {
+      setState(() {
+        _wordIndex = nextIndex;
+        _playing = false;
+      });
+    }
+    _scrollToProgress(nextIndex, words.length);
+    await _toggle(text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final words = _studyWords(_cardStudyText(context));
+    final source = _cardSourceText(context).toUpperCase();
+    final text = _cardStudyText(context);
+    final safeIndex = _wordIndex.clamp(0, words.length - 1);
+    final lead = words.take(safeIndex).join(' ');
+    final current = words[safeIndex];
+    final tail = words.skip(safeIndex + 1).join(' ');
+    final progress = words.isEmpty ? 0.0 : ((safeIndex + 1) / words.length);
+    return Glass(
+      padding: const EdgeInsets.fromLTRB(22, 30, 22, 20),
+      gradient: LinearGradient(
+        colors: [
+          RefColors.violet.withValues(alpha: .28),
+          RefColors.sun.withValues(alpha: .34),
+        ],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      child: Column(
+        children: [
+          Text(
+            source,
+            style: TextStyle(
+              color: RefColors.pink,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 2,
+            ),
+          ),
+          const SizedBox(height: 34),
+          Expanded(
+            child: Center(
+              child: Scrollbar(
+                controller: _textScrollController,
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  controller: _textScrollController,
+                  padding: const EdgeInsets.only(right: 10),
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        if (lead.isNotEmpty)
+                          TextSpan(
+                            text: '$lead ',
+                            style: const TextStyle(color: RefColors.lime),
+                          ),
+                        TextSpan(
+                          text: current,
+                          style: const TextStyle(
+                            color: RefColors.ink,
+                            backgroundColor: Color(0x44273CFE),
+                          ),
+                        ),
+                        TextSpan(
+                          text: tail.isEmpty ? '' : ' $tail',
+                          style: const TextStyle(color: RefColors.muted),
+                        ),
+                      ],
+                    ),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 26,
+                      height: 1.34,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -.35,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 22),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: RefProgress(progress.clamp(.03, 1.0)),
+          ),
+          const SizedBox(height: 7),
+          Row(
+            children: [
+              Text(
+                _playing ? 'Leyendo' : 'Listo',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${safeIndex + 1}/${words.length} palabras',
+                style: const TextStyle(
+                  color: RefColors.muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Container(height: 1, color: RefColors.inner),
+          const SizedBox(height: 18),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _PlayerSmallButton(
+                Icons.replay_rounded,
+                onTap: () => _restart(text),
+              ),
+              const SizedBox(width: 18),
+              _PlayerMainButton(paused: _playing, onTap: () => _toggle(text)),
+              const SizedBox(width: 18),
+              _PlayerSmallButton(
+                Icons.forward_5_rounded,
+                onTap: () => _skipForward(text),
+              ),
+            ],
+          ),
+          if (_completed) ...[
+            const SizedBox(height: 12),
+            const StatusChip(
+              'ESCUCHA COMPLETA',
+              color: Color(0x338DFD63),
+              borderColor: Color(0x668DFD63),
+              textColor: RefColors.lime,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PlayerSmallButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  const _PlayerSmallButton(this.icon, {this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          color: RefColors.glassStrong,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: RefColors.border),
+        ),
+        child: Icon(icon, size: 22),
+      ),
+    );
+  }
+}
+
+class _PlayerMainButton extends StatelessWidget {
+  final bool paused;
+  final VoidCallback? onTap;
+
+  const _PlayerMainButton({this.paused = true, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 72,
+        height: 72,
+        decoration: BoxDecoration(
+          gradient: RefColors.primary,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: RefColors.pink.withValues(alpha: .42),
+              blurRadius: 28,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Icon(
+          paused ? Icons.pause_rounded : Icons.play_arrow_rounded,
+          size: 34,
+        ),
+      ),
+    );
+  }
+}
+
+class _FlowHintCard extends StatelessWidget {
+  final String icon;
+  final String text;
+
+  const _FlowHintCard({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Glass(
+      radius: 18,
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 22)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: RefColors.muted,
+                fontSize: 12,
+                height: 1.45,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FragmentedTextCard extends StatelessWidget {
+  const _FragmentedTextCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final words = _studyWords(_cardStudyText(context));
+    final visible = words.take(3).join(' ');
+    final active = words.length > 3 ? words[3] : '';
+    final hidden = words.skip(4).join(' ');
+    final activeSplit = active.length < 2 ? active.length : 2;
+    return Glass(
+      padding: const EdgeInsets.fromLTRB(22, 28, 22, 28),
+      child: SizedBox(
+        height: 150,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(text: '$visible '),
+                TextSpan(
+                  text: active.isEmpty ? '' : active.substring(0, activeSplit),
+                  style: const TextStyle(
+                    color: RefColors.ink,
+                    decoration: TextDecoration.underline,
+                    decorationColor: RefColors.pink,
+                    decorationThickness: 3,
+                  ),
+                ),
+                TextSpan(
+                  text: active.isEmpty
+                      ? hidden
+                      : '${active.substring(activeSplit)} $hidden',
+                  style: const TextStyle(color: RefColors.dim),
+                ),
+              ],
+            ),
+            style: const TextStyle(
+              fontSize: 29,
+              height: 1.45,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -.35,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SpeedSelectorCard extends StatelessWidget {
+  const _SpeedSelectorCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Glass(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          const Text(
+            'VELOCIDAD',
+            style: TextStyle(
+              color: RefColors.muted,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              letterSpacing: .8,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(child: _SpeedPill('Lenta')),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                gradient: RefColors.primary,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Center(
+                child: Text(
+                  'Normal',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 5),
+          const Expanded(child: _SpeedPill('Rápida')),
+        ],
+      ),
+    );
+  }
+}
+
+class _SpeedPill extends StatelessWidget {
+  final String label;
+
+  const _SpeedPill(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: BoxDecoration(
+        color: RefColors.glassSoft,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: RefColors.border),
+      ),
+      child: Center(
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: RefColors.muted,
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TapPauseCard extends StatelessWidget {
+  const _TapPauseCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Glass(
+      radius: 18,
+      padding: const EdgeInsets.all(14),
+      color: RefColors.cyan.withValues(alpha: .08),
+      border: Border.all(color: RefColors.cyan.withValues(alpha: .28)),
+      child: Row(
+        children: [
+          const Text('👆', style: TextStyle(fontSize: 22)),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'Toca la pantalla para pausar · desliza → para saltar al final',
+              style: TextStyle(
+                color: RefColors.ink,
+                fontSize: 12,
+                height: 1.35,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: RefColors.cyan,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Text(
+              '⏸ Pausar',
+              style: TextStyle(
+                color: Color(0xFF003A4A),
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KaraokeLine extends StatelessWidget {
+  final double fontSize;
+
+  const _KaraokeLine({this.fontSize = 24});
+
+  @override
+  Widget build(BuildContext context) {
+    final words = _studyWords(_cardStudyText(context));
+    final lead = words.take(3).join(' ');
+    final current = words.length > 3 ? words[3] : words.last;
+    final tail = words.skip(4).join(' ');
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(
+            text: '$lead ',
+            style: const TextStyle(color: RefColors.lime),
+          ),
+          TextSpan(
+            text: current,
+            style: const TextStyle(
+              color: RefColors.ink,
+              backgroundColor: Color(0x553B173E),
+              decoration: TextDecoration.underline,
+              decorationColor: RefColors.pink,
+              decorationThickness: 3,
+            ),
+          ),
+          TextSpan(
+            text: tail.isEmpty ? '' : ' $tail',
+            style: const TextStyle(color: RefColors.muted),
+          ),
+        ],
+      ),
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontSize: fontSize,
+        height: 1.42,
+        fontWeight: FontWeight.w900,
+        letterSpacing: -.35,
+      ),
+    );
+  }
+}
+
+class _PulseMic extends StatelessWidget {
+  const _PulseMic();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SizedBox(
+        width: 150,
+        height: 150,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            for (final size in [150.0, 122.0, 98.0])
+              Container(
+                width: size,
+                height: size,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: RefColors.pink.withValues(alpha: .35),
+                    width: 2,
+                  ),
+                ),
+              ),
+            Container(
+              width: 92,
+              height: 92,
+              decoration: BoxDecoration(
+                gradient: RefColors.primary,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: RefColors.pink.withValues(alpha: .45),
+                    blurRadius: 34,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: const Center(
+                child: Text('🎤', style: TextStyle(fontSize: 36)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VoiceQuoteCard extends StatelessWidget {
+  const _VoiceQuoteCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Glass(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      gradient: LinearGradient(
+        colors: [
+          RefColors.violet.withValues(alpha: .28),
+          RefColors.sun.withValues(alpha: .33),
+        ],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      child: const _KaraokeLine(fontSize: 22),
+    );
+  }
+}
+
+enum _WaveKind { original, you }
+
+class _WaveformCard extends StatelessWidget {
+  final _WaveKind kind;
+
+  const _WaveformCard({required this.kind});
+
+  @override
+  Widget build(BuildContext context) {
+    final isYou = kind == _WaveKind.you;
+    return Glass(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              StatusChip(
+                isYou ? 'TÚ' : 'ORIGINAL',
+                color: (isYou ? RefColors.pink : RefColors.cyan).withValues(
+                  alpha: .18,
+                ),
+                borderColor: (isYou ? RefColors.pink : RefColors.cyan)
+                    .withValues(alpha: .38),
+                textColor: isYou ? RefColors.pink : RefColors.cyan,
+              ),
+              if (isYou) ...[
+                const SizedBox(width: 8),
+                const StatusChip(
+                  '3/5 REP',
+                  color: RefColors.glassStrong,
+                  textColor: RefColors.pink,
+                ),
+              ],
+              const Spacer(),
+              const _SpeedMini('0.5×'),
+              const SizedBox(width: 4),
+              const _SpeedMini('1×', active: true),
+              const SizedBox(width: 4),
+              const _SpeedMini('1.5×'),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _WaveBars(color: isYou ? RefColors.pink : RefColors.cyan),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Text(
+                isYou ? '0:01' : '0:00',
+                style: const TextStyle(
+                  color: RefColors.ink,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Spacer(),
+              const _PlayerTinyButton(Icons.replay_rounded),
+              const SizedBox(width: 10),
+              _PlayerRoundButton(paused: isYou),
+              const SizedBox(width: 10),
+              const _PlayerTinyButton(Icons.replay_rounded, mirror: true),
+              const Spacer(),
+              const Text(
+                '0:04',
+                style: TextStyle(
+                  color: RefColors.muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SpeedMini extends StatelessWidget {
+  final String label;
+  final bool active;
+
+  const _SpeedMini(this.label, {this.active = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: active ? null : RefColors.glassStrong,
+        gradient: active ? RefColors.primary : null,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(
+          color: active ? Colors.transparent : RefColors.border,
+        ),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
+      ),
+    );
+  }
+}
+
+class _WaveBars extends StatelessWidget {
+  final Color color;
+
+  const _WaveBars({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    const heights = [
+      24.0,
+      40.0,
+      30.0,
+      52.0,
+      34.0,
+      44.0,
+      25.0,
+      38.0,
+      48.0,
+      31.0,
+      42.0,
+      29.0,
+    ];
+    return SizedBox(
+      height: 56,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          for (var i = 0; i < heights.length; i++) ...[
+            Expanded(
+              child: Container(
+                height: heights[i],
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: i < 6 ? .95 : .55),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ),
+            if (i < heights.length - 1) const SizedBox(width: 5),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PlayerTinyButton extends StatelessWidget {
+  final IconData icon;
+  final bool mirror;
+
+  const _PlayerTinyButton(this.icon, {this.mirror = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: RefColors.glassStrong,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: RefColors.border),
+      ),
+      child: Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.diagonal3Values(mirror ? -1.0 : 1.0, 1.0, 1.0),
+        child: Icon(icon, size: 19),
+      ),
+    );
+  }
+}
+
+class _PlayerRoundButton extends StatelessWidget {
+  final bool paused;
+
+  const _PlayerRoundButton({this.paused = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: paused ? 58 : 52,
+      height: paused ? 58 : 52,
+      decoration: BoxDecoration(
+        color: paused ? null : RefColors.glassStrong,
+        gradient: paused ? RefColors.primary : null,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: paused ? Colors.transparent : RefColors.border,
+        ),
+        boxShadow: paused
+            ? [
+                BoxShadow(
+                  color: RefColors.pink.withValues(alpha: .35),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ]
+            : null,
+      ),
+      child: Icon(paused ? Icons.pause_rounded : Icons.play_arrow_rounded),
+    );
+  }
+}
+
