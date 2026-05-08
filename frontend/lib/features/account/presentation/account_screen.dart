@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/app_state.dart';
 import '../../../core/i18n/strings.dart';
@@ -33,6 +34,69 @@ class _AccountScreenState extends State<AccountScreen> {
     _nameCtrl.dispose();
     _avatarCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickAvatar() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        margin: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: RefColors.glassStrong,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: RefColors.border),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_rounded,
+                  color: RefColors.cyan),
+              title: const Text('Elegir de la galería'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_rounded,
+                  color: RefColors.cyan),
+              title: const Text('Tomar foto'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: source,
+      maxWidth: 800,
+      maxHeight: 800,
+      imageQuality: 82,
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _saving = true);
+    try {
+      final store = AppScope.of(context);
+      final relUrl = await store.api.uploadAvatar(filePath: picked.path);
+      // El backend devuelve `/avatars/userId.png` — concatenamos baseUrl.
+      final fullUrl = '${store.api.baseUrl}$relUrl';
+      _avatarCtrl.text = fullUrl;
+      await store.updateProfile(avatarUrl: fullUrl);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Foto de perfil actualizada')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo subir: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   Future<void> _save() async {
@@ -131,7 +195,38 @@ class _AccountScreenState extends State<AccountScreen> {
                 children: [
                   Row(
                     children: [
-                      _AvatarPreview(url: _avatarCtrl.text, initial: user.initial),
+                      GestureDetector(
+                        onTap: _pickAvatar,
+                        child: Stack(
+                          children: [
+                            _AvatarPreview(
+                              url: _avatarCtrl.text,
+                              initial: user.initial,
+                            ),
+                            Positioned(
+                              right: -2,
+                              bottom: -2,
+                              child: Container(
+                                width: 22,
+                                height: 22,
+                                decoration: BoxDecoration(
+                                  color: RefColors.pink,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: RefColors.glassStrong,
+                                    width: 2,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.camera_alt_rounded,
+                                  size: 12,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -232,6 +327,18 @@ class _AccountScreenState extends State<AccountScreen> {
                   ),
                 ],
               ),
+            ),
+            if (!user.emailVerified) ...[
+              const SizedBox(height: 8),
+              GhostButton(
+                'Verificar mi correo',
+                onTap: () => Navigator.pushNamed(context, AppRoutes.verifyEmail),
+              ),
+            ],
+            const SizedBox(height: 8),
+            GhostButton(
+              'Cambiar contraseña',
+              onTap: () => Navigator.pushNamed(context, AppRoutes.passwordReset),
             ),
             const SizedBox(height: 12),
             GhostButton(

@@ -47,6 +47,8 @@ class AppRoutes {
   static const login = '/login';
   static const account = '/account';
   static const shareInbox = '/inbox';
+  static const verifyEmail = '/verify-email';
+  static const passwordReset = '/password-reset';
 
   static Map<String, WidgetBuilder>? _routes;
 

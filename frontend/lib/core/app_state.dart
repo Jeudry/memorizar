@@ -315,6 +315,19 @@ class AppStore extends ChangeNotifier {
     unawaited(refreshPendingCount());
   }
 
+  /// Setter directo para refrescar el user en memoria sin re-autenticar
+  /// (ej. tras verificar email).
+  void overwriteCurrentUser(RemoteUser user) {
+    _currentUser = user;
+    if (_sessionToken != null) {
+      // Persistencia best-effort. Lo hacemos sync sin await para no bloquear.
+      // El siguiente bootstrapSession leerá el cambio.
+      // ignore: discarded_futures
+      _persistSession(_sessionToken!, user);
+    }
+    notifyListeners();
+  }
+
   Future<void> updateProfile({
     String? displayName,
     String? avatarUrl,

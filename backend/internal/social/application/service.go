@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Jeudry/memorizar/backend/internal/notify"
 	"github.com/Jeudry/memorizar/backend/internal/social/domain"
 	"github.com/Jeudry/memorizar/backend/internal/social/ports"
 	"golang.org/x/crypto/bcrypt"
@@ -31,17 +32,63 @@ var (
 )
 
 type Service struct {
-	repo ports.Repository
-	now  func() time.Time
+	repo     ports.Repository
+	now      func() time.Time
+	notifier notify.Notifier
 }
 
-func NewService(repo ports.Repository) *Service {
+func NewService(repo ports.Repository, opts ...Option) *Service {
 	service := &Service{
-		repo: repo,
-		now:  time.Now,
+		repo:     repo,
+		now:      time.Now,
+		notifier: notify.LogNotifier{},
+	}
+	for _, opt := range opts {
+		opt(service)
 	}
 	service.seed()
 	return service
+}
+
+// Option lets callers swap in alternate notifiers / clocks without breaking
+// existing call sites. Default notifier es LogNotifier (stdout).
+type Option func(*Service)
+
+func WithNotifier(n notify.Notifier) Option {
+	return func(s *Service) {
+		if n != nil {
+			s.notifier = n
+		}
+	}
+}
+
+func WithClock(now func() time.Time) Option {
+	return func(s *Service) {
+		if now != nil {
+			s.now = now
+		}
+	}
+}
+
+// notifySafe envuelve s.notifier.Notify en una guarda nil — los seeds en
+// fase temprana podrían correr antes de inyectar uno.
+func (s *Service) notifySafe(n notify.Notification) {
+	if s.notifier == nil {
+		return
+	}
+	s.notifier.Notify(n)
+}
+
+// userDisplay devuelve el displayName de un usuario, fallback al ID.
+func (s *Service) userDisplay(userID string) string {
+	user, err := s.repo.FindUserByID(userID)
+	if err != nil || user == nil {
+		return userID
+	}
+	if user.DisplayName != "" {
+		return user.DisplayName
+	}
+	return user.Email
 }
 
 type SocialLoginInput struct {
@@ -177,6 +224,17 @@ func (s *Service) RequestFriend(requesterID, addresseeID string) (*domain.Friend
 	if err := s.repo.SaveFriendship(friendship); err != nil {
 		return nil, err
 	}
+	s.notifySafe(notify.Notification{
+		Type:   notify.EventFriendRequested,
+		UserID: addresseeID,
+		Title:  "Nueva solicitud de amistad",
+		Body:   s.userDisplay(requesterID) + " quiere conectar contigo.",
+		Data: map[string]string{
+			"friendshipId": friendship.ID,
+			"requesterId":  requesterID,
+			"deeplink":     "memorizar://amigos",
+		},
+	})
 	return &friendship, nil
 }
 
@@ -193,6 +251,19 @@ func (s *Service) AcceptFriend(currentUserID, friendshipID string) (*domain.Frie
 	if err := s.repo.SaveFriendship(*friendship); err != nil {
 		return nil, err
 	}
+	// Notificar al requester (el que envió originalmente la solicitud) que
+	// fue aceptada.
+	s.notifySafe(notify.Notification{
+		Type:   notify.EventFriendAccepted,
+		UserID: friendship.RequesterID,
+		Title:  "Solicitud aceptada",
+		Body:   s.userDisplay(currentUserID) + " aceptó tu solicitud de amistad.",
+		Data: map[string]string{
+			"friendshipId": friendship.ID,
+			"friendId":     currentUserID,
+			"deeplink":     "memorizar://amigos",
+		},
+	})
 	return friendship, nil
 }
 
@@ -573,6 +644,21 @@ func (s *Service) ShareResource(userID string, input ShareResourceInput) (*domai
 	if err := s.repo.SaveSharedResource(resource); err != nil {
 		return nil, err
 	}
+	// Solo notificamos compartidos privados (1:1). Los públicos van al feed
+	// y no generan push individual.
+	if resource.TargetUserID != "" {
+		s.notifySafe(notify.Notification{
+			Type:   notify.EventDeckShared,
+			UserID: resource.TargetUserID,
+			Title:  s.userDisplay(userID) + " te compartió un deck",
+			Body:   resource.Title,
+			Data: map[string]string{
+				"shareId":  resource.ID,
+				"kind":     string(resource.Kind),
+				"deeplink": "memorizar://inbox",
+			},
+		})
+	}
 	return &resource, nil
 }
 
@@ -644,7 +730,8 @@ func (s *Service) AddReaction(userID, entryID, emoji string) (*domain.FeedReacti
 	if err != nil {
 		return nil, err
 	}
-	if !containsFeedEntry(feed, entryID) {
+	entry, ok := findFeedEntry(feed, entryID)
+	if !ok {
 		return nil, ErrFeedEntryNotFound
 	}
 	reaction := domain.FeedReaction{
@@ -657,6 +744,20 @@ func (s *Service) AddReaction(userID, entryID, emoji string) (*domain.FeedReacti
 	if err := s.repo.SaveReaction(reaction); err != nil {
 		return nil, err
 	}
+	// Notificar al dueño del entry, salvo que se reaccione a uno mismo.
+	if entry.User.ID != "" && entry.User.ID != userID {
+		s.notifySafe(notify.Notification{
+			Type:   notify.EventReactionAdded,
+			UserID: entry.User.ID,
+			Title:  s.userDisplay(userID) + " reaccionó a tu actividad",
+			Body:   reaction.Emoji,
+			Data: map[string]string{
+				"entryId":  entryID,
+				"emoji":    reaction.Emoji,
+				"deeplink": "memorizar://comunidad",
+			},
+		})
+	}
 	return &reaction, nil
 }
 
@@ -665,7 +766,8 @@ func (s *Service) AddComment(userID, entryID, body string) (*domain.FeedComment,
 	if err != nil {
 		return nil, err
 	}
-	if !containsFeedEntry(feed, entryID) {
+	entry, ok := findFeedEntry(feed, entryID)
+	if !ok {
 		return nil, ErrFeedEntryNotFound
 	}
 	comment := domain.FeedComment{
@@ -677,6 +779,22 @@ func (s *Service) AddComment(userID, entryID, body string) (*domain.FeedComment,
 	}
 	if err := s.repo.SaveComment(comment); err != nil {
 		return nil, err
+	}
+	if entry.User.ID != "" && entry.User.ID != userID {
+		preview := comment.Body
+		if len(preview) > 80 {
+			preview = preview[:77] + "…"
+		}
+		s.notifySafe(notify.Notification{
+			Type:   notify.EventCommentAdded,
+			UserID: entry.User.ID,
+			Title:  s.userDisplay(userID) + " comentó tu actividad",
+			Body:   preview,
+			Data: map[string]string{
+				"entryId":  entryID,
+				"deeplink": "memorizar://comunidad",
+			},
+		})
 	}
 	return &comment, nil
 }
@@ -1007,13 +1125,13 @@ func newID(prefix string) string {
 	return prefix + "_" + hex.EncodeToString(buffer)
 }
 
-func containsFeedEntry(feed []domain.FeedEntry, entryID string) bool {
+func findFeedEntry(feed []domain.FeedEntry, entryID string) (domain.FeedEntry, bool) {
 	for _, entry := range feed {
 		if entry.ID == entryID {
-			return true
+			return entry, true
 		}
 	}
-	return false
+	return domain.FeedEntry{}, false
 }
 
 func summarizeSnapshot(payload string) string {
