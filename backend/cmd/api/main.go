@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/Jeudry/memorizar/backend/internal/httpapi"
+	"github.com/Jeudry/memorizar/backend/internal/notify"
 	filerepo "github.com/Jeudry/memorizar/backend/internal/social/adapters/file"
 	sqliterepo "github.com/Jeudry/memorizar/backend/internal/social/adapters/sqlite"
 	"github.com/Jeudry/memorizar/backend/internal/social/application"
@@ -49,7 +50,9 @@ func main() {
 		log.Fatalf("unknown MEMORIZAR_STORE driver: %q (use 'sqlite' or 'file')", driver)
 	}
 
-	service := application.NewService(repo)
+	// Notifier por defecto: LogNotifier (stdout). Cuando Firebase Admin esté
+	// configurado se cambia por FcmNotifier sin tocar el resto del wiring.
+	service := application.NewService(repo, application.WithNotifier(notify.LogNotifier{}))
 	server := httpapi.NewServer(service)
 
 	log.Printf("memorizar api listening on %s", addr)

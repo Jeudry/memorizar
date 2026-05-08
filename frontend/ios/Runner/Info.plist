@@ -50,6 +50,10 @@
 				</dict>
 			</array>
 		</dict>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Memorizar usa la galería para elegir tu foto de perfil.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>Memorizar usa la cámara para tomar tu foto de perfil.</string>
 		<key>CFBundleURLTypes</key>
 		<array>
 			<dict>

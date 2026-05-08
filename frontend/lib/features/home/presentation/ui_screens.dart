@@ -21,6 +21,8 @@ import '../../../core/api/models.dart';
 import '../../../core/app_state.dart';
 import '../../account/presentation/account_screen.dart';
 import '../../auth/presentation/login_screen.dart';
+import '../../auth/presentation/password_reset_screen.dart';
+import '../../auth/presentation/verify_email_screen.dart';
 import '../../cooperativo/data/coop_service.dart';
 import '../../share_inbox/presentation/share_inbox_screen.dart';
 import '../../legal/presentation/community_guidelines_screen.dart';
@@ -190,6 +192,8 @@ Map<String, WidgetBuilder> buildAppRoutes() => {
   AppRoutes.login: (_) => const LoginScreen(),
   AppRoutes.account: (_) => const AccountScreen(),
   AppRoutes.shareInbox: (_) => const ShareInboxScreen(),
+  AppRoutes.verifyEmail: (_) => const VerifyEmailScreen(),
+  AppRoutes.passwordReset: (_) => const PasswordResetScreen(),
 };
 
 class ExerciseFlowData {
