@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Jeudry/memorizar/backend/internal/social/domain"
@@ -365,6 +366,130 @@ func (s *Service) SearchPeople(userID, rawQuery string) ([]domain.User, error) {
 		return matches[i].DisplayName < matches[j].DisplayName
 	})
 	return matches, nil
+}
+
+// ─── Email verification + password reset ──────────────────────────────
+//
+// Mecánica simple sin SMTP real: generamos tokens en memoria + TTL. Cuando
+// el front llama a /verify/request, devolvemos el token *en la respuesta*
+// para uso en dev. En producción ese token solo se manda por email vía
+// SMTP (TODO: integrar SendGrid o Resend).
+
+type verifyToken struct {
+	UserID    string
+	Email     string
+	ExpiresAt time.Time
+}
+
+type resetToken struct {
+	UserID    string
+	Email     string
+	ExpiresAt time.Time
+}
+
+var (
+	verifyTokens   = map[string]verifyToken{}
+	resetTokens    = map[string]resetToken{}
+	tokensMu       sync.Mutex
+)
+
+func (s *Service) RequestEmailVerify(userID string) (string, error) {
+	user, _ := s.repo.FindUserByID(userID)
+	if user == nil {
+		return "", ErrUserNotFound
+	}
+	if user.EmailVerified {
+		return "", nil
+	}
+	token := newID("vrf")
+	tokensMu.Lock()
+	verifyTokens[token] = verifyToken{
+		UserID:    user.ID,
+		Email:     user.Email,
+		ExpiresAt: s.now().UTC().Add(24 * time.Hour),
+	}
+	tokensMu.Unlock()
+	// TODO(smtp): mandar email con link memorizar://verify?token={token}.
+	return token, nil
+}
+
+func (s *Service) ConfirmEmailVerify(token string) error {
+	tokensMu.Lock()
+	v, ok := verifyTokens[token]
+	if ok {
+		delete(verifyTokens, token)
+	}
+	tokensMu.Unlock()
+	if !ok || v.ExpiresAt.Before(s.now().UTC()) {
+		return errors.New("token inválido o expirado")
+	}
+	user, _ := s.repo.FindUserByID(v.UserID)
+	if user == nil {
+		return ErrUserNotFound
+	}
+	user.EmailVerified = true
+	user.UpdatedAt = s.now().UTC()
+	return s.repo.SaveUser(*user)
+}
+
+func (s *Service) RequestPasswordReset(email string) (string, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return "", ErrMissingIdentity
+	}
+	user, _ := s.repo.FindUserByEmail(email)
+	if user == nil {
+		// No revelar si el email existe — devolver token vacío silenciosamente.
+		return "", nil
+	}
+	token := newID("pwr")
+	tokensMu.Lock()
+	resetTokens[token] = resetToken{
+		UserID:    user.ID,
+		Email:     user.Email,
+		ExpiresAt: s.now().UTC().Add(1 * time.Hour),
+	}
+	tokensMu.Unlock()
+	// TODO(smtp): enviar a user.Email.
+	return token, nil
+}
+
+func (s *Service) ConfirmPasswordReset(token, newPassword string) error {
+	if len(newPassword) < 8 {
+		return ErrWeakPassword
+	}
+	tokensMu.Lock()
+	r, ok := resetTokens[token]
+	if ok {
+		delete(resetTokens, token)
+	}
+	tokensMu.Unlock()
+	if !ok || r.ExpiresAt.Before(s.now().UTC()) {
+		return errors.New("token inválido o expirado")
+	}
+	user, _ := s.repo.FindUserByID(r.UserID)
+	if user == nil {
+		return ErrUserNotFound
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	user.PasswordHash = string(hash)
+	user.UpdatedAt = s.now().UTC()
+	return s.repo.SaveUser(*user)
+}
+
+// SetAvatarURL helper que también llama a UpdateProfile pero recibe la
+// URL ya resuelta (path local /avatars/{id}.png o URL externa).
+func (s *Service) SetAvatarURL(userID, url string) error {
+	user, _ := s.repo.FindUserByID(userID)
+	if user == nil {
+		return ErrUserNotFound
+	}
+	user.AvatarURL = url
+	user.UpdatedAt = s.now().UTC()
+	return s.repo.SaveUser(*user)
 }
 
 // FindShareByID busca un SharedResource por su ID. Para uso desde

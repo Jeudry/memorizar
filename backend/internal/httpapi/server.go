@@ -3,7 +3,10 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Jeudry/memorizar/backend/internal/coop"
@@ -39,6 +42,12 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/auth/me", s.withAuth(s.handleMe))
 	s.mux.HandleFunc("/v1/auth/profile", s.withAuth(s.handleProfile))
 	s.mux.HandleFunc("/v1/auth/account", s.withAuth(s.handleAccount))
+	s.mux.HandleFunc("/v1/auth/avatar", s.withAuth(s.handleAvatarUpload))
+	s.mux.HandleFunc("/v1/auth/email/verify/request", s.withAuth(s.handleVerifyRequest))
+	s.mux.HandleFunc("/v1/auth/email/verify/confirm", s.handleVerifyConfirm)
+	s.mux.HandleFunc("/v1/auth/password/reset/request", s.handlePasswordResetRequest)
+	s.mux.HandleFunc("/v1/auth/password/reset/confirm", s.handlePasswordResetConfirm)
+	s.mux.HandleFunc("/avatars/", s.handleAvatarServe)
 	s.mux.HandleFunc("/v1/social/friends", s.withAuth(s.handleFriends))
 	s.mux.HandleFunc("/v1/social/suggestions", s.withAuth(s.handleSuggestions))
 	s.mux.HandleFunc("/v1/social/search", s.withAuth(s.handleSearch))
@@ -489,6 +498,147 @@ func (s *Server) handleSyncProgress(w http.ResponseWriter, r *http.Request, user
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 	}
+}
+
+// ─── Avatars / verificación / reset ────────────────────────────────────
+
+const avatarsDir = "data/avatars"
+
+func (s *Server) handleAvatarUpload(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	// Espera multipart/form-data con campo "file".
+	if err := r.ParseMultipartForm(8 << 20); err != nil { // 8 MB max
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid multipart"})
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing file"})
+		return
+	}
+	defer file.Close()
+	// Validar mime y tamaño básico.
+	if header.Size > 8<<20 {
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "file too large"})
+		return
+	}
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	if ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".webp" {
+		writeJSON(w, http.StatusUnsupportedMediaType, map[string]string{"error": "unsupported format"})
+		return
+	}
+	if err := os.MkdirAll(avatarsDir, 0o755); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	dstPath := filepath.Join(avatarsDir, userID+ext)
+	dst, err := os.Create(dstPath)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	defer dst.Close()
+	if _, err := io.Copy(dst, file); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	url := "/avatars/" + userID + ext
+	if err := s.service.SetAvatarURL(userID, url); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"avatarUrl": url})
+}
+
+func (s *Server) handleAvatarServe(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/avatars/")
+	if strings.Contains(name, "..") || strings.Contains(name, "/") {
+		http.Error(w, "bad path", http.StatusBadRequest)
+		return
+	}
+	http.ServeFile(w, r, filepath.Join(avatarsDir, name))
+}
+
+func (s *Server) handleVerifyRequest(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	token, err := s.service.RequestEmailVerify(userID)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	// En dev devolvemos el token. En prod sólo confirmamos el envío.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sent":     true,
+		"devToken": token, // TODO(smtp): quitar en producción.
+	})
+}
+
+func (s *Server) handleVerifyConfirm(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	if err := s.service.ConfirmEmailVerify(strings.TrimSpace(body.Token)); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"verified": true})
+}
+
+func (s *Server) handlePasswordResetRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	token, _ := s.service.RequestPasswordReset(body.Email)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sent":     true,
+		"devToken": token, // TODO(smtp): quitar en producción.
+	})
+}
+
+func (s *Server) handlePasswordResetConfirm(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		Token       string `json:"token"`
+		NewPassword string `json:"newPassword"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	if err := s.service.ConfirmPasswordReset(strings.TrimSpace(body.Token), body.NewPassword); err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, application.ErrWeakPassword) {
+			status = http.StatusUnprocessableEntity
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"reset": true})
 }
 
 // ─── Cooperativo ────────────────────────────────────────────────────────

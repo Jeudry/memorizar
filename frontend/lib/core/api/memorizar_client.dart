@@ -129,6 +129,60 @@ class MemorizarClient {
     return RemoteUser.fromJson(await _decode(r));
   }
 
+  /// Sube una imagen como avatar. Devuelve la URL pública (path relativo
+  /// al backend). El llamador típicamente concatena `baseUrl + url`.
+  Future<String> uploadAvatar({required String filePath}) async {
+    final req = http.MultipartRequest('POST', _uri('/v1/auth/avatar'));
+    if (_bearerToken != null) {
+      req.headers['Authorization'] = 'Bearer $_bearerToken';
+    }
+    req.files.add(await http.MultipartFile.fromPath('file', filePath));
+    final streamed = await _http.send(req);
+    final r = await http.Response.fromStream(streamed);
+    final body = await _decode(r);
+    return (body['avatarUrl'] as String?) ?? '';
+  }
+
+  Future<String> requestEmailVerify() async {
+    final r = await _http.post(
+      _uri('/v1/auth/email/verify/request'),
+      headers: _headers,
+    );
+    final body = await _decode(r);
+    return (body['devToken'] as String?) ?? '';
+  }
+
+  Future<void> confirmEmailVerify(String token) async {
+    final r = await _http.post(
+      _uri('/v1/auth/email/verify/confirm'),
+      headers: _headers,
+      body: jsonEncode({'token': token}),
+    );
+    await _decode(r);
+  }
+
+  Future<String> requestPasswordReset(String email) async {
+    final r = await _http.post(
+      _uri('/v1/auth/password/reset/request'),
+      headers: _headers,
+      body: jsonEncode({'email': email}),
+    );
+    final body = await _decode(r);
+    return (body['devToken'] as String?) ?? '';
+  }
+
+  Future<void> confirmPasswordReset({
+    required String token,
+    required String newPassword,
+  }) async {
+    final r = await _http.post(
+      _uri('/v1/auth/password/reset/confirm'),
+      headers: _headers,
+      body: jsonEncode({'token': token, 'newPassword': newPassword}),
+    );
+    await _decode(r);
+  }
+
   Future<void> deleteAccount() async {
     final r = await _http.delete(
       _uri('/v1/auth/account'),
