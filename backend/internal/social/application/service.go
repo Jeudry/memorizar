@@ -256,6 +256,60 @@ func (s *Service) ListSuggestedPeople(userID string) ([]domain.User, error) {
 	return suggestions, nil
 }
 
+// SearchPeople busca usuarios por coincidencia parcial de email o
+// displayName (case-insensitive). Excluye al propio usuario y a los que ya
+// están conectados (amigos o request pendiente). Devuelve hasta 25 matches.
+func (s *Service) SearchPeople(userID, rawQuery string) ([]domain.User, error) {
+	query := strings.TrimSpace(strings.ToLower(rawQuery))
+	if query == "" {
+		return []domain.User{}, nil
+	}
+
+	users, err := s.repo.ListUsers()
+	if err != nil {
+		return nil, err
+	}
+	accepted, err := s.repo.ListFriendships(userID, domain.FriendshipAccepted)
+	if err != nil {
+		return nil, err
+	}
+	pending, err := s.repo.ListFriendships(userID, domain.FriendshipPending)
+	if err != nil {
+		return nil, err
+	}
+	connected := map[string]struct{}{}
+	for _, f := range accepted {
+		connected[f.RequesterID] = struct{}{}
+		connected[f.AddresseeID] = struct{}{}
+	}
+	for _, f := range pending {
+		connected[f.RequesterID] = struct{}{}
+		connected[f.AddresseeID] = struct{}{}
+	}
+
+	matches := make([]domain.User, 0, 25)
+	for _, u := range users {
+		if u.ID == userID {
+			continue
+		}
+		if _, exists := connected[u.ID]; exists {
+			continue
+		}
+		email := strings.ToLower(u.Email)
+		name := strings.ToLower(u.DisplayName)
+		if strings.Contains(email, query) || strings.Contains(name, query) {
+			matches = append(matches, u)
+		}
+		if len(matches) >= 25 {
+			break
+		}
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].DisplayName < matches[j].DisplayName
+	})
+	return matches, nil
+}
+
 func (s *Service) RecordAchievement(userID, code, title, description, deckName, emoji string) (*domain.Achievement, error) {
 	achievement := domain.Achievement{
 		ID:          newID("ach"),

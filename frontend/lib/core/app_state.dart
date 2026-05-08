@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../features/moderation/data/report_models.dart';
+import 'api/memorizar_client.dart';
+import 'api/models.dart';
 
 /// Visibility level for a memory deck. Defaults to [private] — going to
 /// [friends] or [public] requires the user to acknowledge they have rights
@@ -158,7 +162,200 @@ final emptyDeck = MemoryDeckData(
 );
 
 class AppStore extends ChangeNotifier {
-  AppStore();
+  AppStore({MemorizarClient? api}) : api = api ?? MemorizarClient();
+
+  /// Cliente HTTP del backend Go. Lo expongo público para que features que
+  /// hablan directo con la API (Amigos, Feed) lo reusen sin duplicarlo.
+  final MemorizarClient api;
+
+  // ─── Auth ───────────────────────────────────────────────────────────────
+
+  static const _kSessionTokenKey = 'memorizar.session.token';
+  static const _kSessionUserKey = 'memorizar.session.user';
+
+  RemoteUser? _currentUser;
+  String? _sessionToken;
+
+  RemoteUser? get currentUser => _currentUser;
+  String? get sessionToken => _sessionToken;
+  bool get isLoggedIn => _sessionToken != null && _sessionToken!.isNotEmpty;
+  /// Modo invitado: el usuario decide no iniciar sesión todavía pero sigue
+  /// usando la app. La diferencia con "no logueado" es semántica solamente —
+  /// hoy ambos se comportan igual.
+  bool get isGuest => !isLoggedIn;
+
+  Future<void> bootstrapSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString(_kSessionTokenKey);
+    final userJson = prefs.getString(_kSessionUserKey);
+    if (token == null || token.isEmpty || userJson == null) return;
+    try {
+      _sessionToken = token;
+      _currentUser =
+          RemoteUser.fromJson(jsonDecode(userJson) as Map<String, dynamic>);
+      api.setSessionToken(token);
+      notifyListeners();
+    } catch (_) {
+      await prefs.remove(_kSessionTokenKey);
+      await prefs.remove(_kSessionUserKey);
+    }
+  }
+
+  Future<void> _persistSession(String token, RemoteUser user) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kSessionTokenKey, token);
+    await prefs.setString(_kSessionUserKey, jsonEncode({
+      'id': user.id,
+      'email': user.email,
+      'displayName': user.displayName,
+      'avatarUrl': user.avatarUrl,
+    }));
+  }
+
+  Future<void> _clearPersistedSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kSessionTokenKey);
+    await prefs.remove(_kSessionUserKey);
+  }
+
+  /// Login social (provider = 'google' | 'apple' | 'facebook'). En Fase 1
+  /// el frontend no integra los SDK reales — el provider valida en el lado
+  /// app y pasa los datos del perfil al backend, que es quien crea/recupera
+  /// el usuario y emite el token de sesión.
+  Future<void> socialLogin({
+    required String provider,
+    required String providerUserId,
+    required String email,
+    required String displayName,
+    String avatarUrl = '',
+  }) async {
+    final result = await api.socialLogin(
+      provider: provider,
+      providerUserId: providerUserId,
+      email: email,
+      displayName: displayName,
+      avatarUrl: avatarUrl,
+    );
+    _currentUser = result.user;
+    _sessionToken = result.session.token;
+    api.setSessionToken(_sessionToken);
+    await _persistSession(result.session.token, result.user);
+    notifyListeners();
+    // Bajar snapshot remoto en background (best-effort, no bloquea login).
+    unawaited(pullProgressSnapshot());
+  }
+
+  Future<void> logout() async {
+    _currentUser = null;
+    _sessionToken = null;
+    api.setSessionToken(null);
+    await _clearPersistedSession();
+    notifyListeners();
+  }
+
+  // ─── Sync de progreso ─────────────────────────────────────────────────
+
+  static const _kDeviceIdKey = 'memorizar.device.id';
+  String? _deviceId;
+  bool _syncing = false;
+
+  Future<String> _getDeviceId() async {
+    if (_deviceId != null) return _deviceId!;
+    final prefs = await SharedPreferences.getInstance();
+    var id = prefs.getString(_kDeviceIdKey);
+    if (id == null || id.isEmpty) {
+      id = 'dev-${DateTime.now().microsecondsSinceEpoch}';
+      await prefs.setString(_kDeviceIdKey, id);
+    }
+    _deviceId = id;
+    return id;
+  }
+
+  /// Serializa el estado relevante (decks + progreso) en JSON para enviar al
+  /// backend. Mantiene el formato simple para que un cliente nuevo pueda
+  /// reconstruirlo sin depender de versiones de Drift.
+  String _buildProgressPayload() {
+    return jsonEncode({
+      'version': 1,
+      'sessionDifficulty': _sessionDifficulty,
+      'sessionDailyTarget': _sessionDailyTarget,
+      'sessionCardsCompleted': _sessionCardsCompleted,
+      'currentCardIndex': _currentCardIndex,
+      'correctAnswers': _correctAnswers,
+      'wrongAnswers': _wrongAnswers,
+      'completedSteps': _completedExerciseSteps.toList(),
+      'decks': [
+        for (final d in _decks)
+          {
+            'id': d.id,
+            'title': d.title,
+            'subtitle': d.subtitle,
+            'icon': d.icon,
+            'isBible': d.isBible,
+            'createdAt': d.createdAt.toIso8601String(),
+            'visibility': d.visibility.name,
+            'cards': [
+              for (final c in d.cards)
+                {
+                  'id': c.id,
+                  'front': c.front,
+                  'back': c.back,
+                  'source': c.source,
+                  'icon': c.icon,
+                  'retention': c.retention,
+                  'lapses': c.lapses,
+                },
+            ],
+          },
+      ],
+    });
+  }
+
+  /// Empuja el snapshot al backend. No-op si no hay sesión. Se llama
+  /// implícitamente al cerrar una sesión de estudio y manualmente desde el
+  /// menú "Sincronizar ahora".
+  Future<bool> pushProgressSnapshot() async {
+    if (!isLoggedIn || _syncing) return false;
+    _syncing = true;
+    try {
+      final deviceId = await _getDeviceId();
+      await api.saveProgressSnapshot(
+        deviceId: deviceId,
+        payloadJson: _buildProgressPayload(),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      _syncing = false;
+    }
+  }
+
+  /// Baja el último snapshot del backend. Hoy NO sobreescribe el estado
+  /// local (merge real es un siguiente paso) — sólo lo expone vía
+  /// [latestRemoteSnapshot] para que el usuario pueda decidir importar.
+  Map<String, dynamic>? _latestRemoteSnapshot;
+  Map<String, dynamic>? get latestRemoteSnapshot => _latestRemoteSnapshot;
+
+  Future<void> pullProgressSnapshot() async {
+    if (!isLoggedIn) return;
+    try {
+      final raw = await api.getProgressSnapshot();
+      if (raw == null) {
+        _latestRemoteSnapshot = null;
+        return;
+      }
+      final payload = raw['payloadJson'];
+      if (payload is String && payload.isNotEmpty) {
+        _latestRemoteSnapshot = jsonDecode(payload) as Map<String, dynamic>;
+      } else if (payload is Map<String, dynamic>) {
+        _latestRemoteSnapshot = payload;
+      }
+      notifyListeners();
+    } catch (_) {
+      // Silencioso — sync es best-effort.
+    }
+  }
 
   final List<MemoryDeckData> _decks = [];
   final List<BibleVerseData> _bibleVerses = [];

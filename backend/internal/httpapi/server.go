@@ -34,6 +34,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/auth/me", s.withAuth(s.handleMe))
 	s.mux.HandleFunc("/v1/social/friends", s.withAuth(s.handleFriends))
 	s.mux.HandleFunc("/v1/social/suggestions", s.withAuth(s.handleSuggestions))
+	s.mux.HandleFunc("/v1/social/search", s.withAuth(s.handleSearch))
 	s.mux.HandleFunc("/v1/social/friends/request", s.withAuth(s.handleFriendRequest))
 	s.mux.HandleFunc("/v1/social/friends/accept", s.withAuth(s.handleFriendAccept))
 	s.mux.HandleFunc("/v1/social/feed", s.withAuth(s.handleFeed))
@@ -126,6 +127,20 @@ func (s *Server) handleSuggestions(w http.ResponseWriter, r *http.Request, userI
 		return
 	}
 	users, err := s.service.ListSuggestedPeople(userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	query := r.URL.Query().Get("q")
+	users, err := s.service.SearchPeople(userID, query)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

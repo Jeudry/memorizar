@@ -43,6 +43,9 @@ class AppRoutes {
   // Mock moderation queue (admin / owner only — real auth comes in Fase 3).
   static const moderationQueue = '/moderation';
 
+  // Auth.
+  static const login = '/login';
+
   static Map<String, WidgetBuilder>? _routes;
 
   /// Inject the master route map. Call once from `main.dart` before the app
