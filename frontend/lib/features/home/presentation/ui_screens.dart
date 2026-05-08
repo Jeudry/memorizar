@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -11,7 +12,9 @@ import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../../core/api/models.dart';
 import '../../../core/app_state.dart';
+import '../../auth/presentation/login_screen.dart';
 import '../../legal/presentation/community_guidelines_screen.dart';
 import '../../legal/presentation/dmca_screen.dart';
 import '../../legal/presentation/legal_menu_screen.dart';
@@ -161,6 +164,7 @@ Map<String, WidgetBuilder> buildAppRoutes() => {
   AppRoutes.legalDmca: (_) => const DmcaScreen(),
   AppRoutes.legalCommunity: (_) => const CommunityGuidelinesScreen(),
   AppRoutes.moderationQueue: (_) => const ModerationQueueScreen(),
+  AppRoutes.login: (_) => const LoginScreen(),
 };
 
 class BibliaScreen extends StatefulWidget {
@@ -1469,6 +1473,16 @@ void _showDeckActionsSheet(BuildContext context, MemoryDeckData deck) {
               },
             ),
             _DeckActionRow(
+              icon: Icons.share_outlined,
+              label: 'Compartir con amigo',
+              subtitle: 'Enviar este mazo a un amigo de tu lista',
+              accent: RefColors.lime,
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                showShareDeckSheet(context, deck: deck);
+              },
+            ),
+            _DeckActionRow(
               icon: Icons.flag_outlined,
               label: 'Reportar',
               subtitle: 'Avisar a moderación si viola las normas',
@@ -1487,6 +1501,231 @@ void _showDeckActionsSheet(BuildContext context, MemoryDeckData deck) {
       );
     },
   );
+}
+
+/// Bottom sheet para compartir un mazo con un amigo. Si no hay sesión, manda
+/// al login. Lista a tus amigos aceptados; al elegir uno, hace POST a
+/// `/v1/social/shares`.
+void showShareDeckSheet(BuildContext context, {required MemoryDeckData deck}) {
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (_) => _ShareDeckSheet(deck: deck),
+  );
+}
+
+class _ShareDeckSheet extends StatefulWidget {
+  final MemoryDeckData deck;
+  const _ShareDeckSheet({required this.deck});
+
+  @override
+  State<_ShareDeckSheet> createState() => _ShareDeckSheetState();
+}
+
+class _ShareDeckSheetState extends State<_ShareDeckSheet> {
+  FriendsResult? _data;
+  bool _loading = true;
+  String? _busyFriendId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) {
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final r = await store.api.listFriends();
+      if (!mounted) return;
+      setState(() => _data = r);
+    } catch (_) {
+      // muestra estado vacío.
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _share(String friendUserId, String friendLabel) async {
+    final store = AppScope.of(context);
+    setState(() => _busyFriendId = friendUserId);
+    try {
+      // Payload mínimo del mazo. El receptor lo deserializa al "copiar" el mazo.
+      final payload = jsonEncode({
+        'title': widget.deck.title,
+        'icon': widget.deck.icon,
+        'cards': [
+          for (final c in widget.deck.cards)
+            {
+              'id': c.id,
+              'front': c.front,
+              'back': c.back,
+              'source': c.source,
+              'icon': c.icon,
+            },
+        ],
+      });
+      await store.api.shareDeck(
+        deckId: widget.deck.id,
+        title: widget.deck.title,
+        summary: '${widget.deck.cards.length} tarjetas',
+        payloadJson: payload,
+        targetUserId: friendUserId,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Mazo compartido con $friendLabel')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No pude compartir: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _busyFriendId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = AppScope.of(context);
+    final friends = _data?.friends ?? const [];
+    final viewInsets = MediaQuery.of(context).viewInsets;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(14, 14, 14, 14 + viewInsets.bottom),
+      child: Glass(
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Compartir "${widget.deck.title}"',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (!store.isLoggedIn)
+              Column(
+                children: [
+                  const Text(
+                    'Necesitas iniciar sesión para compartir mazos con tus amigos.',
+                    style: TextStyle(color: RefColors.muted, fontSize: 13),
+                  ),
+                  const SizedBox(height: 14),
+                  Cta(
+                    'Iniciar sesión',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      Navigator.pushNamed(context, AppRoutes.login);
+                    },
+                  ),
+                ],
+              )
+            else if (_loading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (friends.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  'Todavía no tienes amigos. Agrega alguno desde la pestaña Amigos para compartir.',
+                  style: TextStyle(color: RefColors.muted, fontSize: 13),
+                ),
+              )
+            else
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 320),
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      for (final f in friends)
+                        () {
+                          final myId = store.currentUser?.id ?? '';
+                          final otherId = f.requesterId == myId
+                              ? f.addresseeId
+                              : f.requesterId;
+                          return _ShareFriendRow(
+                            label: otherId,
+                            busy: _busyFriendId == otherId,
+                            onTap: () => _share(otherId, otherId),
+                          );
+                        }(),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ShareFriendRow extends StatelessWidget {
+  final String label;
+  final bool busy;
+  final VoidCallback onTap;
+  const _ShareFriendRow({
+    required this.label,
+    required this.busy,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: busy ? null : onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: HtmlRefColors.glassSoft,
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: HtmlRefColors.glassBorder),
+        ),
+        child: Row(
+          children: [
+            const Fav('A', size: 28),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (busy)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              const Icon(
+                Icons.send_rounded,
+                color: RefColors.lime,
+                size: 18,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _VisibilityBadge extends StatelessWidget {
@@ -4752,11 +4991,131 @@ class _DeckGrid extends StatelessWidget {
   }
 }
 
-class AmigosScreen extends StatelessWidget {
+class AmigosScreen extends StatefulWidget {
   const AmigosScreen({super.key});
 
   @override
+  State<AmigosScreen> createState() => _AmigosScreenState();
+}
+
+class _AmigosScreenState extends State<AmigosScreen> {
+  FriendsResult? _data;
+  List<RemoteUser> _suggestions = const [];
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+  }
+
+  Future<void> _refresh() async {
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final friends = await store.api.listFriends();
+      final suggestions = await store.api.suggestions();
+      if (!mounted) return;
+      setState(() {
+        _data = friends;
+        _suggestions = suggestions;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _sendRequest(RemoteUser to) async {
+    final store = AppScope.of(context);
+    try {
+      await store.api.requestFriend(to.id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Invitación enviada a ${to.displayName}')),
+      );
+      await _refresh();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No pude enviar la invitación: $e')),
+      );
+    }
+  }
+
+  Future<void> _accept(Friendship f) async {
+    final store = AppScope.of(context);
+    try {
+      await store.api.acceptFriend(f.id);
+      await _refresh();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No pude aceptar: $e')),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) {
+      return ReferencePage(
+        active: AppRoutes.amigos,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const RefTopBar(title: 'Amigos'),
+            const _InviteHero(),
+            Glass(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 18,
+                vertical: 24,
+              ),
+              child: Column(
+                children: [
+                  const Icon(
+                    Icons.lock_outline_rounded,
+                    color: RefColors.cyan,
+                    size: 36,
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Inicia sesión para conectar',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Necesitas una cuenta para encontrar y mandar invitaciones a amigos.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 12,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Cta(
+                    'Iniciar sesión',
+                    onTap: () => Navigator.pushNamed(context, AppRoutes.login),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final friends = _data?.friends ?? const [];
+    final pending = _data?.pendingRequests ?? const [];
     return ReferencePage(
       active: AppRoutes.amigos,
       child: Column(
@@ -4764,74 +5123,270 @@ class AmigosScreen extends StatelessWidget {
         children: [
           const RefTopBar(title: 'Amigos'),
           const _InviteHero(),
-          const _FriendSearch(),
-          const _PendingInvite(),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(4, 0, 4, 8),
-            child: Text.rich(
-              TextSpan(
+          _FriendSearch(onInvite: _sendRequest),
+          if (_error != null) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: RefColors.urgent.withValues(alpha: .12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: RefColors.urgent.withValues(alpha: .55),
+                ),
+              ),
+              child: Row(
                 children: [
-                  TextSpan(
-                    text: '8 amigos',
-                    style: TextStyle(
-                      color: RefColors.ink,
-                      fontWeight: FontWeight.w900,
+                  const Icon(Icons.error_outline_rounded,
+                      color: RefColors.urgent, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Error: $_error',
+                      style: const TextStyle(
+                        color: RefColors.urgent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                  TextSpan(text: ' · 2 online'),
+                  GestureDetector(
+                    onTap: _refresh,
+                    child: const Icon(
+                      Icons.refresh_rounded,
+                      color: RefColors.urgent,
+                    ),
+                  ),
                 ],
               ),
-              style: TextStyle(
-                fontSize: 11,
-                color: RefColors.muted,
-                fontWeight: FontWeight.w700,
-                letterSpacing: .4,
+            ),
+          ],
+          if (_loading && _data == null) ...[
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          ],
+          if (pending.isNotEmpty) ...[
+            const SectionHead('Invitaciones pendientes'),
+            for (final f in pending)
+              _PendingFriendRow(
+                friendship: f,
+                meId: store.currentUser?.id ?? '',
+                onAccept: () => _accept(f),
               ),
+          ],
+          if (friends.isNotEmpty) ...[
+            const SectionHead('Tus amigos'),
+            for (final f in friends)
+              _FriendshipRow(friendship: f, meId: store.currentUser?.id ?? ''),
+          ] else if (_data != null) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Todavía no tienes amigos. Mira las sugerencias de abajo.',
+              style: TextStyle(color: RefColors.muted, fontSize: 12),
+            ),
+          ],
+          if (_suggestions.isNotEmpty) ...[
+            const SectionHead('Sugerencias'),
+            for (final s in _suggestions)
+              _SuggestionRow(user: s, onInvite: () => _sendRequest(s)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PendingFriendRow extends StatelessWidget {
+  final Friendship friendship;
+  final String meId;
+  final VoidCallback onAccept;
+  const _PendingFriendRow({
+    required this.friendship,
+    required this.meId,
+    required this.onAccept,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isIncoming = friendship.addresseeId == meId;
+    final otherId = isIncoming ? friendship.requesterId : friendship.addresseeId;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: HtmlRefColors.glassSoft,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: HtmlRefColors.glassBorder),
+      ),
+      child: Row(
+        children: [
+          const Fav('?'),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isIncoming ? 'Te quiere agregar' : 'Solicitud enviada',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
+                Text(
+                  otherId,
+                  style: const TextStyle(
+                    color: RefColors.muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
           ),
-          const _FriendCard(
-            initial: 'M',
-            name: 'Marco Ruiz · ♕',
-            status: 'Sala abierta · Biología',
-            badges: ['🔥 Racha 14', '🎓 3 mazos'],
-            primaryAction: 'Unirme',
-            gradient: RefColors.primary,
-            online: true,
-            live: true,
+          if (isIncoming)
+            GestureDetector(
+              onTap: onAccept,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  gradient: RefColors.primary,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text(
+                  'Aceptar',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            )
+          else
+            const Text(
+              'Pendiente',
+              style: TextStyle(
+                color: RefColors.muted,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FriendshipRow extends StatelessWidget {
+  final Friendship friendship;
+  final String meId;
+  const _FriendshipRow({required this.friendship, required this.meId});
+
+  @override
+  Widget build(BuildContext context) {
+    final otherId = friendship.requesterId == meId
+        ? friendship.addresseeId
+        : friendship.requesterId;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: HtmlRefColors.glassSoft,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: HtmlRefColors.glassBorder),
+      ),
+      child: Row(
+        children: [
+          const Fav('A'),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              otherId,
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 13,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-          const _FriendCard(
-            initial: 'L',
-            name: 'Lucía Pardo',
-            status: 'Estudiando Francés · ahora',
-            badges: ['🔥 Racha 7'],
-            primaryAction: 'Invitar',
-            gradient: RefColors.purple,
-            online: true,
-            live: true,
+          const Icon(
+            Icons.chevron_right_rounded,
+            color: RefColors.muted,
+            size: 22,
           ),
-          const _FriendCard(
-            initial: 'K',
-            name: 'Kai Nakamura',
-            status: 'Nivel 11 · racha 5d',
-            badges: ['📚 Química', '🔥 Racha'],
-            primaryAction: 'Invitar',
-            gradient: RefColors.cool,
+        ],
+      ),
+    );
+  }
+}
+
+class _SuggestionRow extends StatelessWidget {
+  final RemoteUser user;
+  final VoidCallback onInvite;
+  const _SuggestionRow({required this.user, required this.onInvite});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: HtmlRefColors.glassSoft,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: HtmlRefColors.glassBorder),
+      ),
+      child: Row(
+        children: [
+          Fav(user.initial),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  user.displayName.isEmpty ? user.email : user.displayName,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
+                if (user.email.isNotEmpty)
+                  Text(
+                    user.email,
+                    style: const TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+              ],
+            ),
           ),
-          const _FriendCard(
-            initial: 'S',
-            name: 'Sofía Lima',
-            status: 'Nivel 14 · racha 21d 🔥',
-            badges: ['🌟 Top'],
-            primaryAction: 'Invitar',
-            gradient: RefColors.primary,
-          ),
-          const _FriendCard(
-            initial: 'R',
-            name: 'Raúl Fernández',
-            status: 'Nivel 6 · racha 3d',
-            badges: [],
-            primaryAction: 'Invitar',
-            gradient: RefColors.limeGrad,
+          GestureDetector(
+            onTap: onInvite,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: HtmlRefColors.glassStrong,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: RefColors.pink.withValues(alpha: .55)),
+              ),
+              child: const Text(
+                '+ Invitar',
+                style: TextStyle(
+                  color: RefColors.pink,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -4939,58 +5494,209 @@ class _InviteHero extends StatelessWidget {
   }
 }
 
-class _FriendSearch extends StatelessWidget {
-  const _FriendSearch();
+/// Caja de búsqueda de personas. Hace search debounced (350ms) contra el
+/// backend `/v1/social/search`, muestra resultados inline con botón Invitar.
+class _FriendSearch extends StatefulWidget {
+  final ValueChanged<RemoteUser>? onInvite;
+  const _FriendSearch({this.onInvite});
+
+  @override
+  State<_FriendSearch> createState() => _FriendSearchState();
+}
+
+class _FriendSearchState extends State<_FriendSearch> {
+  final _controller = TextEditingController();
+  Timer? _debounce;
+  List<RemoteUser> _results = const [];
+  bool _searching = false;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onChanged(String value) {
+    _debounce?.cancel();
+    if (value.trim().isEmpty) {
+      setState(() => _results = const []);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 350), () => _runSearch(value));
+  }
+
+  Future<void> _runSearch(String query) async {
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) return;
+    setState(() => _searching = true);
+    try {
+      final results = await store.api.searchPeople(query);
+      if (!mounted) return;
+      setState(() => _results = results);
+    } catch (_) {
+      // Silencioso — el usuario puede reintentar tipeando.
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Glass(
-        radius: 18,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        gradient: LinearGradient(
-          colors: [
-            RefColors.violet.withValues(alpha: .14),
-            RefColors.sun.withValues(alpha: .16),
-          ],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.search, size: 19, color: RefColors.muted),
-            const SizedBox(width: 10),
-            const Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Glass(
+            radius: 18,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            gradient: LinearGradient(
+              colors: [
+                RefColors.violet.withValues(alpha: .14),
+                RefColors.sun.withValues(alpha: .16),
+              ],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.search, size: 19, color: RefColors.muted),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    onChanged: _onChanged,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: RefColors.ink,
+                    ),
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      isDense: true,
+                      hintText: 'Buscar por nombre o correo…',
+                      hintStyle: TextStyle(
+                        color: RefColors.dim,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+                if (_searching)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else if (_controller.text.isNotEmpty)
+                  GestureDetector(
+                    onTap: () {
+                      _controller.clear();
+                      setState(() => _results = const []);
+                    },
+                    child: const Icon(
+                      Icons.close_rounded,
+                      color: RefColors.muted,
+                      size: 18,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (_results.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            for (final u in _results)
+              _SearchHitRow(
+                user: u,
+                onInvite: widget.onInvite == null ? null : () => widget.onInvite!(u),
+              ),
+          ] else if (_controller.text.trim().length >= 2 && !_searching) ...[
+            const SizedBox(height: 8),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4),
               child: Text(
-                'Buscar amigo...',
-                style: TextStyle(fontSize: 13, color: RefColors.dim),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-              decoration: BoxDecoration(
-                color: HtmlRefColors.glassStrong,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: HtmlRefColors.glassBorder),
-              ),
-              child: const Row(
-                children: [
-                  Text(
-                    'Todos',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
-                  ),
-                  SizedBox(width: 8),
-                  Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    size: 13,
-                    color: RefColors.muted,
-                  ),
-                ],
+                'Sin resultados.',
+                style: TextStyle(
+                  color: RefColors.muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
-        ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchHitRow extends StatelessWidget {
+  final RemoteUser user;
+  final VoidCallback? onInvite;
+  const _SearchHitRow({required this.user, this.onInvite});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: HtmlRefColors.glassSoft,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: HtmlRefColors.glassBorder),
+      ),
+      child: Row(
+        children: [
+          Fav(user.initial, size: 32),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  user.displayName.isEmpty ? user.email : user.displayName,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                if (user.email.isNotEmpty)
+                  Text(
+                    user.email,
+                    style: const TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (onInvite != null)
+            GestureDetector(
+              onTap: onInvite,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  color: HtmlRefColors.glassStrong,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: RefColors.pink.withValues(alpha: .55),
+                  ),
+                ),
+                child: const Text(
+                  '+ Invitar',
+                  style: TextStyle(
+                    color: RefColors.pink,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -7597,6 +8303,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     required bool correct,
   }) {
     final keepGoing = store.advanceToNextSessionCard(correct: correct);
+    // Sync best-effort: empuja snapshot al backend si hay sesión. No bloquea
+    // la navegación.
+    unawaited(store.pushProgressSnapshot());
     if (!mounted) return;
     if (keepGoing) {
       // Reset estado UI per-tarjeta (banco, completar, niebla, etc.).

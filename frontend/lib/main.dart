@@ -10,6 +10,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final store = AppStore();
   await store.loadBible();
+  await store.bootstrapSession();
 
   // Wire the shared route map and the aurora background into the leaf-level
   // helpers in `core/`, so they don't need to import every feature screen.

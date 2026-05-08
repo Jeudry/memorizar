@@ -451,9 +451,9 @@ class GlassCard extends StatelessWidget {
   }
 }
 
-/// Bottom-sheet con accesos de cuenta. Por ahora alberga los enlaces a Legal,
-/// Moderación y placeholders para Cerrar sesión cuando el auth real exista.
+/// Bottom-sheet con accesos de cuenta.
 void _showAccountMenu(BuildContext context) {
+  final store = AppScope.of(context);
   showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
@@ -469,6 +469,23 @@ void _showAccountMenu(BuildContext context) {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (store.isLoggedIn)
+              _AccountMenuRow(
+                icon: Icons.account_circle_outlined,
+                label: store.currentUser?.displayName ?? 'Mi cuenta',
+                subtitle: store.currentUser?.email ?? '',
+                onTap: () => Navigator.of(sheetCtx).pop(),
+              )
+            else
+              _AccountMenuRow(
+                icon: Icons.login_rounded,
+                label: 'Iniciar sesión',
+                subtitle: 'Sincroniza tus mazos y conecta con amigos',
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  Navigator.pushNamed(context, '/login');
+                },
+              ),
             _AccountMenuRow(
               icon: Icons.gavel_rounded,
               label: 'Legal y privacidad',
@@ -487,8 +504,16 @@ void _showAccountMenu(BuildContext context) {
                 Navigator.pushNamed(context, '/moderation');
               },
             ),
-            // TODO(auth): cuando exista login real, agregar aquí "Mi cuenta"
-            // y "Cerrar sesión".
+            if (store.isLoggedIn)
+              _AccountMenuRow(
+                icon: Icons.logout_rounded,
+                label: 'Cerrar sesión',
+                subtitle: 'Cerrar sesión en este dispositivo',
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  store.logout();
+                },
+              ),
           ],
         ),
       );
@@ -1461,12 +1486,72 @@ class _AvatarCircle extends StatelessWidget {
   }
 }
 
-class _ActivityFeed extends StatelessWidget {
+class _ActivityFeed extends StatefulWidget {
   const _ActivityFeed();
 
   @override
+  State<_ActivityFeed> createState() => _ActivityFeedState();
+}
+
+class _ActivityFeedState extends State<_ActivityFeed> {
+  List<dynamic>? _entries;
+  bool _loading = false;
+  bool _attempted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchFeed());
+  }
+
+  Future<void> _fetchFeed() async {
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) return;
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _attempted = true;
+    });
+    try {
+      final feed = await store.api.feed();
+      if (!mounted) return;
+      setState(() => _entries = feed);
+    } catch (_) {
+      // Silent fallback al feed local.
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final decks = AppScope.of(context).decks;
+    final store = AppScope.of(context);
+
+    // Logueado con datos del backend.
+    if (store.isLoggedIn && _entries != null && _entries!.isNotEmpty) {
+      return GlassCard(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          children: [
+            for (final raw in _entries!.take(5).toList().asMap().entries) ...[
+              _RemoteFeedRow(entry: raw.value as Map<String, dynamic>),
+              if (raw.key != 4 && raw.key < _entries!.length - 1)
+                const Divider(color: AppColors.glassBorder, height: 20),
+            ],
+          ],
+        ),
+      );
+    }
+
+    if (store.isLoggedIn && _loading && _entries == null) {
+      return const GlassCard(
+        padding: EdgeInsets.all(20),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // Fallback local: invitado o feed remoto vacío → mostrar mazos creados.
+    final decks = store.decks;
     if (decks.isEmpty) {
       return const _EmptyHomePanel(
         icon: '✨',
@@ -1494,6 +1579,35 @@ class _ActivityFeed extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Una fila del feed remoto. Mapea por `type` (achievement / activity /
+/// share) a iconos y colores distintos.
+class _RemoteFeedRow extends StatelessWidget {
+  final Map<String, dynamic> entry;
+  const _RemoteFeedRow({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final type = (entry['type'] as String?) ?? '';
+    final title = (entry['title'] as String?) ?? '';
+    final description = (entry['description'] as String?) ?? '';
+    final emoji = (entry['emoji'] as String?) ?? '';
+    final initial = title.isNotEmpty ? title.substring(0, 1).toUpperCase() : '?';
+    final color = type == 'achievement'
+        ? AppColors.accentSun
+        : type == 'share'
+            ? AppColors.accentLime
+            : AppColors.accentCyan;
+    return _FeedItem(
+      label: initial,
+      color: color,
+      name: title,
+      action: description,
+      time: 'Hoy',
+      emoji: emoji.isEmpty ? '✨' : emoji,
     );
   }
 }
