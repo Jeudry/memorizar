@@ -6,12 +6,16 @@ class RemoteUser {
   final String email;
   final String displayName;
   final String avatarUrl;
+  final String locale;
+  final bool emailVerified;
 
   const RemoteUser({
     required this.id,
     required this.email,
     required this.displayName,
     this.avatarUrl = '',
+    this.locale = '',
+    this.emailVerified = false,
   });
 
   factory RemoteUser.fromJson(Map<String, dynamic> json) => RemoteUser(
@@ -19,7 +23,18 @@ class RemoteUser {
         email: (json['email'] as String?) ?? '',
         displayName: (json['displayName'] as String?) ?? '',
         avatarUrl: (json['avatarUrl'] as String?) ?? '',
+        locale: (json['locale'] as String?) ?? '',
+        emailVerified: (json['emailVerified'] as bool?) ?? false,
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'email': email,
+        'displayName': displayName,
+        'avatarUrl': avatarUrl,
+        'locale': locale,
+        'emailVerified': emailVerified,
+      };
 
   String get initial =>
       displayName.isNotEmpty ? displayName.substring(0, 1).toUpperCase() : '?';

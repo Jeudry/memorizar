@@ -3,7 +3,9 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  app_links
   audioplayers_windows
+  firebase_core
   flutter_tts
   record_windows
   speech_to_text_windows

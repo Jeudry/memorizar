@@ -38,8 +38,20 @@ type User struct {
 	DisplayName string            `json:"displayName"`
 	AvatarURL   string            `json:"avatarUrl,omitempty"`
 	Providers   map[string]string `json:"providers"`
-	CreatedAt   time.Time         `json:"createdAt"`
-	UpdatedAt   time.Time         `json:"updatedAt"`
+	// PasswordHash es bcrypt-encoded. Se setea solo cuando el usuario se
+	// registra con email+password. Nunca se serializa en respuestas HTTP
+	// (los handlers usan Sanitize() antes de devolver).
+	PasswordHash  string    `json:"-"`
+	Locale        string    `json:"locale,omitempty"`
+	EmailVerified bool      `json:"emailVerified"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+}
+
+// Sanitize devuelve una copia del User sin campos sensibles.
+func (u User) Sanitize() User {
+	u.PasswordHash = ""
+	return u
 }
 
 type Session struct {

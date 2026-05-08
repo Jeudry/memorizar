@@ -335,3 +335,46 @@ func (r *Repository) FindLatestProgressSnapshot(userID string) (*domain.Progress
 	copy := snapshot
 	return &copy, nil
 }
+
+func (r *Repository) DeleteUserCascade(userID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.state.Users, userID)
+	for token, sess := range r.state.Sessions {
+		if sess.UserID == userID {
+			delete(r.state.Sessions, token)
+		}
+	}
+	for id, f := range r.state.Friendships {
+		if f.RequesterID == userID || f.AddresseeID == userID {
+			delete(r.state.Friendships, id)
+		}
+	}
+	for id, a := range r.state.Achievements {
+		if a.UserID == userID {
+			delete(r.state.Achievements, id)
+		}
+	}
+	for id, a := range r.state.Activities {
+		if a.UserID == userID {
+			delete(r.state.Activities, id)
+		}
+	}
+	for id, s := range r.state.SharedResources {
+		if s.OwnerUserID == userID || s.TargetUserID == userID {
+			delete(r.state.SharedResources, id)
+		}
+	}
+	for id, x := range r.state.Reactions {
+		if x.UserID == userID {
+			delete(r.state.Reactions, id)
+		}
+	}
+	for id, c := range r.state.Comments {
+		if c.UserID == userID {
+			delete(r.state.Comments, id)
+		}
+	}
+	delete(r.state.ProgressSnapshots, userID)
+	return r.persistLocked()
+}

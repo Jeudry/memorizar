@@ -83,6 +83,62 @@ class MemorizarClient {
     return RemoteUser.fromJson(body);
   }
 
+  Future<SessionResult> registerEmail({
+    required String email,
+    required String password,
+    required String displayName,
+  }) async {
+    final r = await _http.post(
+      _uri('/v1/auth/email/register'),
+      headers: _headers,
+      body: jsonEncode({
+        'email': email,
+        'password': password,
+        'displayName': displayName,
+      }),
+    );
+    return SessionResult.fromJson(await _decode(r));
+  }
+
+  Future<SessionResult> loginEmail({
+    required String email,
+    required String password,
+  }) async {
+    final r = await _http.post(
+      _uri('/v1/auth/email/login'),
+      headers: _headers,
+      body: jsonEncode({'email': email, 'password': password}),
+    );
+    return SessionResult.fromJson(await _decode(r));
+  }
+
+  Future<RemoteUser> updateProfile({
+    String? displayName,
+    String? avatarUrl,
+    String? locale,
+  }) async {
+    final body = <String, dynamic>{};
+    if (displayName != null) body['displayName'] = displayName;
+    if (avatarUrl != null) body['avatarUrl'] = avatarUrl;
+    if (locale != null) body['locale'] = locale;
+    final r = await _http.post(
+      _uri('/v1/auth/profile'),
+      headers: _headers,
+      body: jsonEncode(body),
+    );
+    return RemoteUser.fromJson(await _decode(r));
+  }
+
+  Future<void> deleteAccount() async {
+    final r = await _http.delete(
+      _uri('/v1/auth/account'),
+      headers: _headers,
+    );
+    if (r.statusCode >= 400) {
+      throw HttpException('HTTP ${r.statusCode}', uri: r.request?.url);
+    }
+  }
+
   // ─── Social ─────────────────────────────────────────────────────────────
 
   Future<FriendsResult> listFriends() async {
@@ -210,6 +266,17 @@ class MemorizarClient {
     return _decode(r);
   }
 
+  Future<List<Map<String, dynamic>>> searchCommunityDecks(String query) async {
+    final encoded = Uri.encodeQueryComponent(query);
+    final r = await _http.get(
+      _uri('/v1/community/decks?q=$encoded'),
+      headers: _headers,
+    );
+    final body = await _decode(r);
+    final list = (body['decks'] as List? ?? const []).cast<dynamic>();
+    return list.cast<Map<String, dynamic>>();
+  }
+
   Future<List<Map<String, dynamic>>> listShares() async {
     final r = await _http.get(_uri('/v1/social/shares'), headers: _headers);
     final body = await _decode(r);
@@ -240,6 +307,39 @@ class MemorizarClient {
       }),
     );
     return _decode(r);
+  }
+
+  // ─── Cooperativo ───────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> createCoopRoom() async {
+    final r = await _http.post(_uri('/v1/coop/rooms'), headers: _headers);
+    return _decode(r);
+  }
+
+  Future<Map<String, dynamic>?> lookupCoopRoom(String code) async {
+    final r = await _http.get(
+      _uri('/v1/coop/rooms/lookup?code=${Uri.encodeQueryComponent(code)}'),
+      headers: _headers,
+    );
+    if (r.statusCode == 404) return null;
+    return _decode(r);
+  }
+
+  /// URL del websocket del cooperativo. La construimos sustituyendo
+  /// `http://` por `ws://` en `baseUrl` para mantener un único punto de
+  /// configuración.
+  Uri coopWsUri({required String code, required String userId, String name = ''}) {
+    final base = Uri.parse(baseUrl);
+    final scheme = base.scheme == 'https' ? 'wss' : 'ws';
+    return base.replace(
+      scheme: scheme,
+      path: '/v1/coop/ws',
+      queryParameters: {
+        'code': code,
+        'user': userId,
+        'name': name,
+      },
+    );
   }
 
   void close() => _http.close();

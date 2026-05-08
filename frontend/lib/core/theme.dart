@@ -55,6 +55,41 @@ class AppColors {
 }
 
 class AppTheme {
+  /// Light theme — usa los mismos accents pero superficies claras. La aurora
+  /// del fondo se atenúa vía la aurora widget (variant) si el usuario quiere
+  /// más fidelidad.
+  static ThemeData get lightTheme {
+    return ThemeData(
+      brightness: Brightness.light,
+      scaffoldBackgroundColor: const Color(0xFFF6F4FB),
+      textTheme: GoogleFonts.soraTextTheme(
+        ThemeData.light().textTheme,
+      ).apply(
+        bodyColor: const Color(0xFF1B1130),
+        displayColor: const Color(0xFF1B1130),
+      ),
+      colorScheme: const ColorScheme.light(
+        primary: AppColors.accentPink,
+        secondary: AppColors.accentSun,
+        surface: Color(0xFFFFFFFF),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF1B1130),
+        contentTextStyle: GoogleFonts.sora(
+          color: Colors.white,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+        insetPadding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+      ),
+    );
+  }
+
   static ThemeData get darkTheme {
     return ThemeData(
       brightness: Brightness.dark,
