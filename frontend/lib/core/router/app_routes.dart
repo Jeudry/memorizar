@@ -33,6 +33,16 @@ class AppRoutes {
   static const bgNaranjaNocturno = '/preview/background/naranja-nocturno';
   static const bgActualSuave = '/preview/background/actual-suave';
 
+  // Legal hub + sub-pages.
+  static const legalMenu = '/legal';
+  static const legalTerms = '/legal/terms';
+  static const legalPrivacy = '/legal/privacy';
+  static const legalDmca = '/legal/dmca';
+  static const legalCommunity = '/legal/community';
+
+  // Mock moderation queue (admin / owner only — real auth comes in Fase 3).
+  static const moderationQueue = '/moderation';
+
   static Map<String, WidgetBuilder>? _routes;
 
   /// Inject the master route map. Call once from `main.dart` before the app

@@ -67,6 +67,23 @@ class AppTheme {
         secondary: AppColors.accentSun,
         surface: AppColors.glassBg,
       ),
+      // Dark glassy snackbar so any leftover ScaffoldMessenger calls match the
+      // app instead of the default white Material toast.
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.glassStrong,
+        contentTextStyle: GoogleFonts.sora(
+          color: AppColors.ink,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: AppColors.glassBorder),
+        ),
+        insetPadding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+      ),
     );
   }
 }

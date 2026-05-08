@@ -20,7 +20,7 @@ class GlyphIcon extends StatelessWidget {
       case '🇯🇵':
         return _JapanFlag(size: size);
       case '✝️':
-        return Icon(Icons.add_rounded, size: size, color: iconColor);
+        return Icon(Icons.menu_book_rounded, size: size, color: iconColor);
       case '✨':
         return Icon(Icons.auto_awesome_rounded, size: size, color: iconColor);
       case '🧠':

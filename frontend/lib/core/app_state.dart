@@ -3,6 +3,13 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../features/moderation/data/report_models.dart';
+
+/// Visibility level for a memory deck. Defaults to [private] — going to
+/// [friends] or [public] requires the user to acknowledge they have rights
+/// over the content (see ConsentDialog).
+enum DeckVisibility { private, friends, public }
+
 class BibleBookData {
   final String name;
   final String shortName;
@@ -84,6 +91,12 @@ class MemoryDeckData {
   final List<MemoryCardData> cards;
   final bool isBible;
   final DateTime createdAt;
+  /// Visibilidad: privado (default), compartido con amigos, o público en
+  /// la comunidad. Los dos últimos requieren consentimiento explícito.
+  final DeckVisibility visibility;
+  /// True después de que el creador aceptó la cláusula "tengo derechos sobre
+  /// este contenido". Necesario para visibility != private.
+  final bool rightsAcknowledged;
 
   const MemoryDeckData({
     required this.id,
@@ -93,6 +106,8 @@ class MemoryDeckData {
     required this.cards,
     required this.createdAt,
     this.isBible = false,
+    this.visibility = DeckVisibility.private,
+    this.rightsAcknowledged = false,
   });
 
   int get retention {
@@ -103,7 +118,13 @@ class MemoryDeckData {
 
   int get weakCount => cards.where((card) => card.retention < 60).length;
 
-  MemoryDeckData copyWith({String? title, String? subtitle, String? icon}) {
+  MemoryDeckData copyWith({
+    String? title,
+    String? subtitle,
+    String? icon,
+    DeckVisibility? visibility,
+    bool? rightsAcknowledged,
+  }) {
     return MemoryDeckData(
       id: id,
       title: title ?? this.title,
@@ -112,6 +133,8 @@ class MemoryDeckData {
       cards: cards,
       createdAt: createdAt,
       isBible: isBible,
+      visibility: visibility ?? this.visibility,
+      rightsAcknowledged: rightsAcknowledged ?? this.rightsAcknowledged,
     );
   }
 }
@@ -143,11 +166,18 @@ class AppStore extends ChangeNotifier {
   final Set<String> _completedExerciseSteps = {};
   final Map<String, String> _exerciseVoiceReads = {};
   final Map<String, String> _exerciseVoiceAudioPaths = {};
+  // Mock in-memory queue for community reports. Cuando exista el backend (Fase
+  // 3+) esto vivirá del lado servidor con permisos reales de moderador.
+  final List<DeckReport> _deckReports = [];
   String? _activeDeckId;
   int _currentCardIndex = 0;
   int _correctAnswers = 0;
   int _wrongAnswers = 0;
   int _sessionDifficulty = 1;
+  /// Cantidad de tarjetas que el usuario configuró para esta sesión.
+  /// `configureSession` lo establece, `_sessionCardsCompleted` lo va alcanzando.
+  int _sessionDailyTarget = 1;
+  int _sessionCardsCompleted = 0;
   int _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
   bool _isPremium = false;
 
@@ -179,6 +209,11 @@ class AppStore extends ChangeNotifier {
   int get wrongAnswers => _wrongAnswers;
   int get sessionDifficulty => _sessionDifficulty;
   int get sessionFlowSeed => _sessionFlowSeed;
+  int get sessionDailyTarget => _sessionDailyTarget;
+  int get sessionCardsCompleted => _sessionCardsCompleted;
+  int get sessionCardsRemaining =>
+      (_sessionDailyTarget - _sessionCardsCompleted).clamp(0, 99999);
+  bool get sessionFinished => _sessionCardsCompleted >= _sessionDailyTarget;
   bool get isPremium => _isPremium;
 
   void setPremiumPreview(bool value) {
@@ -225,18 +260,66 @@ class AppStore extends ChangeNotifier {
     return cards.take(5).toList();
   }
 
-  Future<void> loadBible() async {
-    if (_bibleVerses.isNotEmpty) return;
-    final raw = await rootBundle.loadString('assets/bible/rv1909.json');
-    final payload = jsonDecode(raw) as Map<String, dynamic>;
-    final verses = payload['verses'] as List<dynamic>;
+  /// Catálogo de versiones empacadas localmente. Cada entrada apunta a su
+  /// asset JSON. Versiones bajo licencia (RV1960, NBLA, etc.) se cargarán
+  /// vía API en una capa aparte cuando exista — esta lista es solo offline.
+  static const Map<String, ({String asset, String name, String license})>
+      bundledBibles = {
+    'rv1909': (
+      asset: 'assets/bible/rv1909.json',
+      name: 'Reina-Valera 1909',
+      license: 'Dominio público',
+    ),
+    'rvg': (
+      asset: 'assets/bible/rvg.json',
+      name: 'Reina-Valera Gómez',
+      license: 'Distribución libre · Comité RVG',
+    ),
+  };
+
+  /// Versículos de cada versión cargada. Se llena al iniciar la app vía
+  /// [loadBible].
+  final Map<String, List<BibleVerseData>> _bibleByVersion = {};
+
+  /// Versión activa que se usa para `versesFor`, búsqueda y selección.
+  String _bibleVersion = 'rv1909';
+
+  String get bibleVersion => _bibleVersion;
+
+  void setBibleVersion(String version) {
+    if (!_bibleByVersion.containsKey(version)) return;
+    if (_bibleVersion == version) return;
+    _bibleVersion = version;
     _bibleVerses
       ..clear()
-      ..addAll(
-        verses.map(
-          (item) => BibleVerseData.fromJson(item as Map<String, dynamic>),
-        ),
-      );
+      ..addAll(_bibleByVersion[version]!);
+    notifyListeners();
+  }
+
+  Future<void> loadBible() async {
+    if (_bibleByVersion.isNotEmpty) return;
+    for (final entry in bundledBibles.entries) {
+      try {
+        final raw = await rootBundle.loadString(entry.value.asset);
+        final payload = jsonDecode(raw) as Map<String, dynamic>;
+        final verses = (payload['verses'] as List<dynamic>)
+            .map((item) => BibleVerseData.fromJson(item as Map<String, dynamic>))
+            .toList(growable: false);
+        _bibleByVersion[entry.key] = verses;
+      } catch (e) {
+        // Asset opcional no encontrado — saltar y continuar.
+        // La UI debe ofrecer solo las versiones que sí cargaron.
+      }
+    }
+    final initial = _bibleByVersion.containsKey(_bibleVersion)
+        ? _bibleVersion
+        : (_bibleByVersion.keys.isNotEmpty
+            ? _bibleByVersion.keys.first
+            : _bibleVersion);
+    _bibleVersion = initial;
+    _bibleVerses
+      ..clear()
+      ..addAll(_bibleByVersion[initial] ?? const []);
   }
 
   List<BibleVerseData> versesFor(String book, int chapter) {
@@ -378,14 +461,39 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  void configureSession({required int difficulty}) {
+  void configureSession({
+    required int difficulty,
+    required int dailyTarget,
+  }) {
     _sessionDifficulty = difficulty.clamp(0, 2);
+    final total = activeDeck.cards.length;
+    _sessionDailyTarget = dailyTarget.clamp(1, total <= 0 ? 1 : total);
+    _sessionCardsCompleted = 0;
     _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
     _correctAnswers = 0;
     _wrongAnswers = 0;
     final deckId = activeDeck.id;
     _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));
     notifyListeners();
+  }
+
+  /// Llamar al terminar el último paso (voz final / quiz final) de una tarjeta.
+  /// Retorna `true` si todavía queda otra tarjeta dentro del target diario;
+  /// `false` cuando la sesión ya completó su cuota y debe ir al review final.
+  bool advanceToNextSessionCard({required bool correct}) {
+    answerCurrentCard(correct);
+    _sessionCardsCompleted += 1;
+    if (sessionFinished) {
+      notifyListeners();
+      return false;
+    }
+    // Limpia los pasos completados del deck para que la próxima tarjeta
+    // arranque con el árbol fresco. Las claves usan deck:card:slug, así que
+    // basta con quitar los del deck activo.
+    final deckId = activeDeck.id;
+    _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));
+    notifyListeners();
+    return true;
   }
 
   void updateActiveDeck({String? title, String? icon}) {
@@ -449,6 +557,94 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ─────── Visibilidad de mazos ──────────────────────────────────────────
+
+  /// Cambia la visibilidad de un mazo. Para algo distinto a [private] el
+  /// caller DEBE haber recogido `rightsAcknowledged: true` desde un
+  /// consent dialog.
+  bool setDeckVisibility(
+    String deckId, {
+    required DeckVisibility visibility,
+    required bool rightsAcknowledged,
+  }) {
+    if (visibility != DeckVisibility.private && !rightsAcknowledged) {
+      return false;
+    }
+    final index = _decks.indexWhere((d) => d.id == deckId);
+    if (index < 0) return false;
+    _decks[index] = _decks[index].copyWith(
+      visibility: visibility,
+      rightsAcknowledged: rightsAcknowledged,
+    );
+    notifyListeners();
+    return true;
+  }
+
+  // ─────── Reportes de moderación ────────────────────────────────────────
+
+  List<DeckReport> get deckReports => List.unmodifiable(_deckReports);
+
+  void fileDeckReport({
+    required String deckId,
+    required String deckTitle,
+    required ReportReason reason,
+    String note = '',
+    String reporterId = 'me',
+  }) {
+    final report = DeckReport(
+      id: 'rep-${DateTime.now().microsecondsSinceEpoch}',
+      deckId: deckId,
+      deckTitle: deckTitle,
+      reporterId: reporterId,
+      reason: reason,
+      note: note,
+      createdAt: DateTime.now(),
+    );
+    _deckReports.insert(0, report);
+    // Auto-bajar visibilidad mientras se revisa.
+    final index = _decks.indexWhere((d) => d.id == deckId);
+    if (index >= 0 && _decks[index].visibility == DeckVisibility.public) {
+      _decks[index] = _decks[index].copyWith(
+        visibility: DeckVisibility.friends,
+      );
+    }
+    notifyListeners();
+  }
+
+  void resolveDeckReport(String reportId, ReportStatus status) {
+    final i = _deckReports.indexWhere((r) => r.id == reportId);
+    if (i < 0) return;
+    final r = _deckReports[i];
+    _deckReports[i] = r.copyWith(status: status);
+    // Aplicar la decisión al deck reportado.
+    if (status == ReportStatus.resolvedRemoved) {
+      _decks.removeWhere((d) => d.id == r.deckId);
+    } else if (status == ReportStatus.resolvedHidden) {
+      final idx = _decks.indexWhere((d) => d.id == r.deckId);
+      if (idx >= 0) {
+        _decks[idx] = _decks[idx].copyWith(
+          visibility: DeckVisibility.private,
+        );
+      }
+    }
+    // resolvedKept: dejar como esté.
+    notifyListeners();
+  }
+
+  /// Remove every verse in [verses] from the selection. Single notify.
+  int removeBibleVerses(Iterable<BibleVerseData> verses) {
+    final keys = verses
+        .map((v) => '${v.book}:${v.chapter}:${v.verse}')
+        .toSet();
+    final before = _selectedBibleVerses.length;
+    _selectedBibleVerses.removeWhere(
+      (v) => keys.contains('${v.book}:${v.chapter}:${v.verse}'),
+    );
+    final removed = before - _selectedBibleVerses.length;
+    if (removed > 0) notifyListeners();
+    return removed;
+  }
+
   void addBibleVerse(BibleVerseData verse) {
     final exists = _selectedBibleVerses.any(
       (item) =>
@@ -460,6 +656,64 @@ class AppStore extends ChangeNotifier {
       _selectedBibleVerses.add(verse);
       notifyListeners();
     }
+  }
+
+  /// Batch-add many verses with a single notification. Skips duplicates.
+  /// Returns how many new verses were actually added.
+  int addBibleVerses(Iterable<BibleVerseData> verses) {
+    var added = 0;
+    final existing = _selectedBibleVerses
+        .map((v) => '${v.book}:${v.chapter}:${v.verse}')
+        .toSet();
+    for (final verse in verses) {
+      final key = '${verse.book}:${verse.chapter}:${verse.verse}';
+      if (existing.add(key)) {
+        _selectedBibleVerses.add(verse);
+        added++;
+      }
+    }
+    if (added > 0) notifyListeners();
+    return added;
+  }
+
+  /// Add every verse of [book]/[chapter] to the selection.
+  int addAllVersesInChapter(String book, int chapter) {
+    return addBibleVerses(versesFor(book, chapter));
+  }
+
+  /// Add every verse of every chapter of [book] to the selection.
+  int addAllVersesInBook(String book) {
+    final canonical = _canonicalBookName(book);
+    return addBibleVerses(
+      _bibleVerses.where((v) => v.book == canonical),
+    );
+  }
+
+  /// Add every verse of the loaded bible to the selection.
+  int addAllVersesInBible() {
+    return addBibleVerses(_bibleVerses);
+  }
+
+  /// True when every verse of [book]/[chapter] is already selected.
+  bool isWholeChapterSelected(String book, int chapter) {
+    final all = versesFor(book, chapter);
+    if (all.isEmpty) return false;
+    final selectedKeys = _selectedBibleVerses
+        .where((v) => v.book == all.first.book && v.chapter == chapter)
+        .map((v) => v.verse)
+        .toSet();
+    return all.every((v) => selectedKeys.contains(v.verse));
+  }
+
+  /// True when every chapter of [book] is fully selected.
+  bool isWholeBookSelected(String book) {
+    final canonical = _canonicalBookName(book);
+    final chapters = _bibleVerses
+        .where((v) => v.book == canonical)
+        .map((v) => v.chapter)
+        .toSet();
+    if (chapters.isEmpty) return false;
+    return chapters.every((c) => isWholeChapterSelected(canonical, c));
   }
 
   bool createBibleDeckFromSelection() {

@@ -451,6 +451,126 @@ class GlassCard extends StatelessWidget {
   }
 }
 
+/// Bottom-sheet con accesos de cuenta. Por ahora alberga los enlaces a Legal,
+/// Moderación y placeholders para Cerrar sesión cuando el auth real exista.
+void _showAccountMenu(BuildContext context) {
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (sheetCtx) {
+      return Container(
+        margin: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.glassBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.glassBorder),
+        ),
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _AccountMenuRow(
+              icon: Icons.gavel_rounded,
+              label: 'Legal y privacidad',
+              subtitle: 'Términos, Privacidad, DMCA, Comunidad',
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                Navigator.pushNamed(context, '/legal');
+              },
+            ),
+            _AccountMenuRow(
+              icon: Icons.shield_outlined,
+              label: 'Moderación',
+              subtitle: 'Cola de reportes recibidos',
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                Navigator.pushNamed(context, '/moderation');
+              },
+            ),
+            // TODO(auth): cuando exista login real, agregar aquí "Mi cuenta"
+            // y "Cerrar sesión".
+          ],
+        ),
+      );
+    },
+  );
+}
+
+class _AccountMenuRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final VoidCallback onTap;
+  const _AccountMenuRow({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        margin: const EdgeInsets.symmetric(vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.glassSoft,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.glassBorder),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.accentCyan.withValues(alpha: .18),
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(
+                  color: AppColors.accentCyan.withValues(alpha: .45),
+                ),
+              ),
+              child: Icon(icon, color: AppColors.accentCyan, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: AppColors.inkMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.inkMuted,
+              size: 22,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _AppHeader extends StatelessWidget {
   const _AppHeader();
 
@@ -459,21 +579,24 @@ class _AppHeader extends StatelessWidget {
     final store = AppScope.of(context);
     return Row(
       children: [
-        Container(
-          width: 46,
-          height: 46,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            gradient: AppColors.gradPrimary,
-            border: Border.all(color: AppColors.glassBorder),
-          ),
-          child: const Center(
-            child: Text(
-              'A',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-                fontSize: 18,
+        GestureDetector(
+          onTap: () => _showAccountMenu(context),
+          child: Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: AppColors.gradPrimary,
+              border: Border.all(color: AppColors.glassBorder),
+            ),
+            child: const Center(
+              child: Text(
+                'A',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  fontSize: 18,
+                ),
               ),
             ),
           ),

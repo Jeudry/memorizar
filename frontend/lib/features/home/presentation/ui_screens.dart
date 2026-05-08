@@ -12,6 +12,14 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../../core/app_state.dart';
+import '../../legal/presentation/community_guidelines_screen.dart';
+import '../../legal/presentation/dmca_screen.dart';
+import '../../legal/presentation/legal_menu_screen.dart';
+import '../../legal/presentation/privacy_policy_screen.dart';
+import '../../legal/presentation/terms_of_service_screen.dart';
+import '../../legal/presentation/visibility_consent_dialog.dart';
+import '../../moderation/presentation/moderation_queue_screen.dart';
+import '../../moderation/presentation/report_dialog.dart';
 import 'glyph_icon.dart';
 import 'home_screen.dart';
 
@@ -147,6 +155,12 @@ Map<String, WidgetBuilder> buildAppRoutes() => {
   '${AppRoutes.flow}/progress-tree': (_) => const _ProgressTreeScreen(),
   for (final screen in flowScreens)
     '${AppRoutes.flow}/${screen.slug}': (_) => ExerciseFlowScreen(data: screen),
+  AppRoutes.legalMenu: (_) => const LegalMenuScreen(),
+  AppRoutes.legalTerms: (_) => const TermsOfServiceScreen(),
+  AppRoutes.legalPrivacy: (_) => const PrivacyPolicyScreen(),
+  AppRoutes.legalDmca: (_) => const DmcaScreen(),
+  AppRoutes.legalCommunity: (_) => const CommunityGuidelinesScreen(),
+  AppRoutes.moderationQueue: (_) => const ModerationQueueScreen(),
 };
 
 class BibliaScreen extends StatefulWidget {
@@ -204,6 +218,38 @@ class _BibliaScreenState extends State<BibliaScreen> {
         .firstWhere((item) => item.verse == verse);
     AppScope.of(context).toggleBibleVerse(item);
     setState(() {});
+  }
+
+  void _selectAllInChapter() {
+    AppScope.of(context)
+        .addAllVersesInChapter(_selectedBook, _selectedChapter);
+    setState(() {});
+  }
+
+  void _selectAllInBook() {
+    AppScope.of(context).addAllVersesInBook(_selectedBook);
+    setState(() {});
+  }
+
+  void _selectAllInBible() {
+    AppScope.of(context).addAllVersesInBible();
+    setState(() {});
+  }
+
+  Set<String> _fullBooks(AppStore store) {
+    final selectedBookNames =
+        store.selectedBibleVerses.map((v) => v.book).toSet();
+    return selectedBookNames
+        .where((b) => store.isWholeBookSelected(b))
+        .toSet();
+  }
+
+  Set<String> _partialBooks(AppStore store) {
+    final selectedBookNames =
+        store.selectedBibleVerses.map((v) => v.book).toSet();
+    return selectedBookNames
+        .where((b) => !store.isWholeBookSelected(b))
+        .toSet();
   }
 
   void _finishBibleSelection() {
@@ -313,6 +359,11 @@ class _BibliaScreenState extends State<BibliaScreen> {
               onVerse: _toggleVerse,
               onConfirmVerses: _finishBibleSelection,
               onFinish: _finishBibleSelection,
+              onSelectAllChapter: _selectAllInChapter,
+              onSelectAllBook: _selectAllInBook,
+              onSelectAllBible: _selectAllInBible,
+              fullBooks: _fullBooks(store),
+              partialBooks: _partialBooks(store),
             ),
           const SizedBox(height: 14),
           Glass(
@@ -356,8 +407,37 @@ class _BibliaScreenState extends State<BibliaScreen> {
                     style: TextStyle(color: RefColors.muted, fontSize: 12),
                   )
                 else
-                  for (final verse in store.selectedBibleVerses.take(5))
-                    _SelectedVerseRef(verse.ref, _clipText(verse.text)),
+                  ...() {
+                    final entries = _summarizeSelection(
+                      store.selectedBibleVerses,
+                      store,
+                    );
+                    final visible = entries.take(8).toList();
+                    final hidden = entries.length - visible.length;
+                    return [
+                      for (final e in visible)
+                        _SelectedVerseRef(
+                          e.title,
+                          e.subtitle,
+                          onRemove: () {
+                            store.removeBibleVerses(e.verses);
+                            setState(() {});
+                          },
+                        ),
+                      if (hidden > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            '+ $hidden ${hidden == 1 ? "rango más" : "rangos más"}',
+                            style: const TextStyle(
+                              color: RefColors.muted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                    ];
+                  }(),
               ],
             ),
           ),
@@ -515,6 +595,11 @@ class _BibleBrowseStep extends StatelessWidget {
   final ValueChanged<int> onVerse;
   final VoidCallback onConfirmVerses;
   final VoidCallback onFinish;
+  final VoidCallback onSelectAllChapter;
+  final VoidCallback onSelectAllBook;
+  final VoidCallback onSelectAllBible;
+  final Set<String> fullBooks;
+  final Set<String> partialBooks;
 
   const _BibleBrowseStep({
     required this.step,
@@ -527,6 +612,11 @@ class _BibleBrowseStep extends StatelessWidget {
     required this.onVerse,
     required this.onConfirmVerses,
     required this.onFinish,
+    required this.onSelectAllChapter,
+    required this.onSelectAllBook,
+    required this.onSelectAllBible,
+    required this.fullBooks,
+    required this.partialBooks,
   });
 
   @override
@@ -536,6 +626,7 @@ class _BibleBrowseStep extends StatelessWidget {
         selectedBook: selectedBook,
         onBack: () => onStep('book'),
         onChapter: onChapter,
+        onSelectAllBook: onSelectAllBook,
       );
     }
     if (step == 'verse') {
@@ -546,6 +637,7 @@ class _BibleBrowseStep extends StatelessWidget {
         onBack: () => onStep('chap'),
         onVerse: onVerse,
         onConfirm: onConfirmVerses,
+        onSelectAllChapter: onSelectAllChapter,
       );
     }
     if (step == 'continue') {
@@ -554,17 +646,119 @@ class _BibleBrowseStep extends StatelessWidget {
         onFinish: onFinish,
       );
     }
-    return _BookPicker(onBook: onBook);
+    return _BookPicker(
+      onBook: onBook,
+      onSelectAllBible: onSelectAllBible,
+      fullBooks: fullBooks,
+      partialBooks: partialBooks,
+    );
   }
 }
 
-class _BookPicker extends StatelessWidget {
-  final ValueChanged<String> onBook;
+/// Traditional grouping used in most Spanish bibles. Order matters — categories
+/// render in this order within their testament.
+class _BibleCategory {
+  final String label;
+  final List<String> books;
+  final Color accent;
+  const _BibleCategory(this.label, this.books, this.accent);
+}
 
-  const _BookPicker({required this.onBook});
+// Category accents picked to NOT clash with the rosa/violeta background of
+// the app and to stay distinct from the pink/violet selection state.
+const _catTeal = Color(0xFF14B8A6);
+const _catAmber = Color(0xFFFB923C);
+const _catSkyBlue = Color(0xFF60A5FA);
+const _catIndigo = Color(0xFF818CF8);
+
+const _oldTestamentCategories = <_BibleCategory>[
+  _BibleCategory(
+    'Pentateuco',
+    ['Gén', 'Éxo', 'Lev', 'Núm', 'Deut'],
+    _catTeal,
+  ),
+  _BibleCategory(
+    'Históricos',
+    [
+      'Jos', 'Jue', 'Rut', '1Sam', '2Sam', '1Re', '2Re',
+      '1Cr', '2Cr', 'Esd', 'Neh', 'Est',
+    ],
+    RefColors.cyan,
+  ),
+  _BibleCategory(
+    'Poéticos',
+    ['Job', 'Salmos', 'Prov', 'Ecl', 'Cant'],
+    RefColors.lime,
+  ),
+  _BibleCategory(
+    'Profetas mayores',
+    ['Isa', 'Jer', 'Lam', 'Eze', 'Dan'],
+    RefColors.sun,
+  ),
+  _BibleCategory(
+    'Profetas menores',
+    [
+      'Ose', 'Joel', 'Amós', 'Abd', 'Jon', 'Miq',
+      'Nah', 'Hab', 'Sof', 'Hag', 'Zac', 'Mal',
+    ],
+    _catAmber,
+  ),
+];
+
+const _newTestamentCategories = <_BibleCategory>[
+  _BibleCategory(
+    'Evangelios',
+    ['Mat', 'Mar', 'Luc', 'Juan'],
+    _catIndigo,
+  ),
+  _BibleCategory('Hechos', ['Hech'], RefColors.cyan),
+  _BibleCategory(
+    'Cartas paulinas',
+    [
+      'Rom', '1Cor', '2Cor', 'Gál', 'Ef', 'Fil', 'Col',
+      '1Tes', '2Tes', '1Tim', '2Tim', 'Tit', 'Flm',
+    ],
+    _catTeal,
+  ),
+  _BibleCategory(
+    'Cartas generales',
+    ['Heb', 'Stg', '1Pe', '2Pe', '1Jn', '2Jn', '3Jn', 'Jud'],
+    RefColors.lime,
+  ),
+  _BibleCategory('Apocalíptico', ['Apoc'], RefColors.urgent),
+];
+
+class _BookPicker extends StatefulWidget {
+  final ValueChanged<String> onBook;
+  final VoidCallback? onSelectAllBible;
+  final Set<String> fullBooks;
+  final Set<String> partialBooks;
+
+  const _BookPicker({
+    required this.onBook,
+    this.onSelectAllBible,
+    this.fullBooks = const {},
+    this.partialBooks = const {},
+  });
+
+  @override
+  State<_BookPicker> createState() => _BookPickerState();
+}
+
+class _BookPickerState extends State<_BookPicker> {
+  bool _showNew = false;
 
   @override
   Widget build(BuildContext context) {
+    final categories = _showNew ? _newTestamentCategories : _oldTestamentCategories;
+    final chip = RefChip(
+      'Toda la Biblia',
+      dense: true,
+      color: widget.onSelectAllBible != null
+          ? RefColors.pink.withValues(alpha: .22)
+          : HtmlRefColors.glassSoft,
+      textColor: RefColors.ink,
+    );
     return Glass(
       color: HtmlRefColors.glassBg,
       border: Border.all(color: HtmlRefColors.glassBorder),
@@ -572,37 +766,36 @@ class _BookPicker extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Expanded(
-                child: Text(
-                  'Libros',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-                ),
+              const Text(
+                'Libros',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
               ),
-              RefChip(
-                'Toda la Biblia',
-                dense: true,
-                color: HtmlRefColors.glassSoft,
-                textColor: RefColors.ink,
-              ),
+              const SizedBox(width: 10),
+              const Expanded(child: _BibleVersionDropdown()),
+              const SizedBox(width: 10),
+              if (widget.onSelectAllBible != null)
+                GestureDetector(onTap: widget.onSelectAllBible, child: chip)
+              else
+                chip,
             ],
           ),
-          const SizedBox(height: 8),
-          const _CategoryLabel('ANTIGUO TESTAMENTO'),
-          _BookGrid(
-            books: _oldTestamentBooks.map((book) => book.name).toList(),
-            selected: const {},
-            partial: const {},
-            onBook: onBook,
+          const SizedBox(height: 10),
+          _TestamentTabs(
+            showNew: _showNew,
+            onChanged: (v) => setState(() => _showNew = v),
           ),
-          const SizedBox(height: 8),
-          const _CategoryLabel('NUEVO TESTAMENTO'),
+          const SizedBox(height: 10),
           _BookGrid(
-            books: _newTestamentBooks.map((book) => book.name).toList(),
-            selected: const {},
-            partial: const {},
-            onBook: onBook,
+            books: [for (final cat in categories) ...cat.books],
+            bookAccents: {
+              for (final cat in categories)
+                for (final b in cat.books) b: cat.accent,
+            },
+            selected: widget.fullBooks,
+            partial: widget.partialBooks,
+            onBook: widget.onBook,
           ),
         ],
       ),
@@ -610,23 +803,132 @@ class _BookPicker extends StatelessWidget {
   }
 }
 
-class _CategoryLabel extends StatelessWidget {
-  final String text;
-
-  const _CategoryLabel(this.text);
+class _TestamentTabs extends StatelessWidget {
+  final bool showNew;
+  final ValueChanged<bool> onChanged;
+  const _TestamentTabs({required this.showNew, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: RefColors.dim,
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.5,
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: HtmlRefColors.glassSoft,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: HtmlRefColors.glassBorder),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _TestamentTabButton(
+              label: 'Antiguo',
+              active: !showNew,
+              onTap: () => onChanged(false),
+            ),
+          ),
+          Expanded(
+            child: _TestamentTabButton(
+              label: 'Nuevo',
+              active: showNew,
+              onTap: () => onChanged(true),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TestamentTabButton extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  const _TestamentTabButton({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        decoration: BoxDecoration(
+          gradient: active
+              ? const LinearGradient(
+                  // Sky-blue → light cyan, distinct from the rosa/violeta bg.
+                  colors: [Color(0xFF60A5FA), Color(0xFF38BDF8)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
+          borderRadius: BorderRadius.circular(9),
+          boxShadow: active
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF60A5FA).withValues(alpha: .35),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
         ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: active ? Colors.white : RefColors.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+              letterSpacing: .4,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoryLabel extends StatelessWidget {
+  final String text;
+  final Color? accent;
+
+  const _CategoryLabel(this.text, {this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = accent ?? RefColors.dim;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: color.withValues(alpha: .6),
+                  blurRadius: 6,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: TextStyle(
+              color: accent ?? RefColors.dim,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.5,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -637,16 +939,26 @@ class _StepHeader extends StatelessWidget {
   final String title;
   final String action;
   final VoidCallback onBack;
+  final VoidCallback? onAction;
 
   const _StepHeader({
     required this.backLabel,
     required this.title,
     required this.action,
     required this.onBack,
+    this.onAction,
   });
 
   @override
   Widget build(BuildContext context) {
+    final chip = RefChip(
+      action,
+      dense: true,
+      color: onAction != null
+          ? RefColors.pink.withValues(alpha: .22)
+          : HtmlRefColors.glassSoft,
+      textColor: RefColors.ink,
+    );
     return Row(
       children: [
         GestureDetector(
@@ -673,12 +985,10 @@ class _StepHeader extends StatelessWidget {
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
           ),
         ),
-        RefChip(
-          action,
-          dense: true,
-          color: HtmlRefColors.glassSoft,
-          textColor: RefColors.ink,
-        ),
+        if (onAction != null)
+          GestureDetector(onTap: onAction, child: chip)
+        else
+          chip,
       ],
     );
   }
@@ -688,11 +998,13 @@ class _ChapterPicker extends StatelessWidget {
   final String selectedBook;
   final VoidCallback onBack;
   final ValueChanged<int> onChapter;
+  final VoidCallback? onSelectAllBook;
 
   const _ChapterPicker({
     required this.selectedBook,
     required this.onBack,
     required this.onChapter,
+    this.onSelectAllBook,
   });
 
   @override
@@ -708,6 +1020,7 @@ class _ChapterPicker extends StatelessWidget {
             title: selectedBook,
             action: 'Todo el libro',
             onBack: onBack,
+            onAction: onSelectAllBook,
           ),
           const SizedBox(height: 10),
           _ChapterGrid(selectedBook: selectedBook, onChapter: onChapter),
@@ -795,12 +1108,16 @@ class _BookGrid extends StatelessWidget {
   final Set<String> selected;
   final Set<String> partial;
   final ValueChanged<String> onBook;
+  /// Per-category tint applied to unselected tiles so the user can group
+  /// books by genre at a glance. Falls back to glassSoft when missing.
+  final Map<String, Color> bookAccents;
 
   const _BookGrid({
     required this.books,
     required this.selected,
     required this.partial,
     required this.onBook,
+    this.bookAccents = const {},
   });
 
   @override
@@ -826,6 +1143,15 @@ class _BookGrid extends StatelessWidget {
             final book = books[index];
             final isSelected = selected.contains(book);
             final isPartial = partial.contains(book);
+            // Category tint applied to unselected tiles. The selected /
+            // partial states still win above this.
+            final acc = bookAccents[book];
+            final defaultBg = acc != null
+                ? acc.withValues(alpha: .32)
+                : HtmlRefColors.glassSoft;
+            final defaultBorder = acc != null
+                ? acc.withValues(alpha: .65)
+                : Colors.transparent;
             return GestureDetector(
               onTap: () => onBook(book),
               child: Container(
@@ -834,7 +1160,7 @@ class _BookGrid extends StatelessWidget {
                       ? HtmlRefColors.bookSelected
                       : isPartial
                       ? HtmlRefColors.bookPartial
-                      : HtmlRefColors.glassSoft,
+                      : defaultBg,
                   borderRadius: BorderRadius.circular(9),
                   border: Border.all(
                     width: 1.4,
@@ -842,7 +1168,7 @@ class _BookGrid extends StatelessWidget {
                         ? RefColors.pink
                         : isPartial
                         ? HtmlRefColors.bookPartialBorder
-                        : Colors.transparent,
+                        : defaultBorder,
                   ),
                 ),
                 child: Center(
@@ -872,6 +1198,7 @@ class _VersePicker extends StatefulWidget {
   final VoidCallback onBack;
   final ValueChanged<int> onVerse;
   final VoidCallback onConfirm;
+  final VoidCallback? onSelectAllChapter;
 
   const _VersePicker({
     required this.selectedBook,
@@ -880,6 +1207,7 @@ class _VersePicker extends StatefulWidget {
     required this.onBack,
     required this.onVerse,
     required this.onConfirm,
+    this.onSelectAllChapter,
   });
 
   @override
@@ -923,6 +1251,7 @@ class _VersePickerState extends State<_VersePicker> {
             title: '${widget.selectedBook} ${widget.selectedChapter}',
             action: 'Todo el cap',
             onBack: widget.onBack,
+            onAction: widget.onSelectAllChapter,
           ),
           const SizedBox(height: 10),
           if (verses.isEmpty)
@@ -993,6 +1322,552 @@ class _VersePickerState extends State<_VersePicker> {
 String _clipText(String text) {
   if (text.length <= 34) return text;
   return '${text.substring(0, 34)}...';
+}
+
+/// Dropdown compacto que muestra la versión bíblica activa y deja al usuario
+/// cambiar entre las que están cargadas. Vive dentro del header del
+/// `_BookPicker`.
+class _BibleVersionDropdown extends StatelessWidget {
+  const _BibleVersionDropdown();
+
+  @override
+  Widget build(BuildContext context) {
+    final store = AppScope.of(context);
+    final entries = AppStore.bundledBibles.entries.toList();
+    final current = entries.firstWhere(
+      (e) => e.key == store.bibleVersion,
+      orElse: () => entries.first,
+    );
+
+    return DropdownButtonHideUnderline(
+      child: DropdownButton<String>(
+        value: current.key,
+        isDense: true,
+        isExpanded: true,
+        dropdownColor: RefColors.glassStrong,
+        borderRadius: BorderRadius.circular(12),
+        icon: const Icon(
+          Icons.keyboard_arrow_down_rounded,
+          color: RefColors.muted,
+          size: 18,
+        ),
+        style: const TextStyle(
+          color: RefColors.ink,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
+        selectedItemBuilder: (_) => [
+          for (final e in entries)
+            Container(
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: HtmlRefColors.glassSoft,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: HtmlRefColors.glassBorder),
+              ),
+              child: Text(
+                e.value.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: RefColors.ink,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+        ],
+        items: [
+          for (final e in entries)
+            DropdownMenuItem<String>(
+              value: e.key,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    e.value.name,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    e.value.license,
+                    style: const TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+        onChanged: (id) {
+          if (id != null) store.setBibleVersion(id);
+        },
+      ),
+    );
+  }
+}
+
+/// Acciones disponibles al hacer long-press sobre un mazo: cambiar visibilidad
+/// (si soy dueño) o reportar (siempre disponible). En Fase 1 todos los mazos
+/// son del usuario, así que mostramos ambas; cuando llegue auth real
+/// filtraremos por owner.
+void _showDeckActionsSheet(BuildContext context, MemoryDeckData deck) {
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (sheetCtx) {
+      return Container(
+        margin: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: HtmlRefColors.glassBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: HtmlRefColors.glassBorder),
+        ),
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+              child: Row(
+                children: [
+                  GlyphIcon(deck.icon, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      deck.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  _VisibilityBadge(visibility: deck.visibility),
+                ],
+              ),
+            ),
+            _DeckActionRow(
+              icon: Icons.visibility_outlined,
+              label: 'Cambiar visibilidad',
+              subtitle: 'Privado, amigos o comunidad',
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                showVisibilityConsentSheet(
+                  context,
+                  deckId: deck.id,
+                  deckTitle: deck.title,
+                  current: deck.visibility,
+                );
+              },
+            ),
+            _DeckActionRow(
+              icon: Icons.flag_outlined,
+              label: 'Reportar',
+              subtitle: 'Avisar a moderación si viola las normas',
+              accent: RefColors.urgent,
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                showReportDeckSheet(
+                  context,
+                  deckId: deck.id,
+                  deckTitle: deck.title,
+                );
+              },
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+class _VisibilityBadge extends StatelessWidget {
+  final DeckVisibility visibility;
+  const _VisibilityBadge({required this.visibility});
+
+  @override
+  Widget build(BuildContext context) {
+    final (icon, label, color) = switch (visibility) {
+      DeckVisibility.private => (
+        Icons.lock_outline_rounded,
+        'Privado',
+        RefColors.muted,
+      ),
+      DeckVisibility.friends => (
+        Icons.people_outline_rounded,
+        'Amigos',
+        RefColors.cyan,
+      ),
+      DeckVisibility.public => (
+        Icons.public_rounded,
+        'Público',
+        RefColors.lime,
+      ),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .15),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: .55)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 12),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: .4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DeckActionRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final Color accent;
+  final VoidCallback onTap;
+  const _DeckActionRow({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.onTap,
+    this.accent = RefColors.cyan,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        margin: const EdgeInsets.symmetric(vertical: 3),
+        decoration: BoxDecoration(
+          color: HtmlRefColors.glassSoft,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: HtmlRefColors.glassBorder),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: .18),
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(color: accent.withValues(alpha: .45)),
+              ),
+              child: Icon(icon, color: accent, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: RefColors.muted,
+              size: 22,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One row in the "Tarjetas más débiles" list. Bible cards from the same
+/// chapter collapse into a single row with verse ranges so 5 consecutive
+/// verses don't show up as 5 near-identical items.
+class _ReviewGroup {
+  final String icon;
+  final String front;
+  final String source;
+  final int totalLapses;
+  final int avgRetention;
+  const _ReviewGroup({
+    required this.icon,
+    required this.front,
+    required this.source,
+    required this.totalLapses,
+    required this.avgRetention,
+  });
+}
+
+/// Try to parse a Bible-style card front into (chapter prefix, verse number).
+///
+/// Acepta dos formatos:
+/// - `"Salmos 106:1"` (deck creado vía Biblia interna)
+/// - `"Versículo 1"` con `deckTitle = "Salmos 106"` → prefijo derivado del
+///   título del mazo (deck creado al pegar contenido y segmentar).
+/// Retorna null para tarjetas que no encajen en ninguno de los dos.
+({String prefix, int verse})? _parseBibleRef(String front, {String? deckTitle}) {
+  final clean = front.trim();
+  final colon = RegExp(r'^(.+?)\s*:\s*(\d+)$').firstMatch(clean);
+  if (colon != null) {
+    return (prefix: colon.group(1)!.trim(), verse: int.parse(colon.group(2)!));
+  }
+  // "Versículo 16", "v. 16", "Verso 16" → usa el título del mazo como prefijo.
+  final loose = RegExp(
+    r'^(?:vers[íi]culo|verso|v\.?)\s+(\d+)$',
+    caseSensitive: false,
+  ).firstMatch(clean);
+  if (loose != null && deckTitle != null && deckTitle.trim().isNotEmpty) {
+    return (prefix: deckTitle.trim(), verse: int.parse(loose.group(1)!));
+  }
+  return null;
+}
+
+/// Una tarjeta lista para agrupar — guarda el deck dueño para que el
+/// agrupador pueda usar `deck.title` como prefijo cuando el `front` no trae
+/// un libro completo (ej. "Versículo 1" en mazos creados desde Especificar).
+typedef _ReviewCardWithDeck = ({MemoryCardData card, MemoryDeckData deck});
+
+List<_ReviewCardWithDeck> _attachDecks(
+  List<MemoryCardData> cards,
+  AppStore store,
+) {
+  final deckOfCard = <String, MemoryDeckData>{};
+  for (final deck in store.decks) {
+    for (final c in deck.cards) {
+      deckOfCard[c.id] = deck;
+    }
+  }
+  return [
+    for (final c in cards)
+      if (deckOfCard[c.id] != null)
+        (card: c, deck: deckOfCard[c.id]!),
+  ];
+}
+
+List<_ReviewGroup> _groupReviewCards(List<_ReviewCardWithDeck> cards) {
+  if (cards.isEmpty) return const [];
+  final order = <String>[];
+  final byKey = <String, List<_ReviewCardWithDeck>>{};
+  for (final entry in cards) {
+    final ref = _parseBibleRef(
+      entry.card.front,
+      deckTitle: entry.deck.title,
+    );
+    // Cuando hay ref, agrupar también por deck.id para no fusionar mazos
+    // distintos que casualmente compartan título o capítulo.
+    final key = ref != null
+        ? 'bible:${entry.deck.id}:${ref.prefix}'
+        : 'solo:${entry.card.id}';
+    if (!byKey.containsKey(key)) order.add(key);
+    byKey.putIfAbsent(key, () => []).add(entry);
+  }
+  final out = <_ReviewGroup>[];
+  for (final key in order) {
+    final group = byKey[key]!;
+    if (key.startsWith('solo:')) {
+      final c = group.first.card;
+      out.add(_ReviewGroup(
+        icon: c.icon,
+        front: c.front,
+        source: c.source,
+        totalLapses: c.lapses,
+        avgRetention: c.retention,
+      ));
+      continue;
+    }
+    final verses = <int>[];
+    var totalLapses = 0;
+    var totalRetention = 0;
+    String? prefix;
+    for (final entry in group) {
+      final ref = _parseBibleRef(
+        entry.card.front,
+        deckTitle: entry.deck.title,
+      );
+      if (ref != null) {
+        prefix ??= ref.prefix;
+        verses.add(ref.verse);
+      }
+      totalLapses += entry.card.lapses;
+      totalRetention += entry.card.retention;
+    }
+    final first = group.first.card;
+    out.add(_ReviewGroup(
+      icon: first.icon,
+      front: verses.length == 1
+          ? '$prefix:${verses.first}'
+          : '$prefix:${_compactRanges(verses)}',
+      source: first.source,
+      totalLapses: totalLapses,
+      avgRetention: (totalRetention / group.length).round(),
+    ));
+  }
+  return out;
+}
+
+/// One row in the "Seleccionado" card. The picker collapses contiguous
+/// verse / chapter ranges into single rows so a whole-Bible selection
+/// renders as a handful of items rather than thousands.
+class _SelectionEntry {
+  final String title;
+  final String subtitle;
+  /// The actual verses this row represents — used by the × button to drop the
+  /// whole range from the selection in one tap.
+  final List<BibleVerseData> verses;
+  const _SelectionEntry(this.title, this.subtitle, this.verses);
+}
+
+String _compactRanges(List<int> nums) {
+  if (nums.isEmpty) return '';
+  final sorted = [...nums]..sort();
+  final ranges = <String>[];
+  var start = sorted.first;
+  var prev = start;
+  for (var i = 1; i < sorted.length; i++) {
+    final n = sorted[i];
+    if (n == prev + 1) {
+      prev = n;
+    } else {
+      ranges.add(start == prev ? '$start' : '$start-$prev');
+      start = n;
+      prev = n;
+    }
+  }
+  ranges.add(start == prev ? '$start' : '$start-$prev');
+  return ranges.join(', ');
+}
+
+List<_SelectionEntry> _summarizeSelection(
+  List<BibleVerseData> selected,
+  AppStore store,
+) {
+  if (selected.isEmpty) return const [];
+
+  // Group selected verses: book → chapter → verse numbers.
+  final byBook = <String, Map<int, List<int>>>{};
+  for (final v in selected) {
+    byBook
+        .putIfAbsent(v.book, () => <int, List<int>>{})
+        .putIfAbsent(v.chapter, () => <int>[])
+        .add(v.verse);
+  }
+
+  final entries = <_SelectionEntry>[];
+  // Preserve the order in which the user added books.
+  final orderedBooks = <String>{};
+  for (final v in selected) {
+    orderedBooks.add(v.book);
+  }
+
+  // Index selected verses for quick lookup when assembling each entry's
+  // `verses` payload.
+  final byKey = <String, BibleVerseData>{
+    for (final v in selected) '${v.book}:${v.chapter}:${v.verse}': v,
+  };
+  List<BibleVerseData> versesFor(String book, Iterable<int> chapters) {
+    final out = <BibleVerseData>[];
+    for (final chap in chapters) {
+      for (final n in byBook[book]![chap]!) {
+        final v = byKey['$book:$chap:$n'];
+        if (v != null) out.add(v);
+      }
+    }
+    return out;
+  }
+
+  for (final book in orderedBooks) {
+    final chapters = byBook[book]!;
+    if (store.isWholeBookSelected(book)) {
+      final totalVerses = chapters.values
+          .map((list) => list.length)
+          .fold<int>(0, (a, b) => a + b);
+      entries.add(_SelectionEntry(
+        book,
+        'Libro completo · $totalVerses vs',
+        versesFor(book, chapters.keys),
+      ));
+      continue;
+    }
+
+    final fullChapters = <int>[];
+    final partialChapters = <int>[];
+    for (final chap in chapters.keys) {
+      if (store.isWholeChapterSelected(book, chap)) {
+        fullChapters.add(chap);
+      } else {
+        partialChapters.add(chap);
+      }
+    }
+
+    if (fullChapters.isNotEmpty) {
+      fullChapters.sort();
+      final ranges = _compactRanges(fullChapters);
+      final totalVerses = fullChapters
+          .map((c) => chapters[c]!.length)
+          .fold<int>(0, (a, b) => a + b);
+      entries.add(
+        _SelectionEntry(
+          '$book $ranges',
+          fullChapters.length == 1
+              ? 'Capítulo completo · $totalVerses vs'
+              : 'Capítulos completos · $totalVerses vs',
+          versesFor(book, fullChapters),
+        ),
+      );
+    }
+
+    partialChapters.sort();
+    for (final chap in partialChapters) {
+      final verses = chapters[chap]!;
+      final preview = selected
+          .firstWhere(
+            (v) => v.book == book && v.chapter == chap && v.verse == verses.first,
+          )
+          .text;
+      entries.add(
+        _SelectionEntry(
+          '$book $chap:${_compactRanges(verses)}',
+          _clipText(preview),
+          versesFor(book, [chap]),
+        ),
+      );
+    }
+  }
+  return entries;
 }
 
 String _cardStudyText(BuildContext context) {
@@ -1698,8 +2573,9 @@ class _ContinueOption extends StatelessWidget {
 class _SelectedVerseRef extends StatelessWidget {
   final String title;
   final String subtitle;
+  final VoidCallback? onRemove;
 
-  const _SelectedVerseRef(this.title, this.subtitle);
+  const _SelectedVerseRef(this.title, this.subtitle, {this.onRemove});
 
   @override
   Widget build(BuildContext context) {
@@ -1733,18 +2609,34 @@ class _SelectedVerseRef extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: HtmlRefColors.glassStrong,
-              borderRadius: BorderRadius.circular(7),
-              border: Border.all(color: HtmlRefColors.glassBorder),
-            ),
-            child: const Center(
-              child: Text(
-                '×',
-                style: TextStyle(fontSize: 14, color: RefColors.ink),
+          GestureDetector(
+            onTap: onRemove,
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: onRemove != null
+                    ? RefColors.urgent.withValues(alpha: .18)
+                    : HtmlRefColors.glassStrong,
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(
+                  color: onRemove != null
+                      ? RefColors.urgent.withValues(alpha: .55)
+                      : HtmlRefColors.glassBorder,
+                ),
+              ),
+              child: Center(
+                child: Text(
+                  '×',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: onRemove != null
+                        ? RefColors.urgent
+                        : RefColors.ink,
+                  ),
+                ),
               ),
             ),
           ),
@@ -2106,13 +2998,6 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
                       onTap: _segmentContent,
                       child: const _ToolChip('✨ Segmentar'),
                     ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: _createDeck,
-                        child: const _ToolChip('+ Crear mazo', primary: true),
-                      ),
-                    ),
                   ],
                 ),
               ],
@@ -2467,9 +3352,15 @@ class IniciarScreen extends StatefulWidget {
   State<IniciarScreen> createState() => _IniciarScreenState();
 }
 
+/// Which quick-pick chip the user explicitly tapped. Used to disambiguate
+/// when the numeric target matches more than one preset (e.g. when the deck
+/// only has 1 card both "breve" and "recomendado" map to 1).
+enum _DailyQuickPick { breve, recomendado, intenso, none }
+
 class _IniciarScreenState extends State<IniciarScreen> {
   int _difficulty = 1;
   int? _dailyTarget;
+  _DailyQuickPick _quickPick = _DailyQuickPick.recomendado;
   String? _deckId;
   String _selectedIcon = '✝️';
   bool _showIconPicker = false;
@@ -2488,6 +3379,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
     if (_deckId == deck.id) return;
     _deckId = deck.id;
     _dailyTarget = _recommendedTarget(deck.cards.length);
+    _quickPick = _pickForValue(_dailyTarget!, deck.cards.length);
     _selectedIcon = deck.icon;
     _showIconPicker = false;
     _deckTitleController.text = deck.title;
@@ -2499,19 +3391,42 @@ class _IniciarScreenState extends State<IniciarScreen> {
     super.dispose();
   }
 
-  int _recommendedTarget(int total) => total <= 0 ? 0 : total.clamp(1, 4);
+  /// "Recomendado" sits between breve (1) and intenso (4). Capped at 3 so it
+  /// never collides with intenso visually. For 1-card decks recommended just
+  /// equals breve and the chip is hidden in render.
+  int _recommendedTarget(int total) {
+    if (total <= 0) return 0;
+    if (total <= 1) return 1;
+    return ((total / 12).ceil()).clamp(2, 3);
+  }
+
+  /// Pick the chip whose value the current daily target lands on, so the
+  /// badge follows the user when they step with +/-. Strict equality only —
+  /// values that don't exactly match a preset leave every chip dim.
+  _DailyQuickPick _pickForValue(int value, int total) {
+    final rec = _recommendedTarget(total);
+    if (value == rec && total > 1) return _DailyQuickPick.recomendado;
+    if (value == 1) return _DailyQuickPick.breve;
+    if (value == 4) return _DailyQuickPick.intenso;
+    return _DailyQuickPick.none;
+  }
 
   void _stepTarget(int delta, int total) {
     if (total <= 0) return;
     final current = _dailyTarget ?? _recommendedTarget(total);
+    final next = (current + delta).clamp(1, total);
     setState(() {
-      _dailyTarget = (current + delta).clamp(1, total);
+      _dailyTarget = next;
+      _quickPick = _pickForValue(next, total);
     });
   }
 
-  void _setDailyTarget(int value, int total) {
+  void _setDailyTarget(int value, int total, _DailyQuickPick pick) {
     if (total <= 0) return;
-    setState(() => _dailyTarget = value.clamp(1, total));
+    setState(() {
+      _dailyTarget = value.clamp(1, total);
+      _quickPick = pick;
+    });
   }
 
   void _renameDeck(String value) {
@@ -2550,7 +3465,15 @@ class _IniciarScreenState extends State<IniciarScreen> {
       Navigator.pushNamed(context, AppRoutes.especificar);
       return;
     }
-    AppScope.of(context).configureSession(difficulty: _difficulty);
+    final target =
+        (_dailyTarget ?? _recommendedTarget(deck.cards.length)).clamp(
+          1,
+          deck.cards.length,
+        );
+    AppScope.of(context).configureSession(
+      difficulty: _difficulty,
+      dailyTarget: target,
+    );
     Navigator.pushNamed(context, '${AppRoutes.flow}/progress-tree');
   }
 
@@ -2802,30 +3725,29 @@ class _IniciarScreenState extends State<IniciarScreen> {
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'CANTIDAD A MEMORIZAR',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: RefColors.cyan,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
+                const Center(
+                  child: Text(
+                    'CANTIDAD A MEMORIZAR',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: RefColors.cyan,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.5,
                     ),
-                    Text(
-                      totalCards == 0
-                          ? 'Sin tarjetas'
-                          : 'Finalizaría en $estimatedDays días',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: RefColors.muted,
-                        fontWeight: FontWeight.w800,
-                      ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Center(
+                  child: Text(
+                    totalCards == 0
+                        ? 'Sin tarjetas'
+                        : 'Finalizaría en $estimatedDays ${estimatedDays == 1 ? "día" : "días"}',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: RefColors.muted,
+                      fontWeight: FontWeight.w800,
                     ),
-                  ],
+                  ),
                 ),
                 const SizedBox(height: 14),
                 Row(
@@ -2879,12 +3801,18 @@ class _IniciarScreenState extends State<IniciarScreen> {
                       child: Column(
                         children: [
                           GestureDetector(
-                            onTap: () => _setDailyTarget(1, totalCards),
+                            onTap: () => _setDailyTarget(
+                              1,
+                              totalCards,
+                              _DailyQuickPick.breve,
+                            ),
                             child: RefChip(
                               '1 · breve',
                               dense: true,
-                              color: dailyTarget == 1 ? RefColors.lime : null,
-                              textColor: dailyTarget == 1
+                              color: _quickPick == _DailyQuickPick.breve
+                                  ? RefColors.lime
+                                  : null,
+                              textColor: _quickPick == _DailyQuickPick.breve
                                   ? RefColors.successInk
                                   : RefColors.ink,
                             ),
@@ -2894,28 +3822,34 @@ class _IniciarScreenState extends State<IniciarScreen> {
                             onTap: () => _setDailyTarget(
                               _recommendedTarget(totalCards),
                               totalCards,
+                              _DailyQuickPick.recomendado,
                             ),
                             child: RefChip(
-                              '2 · recomendado',
+                              '${_recommendedTarget(totalCards)} · recomendado',
                               dense: true,
-                              color:
-                                  dailyTarget == _recommendedTarget(totalCards)
+                              color: _quickPick == _DailyQuickPick.recomendado
                                   ? RefColors.lime
                                   : null,
                               textColor:
-                                  dailyTarget == _recommendedTarget(totalCards)
+                                  _quickPick == _DailyQuickPick.recomendado
                                   ? RefColors.successInk
                                   : RefColors.ink,
                             ),
                           ),
                           const SizedBox(height: 7),
                           GestureDetector(
-                            onTap: () => _setDailyTarget(4, totalCards),
+                            onTap: () => _setDailyTarget(
+                              4,
+                              totalCards,
+                              _DailyQuickPick.intenso,
+                            ),
                             child: RefChip(
                               '4 · intenso',
                               dense: true,
-                              color: dailyTarget >= 4 ? RefColors.lime : null,
-                              textColor: dailyTarget >= 4
+                              color: _quickPick == _DailyQuickPick.intenso
+                                  ? RefColors.lime
+                                  : null,
+                              textColor: _quickPick == _DailyQuickPick.intenso
                                   ? RefColors.successInk
                                   : RefColors.ink,
                             ),
@@ -2934,7 +3868,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
               Expanded(
                 flex: 14,
                 child: GhostButton(
-                  'Guardar y empezar luego',
+                  'Guardar para luego',
                   onTap: () => _saveForLater(context),
                 ),
               ),
@@ -3220,13 +4154,13 @@ class RepasarScreen extends StatelessWidget {
             ),
           ),
           const SectionHead('⚠ Tarjetas más débiles', action: 'Ver todas'),
-          for (final card in dueCards)
+          for (final group in _groupReviewCards(_attachDecks(dueCards, store)))
             _ReviewItem(
-              card.icon,
-              card.front,
-              '${card.source} · ${card.lapses} fallos',
-              '${card.retention}%',
-              urgent: card.retention < 60,
+              group.icon,
+              group.front,
+              '${group.source} · ${group.totalLapses} ${group.totalLapses == 1 ? "fallo" : "fallos"}',
+              '${group.avgRetention}%',
+              urgent: group.avgRetention < 60,
               onTap: () => Navigator.pushNamed(context, AppRoutes.flashcards),
             ),
           const SectionHead('Mazos con retención baja'),
@@ -3758,6 +4692,9 @@ class _DeckGrid extends StatelessWidget {
             AppScope.of(context).setActiveDeck(deck.id);
             Navigator.pushNamed(context, AppRoutes.iniciar);
           },
+          // Long-press abre el menú de visibilidad / reportar para que el
+          // usuario pueda compartir el mazo o, si lo ve en comunidad, marcarlo.
+          onLongPress: () => _showDeckActionsSheet(context, deck),
           child: Glass(
             radius: 16,
             padding: const EdgeInsets.all(8),
@@ -6651,6 +7588,49 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     return _quizPassed;
   }
 
+  /// Llamado al terminar el último paso (voz final). Notifica al store que
+  /// la tarjeta actual quedó completa y decide a dónde ir según el target
+  /// diario de la sesión: siguiente tarjeta o review final.
+  void _completeSessionCard(
+    BuildContext context,
+    AppStore store, {
+    required bool correct,
+  }) {
+    final keepGoing = store.advanceToNextSessionCard(correct: correct);
+    if (!mounted) return;
+    if (keepGoing) {
+      // Reset estado UI per-tarjeta (banco, completar, niebla, etc.).
+      setState(() {
+        _completionCardId = null;
+        _letterCardId = null;
+        _bankCardId = null;
+        _fogCardId = null;
+        _quizCardId = null;
+        _blockOrderCardId = null;
+        _checked = false;
+      });
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '${AppRoutes.flow}/progress-tree',
+        (route) => route.isFirst,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(milliseconds: 1600),
+          content: Text(
+            'Tarjeta ${store.sessionCardsCompleted} de ${store.sessionDailyTarget} · siguiente',
+          ),
+        ),
+      );
+    } else {
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '${AppRoutes.flow}/final-review',
+        (route) => route.isFirst,
+      );
+    }
+  }
+
   bool _canAdvanceAnsweredStep(
     String slug,
     MemoryCardData card,
@@ -7790,7 +8770,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   store.markExerciseStepCompleted(slug);
                   return;
                 }
-                if (_isFinalVoiceSlug(slug)) store.answerCurrentCard(true);
+                if (_isFinalVoiceSlug(slug)) {
+                  _completeSessionCard(context, store, correct: true);
+                  return;
+                }
                 Navigator.push(
                   context,
                   AppRoutes.slideRoute('${AppRoutes.flow}/$next'),
@@ -12941,7 +13924,15 @@ class _ExerciseTopBar extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 14),
       child: Row(
         children: [
-          const RefBackButton(),
+          // Inside the exercise flow the back arrow jumps to the progress
+          // tree (the user's "session map"), not the previous step. Use
+          // pushReplacement so we don't pile new entries on the stack.
+          RefBackButton(
+            onTap: () => Navigator.pushReplacementNamed(
+              context,
+              '${AppRoutes.flow}/progress-tree',
+            ),
+          ),
           Expanded(child: Center(child: RefChip(center, dense: true))),
           const RefIconButton(icon: Icons.wb_sunny_outlined),
         ],
@@ -13768,9 +14759,27 @@ class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
                     child: const Icon(Icons.arrow_back_rounded, size: 20),
                   ),
                 ),
-                const Text(
-                  'Progreso del ejercicio',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Progreso del ejercicio',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    if (store.sessionDailyTarget > 1)
+                      Text(
+                        'Tarjeta ${(store.sessionCardsCompleted + 1).clamp(1, store.sessionDailyTarget)} de ${store.sessionDailyTarget}',
+                        style: const TextStyle(
+                          color: RefColors.muted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: .4,
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(width: 40),
               ],
@@ -13790,6 +14799,19 @@ class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
                     currentStepKey: _currentStepKey,
                   ),
               ],
+            ),
+          ),
+          // "Pausar y volver al inicio" — la sesión y el deck siguen guardados,
+          // así que al volver el usuario retoma desde el mismo paso.
+          Padding(
+            padding: const EdgeInsets.only(top: 6, bottom: 4),
+            child: GhostButton(
+              'Pausar y volver al inicio',
+              onTap: () => Navigator.pushNamedAndRemoveUntil(
+                context,
+                AppRoutes.home,
+                (route) => false,
+              ),
             ),
           ),
         ],
