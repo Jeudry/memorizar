@@ -83,6 +83,16 @@ class CoopService {
   final MemorizarClient client;
   CoopService({required this.client});
 
+  /// Sesión activa compartida entre el lobby y la pantalla de juego. La
+  /// lobby la asigna después de connect/createRoom; el juego la lee. Se
+  /// limpia en disconnect/dispose. Acceso global a propósito — el route
+  /// nombrado `cooperativoJuego` no recibe argumentos.
+  static CoopService? active;
+
+  /// userId del usuario local (host o invitado). Se setea junto con `active`
+  /// para que la pantalla de juego sepa cuál fila del scoreboard es "yo".
+  static String? activeUserId;
+
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _sub;
   CoopRoomState? _state;
