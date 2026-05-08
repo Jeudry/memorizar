@@ -4,12 +4,14 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'core/app_state.dart';
 import 'core/i18n/strings.dart';
 import 'core/router/app_routes.dart';
+import 'core/services/analytics_service.dart';
 import 'core/services/deeplink_service.dart';
 import 'core/services/push_service.dart';
 import 'core/theme.dart';
 import 'core/ui/reference_page.dart';
 import 'features/home/presentation/home_screen.dart';
 import 'features/home/presentation/ui_screens.dart';
+import 'features/onboarding/presentation/onboarding_screen.dart';
 
 final _navigatorKey = GlobalKey<NavigatorState>();
 final _deeplinks = DeeplinkService();
@@ -27,7 +29,20 @@ Future<void> main() async {
   // Push: solo inicializa el plugin local, no requiere Firebase para correr.
   await PushService.instance.initialize();
 
-  runApp(AppScope(store: store, child: const MemorizarApp()));
+  // Si hay usuario logueado, identifícalo en analytics.
+  if (store.currentUser != null) {
+    Analytics.instance.identify(store.currentUser!.id, traits: {
+      'email': store.currentUser!.email,
+    });
+  }
+
+  // Decidir pantalla inicial: si nunca completó onboarding, mostrarlo.
+  final showOnboarding = await OnboardingScreen.shouldShow();
+
+  runApp(AppScope(
+    store: store,
+    child: MemorizarApp(showOnboarding: showOnboarding),
+  ));
 
   // Deeplinks: arrancar después de runApp para que el navigator key esté
   // adjunto al widget tree.
@@ -36,8 +51,33 @@ Future<void> main() async {
   });
 }
 
-class MemorizarApp extends StatelessWidget {
-  const MemorizarApp({super.key});
+class MemorizarApp extends StatefulWidget {
+  final bool showOnboarding;
+  const MemorizarApp({super.key, this.showOnboarding = false});
+
+  @override
+  State<MemorizarApp> createState() => _MemorizarAppState();
+}
+
+class _MemorizarAppState extends State<MemorizarApp> {
+  bool _onboardingShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.showOnboarding) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_onboardingShown) return;
+        _onboardingShown = true;
+        final nav = _navigatorKey.currentState;
+        if (nav != null) {
+          nav.push(MaterialPageRoute(
+            builder: (_) => const OnboardingScreen(),
+          ));
+        }
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

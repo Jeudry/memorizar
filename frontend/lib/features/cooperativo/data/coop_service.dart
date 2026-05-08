@@ -12,17 +12,42 @@ class CoopRoomState {
   final String code;
   final String hostId;
   final Set<String> memberIds;
+  /// Tarjeta actualmente sincronizada por el host. `null` antes de empezar.
+  final String? currentDeckId;
+  final int currentCardIndex;
+  /// Puntaje acumulado por miembro (userId → score).
+  final Map<String, int> scores;
 
   const CoopRoomState({
     required this.code,
     required this.hostId,
     required this.memberIds,
+    this.currentDeckId,
+    this.currentCardIndex = 0,
+    this.scores = const {},
   });
 
-  CoopRoomState copyWith({Set<String>? memberIds}) => CoopRoomState(
+  CoopRoomState copyWith({
+    Set<String>? memberIds,
+    Map<String, int>? scores,
+  }) =>
+      CoopRoomState(
         code: code,
         hostId: hostId,
         memberIds: memberIds ?? this.memberIds,
+        currentDeckId: currentDeckId,
+        currentCardIndex: currentCardIndex,
+        scores: scores ?? this.scores,
+      );
+
+  CoopRoomState copyWithCard({required String deckId, required int cardIndex}) =>
+      CoopRoomState(
+        code: code,
+        hostId: hostId,
+        memberIds: memberIds,
+        currentDeckId: deckId,
+        currentCardIndex: cardIndex,
+        scores: scores,
       );
 }
 
@@ -131,8 +156,42 @@ class CoopService {
         );
         _stateCtrl.add(_state!);
         break;
+      case 'card':
+        // Host avanzó a una tarjeta nueva. Payload: {cardIndex, deckId}.
+        final idx = (msg.payload?['cardIndex'] as int?) ?? 0;
+        final deckId = (msg.payload?['deckId'] as String?) ?? '';
+        _state = state.copyWithCard(deckId: deckId, cardIndex: idx);
+        _stateCtrl.add(_state!);
+        break;
+      case 'score':
+        // Un miembro obtuvo puntos. Payload: {points}.
+        final pts = (msg.payload?['points'] as int?) ?? 0;
+        final newScores = {...state.scores};
+        newScores[msg.userId] = (newScores[msg.userId] ?? 0) + pts;
+        _state = state.copyWith(scores: newScores);
+        _stateCtrl.add(_state!);
+        break;
     }
     _messagesCtrl.add(msg);
+  }
+
+  /// Conveniencia para que el host empuje "estamos en la tarjeta N del
+  /// deck D" a todos los miembros.
+  void broadcastCard({required String deckId, required int cardIndex}) {
+    send(CoopMessage(
+      type: 'card',
+      userId: '',
+      payload: {'deckId': deckId, 'cardIndex': cardIndex},
+    ));
+  }
+
+  /// Conveniencia para reportar score (el server reenvía a todos).
+  void reportScore(int points) {
+    send(CoopMessage(
+      type: 'score',
+      userId: '',
+      payload: {'points': points},
+    ));
   }
 
   void send(CoopMessage msg) {
