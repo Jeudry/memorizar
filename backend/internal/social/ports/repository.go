@@ -35,4 +35,9 @@ type Repository interface {
 
 	SaveProgressSnapshot(snapshot domain.ProgressSnapshot) error
 	FindLatestProgressSnapshot(userID string) (*domain.ProgressSnapshot, error)
+
+	// DeleteUserCascade borra al usuario y todos sus datos asociados.
+	// Implementaciones de archivo / memoria pueden hacerlo físico; en
+	// producción debería ser soft-delete con grace period.
+	DeleteUserCascade(userID string) error
 }

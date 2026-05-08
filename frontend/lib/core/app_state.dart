@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../features/moderation/data/report_models.dart';
@@ -184,6 +184,39 @@ class AppStore extends ChangeNotifier {
   /// hoy ambos se comportan igual.
   bool get isGuest => !isLoggedIn;
 
+  /// Conteo de invitaciones de amistad pendientes (donde YO soy el
+  /// destinatario). Se refresca con [refreshPendingCount] al loguearse y
+  /// tras aceptar/enviar una invitación.
+  int _pendingFriendInvites = 0;
+  /// Conteo de mazos compartidos conmigo que aún no he importado. Mismo
+  /// disparo de refresh.
+  int _unreadShares = 0;
+  int get pendingFriendInvites => _pendingFriendInvites;
+  int get unreadShares => _unreadShares;
+  int get totalNotifications => _pendingFriendInvites + _unreadShares;
+
+  Future<void> refreshPendingCount() async {
+    if (!isLoggedIn) {
+      _pendingFriendInvites = 0;
+      _unreadShares = 0;
+      notifyListeners();
+      return;
+    }
+    try {
+      final friends = await api.listFriends();
+      final me = _currentUser?.id ?? '';
+      _pendingFriendInvites =
+          friends.pendingRequests.where((f) => f.addresseeId == me).length;
+    } catch (_) {}
+    try {
+      final shares = await api.listShares();
+      final me = _currentUser?.id ?? '';
+      _unreadShares =
+          shares.where((s) => (s['targetUserId'] as String?) == me).length;
+    } catch (_) {}
+    notifyListeners();
+  }
+
   Future<void> bootstrapSession() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_kSessionTokenKey);
@@ -204,12 +237,7 @@ class AppStore extends ChangeNotifier {
   Future<void> _persistSession(String token, RemoteUser user) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kSessionTokenKey, token);
-    await prefs.setString(_kSessionUserKey, jsonEncode({
-      'id': user.id,
-      'email': user.email,
-      'displayName': user.displayName,
-      'avatarUrl': user.avatarUrl,
-    }));
+    await prefs.setString(_kSessionUserKey, jsonEncode(user.toJson()));
   }
 
   Future<void> _clearPersistedSession() async {
@@ -243,6 +271,7 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
     // Bajar snapshot remoto en background (best-effort, no bloquea login).
     unawaited(pullProgressSnapshot());
+    unawaited(refreshPendingCount());
   }
 
   Future<void> logout() async {
@@ -250,6 +279,115 @@ class AppStore extends ChangeNotifier {
     _sessionToken = null;
     api.setSessionToken(null);
     await _clearPersistedSession();
+    notifyListeners();
+  }
+
+  Future<void> registerWithEmail({
+    required String email,
+    required String password,
+    required String displayName,
+  }) async {
+    final result = await api.registerEmail(
+      email: email,
+      password: password,
+      displayName: displayName,
+    );
+    _currentUser = result.user;
+    _sessionToken = result.session.token;
+    api.setSessionToken(_sessionToken);
+    await _persistSession(result.session.token, result.user);
+    notifyListeners();
+    unawaited(pullProgressSnapshot());
+    unawaited(refreshPendingCount());
+  }
+
+  Future<void> loginWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    final result = await api.loginEmail(email: email, password: password);
+    _currentUser = result.user;
+    _sessionToken = result.session.token;
+    api.setSessionToken(_sessionToken);
+    await _persistSession(result.session.token, result.user);
+    notifyListeners();
+    unawaited(pullProgressSnapshot());
+    unawaited(refreshPendingCount());
+  }
+
+  Future<void> updateProfile({
+    String? displayName,
+    String? avatarUrl,
+    String? locale,
+  }) async {
+    if (!isLoggedIn) return;
+    final updated = await api.updateProfile(
+      displayName: displayName,
+      avatarUrl: avatarUrl,
+      locale: locale,
+    );
+    _currentUser = updated;
+    if (_sessionToken != null) {
+      await _persistSession(_sessionToken!, updated);
+    }
+    if (locale != null) {
+      await setLocale(locale);
+    }
+    notifyListeners();
+  }
+
+  Future<void> deleteAccount() async {
+    if (!isLoggedIn) return;
+    await api.deleteAccount();
+    await logout();
+    // Limpieza adicional: borra mazos locales, no hay forma de recuperar
+    // sin la cuenta.
+    _decks.clear();
+    _selectedBibleVerses.clear();
+    _completedExerciseSteps.clear();
+    notifyListeners();
+  }
+
+  // ─── Theme + Locale ────────────────────────────────────────────────────
+
+  static const _kThemeModeKey = 'memorizar.theme.mode';
+  static const _kLocaleKey = 'memorizar.locale';
+
+  ThemeMode _themeMode = ThemeMode.dark;
+  String _locale = 'es';
+
+  ThemeMode get themeMode => _themeMode;
+  String get locale => _locale;
+
+  Future<void> bootstrapPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final tm = prefs.getString(_kThemeModeKey);
+    if (tm == 'light') _themeMode = ThemeMode.light;
+    if (tm == 'system') _themeMode = ThemeMode.system;
+    if (tm == 'dark') _themeMode = ThemeMode.dark;
+    final loc = prefs.getString(_kLocaleKey);
+    if (loc != null && loc.isNotEmpty) _locale = loc;
+    notifyListeners();
+  }
+
+  Future<void> setThemeMode(ThemeMode mode) async {
+    _themeMode = mode;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _kThemeModeKey,
+      mode == ThemeMode.light
+          ? 'light'
+          : mode == ThemeMode.system
+              ? 'system'
+              : 'dark',
+    );
+    notifyListeners();
+  }
+
+  Future<void> setLocale(String value) async {
+    _locale = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kLocaleKey, value);
     notifyListeners();
   }
 
@@ -337,7 +475,7 @@ class AppStore extends ChangeNotifier {
   Map<String, dynamic>? _latestRemoteSnapshot;
   Map<String, dynamic>? get latestRemoteSnapshot => _latestRemoteSnapshot;
 
-  Future<void> pullProgressSnapshot() async {
+  Future<void> pullProgressSnapshot({bool autoApply = true}) async {
     if (!isLoggedIn) return;
     try {
       final raw = await api.getProgressSnapshot();
@@ -346,15 +484,99 @@ class AppStore extends ChangeNotifier {
         return;
       }
       final payload = raw['payloadJson'];
+      Map<String, dynamic>? snap;
       if (payload is String && payload.isNotEmpty) {
-        _latestRemoteSnapshot = jsonDecode(payload) as Map<String, dynamic>;
+        snap = jsonDecode(payload) as Map<String, dynamic>;
       } else if (payload is Map<String, dynamic>) {
-        _latestRemoteSnapshot = payload;
+        snap = payload;
+      }
+      _latestRemoteSnapshot = snap;
+      if (snap != null && autoApply) {
+        applyRemoteSnapshot(snap);
       }
       notifyListeners();
     } catch (_) {
       // Silencioso — sync es best-effort.
     }
+  }
+
+  /// Mergea el snapshot remoto con el estado local. Estrategia simple:
+  /// - Por cada deck remoto que NO existe local → lo añade.
+  /// - Por cada deck que existe en ambos → gana el de `cards.length` mayor
+  ///   (heurística para "el más completo"). Para retention/lapses, hace
+  ///   max() por card.id.
+  /// Nada se borra del local — el merge es aditivo.
+  void applyRemoteSnapshot(Map<String, dynamic> snap) {
+    final remoteDecks = (snap['decks'] as List? ?? const []).cast<dynamic>();
+    final byId = {for (final d in _decks) d.id: d};
+
+    for (final r in remoteDecks) {
+      if (r is! Map<String, dynamic>) continue;
+      final id = (r['id'] as String?) ?? '';
+      if (id.isEmpty) continue;
+      final remoteCards = (r['cards'] as List? ?? const [])
+          .cast<dynamic>()
+          .whereType<Map<String, dynamic>>()
+          .toList();
+      final cards = remoteCards
+          .map((c) => MemoryCardData(
+                id: (c['id'] as String?) ?? '',
+                front: (c['front'] as String?) ?? '',
+                back: (c['back'] as String?) ?? '',
+                source: (c['source'] as String?) ?? '',
+                icon: (c['icon'] as String?) ?? '✨',
+                retention: (c['retention'] as int?) ?? 70,
+                lapses: (c['lapses'] as int?) ?? 0,
+              ))
+          .toList();
+      if (!byId.containsKey(id)) {
+        // Deck nuevo del remoto.
+        _decks.add(MemoryDeckData(
+          id: id,
+          title: (r['title'] as String?) ?? 'Deck',
+          subtitle: (r['subtitle'] as String?) ?? '',
+          icon: (r['icon'] as String?) ?? '✨',
+          isBible: (r['isBible'] as bool?) ?? false,
+          createdAt:
+              DateTime.tryParse((r['createdAt'] as String?) ?? '') ??
+                  DateTime.now(),
+          cards: cards,
+        ));
+        continue;
+      }
+      // Deck existente: merge tarjeta por id, queda el de mayor retention.
+      final local = byId[id]!;
+      final merged = <String, MemoryCardData>{
+        for (final c in local.cards) c.id: c,
+      };
+      for (final rc in cards) {
+        final existing = merged[rc.id];
+        if (existing == null) {
+          merged[rc.id] = rc;
+        } else {
+          merged[rc.id] = existing.copyWith(
+            retention: rc.retention > existing.retention
+                ? rc.retention
+                : existing.retention,
+            lapses: rc.lapses > existing.lapses ? rc.lapses : existing.lapses,
+          );
+        }
+      }
+      final updated = MemoryDeckData(
+        id: local.id,
+        title: local.title,
+        subtitle: local.subtitle,
+        icon: local.icon,
+        cards: merged.values.toList(),
+        createdAt: local.createdAt,
+        isBible: local.isBible,
+        visibility: local.visibility,
+        rightsAcknowledged: local.rightsAcknowledged,
+      );
+      final idx = _decks.indexWhere((d) => d.id == id);
+      if (idx >= 0) _decks[idx] = updated;
+    }
+    notifyListeners();
   }
 
   final List<MemoryDeckData> _decks = [];

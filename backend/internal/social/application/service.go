@@ -12,6 +12,7 @@ import (
 
 	"github.com/Jeudry/memorizar/backend/internal/social/domain"
 	"github.com/Jeudry/memorizar/backend/internal/social/ports"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -23,6 +24,9 @@ var (
 	ErrInvalidShareKind    = errors.New("invalid share kind")
 	ErrMissingPayload      = errors.New("missing payload")
 	ErrFeedEntryNotFound   = errors.New("feed entry not found")
+	ErrEmailInUse          = errors.New("email already in use")
+	ErrInvalidCredentials  = errors.New("invalid credentials")
+	ErrWeakPassword        = errors.New("password must be at least 8 characters")
 )
 
 type Service struct {
@@ -116,18 +120,28 @@ func (s *Service) SocialLogin(input SocialLoginInput) (*SocialLoginOutput, error
 		return nil, err
 	}
 
+	session, err := s.createSession(user.ID, string(input.Provider))
+	if err != nil {
+		return nil, err
+	}
+
+	return &SocialLoginOutput{User: user.Sanitize(), Session: *session}, nil
+}
+
+// createSession crea + persiste un Session token con TTL 30 días.
+func (s *Service) createSession(userID, provider string) (*domain.Session, error) {
+	now := s.now().UTC()
 	session := domain.Session{
 		Token:     newID("sess"),
-		UserID:    user.ID,
-		Provider:  input.Provider,
+		UserID:    userID,
+		Provider:  domain.SocialProvider(provider),
 		CreatedAt: now,
 		ExpiresAt: now.Add(30 * 24 * time.Hour),
 	}
 	if err := s.repo.SaveSession(session); err != nil {
 		return nil, err
 	}
-
-	return &SocialLoginOutput{User: *user, Session: session}, nil
+	return &session, nil
 }
 
 func (s *Service) Authenticate(token string) (*domain.User, error) {
@@ -256,6 +270,49 @@ func (s *Service) ListSuggestedPeople(userID string) ([]domain.User, error) {
 	return suggestions, nil
 }
 
+// SearchCommunityDecks busca SharedResources públicos cuyo título o
+// summary coincidan con la query (case-insensitive). Excluye los del propio
+// usuario. Devuelve hasta 25.
+func (s *Service) SearchCommunityDecks(userID, rawQuery string) ([]domain.SharedResource, error) {
+	q := strings.ToLower(strings.TrimSpace(rawQuery))
+	users, err := s.repo.ListUsers()
+	if err != nil {
+		return nil, err
+	}
+	allUserIDs := make([]string, 0, len(users))
+	for _, u := range users {
+		allUserIDs = append(allUserIDs, u.ID)
+	}
+	resources, err := s.repo.ListPublicSharedResourcesByUserIDs(allUserIDs)
+	if err != nil {
+		return nil, err
+	}
+	matches := make([]domain.SharedResource, 0, 25)
+	for _, r := range resources {
+		if r.OwnerUserID == userID {
+			continue
+		}
+		if r.Kind != domain.ShareKindDeck {
+			continue
+		}
+		if !r.IsPublic {
+			continue
+		}
+		if q == "" ||
+			strings.Contains(strings.ToLower(r.Title), q) ||
+			strings.Contains(strings.ToLower(r.Summary), q) {
+			matches = append(matches, r)
+		}
+		if len(matches) >= 25 {
+			break
+		}
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].CreatedAt.After(matches[j].CreatedAt)
+	})
+	return matches, nil
+}
+
 // SearchPeople busca usuarios por coincidencia parcial de email o
 // displayName (case-insensitive). Excluye al propio usuario y a los que ya
 // están conectados (amigos o request pendiente). Devuelve hasta 25 matches.
@@ -308,6 +365,31 @@ func (s *Service) SearchPeople(userID, rawQuery string) ([]domain.User, error) {
 		return matches[i].DisplayName < matches[j].DisplayName
 	})
 	return matches, nil
+}
+
+// FindShareByID busca un SharedResource por su ID. Para uso desde
+// deeplinks — una persona abre un link `memorizar://deck/{shareId}`, la app
+// hace fetch a /v1/community/decks/{id} y muestra preview + botón importar.
+// Solo devuelve si IsPublic = true (no exponer compartidos privados via link).
+func (s *Service) FindShareByID(shareID string) (*domain.SharedResource, error) {
+	users, err := s.repo.ListUsers()
+	if err != nil {
+		return nil, err
+	}
+	allUserIDs := make([]string, 0, len(users))
+	for _, u := range users {
+		allUserIDs = append(allUserIDs, u.ID)
+	}
+	resources, err := s.repo.ListPublicSharedResourcesByUserIDs(allUserIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range resources {
+		if r.ID == shareID && r.IsPublic {
+			return &r, nil
+		}
+	}
+	return nil, nil
 }
 
 func (s *Service) RecordAchievement(userID, code, title, description, deckName, emoji string) (*domain.Achievement, error) {
@@ -613,6 +695,119 @@ func (s *Service) buildCommentViews(comments []domain.FeedComment, friendByID ma
 		return views[i].CreatedAt.Before(views[j].CreatedAt)
 	})
 	return views
+}
+
+// EmailRegisterInput / EmailLoginInput cubren el flujo email+password como
+// alternativa a los providers sociales. EmailVerified queda en false hasta
+// que el usuario confirme via link (a implementar con SMTP).
+type EmailRegisterInput struct {
+	Email       string `json:"email"`
+	Password    string `json:"password"`
+	DisplayName string `json:"displayName"`
+}
+
+type EmailLoginInput struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+func (s *Service) RegisterEmail(input EmailRegisterInput) (*SocialLoginOutput, error) {
+	email := strings.ToLower(strings.TrimSpace(input.Email))
+	if email == "" {
+		return nil, ErrMissingIdentity
+	}
+	if len(input.Password) < 8 {
+		return nil, ErrWeakPassword
+	}
+	existing, _ := s.repo.FindUserByEmail(email)
+	if existing != nil {
+		return nil, ErrEmailInUse
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now().UTC()
+	user := domain.User{
+		ID:           newID("usr"),
+		Email:        email,
+		DisplayName:  fallbackDisplayName(input.DisplayName, email),
+		Providers:    map[string]string{},
+		PasswordHash: string(hash),
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := s.repo.SaveUser(user); err != nil {
+		return nil, err
+	}
+	session, err := s.createSession(user.ID, "email")
+	if err != nil {
+		return nil, err
+	}
+	return &SocialLoginOutput{User: user.Sanitize(), Session: *session}, nil
+}
+
+func (s *Service) LoginEmail(input EmailLoginInput) (*SocialLoginOutput, error) {
+	email := strings.ToLower(strings.TrimSpace(input.Email))
+	if email == "" {
+		return nil, ErrMissingIdentity
+	}
+	user, _ := s.repo.FindUserByEmail(email)
+	if user == nil || user.PasswordHash == "" {
+		return nil, ErrInvalidCredentials
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
+		return nil, ErrInvalidCredentials
+	}
+	session, err := s.createSession(user.ID, "email")
+	if err != nil {
+		return nil, err
+	}
+	return &SocialLoginOutput{User: user.Sanitize(), Session: *session}, nil
+}
+
+// UpdateProfileInput permite editar nombre, avatar y locale del usuario
+// activo. Cualquier campo vacío deja el valor previo.
+type UpdateProfileInput struct {
+	DisplayName *string `json:"displayName,omitempty"`
+	AvatarURL   *string `json:"avatarUrl,omitempty"`
+	Locale      *string `json:"locale,omitempty"`
+}
+
+func (s *Service) UpdateProfile(userID string, input UpdateProfileInput) (*domain.User, error) {
+	user, err := s.repo.FindUserByID(userID)
+	if err != nil || user == nil {
+		return nil, ErrUserNotFound
+	}
+	if input.DisplayName != nil && strings.TrimSpace(*input.DisplayName) != "" {
+		user.DisplayName = strings.TrimSpace(*input.DisplayName)
+	}
+	if input.AvatarURL != nil {
+		user.AvatarURL = strings.TrimSpace(*input.AvatarURL)
+	}
+	if input.Locale != nil {
+		loc := strings.TrimSpace(*input.Locale)
+		if loc == "es" || loc == "en" || loc == "pt" || loc == "" {
+			user.Locale = loc
+		}
+	}
+	user.UpdatedAt = s.now().UTC()
+	if err := s.repo.SaveUser(*user); err != nil {
+		return nil, err
+	}
+	sanitized := user.Sanitize()
+	return &sanitized, nil
+}
+
+// DeleteAccount marca y borra al usuario y sus datos asociados. Para Fase 1
+// hace borrado físico — en producción debería ser soft-delete con período
+// de gracia (GDPR / LATAM data retention).
+func (s *Service) DeleteAccount(userID string) error {
+	user, _ := s.repo.FindUserByID(userID)
+	if user == nil {
+		return nil
+	}
+	return s.repo.DeleteUserCascade(userID)
 }
 
 func (s *Service) seed() {

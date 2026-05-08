@@ -43,8 +43,10 @@ class AppRoutes {
   // Mock moderation queue (admin / owner only — real auth comes in Fase 3).
   static const moderationQueue = '/moderation';
 
-  // Auth.
+  // Auth + cuenta + bandeja de compartidos.
   static const login = '/login';
+  static const account = '/account';
+  static const shareInbox = '/inbox';
 
   static Map<String, WidgetBuilder>? _routes;
 
@@ -95,5 +97,52 @@ class AppRoutes {
         );
       },
     );
+  }
+
+  /// Fade + scale suave para abrir una pantalla "modal" (login, account,
+  /// onboarding). 320ms ida, 200ms vuelta.
+  static Route<dynamic> fadeScaleRoute(String name) {
+    final builder = routes[name];
+    if (builder == null) {
+      throw FlutterError('Unknown route: $name');
+    }
+    return PageRouteBuilder(
+      settings: RouteSettings(name: name),
+      transitionDuration: const Duration(milliseconds: 320),
+      reverseTransitionDuration: const Duration(milliseconds: 200),
+      pageBuilder: (context, animation, secondary) => builder(context),
+      transitionsBuilder: (context, animation, _, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: .96, end: 1).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  /// Aplica defaults coherentes a `Navigator.pushNamed` cuando la ruta no
+  /// llamó explícitamente a slideRoute / fadeScaleRoute. Wireado vía
+  /// `MaterialApp.onGenerateRoute` desde `main.dart`.
+  static Route<dynamic>? generateRoute(RouteSettings settings) {
+    final name = settings.name;
+    if (name == null) return null;
+    final builder = routes[name];
+    if (builder == null) return null;
+
+    // Pantallas que se sienten como "modales" → fadeScale.
+    const modalLike = {login, account, shareInbox, legalMenu};
+    if (modalLike.contains(name)) {
+      return fadeScaleRoute(name);
+    }
+    // Default: slide con fade.
+    return slideRoute(name);
   }
 }

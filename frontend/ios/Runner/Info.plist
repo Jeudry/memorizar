@@ -50,6 +50,17 @@
 				</dict>
 			</array>
 		</dict>
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleURLName</key>
+				<string>com.memorizar.deeplinks</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>memorizar</string>
+				</array>
+			</dict>
+		</array>
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>

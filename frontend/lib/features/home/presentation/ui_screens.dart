@@ -14,7 +14,10 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../core/api/models.dart';
 import '../../../core/app_state.dart';
+import '../../account/presentation/account_screen.dart';
 import '../../auth/presentation/login_screen.dart';
+import '../../cooperativo/data/coop_service.dart';
+import '../../share_inbox/presentation/share_inbox_screen.dart';
 import '../../legal/presentation/community_guidelines_screen.dart';
 import '../../legal/presentation/dmca_screen.dart';
 import '../../legal/presentation/legal_menu_screen.dart';
@@ -165,6 +168,8 @@ Map<String, WidgetBuilder> buildAppRoutes() => {
   AppRoutes.legalCommunity: (_) => const CommunityGuidelinesScreen(),
   AppRoutes.moderationQueue: (_) => const ModerationQueueScreen(),
   AppRoutes.login: (_) => const LoginScreen(),
+  AppRoutes.account: (_) => const AccountScreen(),
+  AppRoutes.shareInbox: (_) => const ShareInboxScreen(),
 };
 
 class BibliaScreen extends StatefulWidget {
@@ -4610,8 +4615,87 @@ class _DeckRetention extends StatelessWidget {
   }
 }
 
-class ComunidadScreen extends StatelessWidget {
+class ComunidadScreen extends StatefulWidget {
   const ComunidadScreen({super.key});
+
+  @override
+  State<ComunidadScreen> createState() => _ComunidadScreenState();
+}
+
+class _ComunidadScreenState extends State<ComunidadScreen> {
+  final _searchCtrl = TextEditingController();
+  Timer? _debounce;
+  List<Map<String, dynamic>>? _results;
+  bool _searching = false;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String v) {
+    _debounce?.cancel();
+    if (v.trim().isEmpty) {
+      setState(() => _results = null);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 350), () => _runSearch(v));
+  }
+
+  Future<void> _runSearch(String q) async {
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inicia sesión para buscar en la comunidad.')),
+      );
+      return;
+    }
+    setState(() => _searching = true);
+    try {
+      final results = await store.api.searchCommunityDecks(q);
+      if (!mounted) return;
+      setState(() => _results = results);
+    } catch (_) {
+      // silent
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  Future<void> _import(Map<String, dynamic> share) async {
+    final store = AppScope.of(context);
+    try {
+      final raw = (share['payloadJson'] as String?) ?? '';
+      if (raw.isEmpty) throw Exception('payload vacío');
+      final payload = jsonDecode(raw) as Map<String, dynamic>;
+      final cards = (payload['cards'] as List? ?? const [])
+          .cast<Map<String, dynamic>>()
+          .map((c) => MemoryCardData(
+                id: 'comm-${DateTime.now().microsecondsSinceEpoch}-${c['id']}',
+                front: (c['front'] as String?) ?? '',
+                back: (c['back'] as String?) ?? '',
+                source: (c['source'] as String?) ?? 'Comunidad',
+                icon: (c['icon'] as String?) ?? '🌍',
+              ))
+          .toList();
+      store.createDeckFromCards(
+        title: '${payload['title'] ?? share['title']} (comunidad)',
+        icon: (payload['icon'] as String?) ?? '🌍',
+        cards: cards,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mazo importado a tu colección')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo importar: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -4629,20 +4713,62 @@ class ComunidadScreen extends StatelessWidget {
           ),
           Glass(
             radius: 18,
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
             child: Row(
-              children: const [
-                Icon(Icons.search, size: 20, color: RefColors.muted),
-                SizedBox(width: 10),
+              children: [
+                const Icon(Icons.search, size: 20, color: RefColors.muted),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    'Buscar por tema, idioma, asignatura...',
-                    style: TextStyle(fontSize: 12, color: RefColors.muted),
+                  child: TextField(
+                    controller: _searchCtrl,
+                    onChanged: _onSearchChanged,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: RefColors.ink,
+                    ),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      border: InputBorder.none,
+                      hintText: 'Buscar por tema, idioma, asignatura…',
+                      hintStyle: TextStyle(color: RefColors.dim, fontSize: 12),
+                    ),
                   ),
                 ),
+                if (_searching)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else if (_searchCtrl.text.isNotEmpty)
+                  GestureDetector(
+                    onTap: () {
+                      _searchCtrl.clear();
+                      setState(() => _results = null);
+                    },
+                    child: const Icon(
+                      Icons.close_rounded,
+                      color: RefColors.muted,
+                      size: 18,
+                    ),
+                  ),
               ],
             ),
           ),
+          if (_results != null) ...[
+            const SizedBox(height: 12),
+            if (_results!.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                child: Text(
+                  'Sin resultados.',
+                  style: TextStyle(color: RefColors.muted, fontSize: 12),
+                ),
+              )
+            else
+              for (final r in _results!) _CommunityHit(share: r, onImport: () => _import(r)),
+          ],
           const SizedBox(height: 12),
           GridView.count(
             crossAxisCount: 4,
@@ -4702,6 +4828,74 @@ class ComunidadScreen extends StatelessWidget {
               '${deck.retention}%',
               cyan: deck.isBible,
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommunityHit extends StatelessWidget {
+  final Map<String, dynamic> share;
+  final VoidCallback onImport;
+  const _CommunityHit({required this.share, required this.onImport});
+
+  @override
+  Widget build(BuildContext context) {
+    final title = (share['title'] as String?) ?? 'Sin título';
+    final summary = (share['summary'] as String?) ?? '';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: HtmlRefColors.glassSoft,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: HtmlRefColors.glassBorder),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.public_rounded, color: RefColors.cyan, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                if (summary.isNotEmpty)
+                  Text(
+                    summary,
+                    style: const TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 11,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          GestureDetector(
+            onTap: onImport,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: RefColors.lime.withValues(alpha: .15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
+              ),
+              child: const Text(
+                'Importar',
+                style: TextStyle(
+                  color: RefColors.lime,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -5958,6 +6152,41 @@ class StatsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
+    final hasData = store.decks.isNotEmpty;
+    if (!hasData) {
+      return ReferencePage(
+        active: AppRoutes.stats,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const RefTopBar(title: 'Tu progreso'),
+            Glass(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: const [
+                  Icon(Icons.bar_chart_rounded,
+                      color: RefColors.cyan, size: 40),
+                  SizedBox(height: 10),
+                  Text(
+                    'Crea tu primer mazo para ver tus números aquí.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    final correct = store.correctAnswers;
+    final wrong = store.wrongAnswers;
+    final accuracy = (correct + wrong) == 0
+        ? 0
+        : ((correct / (correct + wrong)) * 100).round();
     return ReferencePage(
       active: AppRoutes.stats,
       child: Column(
@@ -5966,9 +6195,184 @@ class StatsScreen extends StatelessWidget {
           const RefTopBar(title: 'Tu progreso'),
           const _StatsPeriodTabs(),
           _StreakHeroCard(store: store),
-          _Stat('🎯', '${store.averageRetention}%', 'Retención promedio'),
-          _Stat('⚡', '${store.dominatedCards}', 'Tarjetas dominadas'),
-          _Stat('🧩', '${store.totalCards}', 'Tarjetas totales'),
+          Row(
+            children: [
+              Expanded(
+                child: _StatTile(
+                  emoji: '🎯',
+                  value: '${store.averageRetention}%',
+                  label: 'Retención prom.',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _StatTile(
+                  emoji: '⚡',
+                  value: '${store.dominatedCards}',
+                  label: 'Dominadas',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _StatTile(
+                  emoji: '🧩',
+                  value: '${store.totalCards}',
+                  label: 'Tarjetas totales',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _StatTile(
+                  emoji: '⚠️',
+                  value: '${store.weakCards}',
+                  label: 'Débiles',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _StatTile(
+                  emoji: '✅',
+                  value: '$correct',
+                  label: 'Aciertos',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _StatTile(
+                  emoji: '❌',
+                  value: '$wrong',
+                  label: 'Errores',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _StatTile(
+                  emoji: '%',
+                  value: '$accuracy%',
+                  label: 'Precisión',
+                ),
+              ),
+            ],
+          ),
+          const SectionHead('Por mazo'),
+          for (final deck in store.decks)
+            _DeckStatsRow(deck: deck),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatTile extends StatelessWidget {
+  final String emoji;
+  final String value;
+  final String label;
+  const _StatTile({
+    required this.emoji,
+    required this.value,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Glass(
+      padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+      color: HtmlRefColors.glassSoft,
+      border: Border.all(color: HtmlRefColors.glassBorder),
+      child: Column(
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 22)),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: RefColors.muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DeckStatsRow extends StatelessWidget {
+  final MemoryDeckData deck;
+  const _DeckStatsRow({required this.deck});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: HtmlRefColors.glassSoft,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: HtmlRefColors.glassBorder),
+      ),
+      child: Row(
+        children: [
+          GlyphIcon(deck.icon, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  deck.title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(99),
+                  child: LinearProgressIndicator(
+                    value: (deck.retention / 100).clamp(0, 1),
+                    backgroundColor: HtmlRefColors.glassStrong,
+                    valueColor: AlwaysStoppedAnimation(
+                      deck.retention >= 80
+                          ? RefColors.lime
+                          : deck.retention >= 50
+                              ? RefColors.sun
+                              : RefColors.urgent,
+                    ),
+                    minHeight: 4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            '${deck.retention}%',
+            style: TextStyle(
+              color: deck.retention >= 80
+                  ? RefColors.lime
+                  : deck.retention >= 50
+                      ? RefColors.sun
+                      : RefColors.urgent,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
         ],
       ),
     );
@@ -6130,35 +6534,246 @@ class _StreakMetric extends StatelessWidget {
   }
 }
 
-class CooperativoScreen extends StatelessWidget {
+class CooperativoScreen extends StatefulWidget {
   const CooperativoScreen({super.key});
 
   @override
+  State<CooperativoScreen> createState() => _CooperativoScreenState();
+}
+
+class _CooperativoScreenState extends State<CooperativoScreen> {
+  late final CoopService _coop;
+  CoopRoomState? _state;
+  StreamSubscription<CoopRoomState>? _sub;
+  final _joinCtrl = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _coop = CoopService(client: AppScope.of(context).api);
+    _sub = _coop.stateStream.listen((s) => setState(() => _state = s));
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    _coop.dispose();
+    _joinCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _create() async {
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) {
+      Navigator.pushNamed(context, AppRoutes.login);
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await _coop.createRoom(
+        userId: store.currentUser!.id,
+        name: store.currentUser!.displayName,
+      );
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _join() async {
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) {
+      Navigator.pushNamed(context, AppRoutes.login);
+      return;
+    }
+    final code = _joinCtrl.text.trim().toUpperCase();
+    if (code.isEmpty) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await _coop.joinRoom(
+        code: code,
+        userId: store.currentUser!.id,
+        name: store.currentUser!.displayName,
+      );
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final state = _state;
     return ReferencePage(
       active: AppRoutes.amigos,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _CoopTopBar(center: '🔒 SALA · 4F2K'),
-          const _CoopLobbyHero(),
-          const SizedBox(height: 14),
-          const _CoopSettingsCard(),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              const Expanded(child: GhostButton('+ Invitar')),
-              const SizedBox(width: 8),
-              Expanded(
-                flex: 2,
-                child: Cta(
-                  'Estoy listo · Empezar →',
-                  onTap: () =>
-                      Navigator.pushNamed(context, AppRoutes.cooperativoJuego),
-                ),
+          _CoopTopBar(center: state == null ? 'Cooperativo' : '🔒 SALA · ${state.code}'),
+          if (state == null) ...[
+            const _CoopLobbyHero(),
+            const SizedBox(height: 14),
+            Glass(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Crear una sala',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Genera un código de 6 letras y compártelo con tus amigos.',
+                    style: TextStyle(color: RefColors.muted, fontSize: 11),
+                  ),
+                  const SizedBox(height: 10),
+                  Cta('+ Crear sala', onTap: _busy ? null : _create, disabled: _busy),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Glass(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Unirse con código',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: HtmlRefColors.glassSoft,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: HtmlRefColors.glassBorder),
+                    ),
+                    child: TextField(
+                      controller: _joinCtrl,
+                      textCapitalization: TextCapitalization.characters,
+                      style: const TextStyle(
+                        color: RefColors.ink,
+                        fontSize: 18,
+                        letterSpacing: 4,
+                        fontWeight: FontWeight.w900,
+                      ),
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        isDense: true,
+                        hintText: 'ABC123',
+                        hintStyle: TextStyle(
+                          color: RefColors.dim,
+                          fontSize: 18,
+                          letterSpacing: 4,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Cta('Unirme →', onTap: _busy ? null : _join, disabled: _busy),
+                ],
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                _error!,
+                style: const TextStyle(color: RefColors.urgent, fontSize: 12),
               ),
             ],
-          ),
+          ] else ...[
+            Glass(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  const Text(
+                    'CÓDIGO DE SALA',
+                    style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    state.code,
+                    style: const TextStyle(
+                      fontSize: 38,
+                      letterSpacing: 8,
+                      fontWeight: FontWeight.w900,
+                      color: RefColors.lime,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    '${state.memberIds.length} ${state.memberIds.length == 1 ? "miembro" : "miembros"} en la sala',
+                    style: const TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            for (final id in state.memberIds)
+              Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: HtmlRefColors.glassSoft,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: HtmlRefColors.glassBorder),
+                ),
+                child: Row(
+                  children: [
+                    const Fav('?', size: 32),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        id,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (id == state.hostId)
+                      const RefChip(
+                        'HOST',
+                        dense: true,
+                        color: Color(0x33FF3EA5),
+                        textColor: RefColors.pink,
+                      ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 12),
+            GhostButton(
+              'Salir de la sala',
+              onTap: () async {
+                await _coop.disconnect();
+                if (mounted) setState(() => _state = null);
+              },
+            ),
+          ],
         ],
       ),
     );

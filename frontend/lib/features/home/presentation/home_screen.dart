@@ -469,14 +469,26 @@ void _showAccountMenu(BuildContext context) {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (store.isLoggedIn)
+            if (store.isLoggedIn) ...[
               _AccountMenuRow(
                 icon: Icons.account_circle_outlined,
                 label: store.currentUser?.displayName ?? 'Mi cuenta',
                 subtitle: store.currentUser?.email ?? '',
-                onTap: () => Navigator.of(sheetCtx).pop(),
-              )
-            else
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  Navigator.pushNamed(context, '/account');
+                },
+              ),
+              _AccountMenuRow(
+                icon: Icons.inbox_outlined,
+                label: 'Compartidos conmigo',
+                subtitle: 'Mazos que tus amigos te enviaron',
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  Navigator.pushNamed(context, '/inbox');
+                },
+              ),
+            ] else
               _AccountMenuRow(
                 icon: Icons.login_rounded,
                 label: 'Iniciar sesión',
@@ -504,16 +516,6 @@ void _showAccountMenu(BuildContext context) {
                 Navigator.pushNamed(context, '/moderation');
               },
             ),
-            if (store.isLoggedIn)
-              _AccountMenuRow(
-                icon: Icons.logout_rounded,
-                label: 'Cerrar sesión',
-                subtitle: 'Cerrar sesión en este dispositivo',
-                onTap: () {
-                  Navigator.of(sheetCtx).pop();
-                  store.logout();
-                },
-              ),
           ],
         ),
       );
@@ -606,24 +608,58 @@ class _AppHeader extends StatelessWidget {
       children: [
         GestureDetector(
           onTap: () => _showAccountMenu(context),
-          child: Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              gradient: AppColors.gradPrimary,
-              border: Border.all(color: AppColors.glassBorder),
-            ),
-            child: const Center(
-              child: Text(
-                'A',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                  fontSize: 18,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  gradient: AppColors.gradPrimary,
+                  border: Border.all(color: AppColors.glassBorder),
+                ),
+                child: Center(
+                  child: Text(
+                    store.currentUser?.initial ?? 'A',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      fontSize: 18,
+                    ),
+                  ),
                 ),
               ),
-            ),
+              if (store.totalNotifications > 0)
+                Positioned(
+                  right: -4,
+                  top: -4,
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 20),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.urgent,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: AppColors.bgBase,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Text(
+                      '${store.totalNotifications}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
         const SizedBox(width: 10),
