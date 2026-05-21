@@ -5,6 +5,11 @@ part of '../ui_screens.dart';
 class _RecitationStep extends StatefulWidget {
   final String targetText;
   final bool finalMode;
+  /// Nivel de dificultad de la recitación:
+  /// 1 = un único trozo seguido oculto (~25% del verso) — "completar recitación".
+  /// 2 = varios trozos contiguos (2-3 grupos de palabras adyacentes, ~35% total).
+  /// 3 = todo el texto oculto (memoria pura). `finalMode=true` lo fuerza.
+  final int level;
   final _ListeningColorMode colorMode;
   final void Function(bool passed) onCompleted;
 
@@ -13,6 +18,7 @@ class _RecitationStep extends StatefulWidget {
     required this.finalMode,
     required this.colorMode,
     required this.onCompleted,
+    this.level = 2,
   });
 
   @override
@@ -57,7 +63,8 @@ class _RecitationStepState extends State<_RecitationStep>
   void didUpdateWidget(_RecitationStep oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.targetText != widget.targetText ||
-        oldWidget.finalMode != widget.finalMode) {
+        oldWidget.finalMode != widget.finalMode ||
+        oldWidget.level != widget.level) {
       _micPulse.stop();
       _micPulse.value = 0;
       _speech?.cancel();
@@ -81,36 +88,98 @@ class _RecitationStepState extends State<_RecitationStep>
     _startingListening = false;
   }
 
+  /// Selecciona qué palabras se ocultan según el nivel. La idea es que en
+  /// niveles bajos las palabras ocultas estén AGRUPADAS (trozos contiguos)
+  /// para que el usuario recite frases naturales en lugar de saltar de
+  /// palabra suelta a palabra suelta — eso es lo que se sentía raro.
   Set<int> _pickHiddenIndexes() {
-    if (widget.finalMode) {
-      return Set<int>.from(List<int>.generate(_allWords.length, (i) => i));
+    final total = _allWords.length;
+    if (total == 0) return <int>{};
+    if (widget.finalMode || widget.level == 3) {
+      return Set<int>.from(List<int>.generate(total, (i) => i));
     }
     final rng = math.Random();
-    final ratio = 0.35;
-    final count = (_allWords.length * ratio).round().clamp(
-      1,
-      _allWords.length - 1,
-    );
-    final indices = List<int>.generate(_allWords.length, (i) => i);
-    indices.shuffle(rng);
-    return indices.take(count).toSet();
+    if (widget.level == 1) {
+      // UN solo trozo contiguo de ~25% del verso. Empieza en una posición
+      // aleatoria pero respeta los bordes (no arranca al final).
+      final chunkSize = (total * 0.25).round().clamp(2, total - 1);
+      final maxStart = total - chunkSize;
+      final start = maxStart <= 0 ? 0 : rng.nextInt(maxStart + 1);
+      return Set<int>.from(List<int>.generate(chunkSize, (i) => start + i));
+    }
+    // Nivel 2: 2-3 chunks de palabras adyacentes, ~35% en total. Cada
+    // chunk se ubica en un segmento distinto del verso para que los
+    // huecos cubran principio, medio y final.
+    final targetHidden = (total * 0.35).round().clamp(4, total - 2);
+    final chunkCount = total < 12 ? 2 : 3;
+    final perChunk = math.max(2, (targetHidden / chunkCount).round());
+    final hidden = <int>{};
+    final segment = math.max(perChunk + 1, total ~/ chunkCount);
+    for (var i = 0; i < chunkCount; i++) {
+      final segStart = i * segment;
+      final segEnd = math.min(total, segStart + segment);
+      final room = segEnd - segStart - perChunk;
+      final chunkStart = segStart + (room <= 0 ? 0 : rng.nextInt(room + 1));
+      for (var j = 0; j < perChunk && chunkStart + j < total; j++) {
+        hidden.add(chunkStart + j);
+      }
+    }
+    return hidden;
   }
+
+  /// `true` cuando el usuario tocó el mic para detener. Se distingue de la
+  /// señal `done` que dispara Android al detectar pausa breve — en ese caso
+  /// reabrimos la sesión automáticamente para no interrumpir al usuario.
+  bool _userStopRequested = false;
+  bool _restartPending = false;
 
   Future<bool> _initSpeech() async {
     await _speech?.cancel();
     final speech = stt.SpeechToText();
     _speech = speech;
     final available = await speech.initialize(
+      debugLogging: true,
       onStatus: (status) {
         if (!mounted) return;
         if (status == 'done' || status == 'notListening') {
+          // Si el usuario NO tocó stop pero Android cortó la sesión por
+          // pausa, reabrimos automáticamente para que pueda seguir.
+          if (!_userStopRequested && _listening) {
+            if (_restartPending) return;
+            _restartPending = true;
+            Future.delayed(const Duration(milliseconds: 250), () {
+              _restartPending = false;
+              if (!mounted || _userStopRequested) return;
+              _autoRestartListen();
+            });
+            return;
+          }
           _micPulse.stop();
           _micPulse.value = 0;
           setState(() => _listening = false);
         }
       },
-      onError: (_) {
+      onError: (error) {
         if (!mounted) return;
+        debugPrint(
+          'STT recitation error: ${error.errorMsg} permanent=${error.permanent}',
+        );
+        // Pausas breves → Android cierra con error_speech_timeout pero no
+        // es fatal; reabrimos automáticamente para que el usuario pueda
+        // seguir recitando.
+        final recoverable = error.errorMsg == 'error_speech_timeout' ||
+            error.errorMsg == 'error_no_match' ||
+            error.errorMsg == 'error_no_speech';
+        if (recoverable && !_userStopRequested && _listening) {
+          if (_restartPending) return;
+          _restartPending = true;
+          Future.delayed(const Duration(milliseconds: 250), () {
+            _restartPending = false;
+            if (!mounted || _userStopRequested) return;
+            _autoRestartListen();
+          });
+          return;
+        }
         _micPulse.stop();
         _micPulse.value = 0;
         setState(() {
@@ -124,6 +193,61 @@ class _RecitationStepState extends State<_RecitationStep>
     return available;
   }
 
+  /// Devuelve el locale español disponible en el dispositivo (es_ES, es_MX,
+  /// es_US, es_419 — el que exista) o `es_ES` como último recurso.
+  Future<String> _resolveSpanishLocale() async {
+    try {
+      final s = _speech;
+      if (s == null) return 'es_ES';
+      final locales = await s.locales();
+      for (final wanted in [
+        'es_ES', 'es-ES',
+        'es_MX', 'es-MX',
+        'es_US', 'es-US',
+        'es_419', 'es-419',
+      ]) {
+        final m = locales.firstWhere(
+          (l) => l.localeId.replaceAll('-', '_') == wanted.replaceAll('-', '_'),
+          orElse: () => stt.LocaleName('', ''),
+        );
+        if (m.localeId.isNotEmpty) return m.localeId;
+      }
+      final anyEs = locales.firstWhere(
+        (l) => l.localeId.toLowerCase().startsWith('es'),
+        orElse: () => stt.LocaleName('', ''),
+      );
+      if (anyEs.localeId.isNotEmpty) return anyEs.localeId;
+    } catch (e) {
+      debugPrint('STT recitation locales lookup failed: $e');
+    }
+    return 'es_ES';
+  }
+
+  /// Reabre `_speech.listen()` sin resetear el estado del ejercicio.
+  /// Usado cuando Android cierra por pausa pero el usuario quiere seguir.
+  Future<void> _autoRestartListen() async {
+    if (!mounted || !_listening || _userStopRequested) return;
+    final speech = _speech;
+    if (speech == null) return;
+    try {
+      final localeId = await _resolveSpanishLocale();
+      debugPrint('STT recitation auto-restart with locale=$localeId');
+      await speech.listen(
+        localeId: localeId,
+        listenOptions: stt.SpeechListenOptions(
+          listenMode: stt.ListenMode.dictation,
+          partialResults: true,
+          cancelOnError: false,
+        ),
+        listenFor: const Duration(seconds: 90),
+        pauseFor: const Duration(seconds: 30),
+        onResult: _handleRecognition,
+      );
+    } catch (e) {
+      debugPrint('STT recitation auto-restart error: $e');
+    }
+  }
+
   @override
   void dispose() {
     _micPulse.dispose();
@@ -135,6 +259,7 @@ class _RecitationStepState extends State<_RecitationStep>
     if (_startingListening || _completed) return;
     final speech = _speech;
     if (_listening || (speech?.isListening ?? false)) {
+      _userStopRequested = true; // bandera para no reabrir auto
       _micPulse.stop();
       _micPulse.value = 0;
       HapticFeedback.selectionClick();
@@ -148,6 +273,7 @@ class _RecitationStepState extends State<_RecitationStep>
       return;
     }
     _startingListening = true;
+    _userStopRequested = false;
     setState(() {
       _processedTokenCount = 0;
       _lastRawText = '';
@@ -159,28 +285,26 @@ class _RecitationStepState extends State<_RecitationStep>
       }
       HapticFeedback.lightImpact();
       _micPulse.repeat();
-      // Visual "warming up": user sees 'Preparando mic...' for 450ms while the
-      // iOS audio session activates. Without this the first word always gets
-      // swallowed because capture starts a few hundred ms after listen().
       setState(() {
         _listening = true;
         _warmingMic = true;
       });
-      // Fire listen() — do NOT await its full completion (it returns when the
-      // session ends). Errors are caught and reset state.
+      final localeId = await _resolveSpanishLocale();
+      debugPrint('STT recitation listen with locale=$localeId');
       _speech!
           .listen(
-            localeId: 'es_ES',
+            localeId: localeId,
             listenOptions: stt.SpeechListenOptions(
               listenMode: stt.ListenMode.dictation,
               partialResults: true,
               cancelOnError: false,
             ),
             listenFor: const Duration(seconds: 90),
-            pauseFor: const Duration(seconds: 12),
+            pauseFor: const Duration(seconds: 30),
             onResult: _handleRecognition,
           )
-          .catchError((Object _) {
+          .catchError((Object e) {
+        debugPrint('STT recitation listen catchError: $e');
         if (!mounted) return;
         _micPulse.stop();
         _micPulse.value = 0;

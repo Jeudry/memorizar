@@ -24,11 +24,22 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
   bool _ready = false;
   bool _listening = false;
   bool _completed = false;
+  /// Texto reconocido en la sesión ACTUAL de _speech.listen() (Android reinicia
+  /// la sesión cada vez que detecta una pausa larga).
   String _recognized = '';
+  /// Texto acumulado entre auto-restarts. Cuando STT cierra por pausa y
+  /// reabrimos, los nuevos resultados se concatenan acá.
+  String _accumulated = '';
   String _status = 'Toca el micrófono y lee el texto.';
   double _score = 0;
   final _audioRecorder = AudioRecorder();
   String? _recordedPath;
+  /// `true` cuando el usuario tocó el botón "Detener". Cuando STT cierra por
+  /// pausa interna (status=done) y este flag es false, reabrimos automatic.
+  bool _userStopRequested = false;
+  bool _restartPending = false;
+  /// Controla el scroll interno del target text (versos para leer).
+  final _targetScrollCtrl = ScrollController();
 
   @override
   void initState() {
@@ -39,12 +50,32 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
 
   Future<void> _initSpeech() async {
     final available = await _speech.initialize(
+      debugLogging: true,
       onStatus: _handleStatus,
       onError: (error) {
         if (!mounted) return;
+        debugPrint('STT error: ${error.errorMsg} permanent=${error.permanent}');
+        // Android dispara `error_speech_timeout` / `error_no_match` cuando
+        // el usuario hace una pausa breve. NO son errores fatales — el
+        // recognizer se cerró y queremos reabrirlo automáticamente (igual
+        // que cuando llega status='done'). Solo errores REALMENTE permanentes
+        // (mic no disponible, permiso denegado, etc.) deben matar la sesión.
+        final recoverable = error.errorMsg == 'error_speech_timeout' ||
+            error.errorMsg == 'error_no_match' ||
+            error.errorMsg == 'error_no_speech';
+        if (recoverable && !_userStopRequested && _listening) {
+          if (_restartPending) return;
+          _restartPending = true;
+          Future.delayed(const Duration(milliseconds: 250), () {
+            _restartPending = false;
+            if (!mounted || _userStopRequested) return;
+            _restartListenSession();
+          });
+          return;
+        }
         setState(() {
           _listening = false;
-          _status = 'No pude escuchar bien. Intenta otra vez.';
+          _status = 'STT: ${error.errorMsg}. Intenta otra vez.';
         });
       },
     );
@@ -53,13 +84,40 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
       _ready = available;
       _status = available
           ? 'Toca el micrófono y lee el texto.'
-          : 'Activa permiso de micrófono para leer en voz.';
+          : 'Speech-to-text no disponible. Verifica que el reconocedor de '
+                'voz del sistema esté instalado (Google app / Speech Services).';
     });
+  }
+
+  /// Elige un locale español disponible en el dispositivo, con fallback al
+  /// default. Algunos dispositivos Android solo traen 'es-US' o 'es-419', no
+  /// 'es-ES', y la llamada falla silenciosa.
+  Future<String> _resolveSpanishLocale() async {
+    try {
+      final locales = await _speech.locales();
+      for (final wanted in ['es_ES', 'es-ES', 'es_MX', 'es-MX', 'es_US', 'es-US', 'es_419', 'es-419']) {
+        final match = locales.firstWhere(
+          (l) => l.localeId.replaceAll('-', '_') == wanted.replaceAll('-', '_'),
+          orElse: () => stt.LocaleName('', ''),
+        );
+        if (match.localeId.isNotEmpty) return match.localeId;
+      }
+      // Cualquier locale 'es*' como último recurso.
+      final anyEs = locales.firstWhere(
+        (l) => l.localeId.toLowerCase().startsWith('es'),
+        orElse: () => stt.LocaleName('', ''),
+      );
+      if (anyEs.localeId.isNotEmpty) return anyEs.localeId;
+    } catch (e) {
+      debugPrint('STT locales lookup failed: $e');
+    }
+    return 'es_ES';
   }
 
   @override
   void dispose() {
     _speech.cancel();
+    _targetScrollCtrl.dispose();
     _audioRecorder.stop().then((_) => _audioRecorder.dispose());
     super.dispose();
   }
@@ -67,7 +125,56 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
   void _handleStatus(String status) {
     if (!mounted) return;
     if (status == 'done' || status == 'notListening') {
+      // Android cierra la sesión apenas detecta una pausa breve. Si el
+      // usuario NO tocó detener, reabrimos automáticamente para que pueda
+      // seguir hablando sin perder el flujo.
+      if (!_userStopRequested && _listening) {
+        if (_restartPending) return;
+        _restartPending = true;
+        // Pequeño delay para que el recognizer libere recursos antes de
+        // reabrir, sino vuelve a fallar.
+        Future.delayed(const Duration(milliseconds: 250), () {
+          _restartPending = false;
+          if (!mounted || _userStopRequested) return;
+          _restartListenSession();
+        });
+        return;
+      }
       _finishCapture();
+    }
+  }
+
+  /// Reabre una sesión de _speech.listen sin resetear el estado UI ni el
+  /// texto acumulado. Acumula el último resultado parcial antes de reabrir
+  /// para no perder lo que ya leyó.
+  Future<void> _restartListenSession() async {
+    if (!mounted || !_listening) return;
+    // Preserva lo reconocido hasta aquí para concatenar al volver.
+    if (_recognized.trim().isNotEmpty) {
+      _accumulated = _accumulated.isEmpty
+          ? _recognized.trim()
+          : '${_accumulated.trim()} ${_recognized.trim()}';
+      _recognized = '';
+    }
+    setState(() {
+      _status = 'Escuchando... continúa leyendo cuando quieras.';
+    });
+    try {
+      final localeId = await _resolveSpanishLocale();
+      debugPrint('STT auto-restart with locale=$localeId');
+      await _speech.listen(
+        localeId: localeId,
+        listenOptions: stt.SpeechListenOptions(
+          listenMode: stt.ListenMode.dictation,
+          partialResults: true,
+          cancelOnError: false,
+        ),
+        listenFor: const Duration(seconds: 120),
+        pauseFor: const Duration(seconds: 30),
+        onResult: _handleResult,
+      );
+    } catch (e) {
+      debugPrint('STT auto-restart error: $e');
     }
   }
 
@@ -77,13 +184,16 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
       return;
     }
     if (_listening) {
-      // User tapped stop — end both capture streams and finalize.
+      // User tapped stop — flag para que `_handleStatus` no reabra y cierra.
+      _userStopRequested = true;
       await _speech.stop();
       _finishCapture();
       return;
     }
     setState(() {
       _recognized = '';
+      _accumulated = '';
+      _userStopRequested = false;
       _score = 0;
       _completed = false;
       _listening = true;
@@ -91,44 +201,62 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
     });
 
     // Start the file recorder FIRST so the first words make it onto disk.
-    // The audio session is shared with speech_to_text on iOS — recording in
-    // a file via AVAudioRecorder does not collide with SFSpeechRecognizer's
-    // engine tap.
-    try {
-      if (await _audioRecorder.hasPermission()) {
-        final dir = await getTemporaryDirectory();
-        final path =
-            '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-        await _audioRecorder.start(const RecordConfig(), path: path);
-        _recordedPath = path;
+    // En iOS el audio session SE COMPARTE entre `record` y `speech_to_text`
+    // (ambos tappean AVAudioEngine sin chocarse). En Android NO: `record`
+    // toma exclusivo el MIC y SpeechRecognizer recibe silencio → error
+    // `error_speech_timeout`. Por eso saltamos la grabación en Android y
+    // dejamos que STT tenga el mic en exclusiva. El replay en
+    // `04-escuchar-voz` cae a TTS del texto reconocido.
+    if (!Platform.isAndroid) {
+      try {
+        if (await _audioRecorder.hasPermission()) {
+          final dir = await getTemporaryDirectory();
+          final path =
+              '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+          await _audioRecorder.start(const RecordConfig(), path: path);
+          _recordedPath = path;
+        }
+      } catch (e) {
+        debugPrint('Audio Recorder Error: $e');
       }
-    } catch (e) {
-      debugPrint('Audio Recorder Error: $e');
+    } else {
+      _recordedPath = null;
     }
 
     // Tiny breath so AVAudioSession is fully alive before SFSpeech attaches.
     await Future.delayed(const Duration(milliseconds: 120));
 
     try {
+      final localeId = await _resolveSpanishLocale();
+      debugPrint('STT listen with locale=$localeId');
       await _speech.listen(
-        localeId: 'es_ES',
+        localeId: localeId,
         listenOptions: stt.SpeechListenOptions(
           listenMode: stt.ListenMode.dictation,
           partialResults: true,
           cancelOnError: false,
         ),
         listenFor: const Duration(seconds: 120),
-        pauseFor: const Duration(seconds: 12),
+        pauseFor: const Duration(seconds: 30),
         onResult: _handleResult,
       );
     } catch (e) {
       debugPrint('STT Listen Error: $e');
+      if (mounted) {
+        setState(() {
+          _listening = false;
+          _status = 'No pude iniciar el reconocimiento. ($e)';
+        });
+      }
     }
   }
 
   void _handleResult(SpeechRecognitionResult result) {
     final recognized = result.recognizedWords;
-    final score = _speechSimilarity(recognized, widget.targetText);
+    final fullText = _accumulated.isEmpty
+        ? recognized
+        : '${_accumulated.trim()} ${recognized.trim()}';
+    final score = _speechSimilarity(fullText, widget.targetText);
     final passed = score >= _passScore;
     if (!mounted) return;
     setState(() {
@@ -139,7 +267,37 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
         _status = 'Vas bien — sigue leyendo o toca detener para guardar.';
       }
     });
-    // IMPORTANT: do NOT stop on first passed result. Let the user finish.
+    // Auto-scroll perezoso del target text — solo cuando el progreso de
+    // reconocimiento (palabras dichas / palabras esperadas) llega al 70%
+    // del viewport interno.
+    _maybeAutoScrollTarget(fullText);
+  }
+
+  /// Scroll perezoso del target text basado en cuántas palabras del target
+  /// ya fueron reconocidas. Mismo patrón threshold-70% que usamos en lectura
+  /// fragmentada y en audio playback.
+  void _maybeAutoScrollTarget(String recognizedFull) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_targetScrollCtrl.hasClients) return;
+      final pos = _targetScrollCtrl.position;
+      final max = pos.maxScrollExtent;
+      if (max <= 0) return;
+      final viewport = pos.viewportDimension;
+      final spoken = _speechSimilarity(recognizedFull, widget.targetText);
+      // `spoken` es el ratio de similitud — proxy aceptable de "cuánto del
+      // target ya pasó el usuario leyendo".
+      final totalContentHeight = max + viewport;
+      final progressY = totalContentHeight * spoken.clamp(0.0, 1.0);
+      final thresholdY = pos.pixels + viewport * 0.70;
+      if (progressY < thresholdY) return;
+      final target = (progressY - viewport * 0.60).clamp(0.0, max);
+      if (target <= pos.pixels) return;
+      _targetScrollCtrl.animateTo(
+        target,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      );
+    });
   }
 
   bool _finalizing = false;
@@ -147,11 +305,18 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
     if (_finalizing) return;
     _finalizing = true;
     try {
-      final path = await _audioRecorder.stop();
-      if (path != null) _recordedPath = path;
+      // Solo iOS arrancó el recorder; en Android nunca lo iniciamos.
+      if (!Platform.isAndroid) {
+        final path = await _audioRecorder.stop();
+        if (path != null) _recordedPath = path;
+      }
       if (!mounted) return;
       setState(() => _listening = false);
-      _grade(_recognized);
+      // Texto total reconocido = acumulado de sesiones previas + última.
+      final fullText = _accumulated.isEmpty
+          ? _recognized
+          : '${_accumulated.trim()} ${_recognized.trim()}';
+      _grade(fullText);
     } finally {
       _finalizing = false;
     }
@@ -169,6 +334,32 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
           : 'Se parece poco todavía. Reintenta leyendo más completo.';
     });
     if (passed) widget.onCompleted(recognized, _recordedPath);
+  }
+
+  /// Renderiza el target verso-por-verso si la sesión es batched. Si es 1
+  /// solo item, vuelve al render plano (un solo Text con todo el back).
+  List<Widget> _buildVersedDisplay(BuildContext context) {
+    final verses = _currentBatchVerses(context);
+    const style = TextStyle(
+      fontSize: 20,
+      height: 1.36,
+      fontWeight: FontWeight.w900,
+      color: RefColors.ink,
+    );
+    if (verses.length == 1) {
+      return [Text(verses.first.text, style: style)];
+    }
+    return [
+      for (var i = 0; i < verses.length; i++) ...[
+        _VerseLine(
+          number: verses[i].number,
+          words: _studyWords(verses[i].text),
+          defaultStyle: style,
+          fontSize: 20,
+        ),
+        if (i < verses.length - 1) const SizedBox(height: 10),
+      ],
+    ];
   }
 
 
@@ -204,35 +395,22 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                 ),
               ),
               const SizedBox(height: 12),
-              Text(
-                widget.targetText,
-                style: const TextStyle(
-                  fontSize: 22,
-                  height: 1.36,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 18),
-              Container(
-                padding: const EdgeInsets.all(13),
-                decoration: BoxDecoration(
-                  color: HtmlRefColors.glassSoft,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: HtmlRefColors.glassBorder),
-                ),
-                child: Text(
-                  _recognized.isEmpty
-                      ? 'Aquí aparecerá lo que entendió el reconocimiento de voz.'
-                      : _recognized,
-                  style: TextStyle(
-                    color: _recognized.isEmpty ? RefColors.dim : RefColors.ink,
-                    fontSize: 13,
-                    height: 1.35,
-                    fontWeight: FontWeight.w700,
+              // Target text ARRIBA en un contenedor scrollable con max
+              // height fijo. Auto-scrollea perezosamente conforme el STT
+              // va reconociendo palabras — solo cuando la palabra activa
+              // pasa del 70% del viewport interno.
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 280),
+                child: SingleChildScrollView(
+                  controller: _targetScrollCtrl,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: _buildVersedDisplay(context),
                   ),
                 ),
               ),
               const SizedBox(height: 16),
+              // Mic + score DEBAJO del texto a leer — siempre visible.
               Row(
                 children: [
                   GestureDetector(
@@ -280,6 +458,28 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 16),
+              // Caja de texto reconocido — debajo del mic, todavía a la
+              // vista al arrancar a leer.
+              Container(
+                padding: const EdgeInsets.all(13),
+                decoration: BoxDecoration(
+                  color: HtmlRefColors.glassSoft,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: HtmlRefColors.glassBorder),
+                ),
+                child: Text(
+                  _recognized.isEmpty
+                      ? 'Aquí aparecerá lo que entendió el reconocimiento de voz.'
+                      : _recognized,
+                  style: TextStyle(
+                    color: _recognized.isEmpty ? RefColors.dim : RefColors.ink,
+                    fontSize: 13,
+                    height: 1.35,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ],
           ),
@@ -653,16 +853,29 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
     super.dispose();
   }
 
+  /// Scroll perezoso — antes movía un poquito por cada palabra (terremoto
+  /// visual). Ahora solo mueve cuando la palabra actual cae por debajo del
+  /// 70% del viewport, y lo lleva al ~50% para dejar contexto arriba/abajo.
   void _scrollToProgress(int index, int total) {
     if (total <= 1) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_textScrollController.hasClients) return;
-      final max = _textScrollController.position.maxScrollExtent;
+      final pos = _textScrollController.position;
+      final max = pos.maxScrollExtent;
       if (max <= 0) return;
-      final target = max * (index / (total - 1)).clamp(0.0, 1.0);
+      final viewport = pos.viewportDimension;
+      final ratio = (index / (total - 1)).clamp(0.0, 1.0);
+      final totalContentHeight = max + viewport;
+      final currentWordY = totalContentHeight * ratio;
+      // Trigger solo si la palabra activa sobrepasó el 70% del viewport
+      // visible o ya salió por abajo.
+      final thresholdY = pos.pixels + viewport * 0.70;
+      if (currentWordY < thresholdY) return;
+      final target = (currentWordY - viewport * 0.50).clamp(0.0, max);
+      if (target <= pos.pixels) return;
       _textScrollController.animateTo(
         target,
-        duration: const Duration(milliseconds: 260),
+        duration: const Duration(milliseconds: 320),
         curve: Curves.easeOutCubic,
       );
     });
@@ -714,15 +927,128 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
     await _toggle(text);
   }
 
+  /// Renderiza el texto del paso Escuchar verso-por-verso (cuando el grupo
+  /// tiene 2+ versos). El índice global apunta a la palabra que TTS está
+  /// leyendo en este momento — se traduce a (verso, palabra local) para
+  /// resaltarla solo en su verso. Si solo hay 1 verso, vuelve al render
+  /// linear con lead/current/tail.
+  Widget _buildVersedListenText(BuildContext context, int globalIndex) {
+    final verses = _currentBatchVerses(context);
+    if (verses.length == 1) {
+      // Single-item: render plano como antes (lead + highlight + tail).
+      final words = _studyWords(verses.first.text);
+      final safe = globalIndex.clamp(0, words.length - 1);
+      final lead = words.take(safe).join(' ');
+      final current = words.isEmpty ? '' : words[safe];
+      final tail = words.skip(safe + 1).join(' ');
+      return Text.rich(
+        TextSpan(
+          children: [
+            if (lead.isNotEmpty)
+              TextSpan(
+                text: '$lead ',
+                style: const TextStyle(color: RefColors.lime),
+              ),
+            TextSpan(
+              text: current,
+              style: const TextStyle(
+                color: RefColors.ink,
+                backgroundColor: Color(0x44273CFE),
+              ),
+            ),
+            TextSpan(
+              text: tail.isEmpty ? '' : ' $tail',
+              style: const TextStyle(color: RefColors.muted),
+            ),
+          ],
+        ),
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 26,
+          height: 1.34,
+          fontWeight: FontWeight.w900,
+          letterSpacing: -.35,
+        ),
+      );
+    }
+    // Múltiples versos: encontrar a qué verso pertenece globalIndex.
+    // El back combinado es "1 verse1 2 verse2 3 verse3"; cada verso aporta
+    // 1 (el número) + N_i palabras al índice global.
+    int? activeVerse;
+    int? activeLocal;
+    var offset = 0;
+    for (var i = 0; i < verses.length; i++) {
+      final n = _studyWords(verses[i].text).length;
+      // El número ocupa el slot `offset`; las palabras del verso van
+      // de `offset+1` a `offset+n`.
+      if (globalIndex >= offset && globalIndex <= offset + n) {
+        if (globalIndex == offset) {
+          activeVerse = i;
+          activeLocal = -1; // el número del verso está activo
+        } else {
+          activeVerse = i;
+          activeLocal = globalIndex - offset - 1;
+        }
+        break;
+      }
+      offset += 1 + n;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < verses.length; i++) ...[
+          _VerseLine(
+            number: verses[i].number,
+            words: _studyWords(verses[i].text),
+            defaultStyle: const TextStyle(
+              color: RefColors.muted,
+              fontWeight: FontWeight.w900,
+              height: 1.32,
+            ),
+            wordStyle: (idx) {
+              // Verso entero "ya leído": lime suave.
+              if (activeVerse != null && i < activeVerse!) {
+                return const TextStyle(
+                  color: RefColors.lime,
+                  fontWeight: FontWeight.w900,
+                );
+              }
+              // Verso activo: lead lime, current highlight, tail muted.
+              if (i == activeVerse) {
+                if (idx < (activeLocal ?? -1)) {
+                  return const TextStyle(
+                    color: RefColors.lime,
+                    fontWeight: FontWeight.w900,
+                  );
+                }
+                if (idx == activeLocal) {
+                  return const TextStyle(
+                    color: RefColors.ink,
+                    fontWeight: FontWeight.w900,
+                    backgroundColor: Color(0x44273CFE),
+                  );
+                }
+                return const TextStyle(
+                  color: RefColors.muted,
+                  fontWeight: FontWeight.w900,
+                );
+              }
+              return null; // verso futuro → defaultStyle (muted)
+            },
+            fontSize: 22,
+          ),
+          if (i < verses.length - 1) const SizedBox(height: 14),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final words = _studyWords(_cardStudyText(context));
     final source = _cardSourceText(context).toUpperCase();
     final text = _cardStudyText(context);
-    final safeIndex = _wordIndex.clamp(0, words.length - 1);
-    final lead = words.take(safeIndex).join(' ');
-    final current = words[safeIndex];
-    final tail = words.skip(safeIndex + 1).join(' ');
+    final safeIndex = _wordIndex.clamp(0, words.isEmpty ? 0 : words.length - 1);
     final progress = words.isEmpty ? 0.0 : ((safeIndex + 1) / words.length);
     return Glass(
       padding: const EdgeInsets.fromLTRB(22, 30, 22, 20),
@@ -747,43 +1073,13 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
           ),
           const SizedBox(height: 34),
           Expanded(
-            child: Center(
-              child: Scrollbar(
+            child: Scrollbar(
+              controller: _textScrollController,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
                 controller: _textScrollController,
-                thumbVisibility: true,
-                child: SingleChildScrollView(
-                  controller: _textScrollController,
-                  padding: const EdgeInsets.only(right: 10),
-                  child: Text.rich(
-                    TextSpan(
-                      children: [
-                        if (lead.isNotEmpty)
-                          TextSpan(
-                            text: '$lead ',
-                            style: const TextStyle(color: RefColors.lime),
-                          ),
-                        TextSpan(
-                          text: current,
-                          style: const TextStyle(
-                            color: RefColors.ink,
-                            backgroundColor: Color(0x44273CFE),
-                          ),
-                        ),
-                        TextSpan(
-                          text: tail.isEmpty ? '' : ' $tail',
-                          style: const TextStyle(color: RefColors.muted),
-                        ),
-                      ],
-                    ),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 26,
-                      height: 1.34,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -.35,
-                    ),
-                  ),
-                ),
+                padding: const EdgeInsets.only(right: 10),
+                child: _buildVersedListenText(context, safeIndex),
               ),
             ),
           ),
@@ -813,9 +1109,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          Container(height: 1, color: RefColors.inner),
-          const SizedBox(height: 18),
+          const SizedBox(height: 22),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [

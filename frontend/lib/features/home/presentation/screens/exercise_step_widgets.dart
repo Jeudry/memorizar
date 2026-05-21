@@ -736,6 +736,8 @@ class _VoiceRecitationPracticeCardState
   int _currentBlock = 0;
   int? _lastWrongAt;
   int _attemptsRemaining = 5;
+  bool _userStopRequested = false;
+  bool _restartPending = false;
 
   late List<String> _targetBlocks;
   late List<bool> _blockSolved;
@@ -764,19 +766,95 @@ class _VoiceRecitationPracticeCardState
   Future<void> _initSpeech() async {
     _speech = stt.SpeechToText();
     final available = await _speech!.initialize(
+      debugLogging: true,
       onStatus: (status) {
         if (!mounted) return;
         if (status == 'done' || status == 'notListening') {
-          setState(() => _listening = false);
+          if (!_userStopRequested && _listening && !_completed) {
+            if (_restartPending) return;
+            _restartPending = true;
+            Future.delayed(const Duration(milliseconds: 250), () {
+              _restartPending = false;
+              if (!mounted || _userStopRequested || _completed) return;
+              _autoRestartListen();
+            });
+            return;
+          }
+          if (mounted) setState(() => _listening = false);
         }
       },
       onError: (error) {
         if (!mounted) return;
-        setState(() => _listening = false);
+        debugPrint('STT recitation card error: ${error.errorMsg}');
+        final recoverable = error.errorMsg == 'error_speech_timeout' ||
+            error.errorMsg == 'error_no_match' ||
+            error.errorMsg == 'error_no_speech';
+        if (recoverable && !_userStopRequested && _listening && !_completed) {
+          if (_restartPending) return;
+          _restartPending = true;
+          Future.delayed(const Duration(milliseconds: 250), () {
+            _restartPending = false;
+            if (!mounted || _userStopRequested || _completed) return;
+            _autoRestartListen();
+          });
+          return;
+        }
+        if (mounted) setState(() => _listening = false);
       },
     );
     if (!mounted) return;
     setState(() => _ready = available);
+  }
+
+  /// Elige un locale español disponible en el dispositivo.
+  Future<String> _resolveSpanishLocale() async {
+    try {
+      final s = _speech;
+      if (s == null) return 'es_ES';
+      final locales = await s.locales();
+      for (final wanted in [
+        'es_ES', 'es-ES',
+        'es_MX', 'es-MX',
+        'es_US', 'es-US',
+        'es_419', 'es-419',
+      ]) {
+        final match = locales.firstWhere(
+          (l) => l.localeId.replaceAll('-', '_') == wanted.replaceAll('-', '_'),
+          orElse: () => stt.LocaleName('', ''),
+        );
+        if (match.localeId.isNotEmpty) return match.localeId;
+      }
+      final anyEs = locales.firstWhere(
+        (l) => l.localeId.toLowerCase().startsWith('es'),
+        orElse: () => stt.LocaleName('', ''),
+      );
+      if (anyEs.localeId.isNotEmpty) return anyEs.localeId;
+    } catch (e) {
+      debugPrint('STT recitation card locales lookup failed: $e');
+    }
+    return 'es_ES';
+  }
+
+  /// Auto-reinicio de escucha robusto.
+  Future<void> _autoRestartListen() async {
+    if (!mounted || !_listening || _userStopRequested || _completed) return;
+    try {
+      final localeId = await _resolveSpanishLocale();
+      debugPrint('STT recitation card auto-restart with locale=$localeId');
+      await _speech!.listen(
+        localeId: localeId,
+        listenOptions: stt.SpeechListenOptions(
+          listenMode: stt.ListenMode.dictation,
+          partialResults: true,
+          cancelOnError: false,
+        ),
+        listenFor: const Duration(seconds: 90),
+        pauseFor: const Duration(seconds: 30),
+        onResult: (result) => _handleRecognition(result.recognizedWords),
+      );
+    } catch (e) {
+      debugPrint('STT recitation card auto-restart error: $e');
+    }
   }
 
   @override
@@ -791,23 +869,32 @@ class _VoiceRecitationPracticeCardState
       return;
     }
     if (_listening) {
+      _userStopRequested = true;
       await _speech!.stop();
       if (mounted) setState(() => _listening = false);
       return;
     }
+    _userStopRequested = false;
     setState(() {
       _listening = true;
     });
-    await _speech!.listen(
-      localeId: 'es_ES',
-      listenOptions: stt.SpeechListenOptions(
-        listenMode: stt.ListenMode.dictation,
-        partialResults: true,
-      ),
-      listenFor: const Duration(seconds: 60),
-      pauseFor: const Duration(seconds: 6),
-      onResult: (result) => _handleRecognition(result.recognizedWords),
-    );
+    try {
+      final localeId = await _resolveSpanishLocale();
+      await _speech!.listen(
+        localeId: localeId,
+        listenOptions: stt.SpeechListenOptions(
+          listenMode: stt.ListenMode.dictation,
+          partialResults: true,
+          cancelOnError: false,
+        ),
+        listenFor: const Duration(seconds: 90),
+        pauseFor: const Duration(seconds: 30),
+        onResult: (result) => _handleRecognition(result.recognizedWords),
+      );
+    } catch (e) {
+      debugPrint('STT listen error: $e');
+      if (mounted) setState(() => _listening = false);
+    }
   }
 
   void _handleRecognition(String text) {
