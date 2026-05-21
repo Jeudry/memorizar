@@ -90,6 +90,49 @@ class AppTheme {
     );
   }
 
+  /// Derives a [ThemeData] from [base] applying accessibility tweaks.
+  ///
+  /// - [dyslexia]: swaps the text theme to `Atkinson Hyperlegible` (a
+  ///   dyslexia-friendly typeface bundled with `google_fonts`). OpenDyslexic
+  ///   is NOT available via google_fonts, so we fall back to Atkinson which
+  ///   is the closest hyperlegible option without bundling a font asset.
+  /// - [bigFont]: scales every text style by 1.20 via `apply(fontSizeFactor:)`.
+  static ThemeData withAccessibility(
+    ThemeData base, {
+    bool dyslexia = false,
+    bool bigFont = false,
+  }) {
+    TextTheme textTheme = base.textTheme;
+
+    if (dyslexia) {
+      // Preserve existing colors/weights from base.textTheme.
+      textTheme = GoogleFonts.atkinsonHyperlegibleTextTheme(textTheme);
+    }
+
+    if (bigFont) {
+      textTheme = textTheme.copyWith(
+        displayLarge: textTheme.displayLarge?.copyWith(fontSize: textTheme.displayLarge?.fontSize ?? 57),
+        displayMedium: textTheme.displayMedium?.copyWith(fontSize: textTheme.displayMedium?.fontSize ?? 45),
+        displaySmall: textTheme.displaySmall?.copyWith(fontSize: textTheme.displaySmall?.fontSize ?? 36),
+        headlineLarge: textTheme.headlineLarge?.copyWith(fontSize: textTheme.headlineLarge?.fontSize ?? 32),
+        headlineMedium: textTheme.headlineMedium?.copyWith(fontSize: textTheme.headlineMedium?.fontSize ?? 28),
+        headlineSmall: textTheme.headlineSmall?.copyWith(fontSize: textTheme.headlineSmall?.fontSize ?? 24),
+        titleLarge: textTheme.titleLarge?.copyWith(fontSize: textTheme.titleLarge?.fontSize ?? 22),
+        titleMedium: textTheme.titleMedium?.copyWith(fontSize: textTheme.titleMedium?.fontSize ?? 16),
+        titleSmall: textTheme.titleSmall?.copyWith(fontSize: textTheme.titleSmall?.fontSize ?? 14),
+        bodyLarge: textTheme.bodyLarge?.copyWith(fontSize: textTheme.bodyLarge?.fontSize ?? 16),
+        bodyMedium: textTheme.bodyMedium?.copyWith(fontSize: textTheme.bodyMedium?.fontSize ?? 14),
+        bodySmall: textTheme.bodySmall?.copyWith(fontSize: textTheme.bodySmall?.fontSize ?? 12),
+        labelLarge: textTheme.labelLarge?.copyWith(fontSize: textTheme.labelLarge?.fontSize ?? 14),
+        labelMedium: textTheme.labelMedium?.copyWith(fontSize: textTheme.labelMedium?.fontSize ?? 12),
+        labelSmall: textTheme.labelSmall?.copyWith(fontSize: textTheme.labelSmall?.fontSize ?? 11),
+      );
+      textTheme = textTheme.apply(fontSizeFactor: 1.2);
+    }
+
+    return base.copyWith(textTheme: textTheme);
+  }
+
   static ThemeData get darkTheme {
     return ThemeData(
       brightness: Brightness.dark,

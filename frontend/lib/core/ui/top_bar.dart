@@ -28,7 +28,7 @@ class RefTopBar extends StatelessWidget {
               ),
             ),
           ),
-          const RefIconButton(icon: Icons.wb_sunny_outlined),
+          const SizedBox(width: 42),
         ],
       ),
     );
