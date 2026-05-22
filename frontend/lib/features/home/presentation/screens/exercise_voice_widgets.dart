@@ -310,78 +310,131 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
     ];
   }
 
-
   @override
   Widget build(BuildContext context) {
     if (!_isModelDownloaded) {
       final downloadPercent = (_modelDownloadProgress * 100).round();
+      final displayStatus = _isModelInitializing
+          ? 'Configurando motor local...'
+          : _modelStatus.startsWith('Descargando')
+              ? 'Optimizando archivos del motor...'
+              : _modelStatus.contains('con éxito')
+                  ? 'Verificando componentes...'
+                  : _modelStatus.isEmpty
+                      ? 'Iniciando instalación...'
+                      : _modelStatus;
+
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Glass(
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+            padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
             gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
               colors: [
-                RefColors.violet.withValues(alpha: .24),
-                RefColors.pink.withValues(alpha: .10),
+                RefColors.violet.withValues(alpha: .18),
+                RefColors.cyan.withValues(alpha: .06),
               ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.workspace_premium_rounded,
-                  color: RefColors.pink,
-                  size: 48,
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'RECONOCIMIENTO PREMIUM',
-                  style: TextStyle(
-                    color: RefColors.pink,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.4,
+                // Badge de Componente del Sistema
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: RefColors.cyan.withValues(alpha: .10),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: RefColors.cyan.withValues(alpha: .25),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: RefColors.cyan,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'COMPONENTE DE SISTEMA',
+                        style: TextStyle(
+                          color: RefColors.cyan,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 20),
+                
+                // Icono Central tipo Chip de IA
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: RefColors.violet.withValues(alpha: .10),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: RefColors.violet.withValues(alpha: .20),
+                      width: 2,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.memory_rounded,
+                    color: RefColors.cyan,
+                    size: 40,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                
                 const Text(
-                  'Practica 100% offline y privado',
+                  'Motor de Voz de Alta Precisión',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: RefColors.ink,
-                    fontSize: 18,
+                    fontSize: 20,
                     fontWeight: FontWeight.w900,
+                    letterSpacing: -0.2,
                   ),
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Descarga el motor de voz local Whisper Tiny (75MB) para transcribir tu voz en tiempo real sin conexión a internet.',
+                  'Optimiza la app con reconocimiento de voz en el dispositivo. Permite transcribir y recitar tus versos de forma inmediata, segura y totalmente offline.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: RefColors.muted,
                     fontSize: 12,
-                    height: 1.4,
+                    height: 1.45,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
+                
                 if (_isDownloadingModel || _isModelInitializing) ...[
                   Text(
                     _isModelInitializing
-                        ? 'Inicializando motor local...'
-                        : 'Descargando: $downloadPercent%',
+                        ? 'Configurando módulo...'
+                        : 'Preparando motor: $downloadPercent%',
                     style: const TextStyle(
                       color: RefColors.cyan,
                       fontSize: 14,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   RefProgress(_modelDownloadProgress.clamp(0.02, 1.0)),
                   const SizedBox(height: 8),
                   Text(
-                    _modelStatus.isEmpty ? 'Conectando con servidores...' : _modelStatus,
+                    displayStatus,
                     style: const TextStyle(
                       color: RefColors.dim,
                       fontSize: 11,
@@ -389,31 +442,32 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                     ),
                   ),
                 ] else ...[
+                  // Botón de activación nativa
                   GestureDetector(
                     onTap: _downloadModels,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 14,
+                        horizontal: 28,
+                        vertical: 16,
                       ),
                       decoration: BoxDecoration(
-                        gradient: RefColors.primary,
-                        borderRadius: BorderRadius.circular(14),
+                        gradient: RefColors.cool,
+                        borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: RefColors.pink.withValues(alpha: .35),
-                            blurRadius: 16,
-                            offset: const Offset(0, 6),
+                            color: RefColors.cyan.withValues(alpha: .20),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
                           ),
                         ],
                       ),
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.download_rounded, color: Colors.white, size: 18),
+                          Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
                           SizedBox(width: 8),
                           Text(
-                            'Descargar Modelo (75MB)',
+                            'Activar Reconocimiento Local',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 14,
@@ -423,6 +477,35 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                         ],
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Fichas técnicas sutiles
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.sd_storage_outlined, size: 12, color: RefColors.dim),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Tamaño: 75 MB',
+                        style: TextStyle(
+                          color: RefColors.dim,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Icon(Icons.shield_outlined, size: 12, color: RefColors.dim),
+                      const SizedBox(width: 4),
+                      Text(
+                        '100% Seguro y Privado',
+                        style: TextStyle(
+                          color: RefColors.dim,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ],
@@ -463,9 +546,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
               ),
               const SizedBox(height: 12),
               // Target text ARRIBA en un contenedor scrollable con max
-              // height fijo. Auto-scrollea perezosamente conforme el STT
-              // va reconociendo palabras — solo cuando la palabra activa
-              // pasa del 70% del viewport interno.
+              // height fijo.
               ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 280),
                 child: SingleChildScrollView(
@@ -476,8 +557,9 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              // Mic + score DEBAJO del texto a leer — siempre visible.
+              const SizedBox(height: 20),
+              
+              // Mic + score/ondas DEBAJO del texto a leer.
               Row(
                 children: [
                   GestureDetector(
@@ -502,63 +584,205 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '$percent% parecido',
-                          style: TextStyle(
-                            color: accent,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
+                        if (_listening) ...[
+                          const Text(
+                            'Escuchando...',
+                            style: TextStyle(
+                              color: RefColors.cyan,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        RefProgress(_score.clamp(.02, 1.0)),
-                        const SizedBox(height: 7),
-                        Text(
-                          _status,
-                          style: const TextStyle(
-                            color: RefColors.muted,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Lee el texto completo en voz alta.',
+                            style: TextStyle(
+                              color: RefColors.muted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
-                        ),
+                        ] else ...[
+                          if (_score > 0) ...[
+                            Text(
+                              '$percent% parecido',
+                              style: TextStyle(
+                                color: accent,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            RefProgress(_score.clamp(.02, 1.0)),
+                            const SizedBox(height: 7),
+                          ],
+                          Text(
+                            _status,
+                            style: TextStyle(
+                              color: _score > 0 ? RefColors.muted : RefColors.dim,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              // Caja de texto reconocido — debajo del mic, todavía a la
-              // vista al arrancar a leer.
-              Container(
-                padding: const EdgeInsets.all(13),
-                decoration: BoxDecoration(
-                  color: HtmlRefColors.glassSoft,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: HtmlRefColors.glassBorder),
-                ),
-                child: Builder(
-                  builder: (context) {
-                    final fullTextToShow = _accumulated.isEmpty
-                        ? _recognized
-                        : '${_accumulated.trim()} ${_recognized.trim()}';
-                    return Text(
-                      fullTextToShow.isEmpty
-                          ? 'Aquí aparecerá lo que entendió el reconocimiento de voz.'
-                          : fullTextToShow,
-                      style: TextStyle(
-                        color: fullTextToShow.isEmpty ? RefColors.dim : RefColors.ink,
-                        fontSize: 13,
-                        height: 1.35,
-                        fontWeight: FontWeight.w700,
+              
+              if (_listening) ...[
+                const SizedBox(height: 24),
+                // Panel flotante animado de ondas de voz en tiempo real
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  decoration: BoxDecoration(
+                    color: RefColors.cyan.withValues(alpha: .04),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: RefColors.cyan.withValues(alpha: .15),
+                      width: 1,
+                    ),
+                  ),
+                  child: const Column(
+                    children: [
+                      _ListeningWaveIndicator(color: RefColors.cyan),
+                      SizedBox(height: 12),
+                      Text(
+                        'Procesamiento Local y Seguro Activo',
+                        style: TextStyle(
+                          color: RefColors.dim,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.8,
+                        ),
                       ),
-                    );
-                  }
+                    ],
+                  ),
                 ),
-              ),
+              ],
+
+              // Caja de texto reconocido — solo al final cuando no esté grabando y tenga texto
+              if (!_listening && _recognized.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(13),
+                  decoration: BoxDecoration(
+                    color: HtmlRefColors.glassSoft,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: HtmlRefColors.glassBorder),
+                  ),
+                  child: Builder(
+                    builder: (context) {
+                      final fullTextToShow = _accumulated.isEmpty
+                          ? _recognized
+                          : '${_accumulated.trim()} ${_recognized.trim()}';
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.translate_rounded, size: 12, color: RefColors.cyan),
+                              SizedBox(width: 6),
+                              Text(
+                                'TRANSCRIPCIÓN DEL MOTOR',
+                                style: TextStyle(
+                                  color: RefColors.cyan,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.0,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            fullTextToShow,
+                            style: const TextStyle(
+                              color: RefColors.ink,
+                              fontSize: 13,
+                              height: 1.35,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                  ),
+                ),
+              ],
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+// Widget premium de ondas de voz animadas
+class _ListeningWaveIndicator extends StatefulWidget {
+  final Color color;
+  const _ListeningWaveIndicator({this.color = RefColors.cyan});
+
+  @override
+  State<_ListeningWaveIndicator> createState() => _ListeningWaveIndicatorState();
+}
+
+class _ListeningWaveIndicatorState extends State<_ListeningWaveIndicator>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(6, (index) {
+        return AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            final wave = math.sin((_controller.value * 2 * math.pi) - (index * 0.6));
+            final height = 12.0 + (wave.abs() * 32.0);
+            return Container(
+              width: 4,
+              height: height,
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    widget.color,
+                    RefColors.violet,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    color: widget.color.withValues(alpha: .25),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      }),
     );
   }
 }

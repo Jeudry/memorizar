@@ -1031,40 +1031,91 @@ class _VoiceRecitationPracticeCardState
       final downloadPercent = (_modelDownloadProgress * 100).round();
       final isBlue = widget.colorMode == _ListeningColorMode.blue;
       final accent = isBlue ? RefColors.cyan : RefColors.pink;
+      final displayStatus = _isModelInitializing
+          ? 'Configurando motor local...'
+          : _modelStatus.startsWith('Descargando')
+              ? 'Optimizando archivos del motor...'
+              : _modelStatus.contains('con éxito')
+                  ? 'Verificando componentes...'
+                  : _modelStatus.isEmpty
+                      ? 'Iniciando instalación...'
+                      : _modelStatus;
+
       return Glass(
         radius: 18,
-        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+        padding: const EdgeInsets.fromLTRB(20, 26, 20, 26),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(
-              Icons.workspace_premium_rounded,
-              color: accent,
-              size: 44,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'RECITACIÓN PREMIUM',
-              style: TextStyle(
-                color: accent,
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.4,
+            // Badge de Componente del Sistema
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: .10),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: accent.withValues(alpha: .25),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: accent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'COMPONENTE DE SISTEMA',
+                    style: TextStyle(
+                      color: RefColors.cyan,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 20),
+
+            // Icono Central tipo Chip de IA
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: .10),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: accent.withValues(alpha: .20),
+                  width: 2,
+                ),
+              ),
+              child: Icon(
+                Icons.memory_rounded,
+                color: accent,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 18),
+
             const Text(
-              'Practica 100% offline y privado',
+              'Motor de Voz de Alta Precisión',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: RefColors.ink,
-                fontSize: 16,
+                fontSize: 18,
                 fontWeight: FontWeight.w900,
+                letterSpacing: -0.2,
               ),
             ),
             const SizedBox(height: 8),
             const Text(
-              'Descarga el motor de voz local Whisper Tiny (75MB) para evaluar tu recitación palabra por palabra.',
+              'Optimiza la app con reconocimiento de voz local. Permite transcribir y recitar tus versos palabra por palabra de forma inmediata, segura y 100% offline.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: RefColors.muted,
@@ -1073,23 +1124,24 @@ class _VoiceRecitationPracticeCardState
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 22),
+
             if (_isDownloadingModel || _isModelInitializing) ...[
               Text(
                 _isModelInitializing
-                    ? 'Inicializando motor local...'
-                    : 'Descargando: $downloadPercent%',
+                    ? 'Configurando módulo...'
+                    : 'Preparando motor: $downloadPercent%',
                 style: TextStyle(
                   color: accent,
                   fontSize: 13,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               RefProgress(_modelDownloadProgress.clamp(0.02, 1.0)),
               const SizedBox(height: 8),
               Text(
-                _modelStatus.isEmpty ? 'Conectando con servidores...' : _modelStatus,
+                displayStatus,
                 style: const TextStyle(
                   color: RefColors.dim,
                   fontSize: 11,
@@ -1101,16 +1153,16 @@ class _VoiceRecitationPracticeCardState
                 onTap: _downloadModels,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 13,
+                    horizontal: 26,
+                    vertical: 14,
                   ),
                   decoration: BoxDecoration(
                     gradient: isBlue ? RefColors.cool : RefColors.primary,
                     borderRadius: BorderRadius.circular(14),
                     boxShadow: [
                       BoxShadow(
-                        color: accent.withValues(alpha: .35),
-                        blurRadius: 16,
+                        color: accent.withValues(alpha: .20),
+                        blurRadius: 18,
                         offset: const Offset(0, 6),
                       ),
                     ],
@@ -1118,10 +1170,10 @@ class _VoiceRecitationPracticeCardState
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.download_rounded, color: Colors.white, size: 16),
+                      Icon(Icons.bolt_rounded, color: Colors.white, size: 18),
                       SizedBox(width: 8),
                       Text(
-                        'Descargar Modelo (75MB)',
+                        'Activar Reconocimiento Local',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 13,
@@ -1131,6 +1183,35 @@ class _VoiceRecitationPracticeCardState
                     ],
                   ),
                 ),
+              ),
+              const SizedBox(height: 16),
+
+              // Fichas técnicas sutiles
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.sd_storage_outlined, size: 12, color: RefColors.dim),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'Tamaño: 75 MB',
+                    style: TextStyle(
+                      color: RefColors.dim,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Icon(Icons.shield_outlined, size: 12, color: RefColors.dim),
+                  const SizedBox(width: 4),
+                  const Text(
+                    '100% Seguro y Privado',
+                    style: TextStyle(
+                      color: RefColors.dim,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
               ),
             ],
           ],
@@ -1214,13 +1295,13 @@ class _VoiceRecitationPracticeCardState
                     ),
                   ),
                   child: Text(
-                    _recognized.isEmpty
-                        ? (_listening ? 'Escuchando…' : 'Toca el mic y recita')
-                        : _recognized,
+                    _listening
+                        ? 'Escuchando tu voz...'
+                        : (_recognized.isEmpty ? 'Toca el mic y recita' : _recognized),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: _recognized.isEmpty
+                      color: (_recognized.isEmpty && !_listening)
                           ? RefColors.dim
                           : RefColors.ink,
                       fontSize: 13,
@@ -1276,6 +1357,36 @@ class _VoiceRecitationPracticeCardState
               ),
             ],
           ),
+          
+          if (_listening) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: .04),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: accent.withValues(alpha: .12),
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                children: [
+                  _ListeningWaveIndicator(color: accent),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Capturando audio offline de alta precisión',
+                    style: TextStyle(
+                      color: RefColors.dim,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
