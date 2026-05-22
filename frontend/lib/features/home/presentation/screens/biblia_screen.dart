@@ -196,7 +196,12 @@ class _BibliaScreenState extends State<BibliaScreen> {
               onBook: _pickBook,
               onChapter: _pickChapter,
               onVerse: _toggleVerse,
-              onConfirmVerses: _finishBibleSelection,
+              // "Confirmar versículos →" desde la lista de versículos NO
+              // debe crear el mazo todavía — debe llevar al paso 'continue'
+              // donde se ve el listado completo y se decide seguir agregando
+              // o terminar. _finishBibleSelection se queda para el botón
+              // "Terminar selección" del paso 'continue'.
+              onConfirmVerses: () => setState(() => _step = 'continue'),
               onFinish: _finishBibleSelection,
               onSelectAllChapter: _selectAllInChapter,
               onSelectAllBook: _selectAllInBook,
@@ -251,7 +256,13 @@ class _BibliaScreenState extends State<BibliaScreen> {
                       store.selectedBibleVerses,
                       store,
                     );
-                    final visible = entries.take(8).toList();
+                    // En la pantalla de confirmar selección mostramos TODO
+                    // el listado para que el usuario pueda revisar antes de
+                    // avanzar. En la pantalla de browse normal mantenemos el
+                    // resumen truncado a 8 para no comer espacio del flujo.
+                    final visible = confirmingSelection
+                        ? entries
+                        : entries.take(8).toList();
                     final hidden = entries.length - visible.length;
                     return [
                       for (final e in visible)
@@ -283,15 +294,11 @@ class _BibliaScreenState extends State<BibliaScreen> {
           if (!confirmingSelection) ...[
             const SizedBox(height: 14),
             const _ThemesBrowse(),
-            const SizedBox(height: 16),
-            _ActionCta(
-              label: store.selectedBibleVerses.isEmpty
-                  ? 'Selecciona al menos un versículo'
-                  : 'Siguiente →',
-              enabled: store.selectedBibleVerses.isNotEmpty,
-              onTap: _finishBibleSelection,
-            ),
           ],
+          // El CTA global "Siguiente →" se removió: el flujo ya tiene sus
+          // propios botones ("Confirmar versículos →" en la lista del
+          // capítulo, "Finalizar" en la pantalla de revisión) y mostrar otro
+          // CTA aquí abajo confundía.
         ],
       ),
     );
@@ -607,11 +614,6 @@ class _BookPickerState extends State<_BookPicker> {
         children: [
           Row(
             children: [
-              const Text(
-                'Libros',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-              ),
-              const SizedBox(width: 10),
               const Expanded(child: _BibleVersionDropdown()),
               const SizedBox(width: 10),
               if (widget.onSelectAllBible != null)
@@ -1948,12 +1950,89 @@ String _cardStudyText(BuildContext context) {
   return AppScope.of(context).activeCard.back;
 }
 
+/// Versos del batch/grupo actual, con número y texto. Si la sesión es de
+/// un solo item, devuelve ese item como verso único. El número del verso
+/// se extrae del front (`"Salmo 1:1"` → 1). Para decks no bíblicos donde
+/// el front no es una referencia, el número es secuencial 1..N.
+List<({int number, String text})> _currentBatchVerses(BuildContext context) {
+  final store = AppScope.of(context);
+  final batch = store.currentBatchCards;
+  if (batch.isEmpty) {
+    final card = store.activeCard;
+    final m = RegExp(r':(\d+)$').firstMatch(card.front.trim());
+    return [(number: int.tryParse(m?.group(1) ?? '') ?? 1, text: card.back)];
+  }
+  return [
+    for (var i = 0; i < batch.length; i++)
+      () {
+        final m =
+            RegExp(r':(\d+)$').firstMatch(batch[i].front.trim());
+        final num = int.tryParse(m?.group(1) ?? '') ?? (i + 1);
+        return (number: num, text: batch[i].back);
+      }()
+  ];
+}
+
+/// Widget reusable: un verso renderizado como fila — número anclado
+/// (color pink, llamativo) seguido de las palabras. El callback `wordStyle`
+/// permite a cada call site decidir el estilo por palabra (highlight,
+/// blur, hidden, etc.). Si `wordStyle` es null, todas las palabras usan
+/// `defaultStyle`.
+class _VerseLine extends StatelessWidget {
+  final int number;
+  final List<String> words;
+  final TextStyle defaultStyle;
+  final TextStyle? Function(int wordIndex)? wordStyle;
+  final double fontSize;
+
+  const _VerseLine({
+    required this.number,
+    required this.words,
+    required this.defaultStyle,
+    this.wordStyle,
+    this.fontSize = 18,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(right: 2),
+          child: Text(
+            '$number',
+            style: TextStyle(
+              color: RefColors.pink,
+              fontSize: (fontSize * 0.7).clamp(12, 18),
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        for (var i = 0; i < words.length; i++)
+          Text(
+            words[i],
+            style: (wordStyle?.call(i) ?? defaultStyle).copyWith(
+              fontSize: fontSize,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 String _cardSourceText(BuildContext context) {
   final store = AppScope.of(context);
   final card = store.activeCard;
   if (store.activeDeck.isBible) return '${card.front} · ${card.source}';
-  return '${store.activeDeck.title} · ${card.source}';
+  // Para decks no bíblicos, el `source` por defecto es "Contenido propio"
+  // que es redundante (ya estás dentro de tu mazo). Solo mostramos el
+  // título del deck.
+  return store.activeDeck.title;
 }
+
 
 List<String> _studyWords(String text) {
   final cleaned = text
@@ -2005,7 +2084,7 @@ int _flowStepNumber(String slug) {
 
 String _realStepTitle(String slug) {
   if (slug == '01-escuchar') return 'Escuchar';
-  if (slug == '02-lectura-frag') return 'Lectura fragmentada';
+  if (slug == '02-niebla-n1') return 'Niebla N1';
   if (slug == '03-leer-voz') return 'Leer en voz';
   if (slug == '04-escuchar-voz') return 'Escuchar tu voz';
   if (slug.contains('bloques')) return 'Ordena el texto';
@@ -2014,7 +2093,9 @@ String _realStepTitle(String slug) {
   if (slug.contains('primera-letra')) return 'Iniciales';
   if (slug.contains('quiz')) return 'Quiz real';
   if (slug == '15-banco-completo') return 'Banco completo';
-  if (slug == '16-niebla') return 'Niebla';
+  if (slug == '17-niebla-n2') return 'Niebla N2';
+  if (slug == '16-niebla' || slug == '16-niebla-n3') return 'Niebla N3';
+  if (slug == '18-recit-n1') return 'Completar recitación';
   if (slug.contains('voz')) return 'Recitación';
   return 'Estudio activo';
 }
@@ -2036,19 +2117,21 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     return copy.take(count.clamp(0, copy.length)).toList();
   }
 
+  // Intro: pasos básicos de preparación (escuchar / leer / bloques).
   final intro = <String>[
     '01-escuchar',
-    '02-lectura-frag',
     '03-leer-voz',
     '04-escuchar-voz',
+    '05-bloques',
   ];
   final level1 = <String>[
-    '05-bloques',
     '06-completar-n1',
     '07-primera-letra-n1',
+    '18-recit-n1', // completar recitación (un trozo seguido a recitar)
   ];
   final level2 = <String>[
     '08-voz-guiada',
+    '17-niebla-n2', // recitación intermedia, blur medio
     '10-completar-n2',
     '11-primera-letra-n2',
   ];
@@ -2057,12 +2140,15 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     '12-completar-n3',
     '13-primera-letra-n3',
     '15-banco-completo',
-    '16-niebla',
+    '16-niebla-n3', // niebla densa (el "16-niebla" original ahora renombrado)
   ];
 
   final slugs = <String>[
     ...intro,
-    ...pick(level1, difficulty == 0 ? 2 : 3),
+    // Niebla N1: primer ejercicio activo de recitación → bloque de práctica,
+    // no el bloque inicial. El usuario recita el texto borroso con el mic.
+    '02-niebla-n1',
+    ...pick(level1, difficulty == 0 ? 1 : 2),
     if (difficulty >= 1) ...pick(level2, difficulty == 1 ? 2 : 3),
     if (difficulty >= 1) ...pick(level3Optional, difficulty == 1 ? 2 : 3),
     '14-voz-final',
@@ -2078,8 +2164,9 @@ String _nextFlowSlug(AppStore store, String slug) {
 }
 
 bool _isPassiveStep(String slug) {
+  // 02-lectura-frag fue reemplazado por 02-niebla-n1 que es interactivo
+  // (recitación con mic), no pasivo.
   return slug == '01-escuchar' ||
-      slug == '02-lectura-frag' ||
       slug == '03-leer-voz' ||
       slug == '04-escuchar-voz';
 }
@@ -2092,7 +2179,17 @@ bool _isFinalVoiceSlug(String slug) => slug.endsWith('voz-final');
 
 bool _isWordBankSlug(String slug) => slug == '15-banco-completo';
 
-bool _isFogSlug(String slug) => slug == '16-niebla';
+bool _isFogSlug(String slug) =>
+    slug == '02-niebla-n1' ||
+    slug == '17-niebla-n2' ||
+    slug == '16-niebla' ||
+    slug == '16-niebla-n3';
+
+int _fogLevelForSlug(String slug) {
+  if (slug == '02-niebla-n1') return 1;
+  if (slug == '17-niebla-n2') return 2;
+  return 3; // niebla-n3 / niebla legacy
+}
 
 int _completionLevelForSlug(String slug) {
   if (slug.endsWith('-n3')) return 3;
@@ -2107,15 +2204,19 @@ int _letterLevelForSlug(String slug) {
 }
 
 String _phaseLabelFor(String slug) {
-  if (_flowStepNumber(slug) <= 4) return 'Preparar';
+  if (_isFogSlug(slug)) {
+    return 'Construir';
+  }
+  // Ejercicios activos → bloque de práctica ("Probar"), aunque su número de
+  // paso sea bajo (la niebla N1 es paso 02 pero es un ejercicio, no prep).
   if (_completionLevelForSlug(slug) >= 3 ||
       _letterLevelForSlug(slug) >= 3 ||
       slug == '09-quiz' ||
       _isWordBankSlug(slug) ||
-      _isFogSlug(slug) ||
       _isFinalVoiceSlug(slug)) {
     return 'Probar';
   }
+  if (_flowStepNumber(slug) <= 4) return 'Preparar';
   return 'Construir';
 }
 
@@ -2573,7 +2674,7 @@ class _ContinueSelectionCard extends StatelessWidget {
                 flex: 15,
                 child: _ContinueOption(
                   icon: Icons.check_rounded,
-                  title: 'Terminar selección',
+                  title: 'Finalizar',
                   primary: true,
                   onTap: onFinish,
                 ),
@@ -2766,7 +2867,57 @@ class _ThemesBrowse extends StatelessWidget {
             ],
           ),
         ),
+        const SizedBox(height: 12),
+        const _PlansEntry(),
       ],
+    );
+  }
+}
+
+class _PlansEntry extends StatelessWidget {
+  const _PlansEntry();
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => Navigator.pushNamed(context, AppRoutes.plans),
+      child: Glass(
+        radius: 14,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        color: RefColors.cyan.withValues(alpha: .14),
+        child: Row(
+          children: const [
+            Text('📅', style: TextStyle(fontSize: 20)),
+            SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Planes de lectura',
+                    style: TextStyle(
+                      color: RefColors.ink,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Avanza día a día por temas guiados',
+                    style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: RefColors.muted),
+          ],
+        ),
+      ),
     );
   }
 }
