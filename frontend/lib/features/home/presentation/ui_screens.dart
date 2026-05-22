@@ -40,6 +40,7 @@ import 'home_screen.dart';
 import '../../../core/router/app_routes.dart';
 import '../../../core/theme/ref_colors.dart';
 import '../../../core/ui/widgets.dart';
+import '../../../core/services/whisper_service.dart';
 
 part 'screens/biblia_screen.dart';
 part 'screens/especificar_screen.dart';

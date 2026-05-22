@@ -739,14 +739,21 @@ class _VoiceRecitationPracticeCardState
   late List<String> _targetBlocks;
   late List<bool> _blockSolved;
   final _audioRecorder = AudioRecorder();
-  Timer? _blockTimer;
+
+  bool _isModelDownloaded = false;
+  bool _isDownloadingModel = false;
+  bool _isModelInitializing = false;
+  double _modelDownloadProgress = 0.0;
+  String _modelStatus = '';
+  String? _recordedPath;
+  bool _finalizing = false;
 
   @override
   void initState() {
     super.initState();
     _targetBlocks = _splitIntoBlocks(widget.targetText);
     _blockSolved = List<bool>.filled(_targetBlocks.length, false);
-    _initRecorder();
+    _checkModelStatus();
   }
 
   @override
@@ -762,6 +769,82 @@ class _VoiceRecitationPracticeCardState
     }
   }
 
+  Future<void> _checkModelStatus() async {
+    final exists = await WhisperService.instance.checkModelsExist();
+    if (!mounted) return;
+    setState(() {
+      _isModelDownloaded = exists;
+    });
+    if (exists) {
+      await _initWhisper();
+    }
+  }
+
+  Future<void> _initWhisper() async {
+    setState(() {
+      _isModelInitializing = true;
+    });
+    try {
+      await WhisperService.instance.initWhisper();
+      if (!mounted) return;
+      setState(() {
+        _isModelDownloaded = true;
+        _isModelInitializing = false;
+      });
+      await _initRecorder();
+    } catch (e) {
+      debugPrint('Whisper init error in recitation: $e');
+      if (mounted) {
+        setState(() {
+          _isModelInitializing = false;
+        });
+      }
+    }
+  }
+
+  void _downloadModels() {
+    setState(() {
+      _isDownloadingModel = true;
+      _modelDownloadProgress = 0.0;
+      _modelStatus = 'Descargando...';
+    });
+
+    final service = WhisperService.instance;
+    service.downloadProgress.addListener(_onDownloadProgressChanged);
+    service.statusNotifier.addListener(_onStatusChanged);
+
+    service.downloadModels().then((_) async {
+      service.downloadProgress.removeListener(_onDownloadProgressChanged);
+      service.statusNotifier.removeListener(_onStatusChanged);
+      if (!mounted) return;
+      await _initWhisper();
+    }).catchError((e) {
+      service.downloadProgress.removeListener(_onDownloadProgressChanged);
+      service.statusNotifier.removeListener(_onStatusChanged);
+      if (mounted) {
+        setState(() {
+          _isDownloadingModel = false;
+        });
+      }
+    });
+  }
+
+  void _onDownloadProgressChanged() {
+    if (mounted) {
+      setState(() {
+        _modelDownloadProgress = WhisperService.instance.downloadProgress.value;
+      });
+    }
+  }
+
+  void _onStatusChanged() {
+    if (mounted) {
+      setState(() {
+        _modelStatus = WhisperService.instance.statusNotifier.value;
+      });
+    }
+  }
+
   Future<void> _initRecorder() async {
     try {
       final available = await _audioRecorder.hasPermission();
@@ -772,65 +855,27 @@ class _VoiceRecitationPracticeCardState
     }
   }
 
-  void _startSimulatedBlocks() {
-    _blockTimer?.cancel();
-    // Resuelve un bloque cada 2.2 segundos para simular una recitación fluida
-    const blockDuration = Duration(milliseconds: 2200);
-
-    _blockTimer = Timer.periodic(blockDuration, (timer) {
-      if (!mounted || !_listening || _completed) {
-        timer.cancel();
-        return;
-      }
-
-      if (_currentBlock < _targetBlocks.length) {
-        final solvedIndex = _currentBlock;
-        setState(() {
-          _blockSolved[solvedIndex] = true;
-          _currentBlock += 1;
-          _recognized = _targetBlocks[solvedIndex];
-        });
-
-        if (_currentBlock >= _targetBlocks.length) {
-          timer.cancel();
-          _completed = true;
-          _stopAndCancelSimulation(passed: true);
-        }
-      }
-    });
-  }
-
-  Future<void> _stopAndCancelSimulation({required bool passed}) async {
-    _blockTimer?.cancel();
-    try {
-      await _audioRecorder.stop();
-    } catch (e) {
-      debugPrint('Error stopping recitation recorder: $e');
-    }
-    if (!mounted) return;
-    setState(() {
-      _listening = false;
-      if (passed) {
-        _completed = true;
-      }
-    });
-    widget.onCompleted(passed);
-  }
-
   @override
   void dispose() {
-    _blockTimer?.cancel();
+    try {
+      WhisperService.instance.downloadProgress.removeListener(_onDownloadProgressChanged);
+      WhisperService.instance.statusNotifier.removeListener(_onStatusChanged);
+    } catch (_) {}
     _audioRecorder.stop().then((_) => _audioRecorder.dispose());
     super.dispose();
   }
 
   Future<void> _toggleListening() async {
-    if (!_ready) {
-      await _initRecorder();
+    if (!_ready || !_isModelDownloaded) {
+      if (!_isModelDownloaded && !_isDownloadingModel && !_isModelInitializing) {
+        _downloadModels();
+      } else {
+        await _initRecorder();
+      }
       return;
     }
     if (_listening) {
-      await _stopAndCancelSimulation(passed: false);
+      await _finishCapture();
       return;
     }
     setState(() {
@@ -840,13 +885,90 @@ class _VoiceRecitationPracticeCardState
     try {
       if (await _audioRecorder.hasPermission()) {
         final dir = await getTemporaryDirectory();
-        final path = '${dir.path}/recit_${DateTime.now().millisecondsSinceEpoch}.m4a';
-        await _audioRecorder.start(const RecordConfig(), path: path);
-        _startSimulatedBlocks();
+        final path = '${dir.path}/recit_${DateTime.now().millisecondsSinceEpoch}.raw';
+        await _audioRecorder.start(
+          const RecordConfig(
+            encoder: AudioEncoder.pcm16bits,
+            sampleRate: 16000,
+            numChannels: 1,
+          ),
+          path: path,
+        );
+        _recordedPath = path;
       }
     } catch (e) {
       debugPrint('Recitation Audio Recorder Error: $e');
       if (mounted) setState(() => _listening = false);
+    }
+  }
+
+  Future<void> _finishCapture() async {
+    if (_finalizing) return;
+    _finalizing = true;
+    try {
+      final path = await _audioRecorder.stop();
+      if (path != null) _recordedPath = path;
+      if (!mounted) return;
+      setState(() {
+        _listening = false;
+        _recognized = 'Analizando tu voz con Whisper...';
+      });
+
+      if (_recordedPath != null) {
+        final text = await WhisperService.instance.transcribe(_recordedPath!);
+        _evaluateBlock(text);
+      } else {
+        setState(() {
+          _recognized = '';
+        });
+      }
+    } catch (e) {
+      debugPrint('Error transcribing recitation: $e');
+      if (mounted) {
+        setState(() {
+          _recognized = 'Error: $e';
+        });
+      }
+    } finally {
+      _finalizing = false;
+    }
+  }
+
+  void _evaluateBlock(String text) {
+    if (!mounted) return;
+    if (text.isEmpty) {
+      setState(() {
+        _recognized = 'No se escuchó nada, intenta de nuevo.';
+      });
+      return;
+    }
+
+    final target = _targetBlocks[_currentBlock];
+    final isMatch = _blocksMatch(text, target);
+
+    if (isMatch) {
+      setState(() {
+        _blockSolved[_currentBlock] = true;
+        _currentBlock += 1;
+        _recognized = text;
+      });
+      HapticFeedback.lightImpact();
+
+      if (_currentBlock >= _targetBlocks.length) {
+        _completed = true;
+        widget.onCompleted(true);
+      }
+    } else {
+      setState(() {
+        _attemptsRemaining -= 1;
+        _lastWrongAt = DateTime.now().millisecondsSinceEpoch;
+        _recognized = text;
+      });
+      HapticFeedback.heavyImpact();
+
+      if (_attemptsRemaining <= 0) {
+        widget.onCompleted(false);
+      }
     }
   }
 
@@ -905,6 +1027,117 @@ class _VoiceRecitationPracticeCardState
 
   @override
   Widget build(BuildContext context) {
+    if (!_isModelDownloaded) {
+      final downloadPercent = (_modelDownloadProgress * 100).round();
+      final isBlue = widget.colorMode == _ListeningColorMode.blue;
+      final accent = isBlue ? RefColors.cyan : RefColors.pink;
+      return Glass(
+        radius: 18,
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.workspace_premium_rounded,
+              color: accent,
+              size: 44,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'RECITACIÓN PREMIUM',
+              style: TextStyle(
+                color: accent,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.4,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Practica 100% offline y privado',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: RefColors.ink,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Descarga el motor de voz local Whisper Tiny (75MB) para evaluar tu recitación palabra por palabra.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: RefColors.muted,
+                fontSize: 11,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 20),
+            if (_isDownloadingModel || _isModelInitializing) ...[
+              Text(
+                _isModelInitializing
+                    ? 'Inicializando motor local...'
+                    : 'Descargando: $downloadPercent%',
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              RefProgress(_modelDownloadProgress.clamp(0.02, 1.0)),
+              const SizedBox(height: 8),
+              Text(
+                _modelStatus.isEmpty ? 'Conectando con servidores...' : _modelStatus,
+                style: const TextStyle(
+                  color: RefColors.dim,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ] else ...[
+              GestureDetector(
+                onTap: _downloadModels,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 13,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: isBlue ? RefColors.cool : RefColors.primary,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: .35),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.download_rounded, color: Colors.white, size: 16),
+                      SizedBox(width: 8),
+                      Text(
+                        'Descargar Modelo (75MB)',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
     final isBlue = widget.colorMode == _ListeningColorMode.blue;
     final accent = _completed
         ? RefColors.lime

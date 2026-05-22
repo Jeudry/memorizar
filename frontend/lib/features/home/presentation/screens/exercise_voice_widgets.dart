@@ -23,7 +23,14 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
   bool _ready = false;
   bool _listening = false;
   bool _completed = false;
-  /// Texto reconocido de forma simulada a medida que pasa el tiempo.
+  
+  bool _isModelDownloaded = false;
+  bool _isDownloadingModel = false;
+  bool _isModelInitializing = false;
+  double _modelDownloadProgress = 0.0;
+  String _modelStatus = '';
+
+  /// Texto reconocido real por Whisper.
   String _recognized = '';
   /// Texto acumulado.
   String _accumulated = '';
@@ -33,12 +40,94 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
   String? _recordedPath;
   /// Controla el scroll interno del target text (versos para leer).
   final _targetScrollCtrl = ScrollController();
-  Timer? _simulatedTimer;
 
   @override
   void initState() {
     super.initState();
-    _initRecorder();
+    _checkModelStatus();
+  }
+
+  Future<void> _checkModelStatus() async {
+    final exists = await WhisperService.instance.checkModelsExist();
+    if (!mounted) return;
+    setState(() {
+      _isModelDownloaded = exists;
+    });
+    if (exists) {
+      await _initWhisper();
+    } else {
+      setState(() {
+        _status = 'El modelo de reconocimiento local (75MB) no está descargado.';
+      });
+    }
+  }
+
+  Future<void> _initWhisper() async {
+    setState(() {
+      _isModelInitializing = true;
+      _status = 'Inicializando motor local...';
+    });
+    try {
+      await WhisperService.instance.initWhisper();
+      if (!mounted) return;
+      setState(() {
+        _isModelDownloaded = true;
+        _isModelInitializing = false;
+      });
+      await _initRecorder();
+    } catch (e) {
+      debugPrint('Whisper init error: $e');
+      if (mounted) {
+        setState(() {
+          _isModelInitializing = false;
+          _status = 'Error al inicializar el motor Whisper local.';
+        });
+      }
+    }
+  }
+
+  void _downloadModels() {
+    setState(() {
+      _isDownloadingModel = true;
+      _modelDownloadProgress = 0.0;
+      _modelStatus = 'Descargando...';
+    });
+
+    final service = WhisperService.instance;
+    service.downloadProgress.addListener(_onDownloadProgressChanged);
+    service.statusNotifier.addListener(_onStatusChanged);
+
+    service.downloadModels().then((_) async {
+      service.downloadProgress.removeListener(_onDownloadProgressChanged);
+      service.statusNotifier.removeListener(_onStatusChanged);
+      if (!mounted) return;
+      await _initWhisper();
+    }).catchError((e) {
+      service.downloadProgress.removeListener(_onDownloadProgressChanged);
+      service.statusNotifier.removeListener(_onStatusChanged);
+      if (mounted) {
+        setState(() {
+          _isDownloadingModel = false;
+          _status = 'Error al descargar el modelo: $e';
+        });
+      }
+    });
+  }
+
+  void _onDownloadProgressChanged() {
+    if (mounted) {
+      setState(() {
+        _modelDownloadProgress = WhisperService.instance.downloadProgress.value;
+      });
+    }
+  }
+
+  void _onStatusChanged() {
+    if (mounted) {
+      setState(() {
+        _modelStatus = WhisperService.instance.statusNotifier.value;
+      });
+    }
   }
 
   Future<void> _initRecorder() async {
@@ -64,50 +153,22 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
 
   @override
   void dispose() {
-    _simulatedTimer?.cancel();
+    try {
+      WhisperService.instance.downloadProgress.removeListener(_onDownloadProgressChanged);
+      WhisperService.instance.statusNotifier.removeListener(_onStatusChanged);
+    } catch (_) {}
     _targetScrollCtrl.dispose();
     _audioRecorder.stop().then((_) => _audioRecorder.dispose());
     super.dispose();
   }
 
-  void _startSimulatedProgress() {
-    _simulatedTimer?.cancel();
-    final words = widget.targetText.split(' ').where((w) => w.isNotEmpty).toList();
-    if (words.isEmpty) return;
-
-    final totalWords = words.length;
-    // Estimación: 2.5 palabras por segundo para el progreso.
-    final intervalMs = 400;
-    final totalTicks = (totalWords * 1000 / (2.5 * intervalMs)).round().clamp(10, 150);
-    int currentTick = 0;
-
-    _simulatedTimer = Timer.periodic(Duration(milliseconds: intervalMs), (timer) {
-      if (!mounted || !_listening) {
-        timer.cancel();
-        return;
-      }
-      currentTick++;
-      final ratio = (currentTick / totalTicks).clamp(0.0, 1.0);
-      final currentWordsCount = (totalWords * ratio).round().clamp(0, totalWords);
-      final simulatedRecognized = words.sublist(0, currentWordsCount).join(' ');
-
-      setState(() {
-        _score = ratio * 0.95; // Escala hasta 95%
-        _recognized = simulatedRecognized;
-        _status = 'Grabando voz... Paso $currentWordsCount de $totalWords palabras.';
-      });
-
-      _maybeAutoScrollTarget(simulatedRecognized);
-
-      if (ratio >= 1.0) {
-        timer.cancel();
-      }
-    });
-  }
-
   Future<void> _toggleListening() async {
-    if (!_ready) {
-      await _initRecorder();
+    if (!_ready || !_isModelDownloaded) {
+      if (!_isModelDownloaded && !_isDownloadingModel && !_isModelInitializing) {
+        _downloadModels();
+      } else {
+        await _initRecorder();
+      }
       return;
     }
     if (_listening) {
@@ -126,10 +187,16 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
     try {
       if (await _audioRecorder.hasPermission()) {
         final dir = await getTemporaryDirectory();
-        final path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-        await _audioRecorder.start(const RecordConfig(), path: path);
+        final path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.raw';
+        await _audioRecorder.start(
+          const RecordConfig(
+            encoder: AudioEncoder.pcm16bits,
+            sampleRate: 16000,
+            numChannels: 1,
+          ),
+          path: path,
+        );
         _recordedPath = path;
-        _startSimulatedProgress();
       }
     } catch (e) {
       debugPrint('Audio Recorder Error: $e');
@@ -168,31 +235,53 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
   Future<void> _finishCapture() async {
     if (_finalizing) return;
     _finalizing = true;
-    _simulatedTimer?.cancel();
     try {
       final path = await _audioRecorder.stop();
       if (path != null) _recordedPath = path;
       if (!mounted) return;
-      setState(() => _listening = false);
-      _grade();
+      setState(() {
+        _listening = false;
+        _status = 'Analizando tu voz con Whisper local...';
+      });
+
+      if (_recordedPath != null) {
+        final text = await WhisperService.instance.transcribe(_recordedPath!);
+        _gradeReal(text);
+      } else {
+        setState(() {
+          _status = 'No se grabó ningún audio.';
+        });
+      }
     } catch (e) {
-      debugPrint('Error al detener la grabación: $e');
+      debugPrint('Error al detener/transcribir la grabación: $e');
+      if (mounted) {
+        setState(() {
+          _status = 'Error en reconocimiento local: $e';
+        });
+      }
     } finally {
       _finalizing = false;
     }
   }
 
-  void _grade() {
-    const score = 0.95;
-    const passed = true;
+  void _gradeReal(String text) {
     if (!mounted) return;
+    final score = _speechSimilarity(text, widget.targetText);
+    final passed = score >= _passScore;
     setState(() {
       _score = score;
       _completed = passed;
-      _recognized = widget.targetText;
-      _status = 'Lectura completada y guardada con éxito.';
+      _recognized = text;
+      _status = passed 
+          ? 'Lectura completada y guardada con éxito.' 
+          : 'La similitud es muy baja (${(score * 100).round()}%). Lee de nuevo con claridad.';
     });
-    widget.onCompleted(widget.targetText, _recordedPath);
+    
+    _maybeAutoScrollTarget(text);
+
+    if (passed) {
+      widget.onCompleted(text, _recordedPath);
+    }
   }
 
   /// Renderiza el target verso-por-verso si la sesión es batched. Si es 1
@@ -224,6 +313,125 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_isModelDownloaded) {
+      final downloadPercent = (_modelDownloadProgress * 100).round();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Glass(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+            gradient: LinearGradient(
+              colors: [
+                RefColors.violet.withValues(alpha: .24),
+                RefColors.pink.withValues(alpha: .10),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.workspace_premium_rounded,
+                  color: RefColors.pink,
+                  size: 48,
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'RECONOCIMIENTO PREMIUM',
+                  style: TextStyle(
+                    color: RefColors.pink,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Practica 100% offline y privado',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: RefColors.ink,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Descarga el motor de voz local Whisper Tiny (75MB) para transcribir tu voz en tiempo real sin conexión a internet.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: RefColors.muted,
+                    fontSize: 12,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                if (_isDownloadingModel || _isModelInitializing) ...[
+                  Text(
+                    _isModelInitializing
+                        ? 'Inicializando motor local...'
+                        : 'Descargando: $downloadPercent%',
+                    style: const TextStyle(
+                      color: RefColors.cyan,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  RefProgress(_modelDownloadProgress.clamp(0.02, 1.0)),
+                  const SizedBox(height: 8),
+                  Text(
+                    _modelStatus.isEmpty ? 'Conectando con servidores...' : _modelStatus,
+                    style: const TextStyle(
+                      color: RefColors.dim,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ] else ...[
+                  GestureDetector(
+                    onTap: _downloadModels,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: RefColors.primary,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: RefColors.pink.withValues(alpha: .35),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.download_rounded, color: Colors.white, size: 18),
+                          SizedBox(width: 8),
+                          Text(
+                            'Descargar Modelo (75MB)',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
     final percent = (_score * 100).round();
     final accent = _completed
         ? RefColors.lime
