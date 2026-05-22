@@ -80,7 +80,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
       if (mounted) {
         setState(() {
           _isModelInitializing = false;
-          _status = 'Error al inicializar el motor Whisper local.';
+          _status = 'Error al inicializar el reconocimiento de voz.';
         });
       }
     }
@@ -108,7 +108,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
       if (mounted) {
         setState(() {
           _isDownloadingModel = false;
-          _status = 'Error al descargar el modelo: $e';
+          _status = 'Error al descargar el componente de voz: $e';
         });
       }
     });
@@ -241,7 +241,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
       if (!mounted) return;
       setState(() {
         _listening = false;
-        _status = 'Analizando tu voz con Whisper local...';
+        _status = 'Analizando tu voz...';
       });
 
       if (_recordedPath != null) {
@@ -315,9 +315,9 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
     if (!_isModelDownloaded) {
       final downloadPercent = (_modelDownloadProgress * 100).round();
       final displayStatus = _isModelInitializing
-          ? 'Configurando motor local...'
+          ? 'Configurando módulo de voz...'
           : _modelStatus.startsWith('Descargando')
-              ? 'Optimizando archivos del motor...'
+              ? 'Optimizando archivos...'
               : _modelStatus.contains('con éxito')
                   ? 'Verificando componentes...'
                   : _modelStatus.isEmpty
@@ -408,7 +408,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Optimiza la app con reconocimiento de voz en el dispositivo. Permite transcribir y recitar tus versos de forma inmediata, segura y totalmente offline.',
+                  'Optimiza la app con reconocimiento de voz avanzado. Permite transcribir y recitar tus versos de forma inmediata, segura y privada.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: RefColors.muted,
@@ -467,7 +467,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                           Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
                           SizedBox(width: 8),
                           Text(
-                            'Activar Reconocimiento Local',
+                            'Activar Reconocimiento de Voz',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 14,
@@ -487,7 +487,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                       Icon(Icons.sd_storage_outlined, size: 12, color: RefColors.dim),
                       const SizedBox(width: 4),
                       Text(
-                        'Tamaño: 75 MB',
+                        'Componente: 75 MB',
                         style: TextStyle(
                           color: RefColors.dim,
                           fontSize: 11,
@@ -649,7 +649,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                       _ListeningWaveIndicator(color: RefColors.cyan),
                       SizedBox(height: 12),
                       Text(
-                        'Procesamiento Local y Seguro Activo',
+                        'Grabando voz...',
                         style: TextStyle(
                           color: RefColors.dim,
                           fontSize: 10,
@@ -685,7 +685,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                               Icon(Icons.translate_rounded, size: 12, color: RefColors.cyan),
                               SizedBox(width: 6),
                               Text(
-                                'TRANSCRIPCIÓN DEL MOTOR',
+                                'TEXTO DETECTADO',
                                 style: TextStyle(
                                   color: RefColors.cyan,
                                   fontSize: 9,
@@ -749,40 +749,44 @@ class _ListeningWaveIndicatorState extends State<_ListeningWaveIndicator>
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(6, (index) {
-        return AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            final wave = math.sin((_controller.value * 2 * math.pi) - (index * 0.6));
-            final height = 12.0 + (wave.abs() * 32.0);
-            return Container(
-              width: 4,
-              height: height,
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    widget.color,
-                    RefColors.violet,
+    return SizedBox(
+      height: 48,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: List.generate(6, (index) {
+          return AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              final wave = math.sin((_controller.value * 2 * math.pi) - (index * 0.6));
+              final height = 12.0 + (wave.abs() * 32.0);
+              return Container(
+                width: 4,
+                height: height,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      widget.color,
+                      RefColors.violet,
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [
+                    BoxShadow(
+                      color: widget.color.withValues(alpha: .25),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [
-                  BoxShadow(
-                    color: widget.color.withValues(alpha: .25),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      }),
+              );
+            },
+          );
+        }),
+      ),
     );
   }
 }

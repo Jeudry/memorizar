@@ -169,13 +169,50 @@ class WhisperService {
       final text = recognizer.getResult(stream).text;
       
       debugPrint('Whisper transcription result: "$text"');
-      return text.trim();
+      return _sanitizeTranscription(text.trim());
     } catch (e) {
       debugPrint('Error transcribing audio with Whisper: $e');
       rethrow;
     } finally {
       stream.free();
     }
+  }
+
+  /// Elimina alucinaciones repetitivas de palabras o frases consecutivas.
+  String _sanitizeTranscription(String text) {
+    if (text.isEmpty) return '';
+    
+    // Normalizar espaciado
+    String cleanText = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    List<String> words = cleanText.split(' ');
+    if (words.length < 2) return cleanText;
+
+    bool changed = true;
+    while (changed) {
+      changed = false;
+      // Buscar subsecuencias consecutivas duplicadas de longitud len (de 8 a 1)
+      for (int len = (words.length ~/ 2).clamp(1, 8); len >= 1; len--) {
+        for (int i = 0; i <= words.length - 2 * len; i++) {
+          bool match = true;
+          for (int k = 0; k < len; k++) {
+            final w1 = words[i + k].toLowerCase().replaceAll(RegExp(r'[^\w]'), '');
+            final w2 = words[i + len + k].toLowerCase().replaceAll(RegExp(r'[^\w]'), '');
+            if (w1 != w2) {
+              match = false;
+              break;
+            }
+          }
+          if (match) {
+            // Eliminar duplicado consecutivo
+            words.removeRange(i + len, i + 2 * len);
+            changed = true;
+            break;
+          }
+        }
+        if (changed) break;
+      }
+    }
+    return words.join(' ');
   }
 
   /// Convierte bytes de audio PCM 16-bit en muestras Float32 (de -1.0 a 1.0)

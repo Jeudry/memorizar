@@ -911,7 +911,7 @@ class _VoiceRecitationPracticeCardState
       if (!mounted) return;
       setState(() {
         _listening = false;
-        _recognized = 'Analizando tu voz con Whisper...';
+        _recognized = 'Analizando tu voz...';
       });
 
       if (_recordedPath != null) {
@@ -1032,9 +1032,9 @@ class _VoiceRecitationPracticeCardState
       final isBlue = widget.colorMode == _ListeningColorMode.blue;
       final accent = isBlue ? RefColors.cyan : RefColors.pink;
       final displayStatus = _isModelInitializing
-          ? 'Configurando motor local...'
+          ? 'Configurando módulo de voz...'
           : _modelStatus.startsWith('Descargando')
-              ? 'Optimizando archivos del motor...'
+              ? 'Optimizando archivos...'
               : _modelStatus.contains('con éxito')
                   ? 'Verificando componentes...'
                   : _modelStatus.isEmpty
@@ -1115,7 +1115,7 @@ class _VoiceRecitationPracticeCardState
             ),
             const SizedBox(height: 8),
             const Text(
-              'Optimiza la app con reconocimiento de voz local. Permite transcribir y recitar tus versos palabra por palabra de forma inmediata, segura y 100% offline.',
+              'Optimiza la app con reconocimiento de voz avanzado. Permite transcribir y recitar tus versos palabra por palabra de forma inmediata, segura y privada.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: RefColors.muted,
@@ -1173,7 +1173,7 @@ class _VoiceRecitationPracticeCardState
                       Icon(Icons.bolt_rounded, color: Colors.white, size: 18),
                       SizedBox(width: 8),
                       Text(
-                        'Activar Reconocimiento Local',
+                        'Activar Reconocimiento de Voz',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 13,
@@ -1193,7 +1193,7 @@ class _VoiceRecitationPracticeCardState
                   Icon(Icons.sd_storage_outlined, size: 12, color: RefColors.dim),
                   const SizedBox(width: 4),
                   const Text(
-                    'Tamaño: 75 MB',
+                    'Componente: 75 MB',
                     style: TextStyle(
                       color: RefColors.dim,
                       fontSize: 11,
@@ -1375,7 +1375,7 @@ class _VoiceRecitationPracticeCardState
                   _ListeningWaveIndicator(color: accent),
                   const SizedBox(height: 8),
                   const Text(
-                    'Capturando audio offline de alta precisión',
+                    'Grabando voz...',
                     style: TextStyle(
                       color: RefColors.dim,
                       fontSize: 9,
