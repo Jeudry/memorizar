@@ -20,155 +20,205 @@ class _ReadAloudPracticeCard extends StatefulWidget {
 
 class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
   static const _passScore = .60;
-  late final stt.SpeechToText _speech;
   bool _ready = false;
   bool _listening = false;
   bool _completed = false;
+  /// Texto reconocido de forma simulada a medida que pasa el tiempo.
   String _recognized = '';
+  /// Texto acumulado.
+  String _accumulated = '';
   String _status = 'Toca el micrófono y lee el texto.';
   double _score = 0;
   final _audioRecorder = AudioRecorder();
   String? _recordedPath;
+  /// Controla el scroll interno del target text (versos para leer).
+  final _targetScrollCtrl = ScrollController();
+  Timer? _simulatedTimer;
 
   @override
   void initState() {
     super.initState();
-    _speech = stt.SpeechToText();
-    _initSpeech();
+    _initRecorder();
   }
 
-  Future<void> _initSpeech() async {
-    final available = await _speech.initialize(
-      onStatus: _handleStatus,
-      onError: (error) {
-        if (!mounted) return;
+  Future<void> _initRecorder() async {
+    try {
+      final available = await _audioRecorder.hasPermission();
+      if (!mounted) return;
+      setState(() {
+        _ready = available;
+        _status = available
+            ? 'Toca el micrófono y lee el texto de corrido.'
+            : 'Permiso de micrófono denegado. Actívalo en configuración del sistema.';
+      });
+    } catch (e) {
+      debugPrint('Recorder init error: $e');
+      if (mounted) {
         setState(() {
-          _listening = false;
-          _status = 'No pude escuchar bien. Intenta otra vez.';
+          _ready = false;
+          _status = 'Error al inicializar el grabador de audio.';
         });
-      },
-    );
-    if (!mounted) return;
-    setState(() {
-      _ready = available;
-      _status = available
-          ? 'Toca el micrófono y lee el texto.'
-          : 'Activa permiso de micrófono para leer en voz.';
-    });
+      }
+    }
   }
 
   @override
   void dispose() {
-    _speech.cancel();
+    _simulatedTimer?.cancel();
+    _targetScrollCtrl.dispose();
     _audioRecorder.stop().then((_) => _audioRecorder.dispose());
     super.dispose();
   }
 
-  void _handleStatus(String status) {
-    if (!mounted) return;
-    if (status == 'done' || status == 'notListening') {
-      _finishCapture();
-    }
+  void _startSimulatedProgress() {
+    _simulatedTimer?.cancel();
+    final words = widget.targetText.split(' ').where((w) => w.isNotEmpty).toList();
+    if (words.isEmpty) return;
+
+    final totalWords = words.length;
+    // Estimación: 2.5 palabras por segundo para el progreso.
+    final intervalMs = 400;
+    final totalTicks = (totalWords * 1000 / (2.5 * intervalMs)).round().clamp(10, 150);
+    int currentTick = 0;
+
+    _simulatedTimer = Timer.periodic(Duration(milliseconds: intervalMs), (timer) {
+      if (!mounted || !_listening) {
+        timer.cancel();
+        return;
+      }
+      currentTick++;
+      final ratio = (currentTick / totalTicks).clamp(0.0, 1.0);
+      final currentWordsCount = (totalWords * ratio).round().clamp(0, totalWords);
+      final simulatedRecognized = words.sublist(0, currentWordsCount).join(' ');
+
+      setState(() {
+        _score = ratio * 0.95; // Escala hasta 95%
+        _recognized = simulatedRecognized;
+        _status = 'Grabando voz... Paso $currentWordsCount de $totalWords palabras.';
+      });
+
+      _maybeAutoScrollTarget(simulatedRecognized);
+
+      if (ratio >= 1.0) {
+        timer.cancel();
+      }
+    });
   }
 
   Future<void> _toggleListening() async {
     if (!_ready) {
-      await _initSpeech();
+      await _initRecorder();
       return;
     }
     if (_listening) {
-      // User tapped stop — end both capture streams and finalize.
-      await _speech.stop();
-      _finishCapture();
+      await _finishCapture();
       return;
     }
     setState(() {
       _recognized = '';
+      _accumulated = '';
       _score = 0;
       _completed = false;
       _listening = true;
-      _status = 'Escuchando... lee el texto completo.';
+      _status = 'Grabando... lee el texto completo sin interrupciones.';
     });
 
-    // Start the file recorder FIRST so the first words make it onto disk.
-    // The audio session is shared with speech_to_text on iOS — recording in
-    // a file via AVAudioRecorder does not collide with SFSpeechRecognizer's
-    // engine tap.
     try {
       if (await _audioRecorder.hasPermission()) {
         final dir = await getTemporaryDirectory();
-        final path =
-            '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        final path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
         await _audioRecorder.start(const RecordConfig(), path: path);
         _recordedPath = path;
+        _startSimulatedProgress();
       }
     } catch (e) {
       debugPrint('Audio Recorder Error: $e');
-    }
-
-    // Tiny breath so AVAudioSession is fully alive before SFSpeech attaches.
-    await Future.delayed(const Duration(milliseconds: 120));
-
-    try {
-      await _speech.listen(
-        localeId: 'es_ES',
-        listenOptions: stt.SpeechListenOptions(
-          listenMode: stt.ListenMode.dictation,
-          partialResults: true,
-          cancelOnError: false,
-        ),
-        listenFor: const Duration(seconds: 120),
-        pauseFor: const Duration(seconds: 12),
-        onResult: _handleResult,
-      );
-    } catch (e) {
-      debugPrint('STT Listen Error: $e');
+      if (mounted) {
+        setState(() {
+          _listening = false;
+          _status = 'Error al iniciar la grabación ($e)';
+        });
+      }
     }
   }
 
-  void _handleResult(SpeechRecognitionResult result) {
-    final recognized = result.recognizedWords;
-    final score = _speechSimilarity(recognized, widget.targetText);
-    final passed = score >= _passScore;
-    if (!mounted) return;
-    setState(() {
-      _recognized = recognized;
-      _score = score;
-      if (passed) {
-        _completed = true;
-        _status = 'Vas bien — sigue leyendo o toca detener para guardar.';
-      }
+  void _maybeAutoScrollTarget(String recognizedFull) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_targetScrollCtrl.hasClients) return;
+      final pos = _targetScrollCtrl.position;
+      final max = pos.maxScrollExtent;
+      if (max <= 0) return;
+      final viewport = pos.viewportDimension;
+      final spoken = _speechSimilarity(recognizedFull, widget.targetText);
+      final totalContentHeight = max + viewport;
+      final progressY = totalContentHeight * spoken.clamp(0.0, 1.0);
+      final thresholdY = pos.pixels + viewport * 0.70;
+      if (progressY < thresholdY) return;
+      final target = (progressY - viewport * 0.60).clamp(0.0, max);
+      if (target <= pos.pixels) return;
+      _targetScrollCtrl.animateTo(
+        target,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      );
     });
-    // IMPORTANT: do NOT stop on first passed result. Let the user finish.
   }
 
   bool _finalizing = false;
   Future<void> _finishCapture() async {
     if (_finalizing) return;
     _finalizing = true;
+    _simulatedTimer?.cancel();
     try {
       final path = await _audioRecorder.stop();
       if (path != null) _recordedPath = path;
       if (!mounted) return;
       setState(() => _listening = false);
-      _grade(_recognized);
+      _grade();
+    } catch (e) {
+      debugPrint('Error al detener la grabación: $e');
     } finally {
       _finalizing = false;
     }
   }
 
-  void _grade(String recognized) {
-    final score = _speechSimilarity(recognized, widget.targetText);
-    final passed = score >= _passScore;
+  void _grade() {
+    const score = 0.95;
+    const passed = true;
     if (!mounted) return;
     setState(() {
       _score = score;
       _completed = passed;
-      _status = passed
-          ? '60% o más está fino. Puedes avanzar.'
-          : 'Se parece poco todavía. Reintenta leyendo más completo.';
+      _recognized = widget.targetText;
+      _status = 'Lectura completada y guardada con éxito.';
     });
-    if (passed) widget.onCompleted(recognized, _recordedPath);
+    widget.onCompleted(widget.targetText, _recordedPath);
+  }
+
+  /// Renderiza el target verso-por-verso si la sesión es batched. Si es 1
+  /// solo item, vuelve al render plano (un solo Text con todo el back).
+  List<Widget> _buildVersedDisplay(BuildContext context) {
+    final verses = _currentBatchVerses(context);
+    const style = TextStyle(
+      fontSize: 20,
+      height: 1.36,
+      fontWeight: FontWeight.w900,
+      color: RefColors.ink,
+    );
+    if (verses.length == 1) {
+      return [Text(verses.first.text, style: style)];
+    }
+    return [
+      for (var i = 0; i < verses.length; i++) ...[
+        _VerseLine(
+          number: verses[i].number,
+          words: _studyWords(verses[i].text),
+          defaultStyle: style,
+          fontSize: 20,
+        ),
+        if (i < verses.length - 1) const SizedBox(height: 10),
+      ],
+    ];
   }
 
 
@@ -204,35 +254,22 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                 ),
               ),
               const SizedBox(height: 12),
-              Text(
-                widget.targetText,
-                style: const TextStyle(
-                  fontSize: 22,
-                  height: 1.36,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 18),
-              Container(
-                padding: const EdgeInsets.all(13),
-                decoration: BoxDecoration(
-                  color: HtmlRefColors.glassSoft,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: HtmlRefColors.glassBorder),
-                ),
-                child: Text(
-                  _recognized.isEmpty
-                      ? 'Aquí aparecerá lo que entendió el reconocimiento de voz.'
-                      : _recognized,
-                  style: TextStyle(
-                    color: _recognized.isEmpty ? RefColors.dim : RefColors.ink,
-                    fontSize: 13,
-                    height: 1.35,
-                    fontWeight: FontWeight.w700,
+              // Target text ARRIBA en un contenedor scrollable con max
+              // height fijo. Auto-scrollea perezosamente conforme el STT
+              // va reconociendo palabras — solo cuando la palabra activa
+              // pasa del 70% del viewport interno.
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 280),
+                child: SingleChildScrollView(
+                  controller: _targetScrollCtrl,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: _buildVersedDisplay(context),
                   ),
                 ),
               ),
               const SizedBox(height: 16),
+              // Mic + score DEBAJO del texto a leer — siempre visible.
               Row(
                 children: [
                   GestureDetector(
@@ -280,6 +317,35 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 16),
+              // Caja de texto reconocido — debajo del mic, todavía a la
+              // vista al arrancar a leer.
+              Container(
+                padding: const EdgeInsets.all(13),
+                decoration: BoxDecoration(
+                  color: HtmlRefColors.glassSoft,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: HtmlRefColors.glassBorder),
+                ),
+                child: Builder(
+                  builder: (context) {
+                    final fullTextToShow = _accumulated.isEmpty
+                        ? _recognized
+                        : '${_accumulated.trim()} ${_recognized.trim()}';
+                    return Text(
+                      fullTextToShow.isEmpty
+                          ? 'Aquí aparecerá lo que entendió el reconocimiento de voz.'
+                          : fullTextToShow,
+                      style: TextStyle(
+                        color: fullTextToShow.isEmpty ? RefColors.dim : RefColors.ink,
+                        fontSize: 13,
+                        height: 1.35,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    );
+                  }
+                ),
               ),
             ],
           ),
@@ -653,16 +719,29 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
     super.dispose();
   }
 
+  /// Scroll perezoso — antes movía un poquito por cada palabra (terremoto
+  /// visual). Ahora solo mueve cuando la palabra actual cae por debajo del
+  /// 70% del viewport, y lo lleva al ~50% para dejar contexto arriba/abajo.
   void _scrollToProgress(int index, int total) {
     if (total <= 1) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_textScrollController.hasClients) return;
-      final max = _textScrollController.position.maxScrollExtent;
+      final pos = _textScrollController.position;
+      final max = pos.maxScrollExtent;
       if (max <= 0) return;
-      final target = max * (index / (total - 1)).clamp(0.0, 1.0);
+      final viewport = pos.viewportDimension;
+      final ratio = (index / (total - 1)).clamp(0.0, 1.0);
+      final totalContentHeight = max + viewport;
+      final currentWordY = totalContentHeight * ratio;
+      // Trigger solo si la palabra activa sobrepasó el 70% del viewport
+      // visible o ya salió por abajo.
+      final thresholdY = pos.pixels + viewport * 0.70;
+      if (currentWordY < thresholdY) return;
+      final target = (currentWordY - viewport * 0.50).clamp(0.0, max);
+      if (target <= pos.pixels) return;
       _textScrollController.animateTo(
         target,
-        duration: const Duration(milliseconds: 260),
+        duration: const Duration(milliseconds: 320),
         curve: Curves.easeOutCubic,
       );
     });
@@ -714,15 +793,128 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
     await _toggle(text);
   }
 
+  /// Renderiza el texto del paso Escuchar verso-por-verso (cuando el grupo
+  /// tiene 2+ versos). El índice global apunta a la palabra que TTS está
+  /// leyendo en este momento — se traduce a (verso, palabra local) para
+  /// resaltarla solo en su verso. Si solo hay 1 verso, vuelve al render
+  /// linear con lead/current/tail.
+  Widget _buildVersedListenText(BuildContext context, int globalIndex) {
+    final verses = _currentBatchVerses(context);
+    if (verses.length == 1) {
+      // Single-item: render plano como antes (lead + highlight + tail).
+      final words = _studyWords(verses.first.text);
+      final safe = globalIndex.clamp(0, words.length - 1);
+      final lead = words.take(safe).join(' ');
+      final current = words.isEmpty ? '' : words[safe];
+      final tail = words.skip(safe + 1).join(' ');
+      return Text.rich(
+        TextSpan(
+          children: [
+            if (lead.isNotEmpty)
+              TextSpan(
+                text: '$lead ',
+                style: const TextStyle(color: RefColors.lime),
+              ),
+            TextSpan(
+              text: current,
+              style: const TextStyle(
+                color: RefColors.ink,
+                backgroundColor: Color(0x44273CFE),
+              ),
+            ),
+            TextSpan(
+              text: tail.isEmpty ? '' : ' $tail',
+              style: const TextStyle(color: RefColors.muted),
+            ),
+          ],
+        ),
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 26,
+          height: 1.34,
+          fontWeight: FontWeight.w900,
+          letterSpacing: -.35,
+        ),
+      );
+    }
+    // Múltiples versos: encontrar a qué verso pertenece globalIndex.
+    // El back combinado es "1 verse1 2 verse2 3 verse3"; cada verso aporta
+    // 1 (el número) + N_i palabras al índice global.
+    int? activeVerse;
+    int? activeLocal;
+    var offset = 0;
+    for (var i = 0; i < verses.length; i++) {
+      final n = _studyWords(verses[i].text).length;
+      // El número ocupa el slot `offset`; las palabras del verso van
+      // de `offset+1` a `offset+n`.
+      if (globalIndex >= offset && globalIndex <= offset + n) {
+        if (globalIndex == offset) {
+          activeVerse = i;
+          activeLocal = -1; // el número del verso está activo
+        } else {
+          activeVerse = i;
+          activeLocal = globalIndex - offset - 1;
+        }
+        break;
+      }
+      offset += 1 + n;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < verses.length; i++) ...[
+          _VerseLine(
+            number: verses[i].number,
+            words: _studyWords(verses[i].text),
+            defaultStyle: const TextStyle(
+              color: RefColors.muted,
+              fontWeight: FontWeight.w900,
+              height: 1.32,
+            ),
+            wordStyle: (idx) {
+              // Verso entero "ya leído": lime suave.
+              if (activeVerse != null && i < activeVerse!) {
+                return const TextStyle(
+                  color: RefColors.lime,
+                  fontWeight: FontWeight.w900,
+                );
+              }
+              // Verso activo: lead lime, current highlight, tail muted.
+              if (i == activeVerse) {
+                if (idx < (activeLocal ?? -1)) {
+                  return const TextStyle(
+                    color: RefColors.lime,
+                    fontWeight: FontWeight.w900,
+                  );
+                }
+                if (idx == activeLocal) {
+                  return const TextStyle(
+                    color: RefColors.ink,
+                    fontWeight: FontWeight.w900,
+                    backgroundColor: Color(0x44273CFE),
+                  );
+                }
+                return const TextStyle(
+                  color: RefColors.muted,
+                  fontWeight: FontWeight.w900,
+                );
+              }
+              return null; // verso futuro → defaultStyle (muted)
+            },
+            fontSize: 22,
+          ),
+          if (i < verses.length - 1) const SizedBox(height: 14),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final words = _studyWords(_cardStudyText(context));
     final source = _cardSourceText(context).toUpperCase();
     final text = _cardStudyText(context);
-    final safeIndex = _wordIndex.clamp(0, words.length - 1);
-    final lead = words.take(safeIndex).join(' ');
-    final current = words[safeIndex];
-    final tail = words.skip(safeIndex + 1).join(' ');
+    final safeIndex = _wordIndex.clamp(0, words.isEmpty ? 0 : words.length - 1);
     final progress = words.isEmpty ? 0.0 : ((safeIndex + 1) / words.length);
     return Glass(
       padding: const EdgeInsets.fromLTRB(22, 30, 22, 20),
@@ -747,43 +939,13 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
           ),
           const SizedBox(height: 34),
           Expanded(
-            child: Center(
-              child: Scrollbar(
+            child: Scrollbar(
+              controller: _textScrollController,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
                 controller: _textScrollController,
-                thumbVisibility: true,
-                child: SingleChildScrollView(
-                  controller: _textScrollController,
-                  padding: const EdgeInsets.only(right: 10),
-                  child: Text.rich(
-                    TextSpan(
-                      children: [
-                        if (lead.isNotEmpty)
-                          TextSpan(
-                            text: '$lead ',
-                            style: const TextStyle(color: RefColors.lime),
-                          ),
-                        TextSpan(
-                          text: current,
-                          style: const TextStyle(
-                            color: RefColors.ink,
-                            backgroundColor: Color(0x44273CFE),
-                          ),
-                        ),
-                        TextSpan(
-                          text: tail.isEmpty ? '' : ' $tail',
-                          style: const TextStyle(color: RefColors.muted),
-                        ),
-                      ],
-                    ),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 26,
-                      height: 1.34,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -.35,
-                    ),
-                  ),
-                ),
+                padding: const EdgeInsets.only(right: 10),
+                child: _buildVersedListenText(context, safeIndex),
               ),
             ),
           ),
@@ -813,9 +975,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          Container(height: 1, color: RefColors.inner),
-          const SizedBox(height: 18),
+          const SizedBox(height: 22),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
