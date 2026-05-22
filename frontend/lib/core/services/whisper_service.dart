@@ -155,8 +155,18 @@ class WhisperService {
       return '';
     }
 
+    // Si es un archivo WAV, omitir los primeros 44 bytes de cabecera
+    Uint8List pcmBytes = bytes;
+    if (bytes.length >= 44 &&
+        bytes[0] == 82 && // 'R'
+        bytes[1] == 73 && // 'I'
+        bytes[2] == 70 && // 'F'
+        bytes[3] == 70) { // 'F'
+      pcmBytes = bytes.sublist(44);
+    }
+
     // Convertir PCM 16-bit a Float32List
-    final Float32List floatSamples = _pcm16ToFloat32(bytes);
+    final Float32List floatSamples = _pcm16ToFloat32(pcmBytes);
     debugPrint('Read ${floatSamples.length} float samples from audio file.');
 
     // Ejecutar inferencia

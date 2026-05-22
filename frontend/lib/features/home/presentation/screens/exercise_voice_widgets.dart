@@ -38,6 +38,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
   double _score = 0;
   final _audioRecorder = AudioRecorder();
   String? _recordedPath;
+  Timer? _autoStopTimer;
   /// Controla el scroll interno del target text (versos para leer).
   final _targetScrollCtrl = ScrollController();
 
@@ -153,6 +154,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
 
   @override
   void dispose() {
+    _autoStopTimer?.cancel();
     try {
       WhisperService.instance.downloadProgress.removeListener(_onDownloadProgressChanged);
       WhisperService.instance.statusNotifier.removeListener(_onStatusChanged);
@@ -182,6 +184,15 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
       _completed = false;
       _listening = true;
       _status = 'Grabando... lee el texto completo sin interrupciones.';
+    });
+
+    _autoStopTimer?.cancel();
+    final words = widget.targetText.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+    final limitSeconds = ((words / 1.5).ceil() + 6).clamp(8, 90);
+    _autoStopTimer = Timer(Duration(seconds: limitSeconds), () {
+      if (mounted && _listening) {
+        _finishCapture();
+      }
     });
 
     try {
@@ -235,9 +246,14 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
   Future<void> _finishCapture() async {
     if (_finalizing) return;
     _finalizing = true;
+    _autoStopTimer?.cancel();
+    _autoStopTimer = null;
     try {
       final path = await _audioRecorder.stop();
-      if (path != null) _recordedPath = path;
+      if (path != null) {
+        final wavPath = await _convertPcmToWav(path);
+        _recordedPath = wavPath;
+      }
       if (!mounted) return;
       setState(() {
         _listening = false;
@@ -262,6 +278,89 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
     } finally {
       _finalizing = false;
     }
+  }
+
+  Future<String> _convertPcmToWav(String rawPath) async {
+    final file = File(rawPath);
+    if (!await file.exists()) return rawPath;
+
+    final bytes = await file.readAsBytes();
+    final wavHeader = _buildWavHeader(bytes.length);
+
+    final wavPath = rawPath.replaceAll('.raw', '.wav');
+    final wavFile = File(wavPath);
+
+    final builder = BytesBuilder();
+    builder.add(wavHeader);
+    builder.add(bytes);
+
+    await wavFile.writeAsBytes(builder.toBytes());
+
+    try {
+      await file.delete();
+    } catch (e) {
+      debugPrint('Error deleting raw file: $e');
+    }
+
+    return wavPath;
+  }
+
+  Uint8List _buildWavHeader(int dataLength) {
+    final header = Uint8List(44);
+    final data = ByteData.view(header.buffer);
+
+    // "RIFF"
+    header[0] = 82; // R
+    header[1] = 73; // I
+    header[2] = 70; // F
+    header[3] = 70; // F
+
+    // Chunk Size (file length - 8)
+    data.setUint32(4, dataLength + 36, Endian.little);
+
+    // "WAVE"
+    header[8] = 87;  // W
+    header[9] = 65;  // A
+    header[10] = 86; // V
+    header[11] = 69; // E
+
+    // "fmt "
+    header[12] = 102; // f
+    header[13] = 109; // m
+    header[14] = 116; // t
+    header[15] = 32;  //  
+
+    // Subchunk 1 Size (16)
+    data.setUint32(16, 16, Endian.little);
+
+    // Audio Format (1 = PCM)
+    data.setUint16(20, 1, Endian.little);
+
+    // Num Channels (1 = Mono)
+    data.setUint16(22, 1, Endian.little);
+
+    // Sample Rate (16000)
+    data.setUint32(24, 16000, Endian.little);
+
+    // Byte Rate (SampleRate * NumChannels * BitsPerSample/8 = 16000 * 1 * 16/8 = 32000)
+    data.setUint32(28, 32000, Endian.little);
+
+    // Block Align (NumChannels * BitsPerSample/8 = 2)
+    data.setUint16(32, 2, Endian.little);
+
+    // Bits Per Sample (16)
+    data.setUint16(34, 16, Endian.little);
+
+    // "data"
+    header[36] = 100; // d
+    header[37] = 97;  // a
+    header[38] = 116; // t
+    header[39] = 97;  // a
+
+    // Subchunk 2 Size (data length)
+    data.setUint32(40, dataLength, Endian.little);
+
+    return header;
   }
 
   void _gradeReal(String text) {
@@ -408,7 +507,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Optimiza la app con reconocimiento de voz avanzado. Permite transcribir y recitar tus versos de forma inmediata, segura y privada.',
+                  'Descarga el componente de voz (75 MB) para recitar tus versos offline con total privacidad y seguridad.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: RefColors.muted,
@@ -586,20 +685,11 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                       children: [
                         if (_listening) ...[
                           const Text(
-                            'Escuchando...',
+                            'Grabando voz...',
                             style: TextStyle(
                               color: RefColors.cyan,
                               fontSize: 18,
                               fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            'Lee el texto completo en voz alta.',
-                            style: TextStyle(
-                              color: RefColors.muted,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
                             ),
                           ),
                         ] else ...[
@@ -647,16 +737,6 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                   child: const Column(
                     children: [
                       _ListeningWaveIndicator(color: RefColors.cyan),
-                      SizedBox(height: 12),
-                      Text(
-                        'Grabando voz...',
-                        style: TextStyle(
-                          color: RefColors.dim,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -737,7 +817,7 @@ class _ListeningWaveIndicatorState extends State<_ListeningWaveIndicator>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1100),
+      duration: const Duration(milliseconds: 2000),
     )..repeat();
   }
 

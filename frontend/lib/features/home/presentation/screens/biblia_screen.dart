@@ -1956,7 +1956,7 @@ String _cardStudyText(BuildContext context) {
 /// el front no es una referencia, el número es secuencial 1..N.
 List<({int number, String text})> _currentBatchVerses(BuildContext context) {
   final store = AppScope.of(context);
-  final batch = store.currentBatchCards;
+  final batch = const <MemoryCardData>[];
   if (batch.isEmpty) {
     final card = store.activeCard;
     final m = RegExp(r':(\d+)$').firstMatch(card.front.trim());
@@ -2867,8 +2867,8 @@ class _ThemesBrowse extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 12),
-        const _PlansEntry(),
+        // const SizedBox(height: 12),
+        // const _PlansEntry(),
       ],
     );
   }
@@ -2881,7 +2881,7 @@ class _PlansEntry extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       borderRadius: BorderRadius.circular(14),
-      onTap: () => Navigator.pushNamed(context, AppRoutes.plans),
+      onTap: () => Navigator.pushNamed(context, AppRoutes.home),
       child: Glass(
         radius: 14,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
