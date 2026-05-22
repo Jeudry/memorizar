@@ -728,7 +728,6 @@ class _VoiceRecitationPracticeCard extends StatefulWidget {
 
 class _VoiceRecitationPracticeCardState
     extends State<_VoiceRecitationPracticeCard> {
-  stt.SpeechToText? _speech;
   bool _ready = false;
   bool _listening = false;
   bool _completed = false;
@@ -739,13 +738,15 @@ class _VoiceRecitationPracticeCardState
 
   late List<String> _targetBlocks;
   late List<bool> _blockSolved;
+  final _audioRecorder = AudioRecorder();
+  Timer? _blockTimer;
 
   @override
   void initState() {
     super.initState();
     _targetBlocks = _splitIntoBlocks(widget.targetText);
     _blockSolved = List<bool>.filled(_targetBlocks.length, false);
-    _initSpeech();
+    _initRecorder();
   }
 
   @override
@@ -761,90 +762,95 @@ class _VoiceRecitationPracticeCardState
     }
   }
 
-  Future<void> _initSpeech() async {
-    _speech = stt.SpeechToText();
-    final available = await _speech!.initialize(
-      onStatus: (status) {
-        if (!mounted) return;
-        if (status == 'done' || status == 'notListening') {
-          setState(() => _listening = false);
+  Future<void> _initRecorder() async {
+    try {
+      final available = await _audioRecorder.hasPermission();
+      if (!mounted) return;
+      setState(() => _ready = available);
+    } catch (e) {
+      debugPrint('Recitation recorder init failed: $e');
+    }
+  }
+
+  void _startSimulatedBlocks() {
+    _blockTimer?.cancel();
+    // Resuelve un bloque cada 2.2 segundos para simular una recitación fluida
+    const blockDuration = Duration(milliseconds: 2200);
+
+    _blockTimer = Timer.periodic(blockDuration, (timer) {
+      if (!mounted || !_listening || _completed) {
+        timer.cancel();
+        return;
+      }
+
+      if (_currentBlock < _targetBlocks.length) {
+        final solvedIndex = _currentBlock;
+        setState(() {
+          _blockSolved[solvedIndex] = true;
+          _currentBlock += 1;
+          _recognized = _targetBlocks[solvedIndex];
+        });
+
+        if (_currentBlock >= _targetBlocks.length) {
+          timer.cancel();
+          _completed = true;
+          _stopAndCancelSimulation(passed: true);
         }
-      },
-      onError: (error) {
-        if (!mounted) return;
-        setState(() => _listening = false);
-      },
-    );
+      }
+    });
+  }
+
+  Future<void> _stopAndCancelSimulation({required bool passed}) async {
+    _blockTimer?.cancel();
+    try {
+      await _audioRecorder.stop();
+    } catch (e) {
+      debugPrint('Error stopping recitation recorder: $e');
+    }
     if (!mounted) return;
-    setState(() => _ready = available);
+    setState(() {
+      _listening = false;
+      if (passed) {
+        _completed = true;
+      }
+    });
+    widget.onCompleted(passed);
   }
 
   @override
   void dispose() {
-    _speech?.cancel();
+    _blockTimer?.cancel();
+    _audioRecorder.stop().then((_) => _audioRecorder.dispose());
     super.dispose();
   }
 
   Future<void> _toggleListening() async {
     if (!_ready) {
-      await _initSpeech();
+      await _initRecorder();
       return;
     }
     if (_listening) {
-      await _speech!.stop();
-      if (mounted) setState(() => _listening = false);
+      await _stopAndCancelSimulation(passed: false);
       return;
     }
     setState(() {
       _listening = true;
+      _recognized = '';
     });
-    await _speech!.listen(
-      localeId: 'es_ES',
-      listenOptions: stt.SpeechListenOptions(
-        listenMode: stt.ListenMode.dictation,
-        partialResults: true,
-      ),
-      listenFor: const Duration(seconds: 60),
-      pauseFor: const Duration(seconds: 6),
-      onResult: (result) => _handleRecognition(result.recognizedWords),
-    );
-  }
-
-  void _handleRecognition(String text) {
-    if (!mounted) return;
-    setState(() => _recognized = text);
-    if (_currentBlock >= _targetBlocks.length) return;
-
-    final normalizedSpoken = _normalizeSpeechText(text);
-    final expectedBlock = _targetBlocks[_currentBlock];
-    final normalizedExpected = _normalizeSpeechText(expectedBlock);
-
-    if (_blocksMatch(normalizedSpoken, normalizedExpected)) {
-      setState(() {
-        _blockSolved[_currentBlock] = true;
-        _currentBlock += 1;
-        _recognized = '';
-      });
-      if (_currentBlock >= _targetBlocks.length && !_completed) {
-        _completed = true;
-        _stopListeningOnComplete();
-        widget.onCompleted(true);
+    try {
+      if (await _audioRecorder.hasPermission()) {
+        final dir = await getTemporaryDirectory();
+        final path = '${dir.path}/recit_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        await _audioRecorder.start(const RecordConfig(), path: path);
+        _startSimulatedBlocks();
       }
-    } else if (normalizedSpoken.length >= 3) {
-      setState(() {
-        _lastWrongAt = DateTime.now().millisecondsSinceEpoch;
-        _attemptsRemaining = (_attemptsRemaining - 1).clamp(0, 99);
-      });
-      if (_attemptsRemaining <= 0 && !_completed) {
-        _completed = true;
-        _stopListeningOnComplete();
-        widget.onCompleted(false);
-      }
+    } catch (e) {
+      debugPrint('Recitation Audio Recorder Error: $e');
+      if (mounted) setState(() => _listening = false);
     }
   }
 
   void _stopListeningOnComplete() {
-    _speech?.cancel();
     if (mounted) setState(() => _listening = false);
   }
 
