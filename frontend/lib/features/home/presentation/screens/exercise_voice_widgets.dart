@@ -18,7 +18,8 @@ class _ReadAloudPracticeCard extends StatefulWidget {
   State<_ReadAloudPracticeCard> createState() => _ReadAloudPracticeCardState();
 }
 
-class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
+class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
+    with SingleTickerProviderStateMixin {
   static const _passScore = .60;
   bool _ready = false;
   bool _listening = false;
@@ -41,10 +42,15 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
   Timer? _autoStopTimer;
   /// Controla el scroll interno del target text (versos para leer).
   final _targetScrollCtrl = ScrollController();
+  late AnimationController _pulse;
 
   @override
   void initState() {
     super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
     _checkModelStatus();
   }
 
@@ -155,6 +161,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
   @override
   void dispose() {
     _autoStopTimer?.cancel();
+    _pulse.dispose();
     try {
       WhisperService.instance.downloadProgress.removeListener(_onDownloadProgressChanged);
       WhisperService.instance.statusNotifier.removeListener(_onStatusChanged);
@@ -208,6 +215,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
           path: path,
         );
         _recordedPath = path;
+        _pulse.repeat();
       }
     } catch (e) {
       debugPrint('Audio Recorder Error: $e');
@@ -248,6 +256,8 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
     _finalizing = true;
     _autoStopTimer?.cancel();
     _autoStopTimer = null;
+    _pulse.stop();
+    _pulse.value = 0;
     try {
       final path = await _audioRecorder.stop();
       if (path != null) {
@@ -663,18 +673,58 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                 children: [
                   GestureDetector(
                     onTap: _toggleListening,
-                    child: Container(
+                    child: SizedBox(
                       width: 64,
                       height: 64,
-                      decoration: BoxDecoration(
-                        gradient: _listening ? RefColors.primary : null,
-                        color: _listening ? null : RefColors.glassStrong,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: RefColors.border),
-                      ),
-                      child: Icon(
-                        _listening ? Icons.stop_rounded : Icons.mic_rounded,
-                        size: 30,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          if (_listening)
+                            AnimatedBuilder(
+                              animation: _pulse,
+                              builder: (context, _) {
+                                final t = _pulse.value;
+                                return Container(
+                                  width: 56 + 14 * t,
+                                  height: 56 + 14 * t,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: RefColors.cyan.withValues(alpha: 1 - t),
+                                      width: 2,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 220),
+                            width: 54,
+                            height: 54,
+                            decoration: BoxDecoration(
+                              color: RefColors.cyan.withValues(
+                                alpha: _listening ? .55 : .18,
+                              ),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                  color: RefColors.cyan.withValues(alpha: .85)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: RefColors.cyan.withValues(alpha: .35),
+                                  blurRadius: _listening ? 28 : 14,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ],
+                            ),
+                            child: Icon(
+                              _listening
+                                  ? Icons.stop_rounded
+                                  : Icons.mic_rounded,
+                              color: RefColors.ink,
+                              size: 26,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -906,6 +956,7 @@ class _ListenOwnVoicePracticeCardState
     super.initState();
     _tts = FlutterTts();
     _audioPlayer = AudioPlayer();
+    ActiveMediaRegistry.register(stopPlayback);
 
     _audioPlayer.onPlayerStateChanged.listen((state) {
       if (mounted) {
@@ -976,8 +1027,20 @@ class _ListenOwnVoicePracticeCardState
     });
   }
 
+  void stopPlayback() {
+    _tts.stop();
+    _audioPlayer.stop();
+    if (mounted) {
+      setState(() {
+        _playing = false;
+        _wordIndex = 0;
+      });
+    }
+  }
+
   @override
   void dispose() {
+    ActiveMediaRegistry.unregister(stopPlayback);
     _tts.stop();
     _audioPlayer.dispose();
     super.dispose();
@@ -1284,15 +1347,21 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
   bool _completed = false;
   int _wordIndex = 0;
   int _ttsStartWordOffset = 0;
+  int _lastSkipTime = 0;
 
   @override
   void initState() {
     super.initState();
     _tts = FlutterTts();
+    ActiveMediaRegistry.register(stopPlayback);
     _tts.setStartHandler(() {
       if (mounted) setState(() => _playing = true);
     });
     _tts.setCompletionHandler(() {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - _lastSkipTime < 600) {
+        return;
+      }
       if (mounted) {
         setState(() {
           _playing = false;
@@ -1323,8 +1392,19 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
     });
   }
 
+  void stopPlayback() {
+    _tts.stop();
+    if (mounted) {
+      setState(() {
+        _playing = false;
+        _wordIndex = 0;
+      });
+    }
+  }
+
   @override
   void dispose() {
+    ActiveMediaRegistry.unregister(stopPlayback);
     _tts.stop();
     _textScrollController.dispose();
     super.dispose();
@@ -1392,8 +1472,23 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
 
   Future<void> _skipForward(String text) async {
     final words = _studyWords(text);
-    final nextIndex = (_wordIndex + 12).clamp(0, words.length - 1);
+    final nextIndex = _wordIndex + 12;
+    
+    _lastSkipTime = DateTime.now().millisecondsSinceEpoch;
     await _tts.stop();
+    
+    if (nextIndex >= words.length) {
+      if (mounted) {
+        setState(() {
+          _wordIndex = 0;
+          _playing = false;
+          _completed = true;
+        });
+        widget.onCompleted?.call();
+      }
+      return;
+    }
+    
     if (mounted) {
       setState(() {
         _wordIndex = nextIndex;
@@ -2191,6 +2286,27 @@ class _PlayerRoundButton extends StatelessWidget {
       ),
       child: Icon(paused ? Icons.pause_rounded : Icons.play_arrow_rounded),
     );
+  }
+}
+
+class ActiveMediaRegistry {
+  static final List<VoidCallback> _activeStoppers = [];
+
+  static void register(VoidCallback stopCallback) {
+    _activeStoppers.add(stopCallback);
+  }
+
+  static void unregister(VoidCallback stopCallback) {
+    _activeStoppers.remove(stopCallback);
+  }
+
+  static void stopAll() {
+    for (final stop in List.from(_activeStoppers)) {
+      try {
+        stop();
+      } catch (_) {}
+    }
+    _activeStoppers.clear();
   }
 }
 

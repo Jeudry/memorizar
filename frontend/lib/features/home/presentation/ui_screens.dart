@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -344,6 +345,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   int _fragmentVisibleWords = 8;
   int _soloLecturaVisibleChars = 0;
   Timer? _soloLecturaTimer;
+  DateTime? _soloLecturaPauseUntil;
   String? _blockOrderCardId;
   List<int> _blockOrderIndexes = [];
   int? _selectedBlockPosition;
@@ -664,7 +666,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
   void _onFogRoundCompleted() {
     setState(() {
-      if (_fogRound >= 2) {
+      if (_fogRound >= 1) { // 2 rounds total (0 and 1)
         _fogFinished = true;
         HapticFeedback.heavyImpact();
       } else {
@@ -1060,7 +1062,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       _fragmentVisibleWords = _studyWords(card.back).length;
     }
     if (slug == '00-solo-lectura' && store.isExerciseStepCompleted(slug)) {
-      _soloLecturaVisibleChars = card.back.length;
+      final verses = _currentBatchVerses(context);
+      _soloLecturaVisibleChars = verses.fold<int>(0, (sum, v) => sum + v.text.length);
     }
     return ReferencePage(
       showBottomNav: false,
@@ -1106,95 +1109,141 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     String slug,
   ) {
     if (slug == '00-solo-lectura') {
-      final totalChars = card.back.length;
+      final verses = _currentBatchVerses(context);
+      final totalChars = verses.fold<int>(0, (sum, v) => sum + v.text.length);
+      final fullText = verses.map((v) => v.text).join("");
+      final verseEnds = <int>[];
+      var tempSum = 0;
+      for (var i = 0; i < verses.length - 1; i++) {
+        tempSum += verses[i].text.length;
+        verseEnds.add(tempSum);
+      }
+
       if (!store.isExerciseStepCompleted(slug) && _soloLecturaTimer == null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _startSoloLecturaAnimation(store, totalChars);
+          _startSoloLecturaAnimation(store, totalChars, verseEnds, fullText);
         });
       }
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Glass(
-            padding: const EdgeInsets.fromLTRB(18, 22, 18, 22),
-            gradient: LinearGradient(
-              colors: [
-                RefColors.violet.withValues(alpha: .28),
-                RefColors.sun.withValues(alpha: .34),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  deck.isBible ? card.front.toUpperCase() : 'CITA',
-                  style: const TextStyle(
-                    color: RefColors.pink,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Container(
-                  constraints: const BoxConstraints(minHeight: 120),
-                  alignment: Alignment.center,
-                  child: _buildSoloLecturaText(context, _soloLecturaVisibleChars),
-                ),
-                if (store.isExerciseStepCompleted(slug)) ...[
-                  const SizedBox(height: 18),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.check_circle_outline, size: 16, color: RefColors.lime),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Lectura completada',
-                        style: TextStyle(
-                          color: RefColors.lime,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(width: 20),
-                      GestureDetector(
-                        onTap: () {
-                          _soloLecturaTimer?.cancel();
-                          _soloLecturaTimer = null;
-                          store.resetExerciseStepCompleted(slug);
-                          setState(() {
-                            _soloLecturaVisibleChars = 0;
-                          });
-                          _startSoloLecturaAnimation(store, totalChars);
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: RefColors.cyan.withValues(alpha: .15),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(Icons.replay_rounded, size: 16, color: RefColors.cyan),
-                              SizedBox(width: 6),
-                              Text(
-                                'Repetir',
-                                style: TextStyle(
-                                  color: RefColors.cyan,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+          GestureDetector(
+            onTap: () {
+              if (!store.isExerciseStepCompleted(slug)) {
+                _soloLecturaTimer?.cancel();
+                _soloLecturaTimer = null;
+                _soloLecturaPauseUntil = null;
+                setState(() {
+                  _soloLecturaVisibleChars = totalChars;
+                });
+                store.markExerciseStepCompleted('00-solo-lectura');
+              }
+            },
+            child: Glass(
+              padding: const EdgeInsets.fromLTRB(18, 22, 18, 22),
+              gradient: LinearGradient(
+                colors: [
+                  RefColors.violet.withValues(alpha: .28),
+                  RefColors.sun.withValues(alpha: .34),
                 ],
-              ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    deck.isBible ? card.front.toUpperCase() : 'CITA',
+                    style: const TextStyle(
+                      color: RefColors.pink,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    constraints: const BoxConstraints(minHeight: 120),
+                    alignment: Alignment.center,
+                    child: _buildSoloLecturaText(context, _soloLecturaVisibleChars),
+                  ),
+                  if (!store.isExerciseStepCompleted(slug)) ...[
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.touch_app_outlined,
+                          size: 13,
+                          color: RefColors.pink.withValues(alpha: .55),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'TOCA EL TEXTO PARA OMITIR',
+                          style: TextStyle(
+                            color: RefColors.pink.withValues(alpha: .55),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (store.isExerciseStepCompleted(slug)) ...[
+                    const SizedBox(height: 18),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.check_circle_outline, size: 16, color: RefColors.lime),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Lectura completada',
+                          style: TextStyle(
+                            color: RefColors.lime,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(width: 20),
+                        GestureDetector(
+                          onTap: () {
+                            _soloLecturaTimer?.cancel();
+                            _soloLecturaTimer = null;
+                            _soloLecturaPauseUntil = null;
+                            store.resetExerciseStepCompleted(slug);
+                            setState(() {
+                              _soloLecturaVisibleChars = 0;
+                            });
+                            _startSoloLecturaAnimation(store, totalChars, verseEnds, fullText);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: RefColors.cyan.withValues(alpha: .15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.replay_rounded, size: 16, color: RefColors.cyan),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Repetir',
+                                  style: TextStyle(
+                                    color: RefColors.cyan,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         ],
@@ -1337,7 +1386,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               itemCount: _blockOrderIndexes.length,
               itemBuilder: (context, index) {
                 final blockText = blocks[_blockOrderIndexes[index]];
-                return ReorderableDelayedDragStartListener(
+                return _CustomReorderableDelayedDragStartListener(
                   key: ValueKey('block-$index-${_blockOrderIndexes[index]}'),
                   index: index,
                   child: Padding(
@@ -1756,6 +1805,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         targetText: card.back,
         round: _fogRound,
         finished: _fogFinished,
+        level: _fogLevelForSlug(slug),
         onRoundCompleted: _onFogRoundCompleted,
       );
     }
@@ -1883,7 +1933,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             ),
             TextSpan(
               text: tail,
-              style: const TextStyle(color: RefColors.muted),
+              style: const TextStyle(color: Colors.transparent),
             ),
           ],
         ),
@@ -1926,7 +1976,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     ),
                     TextSpan(
                       text: tail,
-                      style: const TextStyle(color: RefColors.muted),
+                      style: const TextStyle(color: Colors.transparent),
                     ),
                   ],
                 ),
@@ -1938,22 +1988,43 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
   }
 
-  void _startSoloLecturaAnimation(AppStore store, int totalChars) {
+  void _startSoloLecturaAnimation(AppStore store, int totalChars, List<int> verseEnds, String fullText) {
     _soloLecturaTimer?.cancel();
-    _soloLecturaTimer = Timer.periodic(const Duration(milliseconds: 55), (timer) {
+    _soloLecturaPauseUntil = null;
+    _soloLecturaTimer = Timer.periodic(const Duration(milliseconds: 75), (timer) {
       if (!mounted) {
         timer.cancel();
+        return;
+      }
+      if (_soloLecturaPauseUntil != null && DateTime.now().isBefore(_soloLecturaPauseUntil!)) {
         return;
       }
       final nextVisible = _soloLecturaVisibleChars + 1;
       if (nextVisible >= totalChars) {
         timer.cancel();
         _soloLecturaTimer = null;
+        _soloLecturaPauseUntil = null;
         setState(() {
           _soloLecturaVisibleChars = totalChars;
         });
         store.markExerciseStepCompleted('00-solo-lectura');
       } else {
+        var pauseDuration = 0;
+        if (verseEnds.contains(nextVisible)) {
+          pauseDuration = 750;
+        } else if (nextVisible - 1 < fullText.length) {
+          final char = fullText[nextVisible - 1];
+          if (char == '.' || char == '?' || char == '!') {
+            pauseDuration = 450;
+          } else if (char == ',' || char == ';' || char == ':') {
+            pauseDuration = 250;
+          }
+        }
+
+        if (pauseDuration > 0) {
+          _soloLecturaPauseUntil = DateTime.now().add(Duration(milliseconds: pauseDuration));
+        }
+
         setState(() {
           _soloLecturaVisibleChars = nextVisible;
         });
@@ -1990,6 +2061,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   : 'Revela todo para continuar',
               enabled: completed,
               onTap: () {
+                ActiveMediaRegistry.stopAll();
                 Navigator.push(
                   context,
                   AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
@@ -2014,10 +2086,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       final cta = _ActionCta(
         label: _footerLabel(slug, checked: _checked, completed: completed),
         enabled: completed,
-        onTap: () => Navigator.push(
-          context,
-          AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-        ),
+        onTap: () {
+          ActiveMediaRegistry.stopAll();
+          Navigator.push(
+            context,
+            AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
+          );
+        },
       );
       if (!showSkip) return cta;
       return Row(
@@ -2027,6 +2102,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             child: GhostButton(
               'Saltar',
               onTap: () {
+                ActiveMediaRegistry.stopAll();
                 store.markExerciseStepCompleted(slug);
                 Navigator.push(
                   context,
@@ -2073,6 +2149,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               completed: completed,
             ),
             onTap: () {
+              ActiveMediaRegistry.stopAll();
               if (_isPassiveStep(slug)) {
                 if (!completed) {
                   store.markExerciseStepCompleted(slug);
@@ -2826,6 +2903,22 @@ class _RealFinalReview extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CustomReorderableDelayedDragStartListener extends ReorderableDragStartListener {
+  const _CustomReorderableDelayedDragStartListener({
+    required super.child,
+    required super.index,
+    super.key,
+    super.enabled,
+  });
+
+  @override
+  MultiDragGestureRecognizer createRecognizer() {
+    return DelayedMultiDragGestureRecognizer(
+      delay: const Duration(milliseconds: 225), // Perfect 225ms balance based on user preference (default 500ms)
     );
   }
 }

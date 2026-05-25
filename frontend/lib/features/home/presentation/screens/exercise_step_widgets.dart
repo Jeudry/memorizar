@@ -727,7 +727,8 @@ class _VoiceRecitationPracticeCard extends StatefulWidget {
 }
 
 class _VoiceRecitationPracticeCardState
-    extends State<_VoiceRecitationPracticeCard> {
+    extends State<_VoiceRecitationPracticeCard>
+    with SingleTickerProviderStateMixin {
   bool _ready = false;
   bool _listening = false;
   bool _completed = false;
@@ -748,10 +749,15 @@ class _VoiceRecitationPracticeCardState
   String? _recordedPath;
   bool _finalizing = false;
   Timer? _autoStopTimer;
+  late AnimationController _pulse;
 
   @override
   void initState() {
     super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
     _targetBlocks = _splitIntoBlocks(widget.targetText);
     _blockSolved = List<bool>.filled(_targetBlocks.length, false);
     _checkModelStatus();
@@ -859,6 +865,7 @@ class _VoiceRecitationPracticeCardState
   @override
   void dispose() {
     _autoStopTimer?.cancel();
+    _pulse.dispose();
     try {
       WhisperService.instance.downloadProgress.removeListener(_onDownloadProgressChanged);
       WhisperService.instance.statusNotifier.removeListener(_onStatusChanged);
@@ -909,6 +916,7 @@ class _VoiceRecitationPracticeCardState
           path: path,
         );
         _recordedPath = path;
+        _pulse.repeat();
       }
     } catch (e) {
       debugPrint('Recitation Audio Recorder Error: $e');
@@ -921,6 +929,8 @@ class _VoiceRecitationPracticeCardState
     _finalizing = true;
     _autoStopTimer?.cancel();
     _autoStopTimer = null;
+    _pulse.stop();
+    _pulse.value = 0;
     try {
       final path = await _audioRecorder.stop();
       if (path != null) {
@@ -1355,26 +1365,57 @@ class _VoiceRecitationPracticeCardState
             children: [
               GestureDetector(
                 onTap: _toggleListening,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 220),
+                child: SizedBox(
                   width: 58,
                   height: 58,
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: _listening ? .55 : .18),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: accent.withValues(alpha: .85)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: accent.withValues(alpha: .35),
-                        blurRadius: _listening ? 28 : 16,
-                        offset: const Offset(0, 6),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      if (_listening)
+                        AnimatedBuilder(
+                          animation: _pulse,
+                          builder: (context, _) {
+                            final t = _pulse.value;
+                            return Container(
+                              width: 50 + 12 * t,
+                              height: 50 + 12 * t,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: accent.withValues(alpha: 1 - t),
+                                  width: 2,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: accent.withValues(
+                            alpha: _listening ? .55 : .18,
+                          ),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: accent.withValues(alpha: .85),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: accent.withValues(alpha: .35),
+                              blurRadius: _listening ? 28 : 14,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                          color: RefColors.ink,
+                          size: 24,
+                        ),
                       ),
                     ],
-                  ),
-                  child: Icon(
-                    _listening ? Icons.stop_rounded : Icons.mic_rounded,
-                    color: RefColors.ink,
-                    size: 28,
                   ),
                 ),
               ),

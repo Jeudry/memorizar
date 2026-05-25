@@ -4,14 +4,16 @@ part of '../ui_screens.dart';
 
 class _FogStep extends StatefulWidget {
   final String targetText;
-  final int round; // 0,1,2 (Ronda 1, Ronda 2, Ronda 3)
+  final int round; // 0,1 (Ronda 1, Ronda 2)
   final bool finished;
+  final int level;
   final VoidCallback onRoundCompleted;
 
   const _FogStep({
     required this.targetText,
     required this.round,
     required this.finished,
+    required this.level,
     required this.onRoundCompleted,
   });
 
@@ -38,6 +40,8 @@ class _FogStepState extends State<_FogStep>
   String _recognized = '';
   double _score = 0;
   bool _finalizing = false;
+  bool _roundSuccess = false;
+  int _attemptsLeft = 3;
 
   @override
   void initState() {
@@ -57,10 +61,14 @@ class _FogStepState extends State<_FogStep>
       _allWords = _studyWords(widget.targetText);
       _score = 0;
       _recognized = '';
+      _attemptsLeft = 3;
+      _roundSuccess = false;
     }
     if (oldWidget.round != widget.round) {
       _score = 0;
       _recognized = '';
+      _attemptsLeft = 3;
+      _roundSuccess = false;
       _status = 'Ronda cambiada. Presiona recitar.';
     }
   }
@@ -238,7 +246,11 @@ class _FogStepState extends State<_FogStep>
 
   Future<void> _finishCapture() async {
     if (_finalizing) return;
-    _finalizing = true;
+    setState(() {
+      _finalizing = true;
+      _listening = false;
+      _status = 'Analizando tu recitación...';
+    });
     _autoStopTimer?.cancel();
     _autoStopTimer = null;
     _pulse.stop();
@@ -250,10 +262,6 @@ class _FogStepState extends State<_FogStep>
         _recordedPath = wavPath;
       }
       if (!mounted) return;
-      setState(() {
-        _listening = false;
-        _status = 'Analizando tu recitación...';
-      });
 
       if (_recordedPath != null) {
         final text = await WhisperService.instance.transcribe(_recordedPath!);
@@ -267,12 +275,15 @@ class _FogStepState extends State<_FogStep>
       debugPrint('Error deteniendo grabación: $e');
       if (mounted) {
         setState(() {
-          _listening = false;
           _status = 'Error en reconocimiento local: $e';
         });
       }
     } finally {
-      _finalizing = false;
+      if (mounted) {
+        setState(() {
+          _finalizing = false;
+        });
+      }
     }
   }
 
@@ -280,17 +291,31 @@ class _FogStepState extends State<_FogStep>
     if (!mounted) return;
     final score = _speechSimilarity(text, widget.targetText);
     final passed = score >= 0.60;
+    
     setState(() {
       _score = score;
       _recognized = text;
-      _status = passed
-          ? '¡Excelente recitación!'
-          : 'Similitud muy baja (${(score * 100).round()}%). Lee de nuevo con claridad.';
+      if (passed) {
+        _roundSuccess = true;
+        _status = '¡Excelente recitación!';
+        HapticFeedback.mediumImpact();
+      } else {
+        _roundSuccess = false;
+        _attemptsLeft = (_attemptsLeft - 1).clamp(0, 3);
+        _status = 'Similitud muy baja (${(score * 100).round()}%). Lee de nuevo con claridad.';
+      }
     });
+  }
 
-    if (passed) {
-      widget.onRoundCompleted();
-    }
+  void _onContinueRound() {
+    setState(() {
+      _roundSuccess = false;
+      _score = 0;
+      _recognized = '';
+      _attemptsLeft = 3;
+      _status = 'Toca el micrófono y recita el texto.';
+    });
+    widget.onRoundCompleted();
   }
 
   Future<String> _convertPcmToWav(String rawPath) async {
@@ -358,16 +383,33 @@ class _FogStepState extends State<_FogStep>
   }
 
   bool _isWordFoggy(int globalIndex) {
-    switch (widget.round) {
-      case 0:
-        // Ronda 1: 33% (cada tercera palabra)
+    if (widget.level == 1) {
+      // Nivel 1: Muy leve
+      if (widget.round == 0) {
+        // Ronda 1: 20% (1 de cada 5)
+        return globalIndex % 5 == 4;
+      } else {
+        // Ronda 2: 33% (1 de cada 3)
         return globalIndex % 3 == 2;
-      case 1:
-        // Ronda 2: 66% (dos de cada tres)
-        return globalIndex % 3 != 0;
-      default:
-        // Ronda 3: 100%
+      }
+    } else if (widget.level == 2) {
+      // Nivel 2: Intermedio
+      if (widget.round == 0) {
+        // Ronda 1: 33% (1 de cada 3)
+        return globalIndex % 3 == 2;
+      } else {
+        // Ronda 2: 60% (3 de cada 5)
+        return globalIndex % 5 == 1 || globalIndex % 5 == 3 || globalIndex % 5 == 4;
+      }
+    } else {
+      // Nivel 3: Avanzado (completamente oculto en etapa 2)
+      if (widget.round == 0) {
+        // Ronda 1: 50% (1 de cada 2)
+        return globalIndex % 2 == 1;
+      } else {
+        // Ronda 2: 100% (todas las palabras ocultas)
         return true;
+      }
     }
   }
 
@@ -594,7 +636,6 @@ class _FogStepState extends State<_FogStep>
       );
     }
 
-    final total = _allWords.length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -606,7 +647,7 @@ class _FogStepState extends State<_FogStep>
               Text(
                 widget.finished
                     ? 'Recitación completada'
-                    : 'Ronda ${widget.round + 1} / 3',
+                    : 'Ronda ${widget.round + 1} / 2',
                 style: const TextStyle(
                   color: RefColors.pink,
                   fontSize: 12,
@@ -614,24 +655,14 @@ class _FogStepState extends State<_FogStep>
                   letterSpacing: .8,
                 ),
               ),
-              if (_score > 0)
-                Text(
-                  'Similitud: ${(_score * 100).round()}%',
-                  style: TextStyle(
-                    color: _score >= 0.60 ? RefColors.lime : RefColors.urgent,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                  ),
-                )
-              else
-                Text(
-                  'Total: $total palabras',
-                  style: const TextStyle(
-                    color: RefColors.muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                  ),
+              Text(
+                'Intentos disponibles: $_attemptsLeft',
+                style: TextStyle(
+                  color: _attemptsLeft == 1 ? RefColors.urgent : RefColors.muted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
                 ),
+              ),
             ],
           ),
         ),
@@ -677,72 +708,213 @@ class _FogStepState extends State<_FogStep>
               ],
             ),
           )
-        else ...[
-          GestureDetector(
-            onTap: _toggleListening,
-            child: AnimatedBuilder(
-              animation: _pulse,
-              builder: (context, child) {
-                final double scale = 1 + (_pulse.value * 0.04);
-                return Transform.scale(
-                  scale: _listening ? scale : 1.0,
+        else if (_roundSuccess)
+          Glass(
+            padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
+            color: RefColors.lime.withValues(alpha: .14),
+            border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
+            child: Column(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: RefColors.lime, size: 44),
+                const SizedBox(height: 12),
+                Text(
+                  widget.round == 1 ? '¡Niebla Disipada!' : '¡Etapa ${widget.round + 1} Completada!',
+                  style: const TextStyle(
+                    color: RefColors.lime,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Coincidencia: ${(_score * 100).round()}%',
+                  style: const TextStyle(
+                    color: RefColors.ink,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                GestureDetector(
+                  onTap: _onContinueRound,
                   child: Container(
-                    height: 64,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                     decoration: BoxDecoration(
-                      gradient: _listening ? RefColors.primary : null,
-                      color: _listening ? null : RefColors.glassStrong,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: _listening
-                            ? RefColors.pink
-                            : RefColors.border,
-                      ),
-                      boxShadow: _listening
-                          ? [
-                              BoxShadow(
-                                color: RefColors.pink.withValues(alpha: .25),
-                                blurRadius: 15,
-                                spreadRadius: 2,
-                              )
-                            ]
-                          : null,
+                      gradient: RefColors.cool,
+                      borderRadius: BorderRadius.circular(14),
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          _listening ? Icons.stop_rounded : Icons.mic_rounded,
-                          color: Colors.white,
-                          size: 22,
-                        ),
-                        const SizedBox(width: 10),
                         Text(
-                          _listening ? 'Detener y Procesar' : 'Recitar con tu voz',
+                          widget.round == 1 ? 'Finalizar ejercicio →' : 'Siguiente etapa →',
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 15,
+                            fontSize: 14,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
                       ],
                     ),
                   ),
-                );
-              },
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            _status,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: _status.contains('muy baja') ? RefColors.urgent : RefColors.dim,
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
+          )
+        else if (_finalizing)
+          Glass(
+            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+            color: RefColors.cyan.withValues(alpha: .10),
+            border: Border.all(color: RefColors.cyan.withValues(alpha: .30)),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: RefColors.cyan,
+                  ),
+                ),
+                SizedBox(width: 12),
+                Text(
+                  'Evaluando audio...',
+                  style: TextStyle(
+                    color: RefColors.cyan,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
             ),
+          )
+        else ...[
+          // Mic + score/ondas DEBAJO del texto.
+          Row(
+            children: [
+              GestureDetector(
+                onTap: _toggleListening,
+                child: SizedBox(
+                  width: 64,
+                  height: 64,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      if (_listening)
+                        AnimatedBuilder(
+                          animation: _pulse,
+                          builder: (context, _) {
+                            final t = _pulse.value;
+                            return Container(
+                              width: 56 + 14 * t,
+                              height: 56 + 14 * t,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: RefColors.cyan.withValues(alpha: 1 - t),
+                                  width: 2,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        width: 54,
+                        height: 54,
+                        decoration: BoxDecoration(
+                          color: RefColors.cyan.withValues(
+                            alpha: _listening ? .55 : .18,
+                          ),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: RefColors.cyan.withValues(alpha: .85),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: RefColors.cyan.withValues(alpha: .35),
+                              blurRadius: _listening ? 28 : 14,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                          color: RefColors.ink,
+                          size: 26,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_listening) ...[
+                      const Text(
+                        'Grabando voz...',
+                        style: TextStyle(
+                          color: RefColors.cyan,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ] else ...[
+                      if (_score > 0) ...[
+                        Text(
+                          '${(_score * 100).round()}% parecido',
+                          style: TextStyle(
+                            color: _score >= 0.60 ? RefColors.lime : RefColors.pink,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        RefProgress(_score.clamp(.02, 1.0)),
+                        const SizedBox(height: 7),
+                      ],
+                      Text(
+                        _status,
+                        style: TextStyle(
+                          color: _score > 0 ? RefColors.muted : RefColors.dim,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
           ),
-          if (_recognized.isNotEmpty) ...[
-            const SizedBox(height: 8),
+          
+          if (_listening) ...[
+            const SizedBox(height: 24),
+            // Panel flotante animado de ondas de voz en tiempo real
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              decoration: BoxDecoration(
+                color: RefColors.cyan.withValues(alpha: .04),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: RefColors.cyan.withValues(alpha: .15),
+                  width: 1,
+                ),
+              ),
+              child: const Column(
+                children: [
+                  _ListeningWaveIndicator(color: RefColors.cyan),
+                ],
+              ),
+            ),
+          ],
+
+          if (!_listening && _recognized.isNotEmpty) ...[
+            const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
