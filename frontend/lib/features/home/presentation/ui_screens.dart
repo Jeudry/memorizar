@@ -1143,45 +1143,22 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   alignment: Alignment.center,
                   child: _buildSoloLecturaText(context, _soloLecturaVisibleWords),
                 ),
-                const SizedBox(height: 18),
-                if (!store.isExerciseStepCompleted(slug))
+                if (store.isExerciseStepCompleted(slug)) ...[
+                  const SizedBox(height: 18),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(RefColors.cyan),
-                        ),
-                      ),
+                      const Icon(Icons.check_circle_outline, size: 16, color: RefColors.lime),
                       const SizedBox(width: 8),
-                      Text(
-                        'Revelando texto de forma natural... ($_soloLecturaVisibleWords/$totalWords)',
-                        style: const TextStyle(
-                          color: RefColors.cyan,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  )
-                else
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.check_circle_outline, size: 14, color: RefColors.lime),
-                      const SizedBox(width: 6),
                       const Text(
                         'Lectura completada',
                         style: TextStyle(
                           color: RefColors.lime,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(width: 14),
+                      const SizedBox(width: 20),
                       GestureDetector(
                         onTap: () {
                           _soloLecturaTimer?.cancel();
@@ -1192,23 +1169,31 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                           });
                           _startSoloLecturaAnimation(store, totalWords);
                         },
-                        child: const Row(
-                          children: [
-                            Icon(Icons.replay_rounded, size: 14, color: RefColors.cyan),
-                            SizedBox(width: 4),
-                            Text(
-                              'Repetir',
-                              style: TextStyle(
-                                color: RefColors.cyan,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w900,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: RefColors.cyan.withValues(alpha: .15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.replay_rounded, size: 16, color: RefColors.cyan),
+                              SizedBox(width: 6),
+                              Text(
+                                'Repetir',
+                                style: TextStyle(
+                                  color: RefColors.cyan,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w900,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ],
                   ),
+                ],
               ],
             ),
           ),
