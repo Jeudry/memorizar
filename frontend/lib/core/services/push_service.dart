@@ -36,7 +36,11 @@ class PushService {
     );
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _local.initialize(
-      const InitializationSettings(iOS: ios, android: android),
+      const InitializationSettings(
+        iOS: ios,
+        android: android,
+        macOS: ios,
+      ),
     );
     _initialized = true;
   }
@@ -77,7 +81,11 @@ class PushService {
       id,
       title,
       body,
-      const NotificationDetails(iOS: ios, android: android),
+      const NotificationDetails(
+        iOS: ios,
+        android: android,
+        macOS: ios,
+      ),
     );
   }
 
