@@ -343,6 +343,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   bool _checked = false;
   int _fragmentVisibleWords = 8;
   int _soloLecturaVisibleWords = 3;
+  Timer? _soloLecturaTimer;
   String? _blockOrderCardId;
   List<int> _blockOrderIndexes = [];
   int? _selectedBlockPosition;
@@ -400,6 +401,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
   @override
   void dispose() {
+    _soloLecturaTimer?.cancel();
     _completionTimer?.cancel();
     _letterTimer?.cancel();
     super.dispose();
@@ -1105,82 +1107,109 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   ) {
     if (slug == '00-solo-lectura') {
       final totalWords = _studyWords(card.back).length;
+      if (!store.isExerciseStepCompleted(slug) && _soloLecturaTimer == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _startSoloLecturaAnimation(store, totalWords);
+        });
+      }
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          GestureDetector(
-            onTap: () {
-              if (store.isExerciseStepCompleted(slug)) return;
-              setState(() {
-                _soloLecturaVisibleWords = (_soloLecturaVisibleWords + 3).clamp(1, totalWords);
-                if (_soloLecturaVisibleWords >= totalWords) {
-                  store.markExerciseStepCompleted(slug);
-                }
-              });
-            },
-            child: Glass(
-              padding: const EdgeInsets.fromLTRB(18, 22, 18, 22),
-              gradient: LinearGradient(
-                colors: [
-                  RefColors.violet.withValues(alpha: .28),
-                  RefColors.sun.withValues(alpha: .34),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    deck.isBible ? card.front.toUpperCase() : 'CITA',
-                    style: const TextStyle(
-                      color: RefColors.pink,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.4,
-                    ),
+          Glass(
+            padding: const EdgeInsets.fromLTRB(18, 22, 18, 22),
+            gradient: LinearGradient(
+              colors: [
+                RefColors.violet.withValues(alpha: .28),
+                RefColors.sun.withValues(alpha: .34),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  deck.isBible ? card.front.toUpperCase() : 'CITA',
+                  style: const TextStyle(
+                    color: RefColors.pink,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.4,
                   ),
-                  const SizedBox(height: 14),
-                  Container(
-                    constraints: const BoxConstraints(minHeight: 120),
-                    alignment: Alignment.center,
-                    child: _buildSoloLecturaText(context, _soloLecturaVisibleWords),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  constraints: const BoxConstraints(minHeight: 120),
+                  alignment: Alignment.center,
+                  child: _buildSoloLecturaText(context, _soloLecturaVisibleWords),
+                ),
+                const SizedBox(height: 18),
+                if (!store.isExerciseStepCompleted(slug))
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(RefColors.cyan),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Revelando texto de forma natural... ($_soloLecturaVisibleWords/$totalWords)',
+                        style: const TextStyle(
+                          color: RefColors.cyan,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.check_circle_outline, size: 14, color: RefColors.lime),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Lectura completada',
+                        style: TextStyle(
+                          color: RefColors.lime,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      GestureDetector(
+                        onTap: () {
+                          _soloLecturaTimer?.cancel();
+                          _soloLecturaTimer = null;
+                          store.resetExerciseStepCompleted(slug);
+                          setState(() {
+                            _soloLecturaVisibleWords = 0;
+                          });
+                          _startSoloLecturaAnimation(store, totalWords);
+                        },
+                        child: const Row(
+                          children: [
+                            Icon(Icons.replay_rounded, size: 14, color: RefColors.cyan),
+                            SizedBox(width: 4),
+                            Text(
+                              'Repetir',
+                              style: TextStyle(
+                                color: RefColors.cyan,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 18),
-                  if (!store.isExerciseStepCompleted(slug))
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.touch_app, size: 14, color: RefColors.cyan),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Toca para revelar 3 palabras más ($_soloLecturaVisibleWords/$totalWords)',
-                          style: const TextStyle(
-                            color: RefColors.cyan,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    )
-                  else
-                    const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.check_circle_outline, size: 14, color: RefColors.lime),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Texto completamente revelado',
-                          style: TextStyle(
-                            color: RefColors.lime,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                ],
-              ),
+              ],
             ),
           ),
         ],
@@ -1889,6 +1918,29 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ],
       ],
     );
+  }
+
+  void _startSoloLecturaAnimation(AppStore store, int totalWords) {
+    _soloLecturaTimer?.cancel();
+    _soloLecturaTimer = Timer.periodic(const Duration(milliseconds: 320), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final nextVisible = _soloLecturaVisibleWords + 1;
+      if (nextVisible >= totalWords) {
+        timer.cancel();
+        _soloLecturaTimer = null;
+        setState(() {
+          _soloLecturaVisibleWords = totalWords;
+        });
+        store.markExerciseStepCompleted('00-solo-lectura');
+      } else {
+        setState(() {
+          _soloLecturaVisibleWords = nextVisible;
+        });
+      }
+    });
   }
 
   Widget _realExerciseFooter(

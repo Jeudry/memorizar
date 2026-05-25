@@ -970,6 +970,11 @@ class AppStore extends ChangeNotifier {
     if (_completedExerciseSteps.add(key)) notifyListeners();
   }
 
+  void resetExerciseStepCompleted(String slug) {
+    final key = _exerciseStepKey(slug);
+    if (_completedExerciseSteps.remove(key)) notifyListeners();
+  }
+
   String voiceReadForCurrentCard() {
     return _exerciseVoiceReads['${activeDeck.id}:${activeCard.id}'] ?? '';
   }
