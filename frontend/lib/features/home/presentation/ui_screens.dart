@@ -342,7 +342,7 @@ class _QuizRound {
 class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   bool _checked = false;
   int _fragmentVisibleWords = 8;
-  int _soloLecturaVisibleWords = 3;
+  int _soloLecturaVisibleChars = 0;
   Timer? _soloLecturaTimer;
   String? _blockOrderCardId;
   List<int> _blockOrderIndexes = [];
@@ -1060,7 +1060,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       _fragmentVisibleWords = _studyWords(card.back).length;
     }
     if (slug == '00-solo-lectura' && store.isExerciseStepCompleted(slug)) {
-      _soloLecturaVisibleWords = _studyWords(card.back).length;
+      _soloLecturaVisibleChars = card.back.length;
     }
     return ReferencePage(
       showBottomNav: false,
@@ -1106,10 +1106,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     String slug,
   ) {
     if (slug == '00-solo-lectura') {
-      final totalWords = _studyWords(card.back).length;
+      final totalChars = card.back.length;
       if (!store.isExerciseStepCompleted(slug) && _soloLecturaTimer == null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _startSoloLecturaAnimation(store, totalWords);
+          _startSoloLecturaAnimation(store, totalChars);
         });
       }
       return Column(
@@ -1141,7 +1141,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 Container(
                   constraints: const BoxConstraints(minHeight: 120),
                   alignment: Alignment.center,
-                  child: _buildSoloLecturaText(context, _soloLecturaVisibleWords),
+                  child: _buildSoloLecturaText(context, _soloLecturaVisibleChars),
                 ),
                 if (store.isExerciseStepCompleted(slug)) ...[
                   const SizedBox(height: 18),
@@ -1165,9 +1165,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                           _soloLecturaTimer = null;
                           store.resetExerciseStepCompleted(slug);
                           setState(() {
-                            _soloLecturaVisibleWords = 0;
+                            _soloLecturaVisibleChars = 0;
                           });
-                          _startSoloLecturaAnimation(store, totalWords);
+                          _startSoloLecturaAnimation(store, totalChars);
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -1859,7 +1859,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
   }
 
-  Widget _buildSoloLecturaText(BuildContext context, int visibleCount) {
+  Widget _buildSoloLecturaText(BuildContext context, int visibleChars) {
     final verses = _currentBatchVerses(context);
     const style = TextStyle(
       fontSize: 20,
@@ -1870,9 +1870,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
 
     if (verses.length == 1) {
-      final words = _studyWords(verses.first.text);
-      final safe = visibleCount.clamp(0, words.length);
-      final visibleText = words.take(safe).join(' ');
+      final text = verses.first.text;
+      final safe = visibleChars.clamp(0, text.length);
+      final visibleText = text.substring(0, safe);
       return Text(
         visibleText,
         textAlign: TextAlign.center,
@@ -1880,49 +1880,50 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       );
     }
 
-    var wordsShown = 0;
+    var charsShown = 0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (var i = 0; i < verses.length; i++) ...[
           () {
-            final versoWords = _studyWords(verses[i].text);
-            final remainingVisible = (visibleCount - wordsShown).clamp(0, versoWords.length);
-            wordsShown += versoWords.length;
+            final versoText = verses[i].text;
+            final remainingVisible = (visibleChars - charsShown).clamp(0, versoText.length);
+            charsShown += versoText.length;
             if (remainingVisible <= 0) return const SizedBox.shrink();
 
+            final visiblePart = versoText.substring(0, remainingVisible);
             return _VerseLine(
               number: verses[i].number,
-              words: versoWords.take(remainingVisible).toList(),
+              words: _studyWords(visiblePart),
               defaultStyle: style,
               fontSize: 20,
             );
           }(),
-          if (i < verses.length - 1 && visibleCount > wordsShown - _studyWords(verses[i].text).length)
+          if (i < verses.length - 1 && visibleChars > charsShown - verses[i].text.length)
             const SizedBox(height: 10),
         ],
       ],
     );
   }
 
-  void _startSoloLecturaAnimation(AppStore store, int totalWords) {
+  void _startSoloLecturaAnimation(AppStore store, int totalChars) {
     _soloLecturaTimer?.cancel();
-    _soloLecturaTimer = Timer.periodic(const Duration(milliseconds: 320), (timer) {
+    _soloLecturaTimer = Timer.periodic(const Duration(milliseconds: 25), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
       }
-      final nextVisible = _soloLecturaVisibleWords + 1;
-      if (nextVisible >= totalWords) {
+      final nextVisible = _soloLecturaVisibleChars + 1;
+      if (nextVisible >= totalChars) {
         timer.cancel();
         _soloLecturaTimer = null;
         setState(() {
-          _soloLecturaVisibleWords = totalWords;
+          _soloLecturaVisibleChars = totalChars;
         });
         store.markExerciseStepCompleted('00-solo-lectura');
       } else {
         setState(() {
-          _soloLecturaVisibleWords = nextVisible;
+          _soloLecturaVisibleChars = nextVisible;
         });
       }
     });
