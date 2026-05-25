@@ -445,6 +445,7 @@ class _FirstLetterSentence extends StatelessWidget {
   final String? text;
   final int level;
   final List<String>? targets;
+  final List<int>? targetPositions;
   final List<String?>? answers;
   final int activeIndex;
   final ValueChanged<int>? onBlankTap;
@@ -453,6 +454,7 @@ class _FirstLetterSentence extends StatelessWidget {
     this.text,
     required this.level,
     this.targets,
+    this.targetPositions,
     this.answers,
     this.activeIndex = 0,
     this.onBlankTap,
@@ -463,8 +465,11 @@ class _FirstLetterSentence extends StatelessWidget {
     final isHarder = level >= 2;
     final sourceText = text ?? _cardStudyText(context);
     final words = _studyWords(sourceText);
-    final targetWords =
-        targets ?? _firstLetterTargets(sourceText, level: level);
+    final targetsData = targetPositions != null && targets != null
+        ? (targets!, targetPositions!)
+        : _firstLetterTargetsWithPositions(sourceText, level: level);
+    final targetWords = targetsData.$1;
+    final positions = targetsData.$2;
     final answerWords =
         answers ?? List<String?>.filled(targetWords.length, null);
     final visibleWords = switch (level) {
@@ -472,7 +477,6 @@ class _FirstLetterSentence extends StatelessWidget {
       2 => 1,
       _ => 0,
     };
-    final usedTargetIndexes = <int>{};
     return Glass(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
       gradient: LinearGradient(
@@ -499,9 +503,9 @@ class _FirstLetterSentence extends StatelessWidget {
                   _LetterWord(words[wordIndex])
                 else
                   _letterWidget(
+                    wordIndex,
                     words[wordIndex],
-                    usedTargetIndexes,
-                    targetWords,
+                    positions,
                     answerWords,
                   ),
               const Text(
@@ -516,36 +520,19 @@ class _FirstLetterSentence extends StatelessWidget {
   }
 
   Widget _letterWidget(
+    int wordIndex,
     String word,
-    Set<int> usedTargetIndexes,
-    List<String> targetWords,
+    List<int> targetPositions,
     List<String?> answerWords,
   ) {
-    final targetIndex = _matchingUnusedTargetIndex(
-      word,
-      usedTargetIndexes,
-      targetWords,
-    );
-    if (targetIndex == null) return _LetterWord(word);
-    usedTargetIndexes.add(targetIndex);
+    final targetIndex = targetPositions.indexOf(wordIndex);
+    if (targetIndex == -1) return _LetterWord(word);
     return _LetterBlank(
       answer: answerWords[targetIndex],
       active: activeIndex == targetIndex && answerWords[targetIndex] == null,
       wordLength: word.length,
       onTap: () => onBlankTap?.call(targetIndex),
     );
-  }
-
-  int? _matchingUnusedTargetIndex(
-    String word,
-    Set<int> usedTargetIndexes,
-    List<String> targetWords,
-  ) {
-    for (var index = 0; index < targetWords.length; index++) {
-      if (usedTargetIndexes.contains(index)) continue;
-      if (_sameAnswer(word, targetWords[index])) return index;
-    }
-    return null;
   }
 }
 

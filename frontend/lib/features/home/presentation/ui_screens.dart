@@ -359,6 +359,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   String? _letterCardId;
   int _letterLevel = 1;
   List<String> _letterTargets = [];
+  List<int> _letterTargetPositions = [];
   List<String?> _letterAnswers = [];
   int _activeLetterIndex = 0;
   int _letterMistakes = 0;
@@ -894,7 +895,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_letterCardId == cardId && _letterLevel == level) return;
     _letterCardId = cardId;
     _letterLevel = level;
-    _letterTargets = _firstLetterTargets(text, level: level);
+    final (targets, positions) = _firstLetterTargetsWithPositions(text, level: level);
+    _letterTargets = targets;
+    _letterTargetPositions = positions;
     _letterAnswers = List<String?>.filled(_letterTargets.length, null);
     _activeLetterIndex = 0;
     _letterMistakes = 0;
@@ -1586,6 +1589,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               text: card.back,
               level: level,
               targets: _letterTargets,
+              targetPositions: _letterTargetPositions,
               answers: _letterAnswers,
               activeIndex: _activeLetterIndex,
               onBlankTap: _activateLetterBlank,
@@ -1626,28 +1630,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 ],
               ),
             )
-          else if (_letterLost)
+          else if (_letterLost || remainingAttempts == 0)
             _LostPanel(
-              title: '¡Tiempo agotado!',
-              subtitle: 'Se acabó el tiempo. Inténtalo de nuevo.',
+              title: _letterLost ? '¡Tiempo agotado!' : '¡Sin intentos!',
+              subtitle: _letterLost
+                  ? 'Se acabó el tiempo. Inténtalo de nuevo.'
+                  : 'Cometiste demasiados errores. Inténtalo de nuevo.',
               onRetry: _retryLetter,
             )
           else ...[
             _KeyboardCard(
-              onLetterTap: remainingAttempts == 0 ? null : _selectFirstLetter,
+              onLetterTap: _selectFirstLetter,
             ),
-            if (hasInput && !complete && remainingAttempts == 0) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Sin intentos restantes.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: RefColors.urgent,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
           ],
         ],
       );

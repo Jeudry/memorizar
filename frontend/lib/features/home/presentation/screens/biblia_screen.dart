@@ -2331,9 +2331,9 @@ String _firstLetterAnswer(String text, {required int level}) {
   return words.map((word) => word.substring(0, 1)).join('');
 }
 
-List<String> _firstLetterTargets(String text, {required int level}) {
+(List<String>, List<int>) _firstLetterTargetsWithPositions(String text, {required int level}) {
   final words = _studyWords(text);
-  if (words.isEmpty) return [];
+  if (words.isEmpty) return ([], []);
   final targetCount = switch (level) {
     1 => 4,
     2 => (words.length * 0.7).round(),
@@ -2346,14 +2346,20 @@ List<String> _firstLetterTargets(String text, {required int level}) {
   };
   final rng = math.Random();
   final available = words.skip(visibleWords).toList();
-  if (available.isEmpty) return words.take(1).toList();
+  if (available.isEmpty) return ([words.first], [0]);
   final indexes = List.generate(available.length, (i) => i);
   indexes.shuffle(rng);
   final selected = indexes
       .take(targetCount.clamp(1, available.length).toInt())
       .toList();
-  selected.sort();
-  return selected.map((i) => available[i]).toList();
+  selected.sort((a, b) => a.compareTo(b));
+  final targets = selected.map((i) => available[i]).toList();
+  final positions = selected.map((i) => i + visibleWords).toList();
+  return (targets, positions);
+}
+
+List<String> _firstLetterTargets(String text, {required int level}) {
+  return _firstLetterTargetsWithPositions(text, level: level).$1;
 }
 
 int _editDistance(String a, String b) {
