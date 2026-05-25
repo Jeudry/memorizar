@@ -42,6 +42,7 @@ class _FogStepState extends State<_FogStep>
   bool _finalizing = false;
   bool _roundSuccess = false;
   int _attemptsLeft = 3;
+  final Set<int> _revealedWordIndices = {};
 
   @override
   void initState() {
@@ -63,6 +64,7 @@ class _FogStepState extends State<_FogStep>
       _recognized = '';
       _attemptsLeft = 3;
       _roundSuccess = false;
+      _revealedWordIndices.clear();
     }
   }
 
@@ -369,6 +371,9 @@ class _FogStepState extends State<_FogStep>
     if (widget.showHintTemp) {
       return false; // Desnublar completamente si la pista esta activa
     }
+    if (_revealedWordIndices.contains(globalIndex)) {
+      return false; // Desnublar individualmente si se ha tocado
+    }
     if (widget.level == 1) {
       // Nivel 1: Muy leve (oculta 25%, 1 de cada 4)
       return globalIndex % 4 == 3;
@@ -418,11 +423,27 @@ class _FogStepState extends State<_FogStep>
             );
 
             if (isFoggy && !widget.finished) {
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 3.5, sigmaY: 3.5),
-                  child: wordWidget,
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  if (!mounted) return;
+                  setState(() {
+                    _revealedWordIndices.add(globalIdx);
+                  });
+                  Timer(const Duration(seconds: 3), () {
+                    if (mounted) {
+                      setState(() {
+                        _revealedWordIndices.remove(globalIdx);
+                      });
+                    }
+                  });
+                },
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(sigmaX: 3.5, sigmaY: 3.5),
+                    child: wordWidget,
+                  ),
                 ),
               );
             }
@@ -461,11 +482,27 @@ class _FogStepState extends State<_FogStep>
                 );
 
                 if (isFoggy && !widget.finished) {
-                  return ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: ImageFiltered(
-                      imageFilter: ImageFilter.blur(sigmaX: 3.5, sigmaY: 3.5),
-                      child: wordWidget,
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      if (!mounted) return;
+                      setState(() {
+                        _revealedWordIndices.add(i);
+                      });
+                      Timer(const Duration(seconds: 3), () {
+                        if (mounted) {
+                          setState(() {
+                            _revealedWordIndices.remove(i);
+                          });
+                        }
+                      });
+                    },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: ImageFiltered(
+                        imageFilter: ImageFilter.blur(sigmaX: 3.5, sigmaY: 3.5),
+                        child: wordWidget,
+                      ),
                     ),
                   );
                 }
@@ -644,6 +681,28 @@ class _FogStepState extends State<_FogStep>
           ),
           child: _buildVersesContainer(context),
         ),
+        if (!widget.finished) ...[
+          const SizedBox(height: 8),
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.touch_app_rounded,
+                size: 14,
+                color: RefColors.dim,
+              ),
+              SizedBox(width: 6),
+              Text(
+                'Toca una palabra oculta para revelarla por 3 segundos.',
+                style: TextStyle(
+                  color: RefColors.dim,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 16),
         if (widget.finished)
           Glass(

@@ -2069,6 +2069,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         slug == '03-leer-voz' ||
         slug == '04-escuchar-voz') {
       final showSkip =
+          slug == '01-escuchar' ||
           slug == '03-leer-voz' ||
           slug == '04-escuchar-voz';
       final cta = _ActionCta(
@@ -2088,7 +2089,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           SizedBox(
             width: 118,
             child: GhostButton(
-              'Saltar',
+              'Omitir',
               onTap: () {
                 ActiveMediaRegistry.stopAll();
                 store.markExerciseStepCompleted(slug);
@@ -2112,14 +2113,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           SizedBox(
             width: 118,
             child: GhostButton(
-              'Pista',
+              'Omitir',
               onTap: () {
-                setState(() => _fogShowHintTemp = true);
-                Timer(const Duration(seconds: 3), () {
-                  if (mounted) {
-                    setState(() => _fogShowHintTemp = false);
-                  }
-                });
+                ActiveMediaRegistry.stopAll();
+                store.markExerciseStepCompleted(slug);
+                if (_isFinalVoiceSlug(slug)) {
+                  _completeSessionCard(context, store, correct: true);
+                  return;
+                }
+                Navigator.push(
+                  context,
+                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
+                );
               },
             ),
           ),
@@ -2144,13 +2149,30 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ],
       );
     }
+    final showOmitirForDefault =
+        slug == '05-bloques' ||
+        _isFirstLetterSlug(slug) ||
+        slug == '09-quiz';
+
     return Row(
       children: [
         SizedBox(
           width: 118,
           child: GhostButton(
-            'Pista',
+            showOmitirForDefault ? 'Omitir' : 'Pista',
             onTap: () {
+              if (showOmitirForDefault) {
+                ActiveMediaRegistry.stopAll();
+                store.markExerciseStepCompleted(slug);
+                if (slug == '09-quiz') {
+                  store.answerCurrentCard(true);
+                }
+                Navigator.push(
+                  context,
+                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
+                );
+                return;
+              }
               if (slug == '05-bloques') {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -2159,15 +2181,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     ),
                   ),
                 );
-                return;
-              }
-              if (_isFogSlug(slug)) {
-                setState(() => _fogShowHintTemp = true);
-                Timer(const Duration(seconds: 3), () {
-                  if (mounted) {
-                    setState(() => _fogShowHintTemp = false);
-                  }
-                });
                 return;
               }
               ScaffoldMessenger.of(context).showSnackBar(
