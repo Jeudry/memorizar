@@ -4,16 +4,16 @@ part of '../ui_screens.dart';
 
 class _FogStep extends StatefulWidget {
   final String targetText;
-  final int round; // 0,1 (Ronda 1, Ronda 2)
   final bool finished;
   final int level;
+  final bool showHintTemp;
   final VoidCallback onRoundCompleted;
 
   const _FogStep({
     required this.targetText,
-    required this.round,
     required this.finished,
     required this.level,
+    required this.showHintTemp,
     required this.onRoundCompleted,
   });
 
@@ -63,13 +63,6 @@ class _FogStepState extends State<_FogStep>
       _recognized = '';
       _attemptsLeft = 3;
       _roundSuccess = false;
-    }
-    if (oldWidget.round != widget.round) {
-      _score = 0;
-      _recognized = '';
-      _attemptsLeft = 3;
-      _roundSuccess = false;
-      _status = 'Ronda cambiada. Presiona recitar.';
     }
   }
 
@@ -299,23 +292,13 @@ class _FogStepState extends State<_FogStep>
         _roundSuccess = true;
         _status = '¡Excelente recitación!';
         HapticFeedback.mediumImpact();
+        widget.onRoundCompleted();
       } else {
         _roundSuccess = false;
         _attemptsLeft = (_attemptsLeft - 1).clamp(0, 3);
         _status = 'Similitud muy baja (${(score * 100).round()}%). Lee de nuevo con claridad.';
       }
     });
-  }
-
-  void _onContinueRound() {
-    setState(() {
-      _roundSuccess = false;
-      _score = 0;
-      _recognized = '';
-      _attemptsLeft = 3;
-      _status = 'Toca el micrófono y recita el texto.';
-    });
-    widget.onRoundCompleted();
   }
 
   Future<String> _convertPcmToWav(String rawPath) async {
@@ -383,33 +366,18 @@ class _FogStepState extends State<_FogStep>
   }
 
   bool _isWordFoggy(int globalIndex) {
+    if (widget.showHintTemp) {
+      return false; // Desnublar completamente si la pista esta activa
+    }
     if (widget.level == 1) {
-      // Nivel 1: Muy leve
-      if (widget.round == 0) {
-        // Ronda 1: 20% (1 de cada 5)
-        return globalIndex % 5 == 4;
-      } else {
-        // Ronda 2: 33% (1 de cada 3)
-        return globalIndex % 3 == 2;
-      }
+      // Nivel 1: Muy leve (oculta 25%, 1 de cada 4)
+      return globalIndex % 4 == 3;
     } else if (widget.level == 2) {
-      // Nivel 2: Intermedio
-      if (widget.round == 0) {
-        // Ronda 1: 33% (1 de cada 3)
-        return globalIndex % 3 == 2;
-      } else {
-        // Ronda 2: 60% (3 de cada 5)
-        return globalIndex % 5 == 1 || globalIndex % 5 == 3 || globalIndex % 5 == 4;
-      }
+      // Nivel 2: Intermedio (oculta 50%, 1 de cada 2)
+      return globalIndex % 2 == 1;
     } else {
-      // Nivel 3: Avanzado (completamente oculto en etapa 2)
-      if (widget.round == 0) {
-        // Ronda 1: 50% (1 de cada 2)
-        return globalIndex % 2 == 1;
-      } else {
-        // Ronda 2: 100% (todas las palabras ocultas)
-        return true;
-      }
+      // Nivel 3: Avanzado / Final (oculta 100%, todas las palabras)
+      return true;
     }
   }
 
@@ -647,7 +615,7 @@ class _FogStepState extends State<_FogStep>
               Text(
                 widget.finished
                     ? 'Recitación completada'
-                    : 'Ronda ${widget.round + 1} / 2',
+                    : 'Práctica de Niebla Nivel ${widget.level}',
                 style: const TextStyle(
                   color: RefColors.pink,
                   fontSize: 12,
@@ -682,12 +650,12 @@ class _FogStepState extends State<_FogStep>
             padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
             color: RefColors.lime.withValues(alpha: .14),
             border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
-            child: const Column(
+            child: Column(
               children: [
-                Icon(Icons.check_circle_rounded,
+                const Icon(Icons.check_circle_rounded,
                     color: RefColors.lime, size: 36),
-                SizedBox(height: 10),
-                Text(
+                const SizedBox(height: 10),
+                const Text(
                   '¡Niebla disipada!',
                   style: TextStyle(
                     color: RefColors.lime,
@@ -695,67 +663,14 @@ class _FogStepState extends State<_FogStep>
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Text(
-                  'Recitaste el texto de memoria de forma offline.',
+                  'Recitaste el texto de memoria de forma offline con ${(_score > 0 ? (_score * 100).round() : 100)}% de coincidencia.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: RefColors.ink,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          )
-        else if (_roundSuccess)
-          Glass(
-            padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
-            color: RefColors.lime.withValues(alpha: .14),
-            border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
-            child: Column(
-              children: [
-                const Icon(Icons.check_circle_rounded, color: RefColors.lime, size: 44),
-                const SizedBox(height: 12),
-                Text(
-                  widget.round == 1 ? '¡Niebla Disipada!' : '¡Etapa ${widget.round + 1} Completada!',
-                  style: const TextStyle(
-                    color: RefColors.lime,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Coincidencia: ${(_score * 100).round()}%',
-                  style: const TextStyle(
-                    color: RefColors.ink,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                GestureDetector(
-                  onTap: _onContinueRound,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    decoration: BoxDecoration(
-                      gradient: RefColors.cool,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          widget.round == 1 ? 'Finalizar ejercicio →' : 'Siguiente etapa →',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
               ],

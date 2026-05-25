@@ -2083,7 +2083,6 @@ int _flowStepNumber(String slug) {
 }
 
 String _realStepTitle(String slug) {
-  if (slug == '18-recit-n1') return 'Encuesta';
   if (slug == '00-solo-lectura') return 'Solo lectura';
   if (slug == '01-escuchar') return 'Escuchar';
   if (slug == '02-niebla-n1') return 'Niebla N1';
@@ -2131,8 +2130,6 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     '07-primera-letra-n1',
   ];
   final level2 = <String>[
-    '08-voz-guiada',
-    '17-niebla-n2', // recitación intermedia, blur medio
     '10-completar-n2',
     '11-primera-letra-n2',
   ];
@@ -2141,17 +2138,25 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     '12-completar-n3',
     '13-primera-letra-n3',
     '15-banco-completo',
-    '16-niebla-n3', // niebla densa (el "16-niebla" original ahora renombrado)
   ];
 
   final slugs = <String>[
     ...intro,
-    // Niebla N1: primer ejercicio activo de recitación → bloque de práctica,
-    // no el bloque inicial. El usuario recita el texto borroso con el mic.
-    '02-niebla-n1',
+    // Nivel 1: práctica activa + niebla N1 al final del nivel 1
     ...pick(level1, difficulty == 0 ? 1 : 2),
-    if (difficulty >= 1) ...pick(level2, difficulty == 1 ? 2 : 3),
-    if (difficulty >= 1) ...pick(level3Optional, difficulty == 1 ? 2 : 3),
+    '02-niebla-n1',
+    
+    // Nivel 2: práctica activa + niebla N2 al final del nivel 2
+    if (difficulty >= 1) ...[
+      ...pick(level2, difficulty == 1 ? 2 : 3),
+      '17-niebla-n2',
+    ],
+    
+    // Nivel 3: práctica premium/avanzada + niebla N3 al final del nivel 3
+    if (difficulty >= 1) ...[
+      ...pick(level3Optional, difficulty == 1 ? 2 : 3),
+      '16-niebla-n3',
+    ],
     '14-voz-final',
   ];
   return slugs.map(_flowData).toList();

@@ -474,7 +474,7 @@ class _FirstLetterSentence extends StatelessWidget {
     };
     final usedTargetIndexes = <int>{};
     return Glass(
-      padding: const EdgeInsets.fromLTRB(18, 32, 18, 32),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
       gradient: LinearGradient(
         colors: [
           RefColors.violet.withValues(alpha: .28),
@@ -483,28 +483,33 @@ class _FirstLetterSentence extends StatelessWidget {
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ),
-      child: Center(
-        child: Wrap(
-          spacing: isHarder ? 8 : 10,
-          runSpacing: isHarder ? 12 : 14,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          alignment: WrapAlignment.center,
-          children: [
-            for (var wordIndex = 0; wordIndex < words.length; wordIndex++)
-              if (wordIndex < visibleWords)
-                _LetterWord(words[wordIndex])
-              else
-                _letterWidget(
-                  words[wordIndex],
-                  usedTargetIndexes,
-                  targetWords,
-                  answerWords,
-                ),
-            const Text(
-              '.',
-              style: TextStyle(fontSize: 23, fontWeight: FontWeight.w900),
-            ),
-          ],
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        child: Container(
+          width: double.infinity,
+          alignment: Alignment.center,
+          child: Wrap(
+            spacing: isHarder ? 8 : 10,
+            runSpacing: isHarder ? 12 : 14,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.center,
+            children: [
+              for (var wordIndex = 0; wordIndex < words.length; wordIndex++)
+                if (wordIndex < visibleWords)
+                  _LetterWord(words[wordIndex])
+                else
+                  _letterWidget(
+                    words[wordIndex],
+                    usedTargetIndexes,
+                    targetWords,
+                    answerWords,
+                  ),
+              const Text(
+                '.',
+                style: TextStyle(fontSize: 23, fontWeight: FontWeight.w900),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -562,7 +567,7 @@ class _LetterWord extends StatelessWidget {
   }
 }
 
-class _LetterBlank extends StatelessWidget {
+class _LetterBlank extends StatefulWidget {
   final String? answer;
   final bool active;
   final int wordLength;
@@ -576,30 +581,64 @@ class _LetterBlank extends StatelessWidget {
   });
 
   @override
+  State<_LetterBlank> createState() => _LetterBlankState();
+}
+
+class _LetterBlankState extends State<_LetterBlank> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.active) {
+      _ensureVisible();
+    }
+  }
+
+  @override
+  void didUpdateWidget(_LetterBlank oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !oldWidget.active) {
+      _ensureVisible();
+    }
+  }
+
+  void _ensureVisible() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeInOutCubic,
+          alignment: 0.5,
+        );
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final complete = answer != null;
+    final complete = widget.answer != null;
     final accent = complete
         ? RefColors.lime
-        : active
+        : widget.active
         ? RefColors.cyan
         : RefColors.border;
-    final length = wordLength.clamp(1, 14);
+    final length = widget.wordLength.clamp(1, 14);
     return GestureDetector(
-      onTap: complete ? null : onTap,
+      onTap: complete ? null : widget.onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         constraints: BoxConstraints(minWidth: (length * 10.0).clamp(28, 160)),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
         decoration: BoxDecoration(
-          color: active
+          color: widget.active
               ? accent.withValues(alpha: .35)
               : accent.withValues(alpha: complete ? .16 : .08),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: accent.withValues(alpha: active ? 1.0 : .5),
-            width: active ? 2.4 : 1.5,
+            color: accent.withValues(alpha: widget.active ? 1.0 : .5),
+            width: widget.active ? 2.4 : 1.5,
           ),
-          boxShadow: active
+          boxShadow: widget.active
               ? [
                   BoxShadow(
                     color: accent.withValues(alpha: .6),
@@ -610,7 +649,7 @@ class _LetterBlank extends StatelessWidget {
               : null,
         ),
         child: Text(
-          answer ?? '_' * length,
+          widget.answer ?? '_' * length,
           textAlign: TextAlign.center,
           style: TextStyle(
             color: complete ? RefColors.lime : RefColors.ink,

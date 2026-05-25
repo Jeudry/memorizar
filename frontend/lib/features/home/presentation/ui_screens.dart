@@ -57,7 +57,6 @@ part 'screens/flashcards_screen.dart';
 part 'screens/ejercicios_screen.dart';
 part 'screens/progress_tree_screen.dart';
 part 'screens/fog_step.dart';
-part 'screens/recitation_step.dart';
 part 'screens/exercise_flow_screens.dart';
 part 'screens/exercise_review_widgets.dart';
 part 'screens/exercise_voice_widgets.dart';
@@ -226,8 +225,6 @@ const flowScreens = [
     'Primera letra N1',
     'Menos pistas, más memoria',
   ),
-  ExerciseFlowData('18-recit-n1', 'Encuesta', 'Responde de forma inteligente'),
-  ExerciseFlowData('08-voz-guiada', 'Voz guiada', 'Responde en voz alta'),
   ExerciseFlowData('17-niebla-n2', 'Niebla N2', 'Recitación con difuminado medio'),
   ExerciseFlowData('10-completar-n2', 'Completar N2', 'Recuerdo más fuerte'),
   ExerciseFlowData('11-primera-letra-n2', 'Primera letra N2', 'Casi sin ayuda'),
@@ -398,8 +395,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 
   String? _fogCardId;
-  int _fogRound = 0;
   bool _fogFinished = false;
+  bool _fogShowHintTemp = false;
 
   @override
   void dispose() {
@@ -660,19 +657,15 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   void _ensureFogState(String cardId) {
     if (_fogCardId == cardId) return;
     _fogCardId = cardId;
-    _fogRound = 0;
     _fogFinished = false;
   }
 
   void _onFogRoundCompleted() {
     setState(() {
-      if (_fogRound >= 1) { // 2 rounds total (0 and 1)
-        _fogFinished = true;
-        HapticFeedback.heavyImpact();
-      } else {
-        _fogRound += 1;
-        HapticFeedback.lightImpact();
-      }
+      _fogFinished = true;
+      HapticFeedback.heavyImpact();
+      final store = AppScope.of(context);
+      store.markExerciseStepCompleted(widget.data.slug);
     });
   }
 
@@ -1069,8 +1062,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       showBottomNav: false,
       scrollable:
           slug != '01-escuchar' &&
-          slug != '08-voz-guiada' &&
-          !_isFinalVoiceSlug(slug), // Allow voice/listen steps to expand
+          !_isFirstLetterSlug(slug) &&
+          !_isFogSlug(slug) &&
+          !_isFinalVoiceSlug(slug),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1081,7 +1075,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             progress: step.clamp(1, totalSteps),
           ),
           if (slug == '01-escuchar' ||
-              slug == '08-voz-guiada' ||
+              _isFirstLetterSlug(slug) ||
+              _isFogSlug(slug) ||
               _isFinalVoiceSlug(slug))
             Expanded(
               child: _RedFlash(
@@ -1310,15 +1305,16 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       );
     }
 
-    if (slug == '08-voz-guiada' || _isFinalVoiceSlug(slug)) {
-      final hidden = _isFinalVoiceSlug(slug);
-      return _RecitationStep(
+    if (_isFinalVoiceSlug(slug)) {
+      _ensureFogState(card.id);
+      return _FogStep(
         targetText: card.back,
-        finalMode: hidden,
-        colorMode: hidden ? _ListeningColorMode.pink : _ListeningColorMode.blue,
-        onCompleted: (passed) {
-          store.markExerciseStepCompleted(slug);
-          if (hidden) store.answerCurrentCard(passed);
+        finished: _fogFinished,
+        level: 3, // Final voice test blurs 100% of the words!
+        showHintTemp: _fogShowHintTemp,
+        onRoundCompleted: () {
+          _onFogRoundCompleted();
+          store.answerCurrentCard(true); // completed!
         },
       );
     }
@@ -1585,13 +1581,15 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             timeValue: _formatMmSs(_letterSecondsLeft),
           ),
           const SizedBox(height: 12),
-          _FirstLetterSentence(
-            text: card.back,
-            level: level,
-            targets: _letterTargets,
-            answers: _letterAnswers,
-            activeIndex: _activeLetterIndex,
-            onBlankTap: _activateLetterBlank,
+          Expanded(
+            child: _FirstLetterSentence(
+              text: card.back,
+              level: level,
+              targets: _letterTargets,
+              answers: _letterAnswers,
+              activeIndex: _activeLetterIndex,
+              onBlankTap: _activateLetterBlank,
+            ),
           ),
           const SizedBox(height: 14),
           if (complete)
@@ -1803,9 +1801,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       _ensureFogState(card.id);
       return _FogStep(
         targetText: card.back,
-        round: _fogRound,
         finished: _fogFinished,
         level: _fogLevelForSlug(slug),
+        showHintTemp: _fogShowHintTemp,
         onRoundCompleted: _onFogRoundCompleted,
       );
     }
@@ -2075,14 +2073,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '00-solo-lectura' ||
         slug == '01-escuchar' ||
         slug == '03-leer-voz' ||
-        slug == '04-escuchar-voz' ||
-        slug == '08-voz-guiada' ||
-        _isFinalVoiceSlug(slug)) {
+        slug == '04-escuchar-voz') {
       final showSkip =
           slug == '03-leer-voz' ||
-          slug == '04-escuchar-voz' ||
-          slug == '08-voz-guiada' ||
-          _isFinalVoiceSlug(slug);
+          slug == '04-escuchar-voz';
       final cta = _ActionCta(
         label: _footerLabel(slug, checked: _checked, completed: completed),
         enabled: completed,
@@ -2116,6 +2110,46 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ],
       );
     }
+    if (_isFogSlug(slug) || _isFinalVoiceSlug(slug)) {
+      final label = _footerLabel(slug, checked: _checked, completed: completed);
+      final enabled = completed;
+      return Row(
+        children: [
+          SizedBox(
+            width: 118,
+            child: GhostButton(
+              'Pista',
+              onTap: () {
+                setState(() => _fogShowHintTemp = true);
+                Timer(const Duration(seconds: 3), () {
+                  if (mounted) {
+                    setState(() => _fogShowHintTemp = false);
+                  }
+                });
+              },
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _ActionCta(
+              label: label,
+              enabled: enabled,
+              onTap: () {
+                ActiveMediaRegistry.stopAll();
+                if (_isFinalVoiceSlug(slug)) {
+                  _completeSessionCard(context, store, correct: true);
+                  return;
+                }
+                Navigator.push(
+                  context,
+                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
+                );
+              },
+            ),
+          ),
+        ],
+      );
+    }
     return Row(
       children: [
         SizedBox(
@@ -2131,6 +2165,15 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     ),
                   ),
                 );
+                return;
+              }
+              if (_isFogSlug(slug)) {
+                setState(() => _fogShowHintTemp = true);
+                Timer(const Duration(seconds: 3), () {
+                  if (mounted) {
+                    setState(() => _fogShowHintTemp = false);
+                  }
+                });
                 return;
               }
               ScaffoldMessenger.of(context).showSnackBar(
@@ -2266,7 +2309,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '04-escuchar-voz') {
       return completed ? 'Siguiente →' : 'Escucha tu lectura para continuar';
     }
-    if (slug == '08-voz-guiada') {
+    if (_isFogSlug(slug)) {
       return completed ? 'Siguiente →' : 'Recita para continuar';
     }
     if (_isFinalVoiceSlug(slug)) {
