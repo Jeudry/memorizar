@@ -9,11 +9,12 @@ class WhisperService {
   WhisperService._privateConstructor();
   static final WhisperService instance = WhisperService._privateConstructor();
 
-  // URLs de descarga para los modelos Whisper Tiny multilenguaje cuantizados (INT8)
-  static const String _baseUrl = 'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/';
-  static const String _encoderFile = 'tiny-encoder.int8.onnx';
-  static const String _decoderFile = 'tiny-decoder.int8.onnx';
-  static const String _tokensFile = 'tiny-tokens.txt';
+  // URLs de descarga para los modelos Whisper Small multilenguaje cuantizados (INT8)
+  static const String _baseUrl = 'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/';
+  static const String _encoderFile = 'small-encoder.int8.onnx';
+  static const String _decoderFile = 'small-decoder.int8.onnx';
+  static const String _tokensFile = 'small-tokens.txt';
+
 
   bool _initialized = false;
   sherpa_onnx.OfflineRecognizer? _recognizer;
@@ -48,9 +49,9 @@ class WhisperService {
     final dio = Dio();
 
     final filesToDownload = {
-      _encoderFile: 37.7 * 1024 * 1024, // Aprox ~37.7 MB
-      _decoderFile: 36.3 * 1024 * 1024, // Aprox ~36.3 MB
-      _tokensFile: 830 * 1024,          // Aprox ~830 KB
+      _encoderFile: 112.0 * 1024 * 1024, // Aprox ~112 MB
+      _decoderFile: 262.0 * 1024 * 1024, // Aprox ~262 MB
+      _tokensFile: 1.0 * 1024 * 1024,    // Aprox ~1 MB
     };
 
     double totalBytesToDownload = filesToDownload.values.fold<double>(0.0, (sum, val) => sum + val);

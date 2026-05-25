@@ -1295,7 +1295,7 @@ class _VoiceRecitationPracticeCardState
                   Icon(Icons.sd_storage_outlined, size: 12, color: RefColors.dim),
                   const SizedBox(width: 4),
                   const Text(
-                    'Componente: 75 MB',
+                    'Componente: 375 MB',
                     style: TextStyle(
                       color: RefColors.dim,
                       fontSize: 11,

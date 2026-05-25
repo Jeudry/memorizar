@@ -58,7 +58,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
       await _initWhisper();
     } else {
       setState(() {
-        _status = 'El modelo de reconocimiento local (75MB) no está descargado.';
+        _status = 'El modelo de reconocimiento local (375MB) no está descargado.';
       });
     }
   }
@@ -507,7 +507,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Descarga el componente de voz (75 MB) para recitar tus versos offline con total privacidad y seguridad.',
+                  'Descarga el componente de voz (375 MB) para recitar tus versos offline con total privacidad y seguridad.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: RefColors.muted,
@@ -586,7 +586,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
                       Icon(Icons.sd_storage_outlined, size: 12, color: RefColors.dim),
                       const SizedBox(width: 4),
                       Text(
-                        'Componente: 75 MB',
+                        'Componente: 375 MB',
                         style: TextStyle(
                           color: RefColors.dim,
                           fontSize: 11,
@@ -898,7 +898,7 @@ class _ListenOwnVoicePracticeCardState
   int _tab = 1;
   bool _playing = false;
   bool _completed = false;
-  int _highlightedCount = 0;
+  int _wordIndex = 0;
   Duration _audioDuration = Duration.zero;
 
   @override
@@ -923,11 +923,9 @@ class _ListenOwnVoicePracticeCardState
       if (mounted && _audioDuration.inMilliseconds > 0 && _playing) {
         final progress =
             position.inMilliseconds / _audioDuration.inMilliseconds;
+        final words = _studyWords(_currentText);
         setState(() {
-          _highlightedCount = (progress * _currentText.length).toInt().clamp(
-            0,
-            _currentText.length,
-          );
+          _wordIndex = (progress * words.length).toInt().clamp(0, words.length);
         });
       }
     });
@@ -936,7 +934,7 @@ class _ListenOwnVoicePracticeCardState
       if (!mounted) return;
       setState(() {
         _playing = false;
-        _highlightedCount = 0;
+        _wordIndex = 0;
         if (_tab == 1) _completed = true;
       });
       if (_tab == 1) widget.onCompleted();
@@ -948,8 +946,9 @@ class _ListenOwnVoicePracticeCardState
 
     _tts.setProgressHandler((text, start, end, word) {
       if (mounted) {
+        final textBefore = _currentText.substring(0, end);
         setState(() {
-          _highlightedCount = end.clamp(0, _currentText.length);
+          _wordIndex = _studyWords(textBefore).length;
         });
       }
     });
@@ -958,7 +957,7 @@ class _ListenOwnVoicePracticeCardState
       if (!mounted) return;
       setState(() {
         _playing = false;
-        _highlightedCount = 0;
+        _wordIndex = 0;
         if (_tab == 1 && widget.voiceText.trim().isNotEmpty) {
           _completed = true;
         }
@@ -971,7 +970,7 @@ class _ListenOwnVoicePracticeCardState
       if (mounted) {
         setState(() {
           _playing = false;
-          _highlightedCount = 0;
+          _wordIndex = 0;
         });
       }
     });
@@ -998,7 +997,7 @@ class _ListenOwnVoicePracticeCardState
       if (mounted) {
         setState(() {
           _playing = false;
-          _highlightedCount = 0;
+          _wordIndex = 0;
         });
       }
       return;
@@ -1026,8 +1025,124 @@ class _ListenOwnVoicePracticeCardState
     setState(() {
       _tab = tab;
       _playing = false;
-      _highlightedCount = 0;
+      _wordIndex = 0;
     });
+  }
+
+  Widget _buildVersedText(BuildContext context, int globalIndex) {
+    final hasVoice = widget.voiceText.trim().isNotEmpty;
+    if (_tab == 1 && !hasVoice) {
+      return const Text(
+        'Primero completa el paso de leer en voz para guardar tu lectura.',
+        style: TextStyle(
+          color: RefColors.dim,
+          fontSize: 18,
+          fontWeight: FontWeight.w900,
+          fontFamily: 'Outfit',
+        ),
+      );
+    }
+
+    final verses = _currentBatchVerses(context);
+    if (verses.length == 1) {
+      final words = _studyWords(verses.first.text);
+      final safe = globalIndex.clamp(0, words.isEmpty ? 0 : words.length - 1);
+      final lead = words.take(safe).join(' ');
+      final current = words.isEmpty ? '' : words[safe];
+      final tail = words.isEmpty ? '' : words.skip(safe + 1).join(' ');
+      return Text.rich(
+        TextSpan(
+          children: [
+            if (lead.isNotEmpty)
+              TextSpan(
+                text: '$lead ',
+                style: const TextStyle(color: RefColors.lime),
+              ),
+            if (current.isNotEmpty)
+              TextSpan(
+                text: current,
+                style: const TextStyle(
+                  color: RefColors.ink,
+                  backgroundColor: Color(0x44273CFE),
+                ),
+              ),
+            if (tail.isNotEmpty)
+              TextSpan(
+                text: ' $tail',
+                style: const TextStyle(color: RefColors.muted),
+              ),
+          ],
+        ),
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 18,
+          height: 1.38,
+          fontWeight: FontWeight.w900,
+          fontFamily: 'Outfit',
+        ),
+      );
+    }
+
+    int? activeVerse;
+    int? activeLocal;
+    var offset = 0;
+    for (var i = 0; i < verses.length; i++) {
+      final n = _studyWords(verses[i].text).length;
+      if (globalIndex >= offset && globalIndex < offset + n) {
+        activeVerse = i;
+        activeLocal = globalIndex - offset;
+        break;
+      }
+      offset += n;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < verses.length; i++) ...[
+          _VerseLine(
+            number: verses[i].number,
+            words: _studyWords(verses[i].text),
+            defaultStyle: const TextStyle(
+              color: RefColors.muted,
+              fontWeight: FontWeight.w900,
+              height: 1.38,
+              fontFamily: 'Outfit',
+            ),
+            wordStyle: (idx) {
+              if (activeVerse != null && i < activeVerse) {
+                return const TextStyle(
+                  color: RefColors.lime,
+                  fontWeight: FontWeight.w900,
+                );
+              }
+              if (i == activeVerse) {
+                if (idx < (activeLocal ?? 0)) {
+                  return const TextStyle(
+                    color: RefColors.lime,
+                    fontWeight: FontWeight.w900,
+                  );
+                }
+                if (idx == activeLocal) {
+                  return const TextStyle(
+                    color: RefColors.ink,
+                    fontWeight: FontWeight.w900,
+                    backgroundColor: Color(0x44273CFE),
+                  );
+                }
+                return const TextStyle(
+                  color: RefColors.muted,
+                  fontWeight: FontWeight.w900,
+                );
+              }
+              return null;
+            },
+            fontSize: 18,
+          ),
+          if (i < verses.length - 1) const SizedBox(height: 10),
+        ],
+      ],
+    );
   }
 
   @override
@@ -1090,27 +1205,7 @@ class _ListenOwnVoicePracticeCardState
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: HtmlRefColors.glassBorder),
             ),
-            child: RichText(
-              text: TextSpan(
-                style: TextStyle(
-                  color: _tab == 1 && !hasVoice
-                      ? RefColors.dim
-                      : RefColors.ink.withValues(alpha: 0.4),
-                  fontSize: 18,
-                  height: 1.38,
-                  fontWeight: FontWeight.w900,
-                  fontFamily: 'Outfit',
-                ),
-                children: [
-                  if (_highlightedCount > 0)
-                    TextSpan(
-                      text: _currentText.substring(0, _highlightedCount),
-                      style: const TextStyle(color: RefColors.ink),
-                    ),
-                  TextSpan(text: _currentText.substring(_highlightedCount)),
-                ],
-              ),
-            ),
+            child: _buildVersedText(context, _wordIndex),
           ),
           const SizedBox(height: 18),
           Row(

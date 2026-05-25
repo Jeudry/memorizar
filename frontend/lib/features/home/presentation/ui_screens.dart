@@ -212,8 +212,10 @@ class ExerciseFlowData {
 }
 
 const flowScreens = [
+  ExerciseFlowData('00-solo-lectura', 'Solo lectura', 'Lee el texto con atención'),
   ExerciseFlowData('01-escuchar', 'Escuchar', 'Primero absorbe la idea'),
   ExerciseFlowData('02-lectura-frag', 'Lectura fragmentada', 'Divide y repite'),
+  ExerciseFlowData('02-niebla-n1', 'Niebla N1', 'Recita mientras se nubla un poco'),
   ExerciseFlowData('03-leer-voz', 'Leer en voz', 'Activa memoria auditiva'),
   ExerciseFlowData('04-escuchar-voz', 'Escuchar voz', 'Reconoce sin mirar'),
   ExerciseFlowData('05-bloques', 'Bloques', 'Ordena piezas clave'),
@@ -223,10 +225,12 @@ const flowScreens = [
     'Primera letra N1',
     'Menos pistas, más memoria',
   ),
+  ExerciseFlowData('18-recit-n1', 'Encuesta', 'Responde de forma inteligente'),
   ExerciseFlowData('08-voz-guiada', 'Voz guiada', 'Responde en voz alta'),
-  ExerciseFlowData('09-quiz', 'Quiz', 'Elige la respuesta correcta'),
+  ExerciseFlowData('17-niebla-n2', 'Niebla N2', 'Recitación con difuminado medio'),
   ExerciseFlowData('10-completar-n2', 'Completar N2', 'Recuerdo más fuerte'),
   ExerciseFlowData('11-primera-letra-n2', 'Primera letra N2', 'Casi sin ayuda'),
+  ExerciseFlowData('09-quiz', 'Quiz', 'Elige la respuesta correcta'),
   ExerciseFlowData('12-completar-n3', 'Completado N3', 'Más huecos visibles'),
   ExerciseFlowData(
     '13-primera-letra-n3',
@@ -242,6 +246,11 @@ const flowScreens = [
     '16-niebla',
     'Niebla',
     'Recita mientras se nubla más',
+  ),
+  ExerciseFlowData(
+    '16-niebla-n3',
+    'Niebla N3',
+    'Recitación con difuminado denso',
   ),
   ExerciseFlowData('14-voz-final', 'Voz final', 'Demuestra dominio'),
   ExerciseFlowData('mini-review', 'Mini review', 'Cierre rápido'),
@@ -333,6 +342,7 @@ class _QuizRound {
 class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   bool _checked = false;
   int _fragmentVisibleWords = 8;
+  int _soloLecturaVisibleWords = 3;
   String? _blockOrderCardId;
   List<int> _blockOrderIndexes = [];
   int? _selectedBlockPosition;
@@ -1047,6 +1057,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '02-lectura-frag' && store.isExerciseStepCompleted(slug)) {
       _fragmentVisibleWords = _studyWords(card.back).length;
     }
+    if (slug == '00-solo-lectura' && store.isExerciseStepCompleted(slug)) {
+      _soloLecturaVisibleWords = _studyWords(card.back).length;
+    }
     return ReferencePage(
       showBottomNav: false,
       scrollable:
@@ -1090,6 +1103,90 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     MemoryDeckData deck,
     String slug,
   ) {
+    if (slug == '00-solo-lectura') {
+      final totalWords = _studyWords(card.back).length;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GestureDetector(
+            onTap: () {
+              if (store.isExerciseStepCompleted(slug)) return;
+              setState(() {
+                _soloLecturaVisibleWords = (_soloLecturaVisibleWords + 3).clamp(1, totalWords);
+                if (_soloLecturaVisibleWords >= totalWords) {
+                  store.markExerciseStepCompleted(slug);
+                }
+              });
+            },
+            child: Glass(
+              padding: const EdgeInsets.fromLTRB(18, 22, 18, 22),
+              gradient: LinearGradient(
+                colors: [
+                  RefColors.violet.withValues(alpha: .28),
+                  RefColors.sun.withValues(alpha: .34),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    deck.isBible ? card.front.toUpperCase() : 'CITA',
+                    style: const TextStyle(
+                      color: RefColors.pink,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    constraints: const BoxConstraints(minHeight: 120),
+                    alignment: Alignment.center,
+                    child: _buildSoloLecturaText(context, _soloLecturaVisibleWords),
+                  ),
+                  const SizedBox(height: 18),
+                  if (!store.isExerciseStepCompleted(slug))
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.touch_app, size: 14, color: RefColors.cyan),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Toca para revelar 3 palabras más ($_soloLecturaVisibleWords/$totalWords)',
+                          style: const TextStyle(
+                            color: RefColors.cyan,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.check_circle_outline, size: 14, color: RefColors.lime),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Texto completamente revelado',
+                          style: TextStyle(
+                            color: RefColors.lime,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     if (slug == '01-escuchar') {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1175,39 +1272,25 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         children: [
           Glass(
             radius: 18,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-            child: Row(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: const Row(
               children: [
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: hasInteracted
-                            ? '$correctCount / ${blocks.length}'
-                            : '${blocks.length} bloques',
-                        style: const TextStyle(
-                          color: RefColors.ink,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      TextSpan(text: hasInteracted ? ' correctos' : ''),
-                    ],
-                  ),
-                  style: const TextStyle(
-                    color: RefColors.muted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
+                Icon(
+                  Icons.info_outline,
+                  color: RefColors.cyan,
+                  size: 16,
                 ),
-                const Spacer(),
-                RefChip(
-                  hasInteracted && allCorrect
-                      ? 'Correcto'
-                      : selectingDestination
-                      ? 'Elige destino'
-                      : 'Toca un bloque',
-                  dense: true,
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Mantén presionado un bloque para arrastrarlo a su lugar, o toca dos bloques para intercambiar sus posiciones.',
+                    style: TextStyle(
+                      color: RefColors.dim,
+                      fontSize: 11,
+                      height: 1.35,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -1240,7 +1323,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               itemCount: _blockOrderIndexes.length,
               itemBuilder: (context, index) {
                 final blockText = blocks[_blockOrderIndexes[index]];
-                return ReorderableDragStartListener(
+                return ReorderableDelayedDragStartListener(
                   key: ValueKey('block-$index-${_blockOrderIndexes[index]}'),
                   index: index,
                   child: Padding(
@@ -1762,6 +1845,52 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
   }
 
+  Widget _buildSoloLecturaText(BuildContext context, int visibleCount) {
+    final verses = _currentBatchVerses(context);
+    const style = TextStyle(
+      fontSize: 20,
+      height: 1.36,
+      fontWeight: FontWeight.w900,
+      color: RefColors.ink,
+      fontFamily: 'Outfit',
+    );
+
+    if (verses.length == 1) {
+      final words = _studyWords(verses.first.text);
+      final safe = visibleCount.clamp(0, words.length);
+      final visibleText = words.take(safe).join(' ');
+      return Text(
+        visibleText,
+        textAlign: TextAlign.center,
+        style: style,
+      );
+    }
+
+    var wordsShown = 0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < verses.length; i++) ...[
+          () {
+            final versoWords = _studyWords(verses[i].text);
+            final remainingVisible = (visibleCount - wordsShown).clamp(0, versoWords.length);
+            wordsShown += versoWords.length;
+            if (remainingVisible <= 0) return const SizedBox.shrink();
+
+            return _VerseLine(
+              number: verses[i].number,
+              words: versoWords.take(remainingVisible).toList(),
+              defaultStyle: style,
+              fontSize: 20,
+            );
+          }(),
+          if (i < verses.length - 1 && visibleCount > wordsShown - _studyWords(verses[i].text).length)
+            const SizedBox(height: 10),
+        ],
+      ],
+    );
+  }
+
   Widget _realExerciseFooter(
     BuildContext context,
     AppStore store,
@@ -1801,7 +1930,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ],
       );
     }
-    if (slug == '01-escuchar' ||
+    if (slug == '00-solo-lectura' ||
+        slug == '01-escuchar' ||
         slug == '03-leer-voz' ||
         slug == '04-escuchar-voz' ||
         slug == '08-voz-guiada' ||
@@ -1977,6 +2107,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     required bool checked,
     required bool completed,
   }) {
+    if (slug == '00-solo-lectura') {
+      return completed ? 'Siguiente →' : 'Toca el texto para revelar palabras';
+    }
     if (slug == '01-escuchar') {
       return completed ? 'Siguiente →' : 'Escucha completa requerida';
     }

@@ -630,6 +630,19 @@ class AppStore extends ChangeNotifier {
 
   MemoryCardData get activeCard {
     if (activeDeck.cards.isEmpty) return emptyCard;
+    final deck = activeDeck;
+    if (deck.isBible && deck.cards.length > 1) {
+      final combinedFront = deck.cards.map((c) => c.front).join('; ');
+      final combinedBack = deck.cards.map((c) => c.back.trim()).join(' ');
+      return MemoryCardData(
+        id: 'combined-${deck.id}',
+        front: combinedFront,
+        back: combinedBack,
+        source: deck.cards.first.source,
+        icon: deck.cards.first.icon,
+        retention: deck.cards.first.retention,
+      );
+    }
     return activeDeck.cards[_currentCardIndex.clamp(
       0,
       activeDeck.cards.length - 1,
@@ -898,7 +911,8 @@ class AppStore extends ChangeNotifier {
     required int dailyTarget,
   }) {
     _sessionDifficulty = difficulty.clamp(0, 2);
-    final total = activeDeck.cards.length;
+    final isCombinedBible = activeDeck.isBible && activeDeck.cards.length > 1;
+    final total = isCombinedBible ? 1 : activeDeck.cards.length;
     _sessionDailyTarget = dailyTarget.clamp(1, total <= 0 ? 1 : total);
     _sessionCardsCompleted = 0;
     _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
@@ -913,8 +927,13 @@ class AppStore extends ChangeNotifier {
   /// Retorna `true` si todavía queda otra tarjeta dentro del target diario;
   /// `false` cuando la sesión ya completó su cuota y debe ir al review final.
   bool advanceToNextSessionCard({required bool correct}) {
+    final isCombinedBible = activeDeck.isBible && activeDeck.cards.length > 1;
     answerCurrentCard(correct);
-    _sessionCardsCompleted += 1;
+    if (isCombinedBible) {
+      _sessionCardsCompleted = _sessionDailyTarget;
+    } else {
+      _sessionCardsCompleted += 1;
+    }
     if (sessionFinished) {
       notifyListeners();
       return false;
@@ -1251,6 +1270,32 @@ class AppStore extends ChangeNotifier {
     if (deckIndex < 0) return;
     final deck = activeDeck;
     final cards = [...deck.cards];
+    if (deck.isBible && deck.cards.length > 1) {
+      for (var i = 0; i < cards.length; i++) {
+        final card = cards[i];
+        cards[i] = card.copyWith(
+          retention: (card.retention + (correct ? 8 : -14)).clamp(18, 100),
+          lapses: card.lapses + (correct ? 0 : 1),
+        );
+      }
+      _decks[deckIndex] = MemoryDeckData(
+        id: deck.id,
+        title: deck.title,
+        subtitle: deck.subtitle,
+        icon: deck.icon,
+        cards: cards,
+        createdAt: deck.createdAt,
+        isBible: deck.isBible,
+      );
+      if (correct) {
+        _correctAnswers += cards.length;
+      } else {
+        _wrongAnswers += cards.length;
+      }
+      _currentCardIndex = 0;
+      notifyListeners();
+      return;
+    }
     final card = cards[_currentCardIndex];
     cards[_currentCardIndex] = card.copyWith(
       retention: (card.retention + (correct ? 8 : -14)).clamp(18, 100),

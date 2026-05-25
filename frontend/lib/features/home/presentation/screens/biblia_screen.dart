@@ -1956,17 +1956,17 @@ String _cardStudyText(BuildContext context) {
 /// el front no es una referencia, el número es secuencial 1..N.
 List<({int number, String text})> _currentBatchVerses(BuildContext context) {
   final store = AppScope.of(context);
-  final batch = const <MemoryCardData>[];
-  if (batch.isEmpty) {
-    final card = store.activeCard;
-    final m = RegExp(r':(\d+)$').firstMatch(card.front.trim());
-    return [(number: int.tryParse(m?.group(1) ?? '') ?? 1, text: card.back)];
+  final deck = store.activeDeck;
+  final List<MemoryCardData> batch;
+  if (deck.isBible && deck.cards.length > 1) {
+    batch = deck.cards;
+  } else {
+    batch = [store.activeCard];
   }
   return [
     for (var i = 0; i < batch.length; i++)
       () {
-        final m =
-            RegExp(r':(\d+)$').firstMatch(batch[i].front.trim());
+        final m = RegExp(r':(\d+)$').firstMatch(batch[i].front.trim());
         final num = int.tryParse(m?.group(1) ?? '') ?? (i + 1);
         return (number: num, text: batch[i].back);
       }()
@@ -2083,6 +2083,8 @@ int _flowStepNumber(String slug) {
 }
 
 String _realStepTitle(String slug) {
+  if (slug == '18-recit-n1') return 'Encuesta';
+  if (slug == '00-solo-lectura') return 'Solo lectura';
   if (slug == '01-escuchar') return 'Escuchar';
   if (slug == '02-niebla-n1') return 'Niebla N1';
   if (slug == '03-leer-voz') return 'Leer en voz';
@@ -2095,7 +2097,6 @@ String _realStepTitle(String slug) {
   if (slug == '15-banco-completo') return 'Banco completo';
   if (slug == '17-niebla-n2') return 'Niebla N2';
   if (slug == '16-niebla' || slug == '16-niebla-n3') return 'Niebla N3';
-  if (slug == '18-recit-n1') return 'Completar recitación';
   if (slug.contains('voz')) return 'Recitación';
   return 'Estudio activo';
 }
@@ -2119,6 +2120,7 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
 
   // Intro: pasos básicos de preparación (escuchar / leer / bloques).
   final intro = <String>[
+    '00-solo-lectura',
     '01-escuchar',
     '03-leer-voz',
     '04-escuchar-voz',
@@ -2127,7 +2129,6 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
   final level1 = <String>[
     '06-completar-n1',
     '07-primera-letra-n1',
-    '18-recit-n1', // completar recitación (un trozo seguido a recitar)
   ];
   final level2 = <String>[
     '08-voz-guiada',
@@ -2529,10 +2530,11 @@ int _levenshtein(String a, String b) {
 List<String> _studyBlocks(BuildContext context) {
   final words = _studyWords(_cardStudyText(context));
   final blocks = <String>[];
-  for (var i = 0; i < words.length; i += 2) {
-    blocks.add(words.skip(i).take(2).join(' '));
+  final size = words.length > 18 ? 3 : 2;
+  for (var i = 0; i < words.length; i += size) {
+    blocks.add(words.skip(i).take(size).join(' '));
   }
-  return blocks.take(4).toList();
+  return blocks;
 }
 
 String _maskedStudyLine(BuildContext context, {required int visibleWords}) {
