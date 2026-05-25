@@ -1863,20 +1863,31 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     final verses = _currentBatchVerses(context);
     const style = TextStyle(
       fontSize: 20,
-      height: 1.36,
+      height: 1.38,
       fontWeight: FontWeight.w900,
-      color: RefColors.ink,
       fontFamily: 'Outfit',
     );
 
     if (verses.length == 1) {
       final text = verses.first.text;
-      final safe = visibleChars.clamp(0, text.length);
-      final visibleText = text.substring(0, safe);
-      return Text(
-        visibleText,
+      final safeGreen = visibleChars.clamp(0, text.length);
+      final lead = text.substring(0, safeGreen);
+      final tail = text.substring(safeGreen);
+      return Text.rich(
+        TextSpan(
+          style: style,
+          children: [
+            TextSpan(
+              text: lead,
+              style: const TextStyle(color: RefColors.lime),
+            ),
+            TextSpan(
+              text: tail,
+              style: const TextStyle(color: RefColors.muted),
+            ),
+          ],
+        ),
         textAlign: TextAlign.center,
-        style: style,
       );
     }
 
@@ -1887,20 +1898,41 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         for (var i = 0; i < verses.length; i++) ...[
           () {
             final versoText = verses[i].text;
-            final remainingVisible = (visibleChars - charsShown).clamp(0, versoText.length);
+            final safeGreen = (visibleChars - charsShown).clamp(0, versoText.length);
             charsShown += versoText.length;
-            if (remainingVisible <= 0) return const SizedBox.shrink();
 
-            final visiblePart = versoText.substring(0, remainingVisible);
-            return _VerseLine(
-              number: verses[i].number,
-              words: _studyWords(visiblePart),
-              defaultStyle: style,
-              fontSize: 20,
+            final lead = versoText.substring(0, safeGreen);
+            final tail = versoText.substring(safeGreen);
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: i == verses.length - 1 ? 0 : 10,
+              ),
+              child: Text.rich(
+                TextSpan(
+                  style: style,
+                  children: [
+                    TextSpan(
+                      text: '${verses[i].number}  ',
+                      style: const TextStyle(
+                        color: RefColors.pink,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    TextSpan(
+                      text: lead,
+                      style: const TextStyle(color: RefColors.lime),
+                    ),
+                    TextSpan(
+                      text: tail,
+                      style: const TextStyle(color: RefColors.muted),
+                    ),
+                  ],
+                ),
+              ),
             );
           }(),
-          if (i < verses.length - 1 && visibleChars > charsShown - verses[i].text.length)
-            const SizedBox(height: 10),
         ],
       ],
     );
@@ -1908,7 +1940,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
   void _startSoloLecturaAnimation(AppStore store, int totalChars) {
     _soloLecturaTimer?.cancel();
-    _soloLecturaTimer = Timer.periodic(const Duration(milliseconds: 25), (timer) {
+    _soloLecturaTimer = Timer.periodic(const Duration(milliseconds: 55), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
