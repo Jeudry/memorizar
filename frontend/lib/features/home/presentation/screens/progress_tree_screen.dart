@@ -11,7 +11,7 @@ class _ProgressTreeScreen extends StatefulWidget {
 
 class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
   final GlobalKey _currentStepKey = GlobalKey();
-  static int _lastScrolledIndex = -1;
+  int _lastScrolledIndex = -1;
 
   void _scheduleScrollToCurrent(int currentIndex) {
     if (_lastScrolledIndex == currentIndex) return;

@@ -962,6 +962,91 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     _quizRounds = _buildQuizRounds(deck, card);
   }
 
+  _QuizRound _buildConceptualRound(MemoryCardData card, math.Random rng) {
+    final text = card.back.toLowerCase();
+    String question = '¿Cuál es la enseñanza espiritual o el significado central de este texto?';
+    String correct = '';
+    List<String> distractors = [];
+
+    if (text.contains('puedo') || text.contains('fortalece')) {
+      question = '¿Cuál es la idea principal de este pasaje sobre la fortaleza?';
+      correct = 'La capacidad de superar toda adversidad y circunstancia a través del poder de Cristo.';
+      distractors = [
+        'La creencia de que el éxito se logra únicamente con autodisciplina humana.',
+        'La resignación pasiva ante las dificultades sin fe activa.',
+        'La promesa de prosperidad material y ausencia de problemas terrenales.',
+      ];
+    } else if (text.contains('gracias') || text.contains('misericordia') || text.contains('bueno')) {
+      question = '¿Qué actitud fundamental promueve este pasaje en el creyente?';
+      correct = 'La gratitud y alabanza sincera al Señor por su amor fiel y bondad eternos.';
+      distractors = [
+        'La preocupación constante por las riquezas materiales de este mundo.',
+        'El cumplimiento ritualista de normas sin una verdadera devoción interna.',
+        'El aislamiento del creyente frente a las necesidades de su prójimo.',
+      ];
+    } else if (text.contains('angustia') || text.contains('clamar') || text.contains('liberó') || text.contains('salvó') || text.contains('angustiados')) {
+      question = '¿Qué nos enseña este versículo sobre la respuesta ante el sufrimiento?';
+      correct = 'Que acudir al Señor con fe en la prueba trae consuelo y liberación real.';
+      distractors = [
+        'Que el sufrimiento es un castigo definitivo del cual es imposible ser librado.',
+        'Que debemos confiar únicamente en nuestras fuerzas y no molestar a Dios.',
+        'Que la oración es solo un ejercicio mental sin respuesta real en la realidad.',
+      ];
+    } else if (text.contains('paz') || text.contains('cuidado') || text.contains('ansiedad') || text.contains('guardará')) {
+      question = '¿Cuál es el camino que propone este texto para vencer la ansiedad?';
+      correct = 'Depositar toda preocupación en Dios a través del ruego y la gratitud profunda.';
+      distractors = [
+        'Evitar pensar en los problemas o distraerse con placeres temporales.',
+        'Confiar en que las circunstancias cambiarán por sí solas con el tiempo.',
+        'Obsesionarse con el control de cada detalle del futuro.',
+      ];
+    } else {
+      question = '¿Cuál de las siguientes afirmaciones describe mejor el propósito de este pasaje?';
+      final words = card.back.split(' ');
+      if (words.length > 6) {
+        correct = 'Vivir con una fe profunda alineada a la verdad del mensaje expresado en este texto.';
+        distractors = [
+          'Centrarse en el esfuerzo humano y la autosuficiencia sin guía espiritual.',
+          'Seguir tradiciones externas sin experimentar una verdadera transformación interna del corazón.',
+          'Ignorar las promesas divinas en momentos de prueba y dificultad cotidiana.',
+        ];
+      } else {
+        correct = 'Reconocer el valor espiritual e inspirador del mensaje de este pasaje.';
+        distractors = [
+          'Considerarlo únicamente como un texto histórico de la antigüedad.',
+          'Aplicar el texto de manera rígida sin considerar su contexto espiritual.',
+          'Descartar su relevancia práctica para los desafíos de la vida actual.',
+        ];
+      }
+    }
+
+    final targetCard = MemoryCardData(
+      id: 'quiz-conceptual-${card.id}',
+      front: question,
+      back: correct,
+      source: card.source,
+      icon: card.icon,
+    );
+
+    final optionCards = <MemoryCardData>[
+      targetCard,
+      for (var i = 0; i < distractors.length; i++)
+        MemoryCardData(
+          id: 'quiz-conceptual-distractor-$i-${card.id}',
+          front: question,
+          back: distractors[i],
+          source: 'IA Local Offline',
+          icon: card.icon,
+        )
+    ]..shuffle(rng);
+
+    return _QuizRound(
+      target: targetCard,
+      type: _QuizQuestionType.frontToBack,
+      options: optionCards,
+    );
+  }
+
   List<_QuizRound> _buildQuizRounds(
     MemoryDeckData deck,
     MemoryCardData activeCard,
@@ -970,47 +1055,53 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       activeCard.id.hashCode ^ DateTime.now().millisecondsSinceEpoch,
     );
     final rounds = <_QuizRound>[];
-    final allCards = [
-      activeCard,
-      ...deck.cards.where((c) => c.id != activeCard.id),
-    ];
-    final usedTargets = <String>{};
-    final shuffledPool = [...allCards]..shuffle(rng);
-    final targets = <MemoryCardData>[activeCard];
-    usedTargets.add(activeCard.id);
-    for (final c in shuffledPool) {
-      if (targets.length >= 5) break;
-      if (usedTargets.contains(c.id)) continue;
-      targets.add(c);
-      usedTargets.add(c.id);
-    }
-    while (targets.length < 5) {
-      targets.add(activeCard);
-    }
+    final store = AppScope.of(context);
+    final isCombinedBible = deck.isBible && deck.cards.length > 1 && store.sessionDailyTarget > 1;
+    final List<MemoryCardData> sessionStudiedCards = isCombinedBible
+        ? deck.cards.take(store.sessionDailyTarget).toList()
+        : deck.cards.take(store.currentCardIndex + 1).toList();
+
+    final studiedPool = sessionStudiedCards.isNotEmpty ? sessionStudiedCards : [activeCard];
+
     for (var i = 0; i < 5; i++) {
-      final target = targets[i];
-      final type = i.isEven
-          ? _QuizQuestionType.frontToBack
-          : _QuizQuestionType.backToFront;
-      final distractorPool = allCards.where((c) => c.id != target.id).toList()
-        ..shuffle(rng);
-      final distractors = distractorPool.take(3).toList();
-      while (distractors.length < 3) {
-        final llm = LocalLlmService.instance;
-        final dists = llm.generateDistractorsSync(target.back);
-        final distText = dists[distractors.length % dists.length];
-        distractors.add(
-          MemoryCardData(
-            id: 'ai-distractor-${distractors.length}-${target.id}',
-            front: target.front,
-            back: distText,
-            source: 'IA Local Offline',
-            icon: target.icon,
-          ),
-        );
+      final target = studiedPool[i % studiedPool.length];
+      
+      final type = i == 0 || i == 3 
+          ? _QuizQuestionType.frontToBack 
+          : (i == 1 ? _QuizQuestionType.backToFront : _QuizQuestionType.frontToBack);
+
+      if (i == 2 || (i == 4 && studiedPool.length == 1)) {
+        rounds.add(_buildConceptualRound(target, rng));
+      } else {
+        final distractorPool = deck.cards.where((c) => c.id != target.id).toList()..shuffle(rng);
+        
+        final distractors = <MemoryCardData>[];
+        final otherStudied = studiedPool.where((c) => c.id != target.id).toList()..shuffle(rng);
+        distractors.addAll(otherStudied.take(3));
+
+        if (distractors.length < 3) {
+          final extraDeck = distractorPool.where((c) => !distractors.any((d) => d.id == c.id)).toList();
+          distractors.addAll(extraDeck.take(3 - distractors.length));
+        }
+
+        while (distractors.length < 3) {
+          final llm = LocalLlmService.instance;
+          final dists = llm.generateDistractorsSync(target.back);
+          final distText = dists[distractors.length % dists.length];
+          distractors.add(
+            MemoryCardData(
+              id: 'ai-distractor-${distractors.length}-${target.id}',
+              front: target.front,
+              back: distText,
+              source: 'IA Local Offline',
+              icon: target.icon,
+            ),
+          );
+        }
+
+        final options = [target, ...distractors.take(3)]..shuffle(rng);
+        rounds.add(_QuizRound(target: target, type: type, options: options));
       }
-      final options = [target, ...distractors]..shuffle(rng);
-      rounds.add(_QuizRound(target: target, type: type, options: options));
     }
     return rounds;
   }
@@ -1028,6 +1119,39 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       HapticFeedback.lightImpact();
     } else {
       HapticFeedback.mediumImpact();
+    }
+
+    if (_quizRoundIndex < _quizRounds.length - 1) {
+      final delayMs = round.correct ? 1000 : 2500;
+      Future.delayed(Duration(milliseconds: delayMs), () {
+        if (!mounted) return;
+        if (_quizRoundIndex < _quizRounds.length - 1 && _quizRounds[_quizRoundIndex].selectedIdx == idx) {
+          _advanceQuizRound();
+        }
+      });
+    } else {
+      // Last round!
+      final store = AppScope.of(context);
+      final isPassed = _quizScore >= 3;
+      if (isPassed) {
+        Future.delayed(const Duration(milliseconds: 1500), () {
+          if (!mounted) return;
+          if (_quizFinished && _quizPassed) {
+            final steps = _sessionFlowSteps(store);
+            final isLastStep = steps.isNotEmpty && steps.last.slug == widget.data.slug;
+            if (isLastStep) {
+              _completeSessionCard(context, store, correct: true);
+            } else {
+              store.answerCurrentCard(true);
+              store.markExerciseStepCompleted(widget.data.slug);
+              Navigator.push(
+                context,
+                AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
+              );
+            }
+          }
+        });
+      }
     }
   }
 
@@ -1819,7 +1943,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     final answered = round.answered;
     final isFrontToBack = round.type == _QuizQuestionType.frontToBack;
     final question = isFrontToBack
-        ? '¿Qué texto corresponde a ${round.target.front}?'
+        ? (round.target.front.startsWith('¿')
+            ? round.target.front
+            : '¿Qué texto corresponde a ${round.target.front}?')
         : '¿A qué referencia pertenece este texto?';
     final contextLabel = isFrontToBack
         ? (deck.isBible ? round.target.source : deck.title.toUpperCase())
@@ -1859,9 +1985,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             title: isFrontToBack
                 ? round.options[i].back
                 : round.options[i].front,
-            tip: isFrontToBack
-                ? round.options[i].front
-                : round.options[i].source,
+            tip: round.options[i].source,
             selected: round.selectedIdx == i,
             correct: answered && round.options[i].id == round.target.id,
             wrong: round.selectedIdx == i && !round.correct,
@@ -2178,6 +2302,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 store.markExerciseStepCompleted(slug);
                 if (slug == '09-quiz') {
                   store.answerCurrentCard(true);
+                  final steps = _sessionFlowSteps(store);
+                  final isLastStep = steps.isNotEmpty && steps.last.slug == '09-quiz';
+                  if (isLastStep) {
+                    _completeSessionCard(context, store, correct: true);
+                    return;
+                  }
                 }
                 Navigator.push(
                   context,
@@ -2243,12 +2373,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   );
                   return;
                 }
-                store.answerCurrentCard(true);
-                store.markExerciseStepCompleted(slug);
-                Navigator.push(
-                  context,
-                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-                );
+                final steps = _sessionFlowSteps(store);
+                final isLastStep = steps.isNotEmpty && steps.last.slug == '09-quiz';
+                if (isLastStep) {
+                  _completeSessionCard(context, store, correct: true);
+                } else {
+                  store.answerCurrentCard(true);
+                  store.markExerciseStepCompleted(slug);
+                  Navigator.push(
+                    context,
+                    AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
+                  );
+                }
                 return;
               }
               if (!_checked) {

@@ -2139,7 +2139,6 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     '11-primera-letra-n2',
   ];
   final level3Optional = <String>[
-    '09-quiz',
     '12-completar-n3',
     '13-primera-letra-n3',
     '15-banco-completo',
@@ -2159,9 +2158,12 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     
     // Nivel 3: práctica premium/avanzada + niebla N3 al final del nivel 3
     if (difficulty >= 1) ...[
-      ...pick(level3Optional, difficulty == 1 ? 2 : 3),
+      ...pick(level3Optional, difficulty == 1 ? 1 : 2),
       '16-niebla-n3',
     ],
+
+    // Universal: siempre se incluye el Quiz al final del flujo activo de estudio!
+    '09-quiz',
   ];
   return slugs.map(_flowData).toList();
 }
