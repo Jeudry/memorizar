@@ -45,6 +45,7 @@ class RefBottomItem extends StatelessWidget {
     final isActive = active == route;
     return Expanded(
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: () {
           if (!isActive) {
             final shell = MainTabShell.of(context);
