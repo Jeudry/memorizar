@@ -36,6 +36,7 @@ import '../../legal/presentation/terms_of_service_screen.dart';
 import '../../legal/presentation/visibility_consent_dialog.dart';
 import '../../moderation/presentation/moderation_queue_screen.dart';
 import '../../moderation/presentation/report_dialog.dart';
+import '../../settings/presentation/settings_screen.dart';
 import 'glyph_icon.dart';
 import 'home_screen.dart';
 
@@ -198,6 +199,7 @@ Map<String, WidgetBuilder> buildAppRoutes() => {
   AppRoutes.moderationQueue: (_) => const ModerationQueueScreen(),
   AppRoutes.login: (_) => const LoginScreen(),
   AppRoutes.account: (_) => const AccountScreen(),
+  AppRoutes.settings: (_) => const SettingsScreen(),
   AppRoutes.shareInbox: (_) => const ShareInboxScreen(),
   AppRoutes.verifyEmail: (_) => const VerifyEmailScreen(),
   AppRoutes.passwordReset: (_) => const PasswordResetScreen(),

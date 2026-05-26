@@ -2152,8 +2152,8 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     '02-niebla-n1',
     
     // Nivel 2: práctica activa + niebla N2 al final del nivel 2
-    if (difficulty >= 1) ...[
-      ...pick(level2, difficulty == 1 ? 2 : 3),
+    if (difficulty >= 0) ...[
+      ...pick(level2, difficulty == 0 ? 1 : (difficulty == 1 ? 2 : 3)),
       '17-niebla-n2',
     ],
     
@@ -2214,6 +2214,9 @@ int _letterLevelForSlug(String slug) {
 }
 
 String _phaseLabelFor(String slug) {
+  if (slug == '16-niebla' || slug == '16-niebla-n3') {
+    return 'Probar';
+  }
   if (_isFogSlug(slug)) {
     return 'Construir';
   }
