@@ -2,6 +2,71 @@
 // BibliaScreen + pickers (book/chapter/verse), themes, version dropdown.
 part of '../ui_screens.dart';
 
+class _BibleStudyStatus {
+  final Map<String, int> verseRetentions = {};
+
+  _BibleStudyStatus(AppStore store) {
+    for (final deck in store.decks) {
+      for (final card in deck.cards) {
+        final parts = card.front.split('·');
+        final ref = parts.first.trim();
+        final currentMax = verseRetentions[ref] ?? -1;
+        if (card.retention > currentMax) {
+          verseRetentions[ref] = card.retention;
+        }
+      }
+    }
+  }
+
+  bool isVerseCompleted(String book, int chapter, int verse) {
+    final ret = verseRetentions['$book $chapter:$verse'];
+    return ret != null && ret >= 80;
+  }
+
+  bool isVerseInProgress(String book, int chapter, int verse) {
+    final ret = verseRetentions['$book $chapter:$verse'];
+    return ret != null && ret < 80;
+  }
+
+  bool isChapterCompleted(String book, int chapter, List<BibleVerseData> allChapterVerses) {
+    if (allChapterVerses.isEmpty) return false;
+    return allChapterVerses.every((v) => isVerseCompleted(book, chapter, v.verse));
+  }
+
+  bool isChapterInProgress(String book, int chapter, List<BibleVerseData> allChapterVerses) {
+    if (allChapterVerses.isEmpty) return false;
+    final anyStudied = allChapterVerses.any((v) => verseRetentions.containsKey('$book $chapter:${v.verse}'));
+    final allCompleted = allChapterVerses.every((v) => isVerseCompleted(book, chapter, v.verse));
+    return anyStudied && !allCompleted;
+  }
+
+  bool isBookCompleted(String book, AppStore store) {
+    final chapters = _chapterCountFor(book);
+    if (chapters <= 0) return false;
+    for (int c = 1; c <= chapters; c++) {
+      final verses = store.versesFor(book, c);
+      if (!isChapterCompleted(book, c, verses)) return false;
+    }
+    return true;
+  }
+
+  bool isBookInProgress(String book, AppStore store) {
+    final chapters = _chapterCountFor(book);
+    if (chapters <= 0) return false;
+    var anyStudied = false;
+    var allCompleted = true;
+    for (int c = 1; c <= chapters; c++) {
+      final verses = store.versesFor(book, c);
+      if (verses.isEmpty) continue;
+      final anyInChap = verses.any((v) => verseRetentions.containsKey('$book $c:${v.verse}'));
+      final chapComp = isChapterCompleted(book, c, verses);
+      if (anyInChap) anyStudied = true;
+      if (!chapComp) allCompleted = false;
+    }
+    return anyStudied && !allCompleted;
+  }
+}
+
 class BibliaScreen extends StatefulWidget {
   const BibliaScreen({super.key});
 
@@ -885,8 +950,8 @@ class _ChapterGrid extends StatelessWidget {
       _chapterCountFor(selectedBook),
       (index) => index + 1,
     );
-    const selected = <int>{};
-    const partial = <int>{};
+    final store = AppScope.of(context);
+    final status = _BibleStudyStatus(store);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -907,25 +972,46 @@ class _ChapterGrid extends StatelessWidget {
           ),
           itemBuilder: (context, index) {
             final chapter = chapters[index];
-            final isSelected = selected.contains(chapter);
-            final isPartial = partial.contains(chapter);
+            final allInChapter = store.versesFor(selectedBook, chapter);
+            final selectedInStore = store.selectedBibleVerses
+                .where((v) => v.book == selectedBook && v.chapter == chapter)
+                .map((v) => v.verse)
+                .toSet();
+            final isSelected = allInChapter.isNotEmpty && selectedInStore.length == allInChapter.length;
+            final isPartial = selectedInStore.isNotEmpty && selectedInStore.length < allInChapter.length;
+
+            final isComp = status.isChapterCompleted(selectedBook, chapter, allInChapter);
+            final isProg = status.isChapterInProgress(selectedBook, chapter, allInChapter);
+
+            final finalBg = isSelected
+                ? RefColors.pink
+                : isComp
+                    ? RefColors.lime.withValues(alpha: .18)
+                    : isProg
+                        ? RefColors.sun.withValues(alpha: .18)
+                        : isPartial
+                            ? HtmlRefColors.bookPartial
+                            : HtmlRefColors.glassSoft;
+
+            final finalBorder = isSelected
+                ? Colors.transparent
+                : isComp
+                    ? RefColors.lime.withValues(alpha: .75)
+                    : isProg
+                        ? RefColors.sun.withValues(alpha: .75)
+                        : isPartial
+                            ? HtmlRefColors.bookPartialBorder
+                            : Colors.transparent;
+
             return GestureDetector(
               onTap: () => onChapter(chapter),
               child: Container(
                 decoration: BoxDecoration(
-                  color: isSelected
-                      ? RefColors.pink
-                      : isPartial
-                      ? HtmlRefColors.bookPartial
-                      : HtmlRefColors.glassSoft,
+                  color: finalBg,
                   borderRadius: BorderRadius.circular(7),
                   border: Border.all(
                     width: 1.4,
-                    color: isSelected
-                        ? Colors.transparent
-                        : isPartial
-                        ? HtmlRefColors.bookPartialBorder
-                        : Colors.transparent,
+                    color: finalBorder,
                   ),
                 ),
                 child: Center(
@@ -986,6 +1072,11 @@ class _BookGrid extends StatelessWidget {
             final book = books[index];
             final isSelected = selected.contains(book);
             final isPartial = partial.contains(book);
+            final store = AppScope.of(context);
+            final status = _BibleStudyStatus(store);
+            final isComp = status.isBookCompleted(book, store);
+            final isProg = status.isBookInProgress(book, store);
+
             // Category tint applied to unselected tiles. The selected /
             // partial states still win above this.
             final acc = bookAccents[book];
@@ -995,23 +1086,36 @@ class _BookGrid extends StatelessWidget {
             final defaultBorder = acc != null
                 ? acc.withValues(alpha: .65)
                 : Colors.transparent;
+
+            final finalBg = isSelected
+                ? HtmlRefColors.bookSelected
+                : isComp
+                    ? RefColors.lime.withValues(alpha: .18)
+                    : isProg
+                        ? RefColors.sun.withValues(alpha: .18)
+                        : isPartial
+                            ? HtmlRefColors.bookPartial
+                            : defaultBg;
+
+            final finalBorder = isSelected
+                ? RefColors.pink
+                : isComp
+                    ? RefColors.lime.withValues(alpha: .75)
+                    : isProg
+                        ? RefColors.sun.withValues(alpha: .75)
+                        : isPartial
+                            ? HtmlRefColors.bookPartialBorder
+                            : defaultBorder;
+
             return GestureDetector(
               onTap: () => onBook(book),
               child: Container(
                 decoration: BoxDecoration(
-                  color: isSelected
-                      ? HtmlRefColors.bookSelected
-                      : isPartial
-                      ? HtmlRefColors.bookPartial
-                      : defaultBg,
+                  color: finalBg,
                   borderRadius: BorderRadius.circular(9),
                   border: Border.all(
                     width: 1.4,
-                    color: isSelected
-                        ? RefColors.pink
-                        : isPartial
-                        ? HtmlRefColors.bookPartialBorder
-                        : defaultBorder,
+                    color: finalBorder,
                   ),
                 ),
                 child: Center(
@@ -1138,10 +1242,15 @@ class _VersePickerState extends State<_VersePicker> {
                   padding: EdgeInsets.zero,
                   itemBuilder: (context, index) {
                     final verse = verses[index];
+                    final status = _BibleStudyStatus(store);
+                    final isComp = status.isVerseCompleted(canonicalBook, widget.selectedChapter, verse.verse);
+                    final isProg = status.isVerseInProgress(canonicalBook, widget.selectedChapter, verse.verse);
                     return _VerseItem(
                       number: verse.verse,
                       text: verse.text,
                       selected: effectiveSelected.contains(verse.verse),
+                      isCompleted: isComp,
+                      isInProgress: isProg,
                       onTap: () => widget.onVerse(verse.verse),
                     );
                   },
@@ -2571,28 +2680,48 @@ class _VerseItem extends StatelessWidget {
   final int number;
   final String text;
   final bool selected;
+  final bool isCompleted;
+  final bool isInProgress;
   final VoidCallback onTap;
 
   const _VerseItem({
     required this.number,
     required this.text,
     required this.selected,
+    this.isCompleted = false,
+    this.isInProgress = false,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final finalBg = selected
+        ? const Color(0x2EFF3EA5)
+        : isCompleted
+            ? RefColors.lime.withValues(alpha: .1)
+            : isInProgress
+                ? RefColors.sun.withValues(alpha: .1)
+                : HtmlRefColors.glassSoft;
+
+    final finalBorder = selected
+        ? RefColors.pink
+        : isCompleted
+            ? RefColors.lime.withValues(alpha: .5)
+            : isInProgress
+                ? RefColors.sun.withValues(alpha: .5)
+                : Colors.transparent;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 4),
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? const Color(0x2EFF3EA5) : HtmlRefColors.glassSoft,
+          color: finalBg,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             width: 1.5,
-            color: selected ? RefColors.pink : Colors.transparent,
+            color: finalBorder,
           ),
         ),
         child: Row(

@@ -690,11 +690,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final store = AppScope.of(context);
-      store.markExerciseStepCompleted('15-banco-completo');
-      Navigator.push(
-        context,
-        AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-      );
+      _completeStepAndNavigate(context, store, '15-banco-completo');
     });
   }
 
@@ -796,6 +792,24 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         (route) => route.isFirst,
       );
     }
+  }
+
+  void _navigateToNextStepOrComplete(BuildContext context, AppStore store, String slug) {
+    final steps = _sessionFlowSteps(store);
+    final isLastStep = steps.isNotEmpty && steps.last.slug == slug;
+    if (isLastStep) {
+      _completeSessionCard(context, store, correct: true);
+    } else {
+      Navigator.push(
+        context,
+        AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
+      );
+    }
+  }
+
+  void _completeStepAndNavigate(BuildContext context, AppStore store, String slug) {
+    store.markExerciseStepCompleted(slug);
+    _navigateToNextStepOrComplete(context, store, slug);
   }
 
   bool _canAdvanceAnsweredStep(
@@ -1363,11 +1377,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               _completeSessionCard(context, store, correct: true);
             } else {
               store.answerCurrentCard(true);
-              store.markExerciseStepCompleted(widget.data.slug);
-              Navigator.push(
-                context,
-                AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-              );
+              _completeStepAndNavigate(context, store, widget.data.slug);
             }
           }
         });
@@ -1435,11 +1445,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     _completeSessionCard(context, store, correct: true);
                   } else {
                     store.answerCurrentCard(true);
-                    store.markExerciseStepCompleted(widget.data.slug);
-                    Navigator.push(
-                      context,
-                      AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-                    );
+                    _completeStepAndNavigate(context, store, widget.data.slug);
                   }
                 }
               });
@@ -1593,11 +1599,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               _completeSessionCard(context, store, correct: true);
             } else {
               store.answerCurrentCard(true);
-              store.markExerciseStepCompleted(widget.data.slug);
-              Navigator.push(
-                context,
-                AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-              );
+              _completeStepAndNavigate(context, store, widget.data.slug);
             }
           }
         });
@@ -3001,10 +3003,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               enabled: completed,
               onTap: () {
                 ActiveMediaRegistry.stopAll();
-                Navigator.push(
-                  context,
-                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-                );
+                _navigateToNextStepOrComplete(context, store, widget.data.slug);
               },
             ),
           ),
@@ -3024,10 +3023,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         enabled: completed,
         onTap: () {
           ActiveMediaRegistry.stopAll();
-          Navigator.push(
-            context,
-            AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-          );
+          _navigateToNextStepOrComplete(context, store, widget.data.slug);
         },
       );
       if (!showSkip) return cta;
@@ -3039,11 +3035,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               'Omitir',
               onTap: () {
                 ActiveMediaRegistry.stopAll();
-                store.markExerciseStepCompleted(slug);
-                Navigator.push(
-                  context,
-                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-                );
+                _completeStepAndNavigate(context, store, slug);
               },
             ),
           ),
@@ -3063,15 +3055,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               'Omitir',
               onTap: () {
                 ActiveMediaRegistry.stopAll();
-                store.markExerciseStepCompleted(slug);
-                if (_isFinalVoiceSlug(slug)) {
-                  _completeSessionCard(context, store, correct: true);
-                  return;
-                }
-                Navigator.push(
-                  context,
-                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-                );
+                _completeStepAndNavigate(context, store, slug);
               },
             ),
           ),
@@ -3082,14 +3066,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               enabled: enabled,
               onTap: () {
                 ActiveMediaRegistry.stopAll();
-                if (_isFinalVoiceSlug(slug)) {
-                  _completeSessionCard(context, store, correct: true);
-                  return;
-                }
-                Navigator.push(
-                  context,
-                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-                );
+                _completeStepAndNavigate(context, store, slug);
               },
             ),
           ),
@@ -3110,20 +3087,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             onTap: () {
               if (showOmitirForDefault) {
                 ActiveMediaRegistry.stopAll();
-                store.markExerciseStepCompleted(slug);
                 if (slug == '09-quiz') {
                   store.answerCurrentCard(true);
-                  final steps = _sessionFlowSteps(store);
-                  final isLastStep = steps.isNotEmpty && steps.last.slug == '09-quiz';
-                  if (isLastStep) {
-                    _completeSessionCard(context, store, correct: true);
-                    return;
-                  }
                 }
-                Navigator.push(
-                  context,
-                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-                );
+                _completeStepAndNavigate(context, store, slug);
                 return;
               }
               if (slug == '05-bloques') {
@@ -3184,28 +3151,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   );
                   return;
                 }
-                final steps = _sessionFlowSteps(store);
-                final isLastStep = steps.isNotEmpty && steps.last.slug == '09-quiz';
-                if (isLastStep) {
-                  _completeSessionCard(context, store, correct: true);
-                } else {
-                  store.answerCurrentCard(true);
-                  store.markExerciseStepCompleted(slug);
-                  Navigator.push(
-                    context,
-                    AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-                  );
-                }
+                store.answerCurrentCard(true);
+                _completeStepAndNavigate(context, store, slug);
                 return;
               }
               if (!_checked) {
                 if (slug == '05-bloques') {
                   if (_blocksAreCorrect()) {
-                    store.markExerciseStepCompleted(slug);
-                    Navigator.push(
-                      context,
-                      AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-                    );
+                    _completeStepAndNavigate(context, store, slug);
                     return;
                   }
                   setState(() => _checked = true);
@@ -3226,11 +3179,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               if (slug == '09-quiz') {
                 store.answerCurrentCard(correct);
               }
-              store.markExerciseStepCompleted(slug);
-              Navigator.push(
-                context,
-                AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-              );
+              _completeStepAndNavigate(context, store, slug);
             },
           ),
         ),
@@ -4577,15 +4526,6 @@ class _RealFinalReview extends StatelessWidget {
                     letterSpacing: -.5,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '$totalCards tarjetas · $timeMin min · $retention% aciertos',
-                  style: TextStyle(
-                    color: const Color(0xFF153A18).withOpacity(0.7),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
               ],
             ),
           ),
@@ -4816,39 +4756,6 @@ class _RealFinalReview extends StatelessWidget {
           ],
           const SizedBox(height: 16),
 
-          // Achievements unlocked header
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4),
-            child: Row(
-              children: [
-                Icon(Icons.workspace_premium_outlined, size: 16, color: RefColors.muted),
-                SizedBox(width: 8),
-                Text(
-                  'LOGROS DESBLOQUEADOS HOY',
-                  style: TextStyle(
-                    color: RefColors.muted,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Achievements Row
-          Row(
-            children: [
-              _buildAchievementItem('🎯', 'Precisión 90', 'Nuevo'),
-              const SizedBox(width: 8),
-              _buildAchievementItem('🌲', 'Mazo dominado', 'Nuevo'),
-              const SizedBox(width: 8),
-              _buildAchievementItem('🔥', 'Racha 7', 'Activo'),
-            ],
-          ),
-          const SizedBox(height: 24),
-
           // Bottom Action buttons
           Row(
             children: [
@@ -4902,39 +4809,6 @@ class _RealFinalReview extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildAchievementItem(String emoji, String title, String subtitle) {
-    return Expanded(
-      child: Glass(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
-        child: Column(
-          children: [
-            Text(emoji, style: const TextStyle(fontSize: 22)),
-            const SizedBox(height: 6),
-            Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              style: const TextStyle(
-                color: RefColors.muted,
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
