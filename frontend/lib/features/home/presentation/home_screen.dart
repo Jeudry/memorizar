@@ -949,19 +949,40 @@ class _HeroSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          for (var i = 0; i < topCards.length; i++) ...[
-            _HeroItem(
-              emoji: topCards[i].icon,
-              title: topCards[i].front,
-              subtitle:
-                  '${topCards[i].source} · retención ${topCards[i].retention}%',
-              eta: '~${(topCards[i].lapses + 3).clamp(3, 7)} min',
-              isUrgent: topCards[i].retention < 50,
-              isToday: topCards[i].retention >= 50,
-              isPriority: i == 0,
+          ShaderMask(
+            shaderCallback: (Rect bounds) {
+              return LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white,
+                  Colors.white,
+                  Colors.white.withOpacity(0.28),
+                  Colors.transparent,
+                ],
+                stops: const [0.0, 0.45, 0.88, 1.0],
+              ).createShader(bounds);
+            },
+            blendMode: BlendMode.dstIn,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < topCards.length; i++) ...[
+                  _HeroItem(
+                    emoji: topCards[i].icon,
+                    title: topCards[i].front,
+                    subtitle:
+                        '${topCards[i].source} · retención ${topCards[i].retention}%',
+                    eta: '~${(topCards[i].lapses + 3).clamp(3, 7)} min',
+                    isUrgent: topCards[i].retention < 50,
+                    isToday: topCards[i].retention >= 50,
+                    isPriority: i == 0,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ],
             ),
-            const SizedBox(height: 8),
-          ],
+          ),
           const SizedBox(height: 8),
           const Divider(color: AppColors.glassBorder, height: 1),
           const SizedBox(height: 6),
