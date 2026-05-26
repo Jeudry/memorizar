@@ -44,6 +44,8 @@ class _FogStepState extends State<_FogStep>
   bool _roundSuccess = false;
   int _attemptsLeft = 3;
   final Set<int> _revealedWordIndices = {};
+  int _hintsUsed = 0;
+  static const int _maxHints = 5;
 
   @override
   void initState() {
@@ -53,6 +55,10 @@ class _FogStepState extends State<_FogStep>
       duration: const Duration(milliseconds: 1400),
     );
     _allWords = _studyWords(widget.targetText);
+    if (widget.finished) {
+      _isCheckingModel = false;
+      _isModelInitializing = false;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(milliseconds: 350), () {
         if (mounted && !widget.finished) {
@@ -72,6 +78,11 @@ class _FogStepState extends State<_FogStep>
       _attemptsLeft = 3;
       _roundSuccess = false;
       _revealedWordIndices.clear();
+      _hintsUsed = 0;
+      if (widget.finished) {
+        _isCheckingModel = false;
+        _isModelInitializing = false;
+      }
     }
   }
 
@@ -440,7 +451,13 @@ class _FogStepState extends State<_FogStep>
                 behavior: HitTestBehavior.opaque,
                 onTap: () {
                   if (!mounted) return;
+                  if (_revealedWordIndices.contains(globalIdx)) return;
+                  if (_hintsUsed >= _maxHints) {
+                    HapticFeedback.heavyImpact();
+                    return;
+                  }
                   setState(() {
+                    _hintsUsed++;
                     _revealedWordIndices.add(globalIdx);
                   });
                   Timer(const Duration(seconds: 3), () {
@@ -499,7 +516,13 @@ class _FogStepState extends State<_FogStep>
                     behavior: HitTestBehavior.opaque,
                     onTap: () {
                       if (!mounted) return;
+                      if (_revealedWordIndices.contains(i)) return;
+                      if (_hintsUsed >= _maxHints) {
+                        HapticFeedback.heavyImpact();
+                        return;
+                      }
                       setState(() {
+                        _hintsUsed++;
                         _revealedWordIndices.add(i);
                       });
                       Timer(const Duration(seconds: 3), () {
@@ -729,19 +752,19 @@ class _FogStepState extends State<_FogStep>
             ),
             if (!widget.finished) ...[
               const SizedBox(height: 6),
-              const Row(
+              Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
                     Icons.touch_app_rounded,
                     size: 14,
-                    color: RefColors.dim,
+                    color: _hintsUsed >= _maxHints ? RefColors.pink : RefColors.dim,
                   ),
-                  SizedBox(width: 6),
+                  const SizedBox(width: 6),
                   Text(
-                    'Toca una palabra oculta para revelarla por 3 segundos.',
+                    'Pistas: $_hintsUsed/$_maxHints · Toca una palabra para revelarla (3s)',
                     style: TextStyle(
-                      color: RefColors.dim,
+                      color: _hintsUsed >= _maxHints ? RefColors.pink : RefColors.dim,
                       fontSize: 10,
                       fontWeight: FontWeight.w800,
                     ),

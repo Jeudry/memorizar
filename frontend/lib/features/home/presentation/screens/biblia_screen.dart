@@ -2110,6 +2110,8 @@ ExerciseFlowData _flowData(String slug) {
   );
 }
 
+
+
 List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
   final difficulty = store.sessionDifficulty.clamp(0, 2);
   final seed = store.sessionFlowSeed;
@@ -2160,7 +2162,6 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
       ...pick(level3Optional, difficulty == 1 ? 2 : 3),
       '16-niebla-n3',
     ],
-    '14-voz-final',
   ];
   return slugs.map(_flowData).toList();
 }
