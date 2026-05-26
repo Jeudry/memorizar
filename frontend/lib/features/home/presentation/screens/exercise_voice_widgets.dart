@@ -6,12 +6,14 @@ part of '../ui_screens.dart';
 class _ReadAloudPracticeCard extends StatefulWidget {
   final String targetText;
   final String source;
+  final bool completed;
   final void Function(String text, String? audioPath) onCompleted;
 
   const _ReadAloudPracticeCard({
     required this.targetText,
     required this.source,
     required this.onCompleted,
+    this.completed = false,
   });
 
   @override
@@ -25,6 +27,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
   bool _listening = false;
   bool _completed = false;
   
+  bool _isCheckingModel = true;
   bool _isModelDownloaded = false;
   bool _isDownloadingModel = false;
   bool _isModelInitializing = true;
@@ -55,13 +58,24 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     );
+    _completed = widget.completed;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(milliseconds: 350), () {
-        if (mounted) {
+        if (mounted && !widget.completed) {
           _checkModelStatus();
         }
       });
     });
+  }
+
+  @override
+  void didUpdateWidget(_ReadAloudPracticeCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.completed != widget.completed) {
+      setState(() {
+        _completed = widget.completed;
+      });
+    }
   }
 
   Future<void> _checkModelStatus() async {
@@ -69,11 +83,13 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
     if (!mounted) return;
     setState(() {
       _isModelDownloaded = exists;
+      _isCheckingModel = false;
     });
     if (exists) {
       await _initWhisper();
     } else {
       setState(() {
+        _isModelInitializing = false;
         _status = 'El modelo de reconocimiento local (375MB) no está descargado.';
       });
     }
@@ -473,6 +489,35 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
 
   @override
   Widget build(BuildContext context) {
+    if (_isCheckingModel || (_isModelInitializing && !_isDownloadingModel)) {
+      return Container(
+        height: 220,
+        alignment: Alignment.center,
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 32,
+              height: 32,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                color: RefColors.cyan,
+              ),
+            ),
+            SizedBox(height: 14),
+            Text(
+              'Cargando módulo de voz...',
+              style: TextStyle(
+                color: RefColors.cyan,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     if (!_isModelDownloaded) {
       final downloadPercent = (_modelDownloadProgress * 100).round();
       final displayStatus = _isModelInitializing

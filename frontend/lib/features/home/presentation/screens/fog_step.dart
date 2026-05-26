@@ -24,6 +24,7 @@ class _FogStep extends StatefulWidget {
 class _FogStepState extends State<_FogStep>
     with SingleTickerProviderStateMixin {
   final _audioRecorder = AudioRecorder();
+  bool _isCheckingModel = true;
   bool _isModelDownloaded = false;
   bool _isModelInitializing = true;
   bool _isDownloadingModel = false;
@@ -54,7 +55,7 @@ class _FogStepState extends State<_FogStep>
     _allWords = _studyWords(widget.targetText);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(milliseconds: 350), () {
-        if (mounted) {
+        if (mounted && !widget.finished) {
           _checkModelStatus();
         }
       });
@@ -79,11 +80,13 @@ class _FogStepState extends State<_FogStep>
     if (!mounted) return;
     setState(() {
       _isModelDownloaded = exists;
+      _isCheckingModel = false;
     });
     if (exists) {
       await _initWhisper();
     } else {
       setState(() {
+        _isModelInitializing = false;
         _status = 'El modelo de reconocimiento local (375MB) no está descargado.';
       });
     }
@@ -543,6 +546,37 @@ class _FogStepState extends State<_FogStep>
 
   @override
   Widget build(BuildContext context) {
+    if (_isCheckingModel || (_isModelInitializing && !_isDownloadingModel)) {
+      return Glass(
+        padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+        radius: 24,
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 32,
+                height: 32,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  color: RefColors.cyan,
+                ),
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Cargando módulo de voz...',
+                style: TextStyle(
+                  color: RefColors.cyan,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (!_isModelDownloaded) {
       final downloadPercent = (_modelDownloadProgress * 100).round();
       final displayStatus = _isModelInitializing

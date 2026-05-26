@@ -1108,6 +1108,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     MemoryDeckData deck,
     String slug,
   ) {
+    final completed = store.isExerciseStepCompleted(slug);
     if (slug == '00-solo-lectura') {
       final verses = _currentBatchVerses(context);
       final totalChars = verses.fold<int>(0, (sum, v) => sum + v.text.length);
@@ -1283,6 +1284,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           _ReadAloudPracticeCard(
             targetText: card.back,
             source: card.front,
+            completed: completed,
             onCompleted: (recognized, audioPath) {
               store.saveVoiceReadForCurrentCard(recognized);
               if (audioPath != null) {
@@ -1314,7 +1316,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       _ensureFogState(card.id);
       return _FogStep(
         targetText: card.back,
-        finished: _fogFinished,
+        finished: _fogFinished || completed,
         level: 3, // Final voice test blurs 100% of the words!
         showHintTemp: _fogShowHintTemp,
         onRoundCompleted: () {
@@ -1797,7 +1799,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       _ensureFogState(card.id);
       return _FogStep(
         targetText: card.back,
-        finished: _fogFinished,
+        finished: _fogFinished || completed,
         level: _fogLevelForSlug(slug),
         showHintTemp: _fogShowHintTemp,
         onRoundCompleted: _onFogRoundCompleted,

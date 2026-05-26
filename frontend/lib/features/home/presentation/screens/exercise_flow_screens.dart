@@ -694,7 +694,15 @@ class _FlowTopBar extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 14),
       child: Row(
         children: [
-          const RefBackButton(),
+          RefBackButton(
+            onTap: () {
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                '${AppRoutes.flow}/progress-tree',
+                ModalRoute.withName(AppRoutes.home),
+              );
+            },
+          ),
           Expanded(child: Center(child: RefChip(dynamicChip, dense: true))),
           const RefIconButton(icon: Icons.wb_sunny_outlined),
         ],
@@ -731,7 +739,15 @@ class _FlowStepHeader extends StatelessWidget {
           children: [
             Row(
               children: [
-                const RefBackButton(),
+                RefBackButton(
+                  onTap: () {
+                    Navigator.pushNamedAndRemoveUntil(
+                      context,
+                      '${AppRoutes.flow}/progress-tree',
+                      ModalRoute.withName(AppRoutes.home),
+                    );
+                  },
+                ),
                 const SizedBox(width: 10),
                 Text(
                   'PASO $step/$totalSteps',
