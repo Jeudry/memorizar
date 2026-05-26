@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'main_tab_shell.dart';
 
 import '../router/app_routes.dart';
 import '../theme/ref_colors.dart';
@@ -46,22 +47,27 @@ class RefBottomItem extends StatelessWidget {
       child: GestureDetector(
         onTap: () {
           if (!isActive) {
-            final routesOrder = [
-              AppRoutes.home,
-              AppRoutes.repasar,
-              AppRoutes.amigos,
-              AppRoutes.comunidad,
-              AppRoutes.stats,
-            ];
-            final currentIndex = routesOrder.indexOf(parent?.active ?? '');
-            final targetIndex = routesOrder.indexOf(route);
-            final beginOffset = targetIndex > currentIndex
-                ? const Offset(1.0, 0.0)
-                : const Offset(-1.0, 0.0);
-            Navigator.pushReplacement(
-              context,
-              AppRoutes.slideRoute(route, begin: beginOffset),
-            );
+            final shell = MainTabShell.of(context);
+            if (shell != null) {
+              shell.goToRoute(route);
+            } else {
+              final routesOrder = [
+                AppRoutes.home,
+                AppRoutes.repasar,
+                AppRoutes.amigos,
+                AppRoutes.comunidad,
+                AppRoutes.stats,
+              ];
+              final currentIndex = routesOrder.indexOf(parent?.active ?? '');
+              final targetIndex = routesOrder.indexOf(route);
+              final beginOffset = targetIndex > currentIndex
+                  ? const Offset(1.0, 0.0)
+                  : const Offset(-1.0, 0.0);
+              Navigator.pushReplacement(
+                context,
+                AppRoutes.slideRoute(route, begin: beginOffset),
+              );
+            }
           }
         },
         child: Container(

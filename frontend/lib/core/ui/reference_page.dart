@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'main_tab_shell.dart';
 
 import '../router/app_routes.dart';
 import '../theme/ref_colors.dart';
@@ -44,6 +45,36 @@ class ReferencePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isInsideShell = MainTabShell.of(context) != null;
+
+    if (isInsideShell) {
+      return scrollable
+          ? SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                18,
+                4,
+                18,
+                showBottomNav ? 118 : 28,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [child],
+              ),
+            )
+          : Padding(
+              padding: EdgeInsets.fromLTRB(
+                18,
+                4,
+                18,
+                showBottomNav ? 118 : 28,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [Expanded(child: child)],
+              ),
+            );
+    }
+
     return Scaffold(
       backgroundColor: RefColors.bg,
       body: Stack(

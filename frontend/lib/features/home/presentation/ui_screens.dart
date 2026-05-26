@@ -45,6 +45,7 @@ import 'home_screen.dart';
 import '../../../core/router/app_routes.dart';
 import '../../../core/theme/ref_colors.dart';
 import '../../../core/ui/widgets.dart';
+import '../../../core/ui/main_tab_shell.dart';
 import '../../../core/services/whisper_service.dart';
 
 part 'screens/biblia_screen.dart';
@@ -157,32 +158,32 @@ int _chapterCountFor(String book) {
 /// because it references every feature screen, all of which still live here.
 /// Once each feature lives in its own folder this can move.
 Map<String, WidgetBuilder> buildAppRoutes() => {
-  AppRoutes.home: (_) => const HomeScreen(),
+  AppRoutes.home: (_) => const MainTabShell(initialRoute: AppRoutes.home),
   AppRoutes.bgNocturnoMate: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.nocturnoMate),
+      const MainTabShell(initialRoute: AppRoutes.bgNocturnoMate),
   AppRoutes.bgVinoAhumado: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.vinoAhumado),
+      const MainTabShell(initialRoute: AppRoutes.bgVinoAhumado),
   AppRoutes.bgTintaProfunda: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.tintaProfunda),
+      const MainTabShell(initialRoute: AppRoutes.bgTintaProfunda),
   AppRoutes.bgBrasaSuave: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.brasaSuave),
+      const MainTabShell(initialRoute: AppRoutes.bgBrasaSuave),
   AppRoutes.bgCarbonAmbar: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.carbonAmbar),
+      const MainTabShell(initialRoute: AppRoutes.bgCarbonAmbar),
   AppRoutes.bgCiruelaTostada: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.ciruelaTostada),
+      const MainTabShell(initialRoute: AppRoutes.bgCiruelaTostada),
   AppRoutes.bgPetroleoDorado: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.petroleoDorado),
+      const MainTabShell(initialRoute: AppRoutes.bgPetroleoDorado),
   AppRoutes.bgNaranjaNocturno: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.naranjaNocturno),
+      const MainTabShell(initialRoute: AppRoutes.bgNaranjaNocturno),
   AppRoutes.bgActualSuave: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.actualSuave),
+      const MainTabShell(initialRoute: AppRoutes.bgActualSuave),
   AppRoutes.biblia: (_) => const BibliaScreen(),
   AppRoutes.especificar: (_) => const EspecificarScreen(),
   AppRoutes.iniciar: (_) => const IniciarScreen(),
-  AppRoutes.repasar: (_) => const RepasarScreen(),
-  AppRoutes.comunidad: (_) => const ComunidadScreen(),
-  AppRoutes.amigos: (_) => const AmigosScreen(),
-  AppRoutes.stats: (_) => const StatsScreen(),
+  AppRoutes.repasar: (_) => const MainTabShell(initialRoute: AppRoutes.repasar),
+  AppRoutes.comunidad: (_) => const MainTabShell(initialRoute: AppRoutes.comunidad),
+  AppRoutes.amigos: (_) => const MainTabShell(initialRoute: AppRoutes.amigos),
+  AppRoutes.stats: (_) => const MainTabShell(initialRoute: AppRoutes.stats),
   AppRoutes.cooperativo: (_) => const CooperativoScreen(),
   AppRoutes.cooperativoJuego: (_) => const CooperativoGameScreen(),
   AppRoutes.cooperativoLogrado: (_) => const CooperativoSuccessScreen(),
