@@ -8,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../features/moderation/data/report_models.dart';
 import 'api/memorizar_client.dart';
 import 'api/models.dart';
+import 'db/app_database.dart';
+import 'package:drift/drift.dart' as drift;
 
 /// Visibility level for a memory deck. Defaults to [private] — going to
 /// [friends] or [public] requires the user to acknowledge they have rights
@@ -162,11 +164,93 @@ final emptyDeck = MemoryDeckData(
 );
 
 class AppStore extends ChangeNotifier {
-  AppStore({MemorizarClient? api}) : api = api ?? MemorizarClient();
+  AppStore({
+    MemorizarClient? api,
+    AppDatabase? db,
+    this.enableDatabasePersistence = true,
+  })  : api = api ?? MemorizarClient(),
+        db = db ?? (enableDatabasePersistence ? AppDatabase() : null);
 
   /// Cliente HTTP del backend Go. Lo expongo público para que features que
   /// hablan directo con la API (Amigos, Feed) lo reusen sin duplicarlo.
   final MemorizarClient api;
+  final AppDatabase? db;
+  final bool enableDatabasePersistence;
+
+  Future<void> loadDecksFromDatabase() async {
+    if (db == null) return;
+    final dbDecks = await db!.getAllDecks();
+    if (dbDecks.isEmpty) {
+      // Pre-cargar mazo de demostración de Filipenses 4
+      final demoDeck = DecksCompanion(
+        id: const drift.Value('demo-filipenses-4'),
+        title: const drift.Value('Filipenses 4'),
+        subtitle: const drift.Value('2 versículos de demostración'),
+        icon: const drift.Value('✝️'),
+        isBible: const drift.Value(true),
+        createdAt: drift.Value(DateTime.now()),
+      );
+      await db!.upsertDeck(demoDeck);
+
+      final demoCards = [
+        CardsCompanion(
+          id: const drift.Value('fil-4-13'),
+          deckId: const drift.Value('demo-filipenses-4'),
+          front: const drift.Value('Filipenses 4:13'),
+          back: const drift.Value('Todo lo puedo en Cristo que me fortalece.'),
+          source: const drift.Value('RV1909'),
+          icon: const drift.Value('✝️'),
+          retention: const drift.Value(74),
+          lapses: const drift.Value(0),
+        ),
+        CardsCompanion(
+          id: const drift.Value('fil-4-19'),
+          deckId: const drift.Value('demo-filipenses-4'),
+          front: const drift.Value('Filipenses 4:19'),
+          back: const drift.Value('Mi Dios, pues, suplirá todo lo que os falta conforme a sus riquezas en gloria en Cristo Jesús.'),
+          source: const drift.Value('RV1909'),
+          icon: const drift.Value('✝️'),
+          retention: const drift.Value(74),
+          lapses: const drift.Value(0),
+        ),
+      ];
+
+      for (final card in demoCards) {
+        await db!.upsertCard(card);
+      }
+      
+      return loadDecksFromDatabase();
+    }
+
+    _decks.clear();
+    for (final d in dbDecks) {
+      final dbCards = await db!.getCardsForDeck(d.id);
+      final cards = dbCards.map((c) => MemoryCardData(
+        id: c.id,
+        front: c.front,
+        back: c.back,
+        source: c.source,
+        icon: c.icon,
+        retention: c.retention,
+        lapses: c.lapses,
+      )).toList();
+
+      _decks.add(MemoryDeckData(
+        id: d.id,
+        title: d.title,
+        subtitle: d.subtitle,
+        icon: d.icon,
+        createdAt: d.createdAt,
+        isBible: d.isBible,
+        cards: cards,
+      ));
+    }
+    
+    if (_decks.isNotEmpty && _activeDeckId == null) {
+      _activeDeckId = _decks.first.id;
+    }
+    notifyListeners();
+  }
 
   // ─── Auth ───────────────────────────────────────────────────────────────
 
@@ -218,6 +302,9 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> bootstrapSession() async {
+    if (enableDatabasePersistence) {
+      await loadDecksFromDatabase();
+    }
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_kSessionTokenKey);
     final userJson = prefs.getString(_kSessionUserKey);
@@ -1223,6 +1310,31 @@ class AppStore extends ChangeNotifier {
     return chapters.every((c) => isWholeChapterSelected(canonical, c));
   }
 
+  Future<void> _persistDeckToDatabase(MemoryDeckData deck) async {
+    if (!enableDatabasePersistence) return;
+    final companion = DecksCompanion(
+      id: drift.Value(deck.id),
+      title: drift.Value(deck.title),
+      subtitle: drift.Value(deck.subtitle),
+      icon: drift.Value(deck.icon),
+      isBible: drift.Value(deck.isBible),
+      createdAt: drift.Value(deck.createdAt),
+    );
+    await db!.upsertDeck(companion);
+    for (final card in deck.cards) {
+      await db!.upsertCard(CardsCompanion(
+        id: drift.Value(card.id),
+        deckId: drift.Value(deck.id),
+        front: drift.Value(card.front),
+        back: drift.Value(card.back),
+        source: drift.Value(card.source),
+        icon: drift.Value(card.icon),
+        retention: drift.Value(card.retention),
+        lapses: drift.Value(card.lapses),
+      ));
+    }
+  }
+
   bool createBibleDeckFromSelection() {
     if (_selectedBibleVerses.isEmpty) return false;
     final grouped = _selectedBibleVerses.first;
@@ -1248,6 +1360,7 @@ class AppStore extends ChangeNotifier {
     );
     _decks.insert(0, deck);
     setActiveDeck(deck.id);
+    unawaited(_persistDeckToDatabase(deck));
     return true;
   }
 
@@ -1295,6 +1408,7 @@ class AppStore extends ChangeNotifier {
     );
     _decks.insert(0, deck);
     setActiveDeck(deck.id);
+    unawaited(_persistDeckToDatabase(deck));
     return deck;
   }
 
@@ -1383,6 +1497,9 @@ class AppStore extends ChangeNotifier {
           retention: (card.retention + (correct ? 8 : -14)).clamp(18, 100),
           lapses: card.lapses + (correct ? 0 : 1),
         );
+        if (enableDatabasePersistence) {
+          unawaited(db!.updateCardRetention(cards[i].id, cards[i].retention, cards[i].lapses));
+        }
       }
       _decks[deckIndex] = MemoryDeckData(
         id: deck.id,
@@ -1407,6 +1524,9 @@ class AppStore extends ChangeNotifier {
       retention: (card.retention + (correct ? 8 : -14)).clamp(18, 100),
       lapses: card.lapses + (correct ? 0 : 1),
     );
+    if (enableDatabasePersistence) {
+      unawaited(db!.updateCardRetention(cards[_currentCardIndex].id, cards[_currentCardIndex].retention, cards[_currentCardIndex].lapses));
+    }
     _decks[deckIndex] = MemoryDeckData(
       id: deck.id,
       title: deck.title,

@@ -22,6 +22,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../core/api/models.dart';
 import '../../../core/app_state.dart';
+import '../../../core/services/local_llm_service.dart';
 import '../../account/presentation/account_screen.dart';
 import '../../auth/presentation/login_screen.dart';
 import '../../auth/presentation/password_reset_screen.dart';
@@ -995,12 +996,15 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ..shuffle(rng);
       final distractors = distractorPool.take(3).toList();
       while (distractors.length < 3) {
+        final llm = LocalLlmService.instance;
+        final dists = llm.generateDistractorsSync(target.back);
+        final distText = dists[distractors.length % dists.length];
         distractors.add(
           MemoryCardData(
-            id: 'placeholder-${distractors.length}-${target.id}',
-            front: 'Opción aproximada',
-            back: _firstWords(target.back, 4),
-            source: 'Placeholder',
+            id: 'ai-distractor-${distractors.length}-${target.id}',
+            front: target.front,
+            back: distText,
+            source: 'IA Local Offline',
             icon: target.icon,
           ),
         );

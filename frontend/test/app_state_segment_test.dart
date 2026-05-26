@@ -1,9 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frontend/core/app_state.dart';
+import 'package:frontend/core/db/app_database.dart';
 
 void main() {
   test('segmentContent creates one card per pasted line', () {
-    final store = AppStore();
+    final store = AppStore(enableDatabasePersistence: false);
 
     final cards = store.segmentContent('Capital: Santo Domingo\nMoneda: Peso');
 
@@ -15,7 +16,7 @@ void main() {
   });
 
   test('segmentContent preserves Bible references with chapter and verse', () {
-    final store = AppStore();
+    final store = AppStore(enableDatabasePersistence: false);
 
     final cards = store.segmentContent(
       'Juan 3:16 Porque de tal manera amó Dios al mundo',
@@ -27,7 +28,7 @@ void main() {
   });
 
   test('segmentContent groups wrapped Bible verse lines by verse number', () {
-    final store = AppStore();
+    final store = AppStore(enableDatabasePersistence: false);
 
     final cards = store.segmentContent('''
 1 Aleluya. Alabad a Jehová, porque él es bueno;
@@ -54,7 +55,7 @@ Para que me gloríe con tu heredad.
   });
 
   test('segmentContent groups verse lines without title or number spacing', () {
-    final store = AppStore();
+    final store = AppStore(enableDatabasePersistence: false);
 
     final cards = store.segmentContent('''
 1¡Aleluya!
@@ -78,7 +79,7 @@ O expresar toda Su alabanza?
   });
 
   test('segmentContent splits one pasted paragraph into sentence cards', () {
-    final store = AppStore();
+    final store = AppStore(enableDatabasePersistence: false);
 
     final cards = store.segmentContent(
       'Primera idea importante. Segunda idea para practicar.',
@@ -90,7 +91,7 @@ O expresar toda Su alabanza?
   });
 
   test('segmentContent matches verse numbers in brackets and parentheses', () {
-    final store = AppStore();
+    final store = AppStore(enableDatabasePersistence: false);
     final cards = store.segmentContent('''
 [1] Den gracias al Señor, porque Él es bueno;
 (2) Díganlo los redimidos
@@ -104,7 +105,7 @@ O expresar toda Su alabanza?
   });
 
   test('segmentContent performs ultimate smart title extraction, url stripping, and same-line verse splitting', () {
-    final store = AppStore();
+    final store = AppStore(enableDatabasePersistence: false);
     final cards = store.segmentContent('''
 Salmo 107:1-2 NBLA
 [1] Den gracias al Señor, porque Él es bueno; Porque para siempre es Su misericordia. [2] Díganlo los redimidos del Señor, A quienes ha redimido de la mano del adversario,
@@ -120,7 +121,7 @@ https://bible.com/bible/103/psa.107.1-2.NBLA
   });
 
   test('segmentContent performs dynamic verse grouping even when first verse marker is eaten or omitted', () {
-    final store = AppStore();
+    final store = AppStore(enableDatabasePersistence: false);
     final cards = store.segmentContent('''
 Den gracias al Señor, porque Él es bueno;
 Porque para siempre es Su misericordia.
@@ -136,7 +137,7 @@ A quienes ha redimido de la mano del adversario,
   });
 
   test('segmentContent handles key-value lists and bullet lists separately per line', () {
-    final store = AppStore();
+    final store = AppStore(enableDatabasePersistence: false);
     final listCards = store.segmentContent('''
 Capital: Santo Domingo
 Moneda: Peso
@@ -162,7 +163,7 @@ Idioma: Español
   });
 
   test('segmentContent joins wrapped paragraph lines into a single sentence card', () {
-    final store = AppStore();
+    final store = AppStore(enableDatabasePersistence: false);
     final cards = store.segmentContent('''
 En la antigüedad, las personas
 solían memorizar textos enteros
