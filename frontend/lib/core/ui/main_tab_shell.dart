@@ -21,7 +21,7 @@ class MainTabShell extends StatefulWidget {
 
 class MainTabShellState extends State<MainTabShell> {
   late int _currentIndex;
-  late final PageController _pageController;
+  int _previousIndex = 0;
 
   static const List<String> routesOrder = [
     AppRoutes.home,
@@ -35,11 +35,10 @@ class MainTabShellState extends State<MainTabShell> {
   void initState() {
     super.initState();
     _currentIndex = _getIndexOfRoute(widget.initialRoute);
-    _pageController = PageController(initialPage: _currentIndex);
+    _previousIndex = _currentIndex;
   }
 
   int _getIndexOfRoute(String route) {
-    // Treat any bg* variant routes as index 0 (home)
     if (route.contains('/preview/background/')) {
       return 0;
     }
@@ -52,32 +51,20 @@ class MainTabShellState extends State<MainTabShell> {
     super.didUpdateWidget(oldWidget);
     final newIndex = _getIndexOfRoute(widget.initialRoute);
     if (newIndex != _currentIndex) {
-      _currentIndex = newIndex;
-      _pageController.animateToPage(
-        newIndex,
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeOutCubic,
-      );
+      setState(() {
+        _previousIndex = _currentIndex;
+        _currentIndex = newIndex;
+      });
     }
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
   }
 
   void goToRoute(String route) {
     final targetIndex = _getIndexOfRoute(route);
     if (targetIndex != _currentIndex) {
       setState(() {
+        _previousIndex = _currentIndex;
         _currentIndex = targetIndex;
       });
-      _pageController.animateToPage(
-        targetIndex,
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeOutCubic,
-      );
     }
   }
 
@@ -108,8 +95,27 @@ class MainTabShellState extends State<MainTabShell> {
     }
   }
 
+  Widget _buildScreen(int index) {
+    switch (index) {
+      case 0:
+        return const HomeScreen();
+      case 1:
+        return const RepasarScreen();
+      case 2:
+        return const AmigosScreen();
+      case 3:
+        return const ComunidadScreen();
+      case 4:
+        return const StatsScreen();
+      default:
+        return const HomeScreen();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final slideDirection = _currentIndex >= _previousIndex ? 1.0 : -1.0;
+
     return Scaffold(
       backgroundColor: RefColors.bg,
       body: Stack(
@@ -117,23 +123,44 @@ class MainTabShellState extends State<MainTabShell> {
           // Aurora Background matching current variant
           AppAuroraBackground(variant: _getBackgroundVariant()),
 
-          // Main page transitions
+          // Main page transitions using AnimatedSwitcher to avoid intermediate page flashing
           SafeArea(
-            child: PageView(
-              controller: _pageController,
-              physics: const NeverScrollableScrollPhysics(), // Only tap navigation
-              onPageChanged: (index) {
-                setState(() {
-                  _currentIndex = index;
-                });
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 320),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (Widget child, Animation<double> animation) {
+                final isEntering = child.key == ValueKey<int>(_currentIndex);
+                if (isEntering) {
+                  return SlideTransition(
+                    position: Tween<Offset>(
+                      begin: Offset(slideDirection, 0.0),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: child,
+                  );
+                } else {
+                  return SlideTransition(
+                    position: Tween<Offset>(
+                      begin: Offset(-slideDirection, 0.0),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: child,
+                  );
+                }
               },
-              children: const [
-                HomeScreen(),
-                RepasarScreen(),
-                AmigosScreen(),
-                ComunidadScreen(),
-                StatsScreen(),
-              ],
+              layoutBuilder: (Widget? currentChild, List<Widget> previousChildren) {
+                return Stack(
+                  children: <Widget>[
+                    ...previousChildren,
+                    if (currentChild != null) currentChild,
+                  ],
+                );
+              },
+              child: SizedBox.expand(
+                key: ValueKey<int>(_currentIndex),
+                child: _buildScreen(_currentIndex),
+              ),
             ),
           ),
 
