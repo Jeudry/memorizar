@@ -45,7 +45,24 @@ class RefBottomItem extends StatelessWidget {
     return Expanded(
       child: GestureDetector(
         onTap: () {
-          if (!isActive) Navigator.pushReplacementNamed(context, route);
+          if (!isActive) {
+            final routesOrder = [
+              AppRoutes.home,
+              AppRoutes.repasar,
+              AppRoutes.amigos,
+              AppRoutes.comunidad,
+              AppRoutes.stats,
+            ];
+            final currentIndex = routesOrder.indexOf(parent?.active ?? '');
+            final targetIndex = routesOrder.indexOf(route);
+            final beginOffset = targetIndex > currentIndex
+                ? const Offset(1.0, 0.0)
+                : const Offset(-1.0, 0.0);
+            Navigator.pushReplacement(
+              context,
+              AppRoutes.slideRoute(route, begin: beginOffset),
+            );
+          }
         },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),

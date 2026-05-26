@@ -29,6 +29,19 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
   }
 
   void _refreshPreview() {
+    final text = _contentController.text.trim();
+    if (_titleController.text.trim().isEmpty) {
+      final lines = text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+      if (lines.isNotEmpty) {
+        final firstLine = lines.first;
+        final bibleRefRegExp = RegExp(
+          r'^((?:[1-3]\s*)?[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?:\s+[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)*\s+\d+:\d+(?:-\d+)?)(?:\s+[A-Za-z0-9]+)?$'
+        );
+        if (bibleRefRegExp.hasMatch(firstLine)) {
+          _titleController.text = firstLine;
+        }
+      }
+    }
     setState(() {
       _segmentedCards = AppScope.of(
         context,
@@ -46,8 +59,27 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
       );
       return;
     }
+    
+    // Auto-extract title if title is empty
+    String? extractedTitle;
+    if (_titleController.text.trim().isEmpty) {
+      final lines = text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+      if (lines.isNotEmpty) {
+        final firstLine = lines.first;
+        final bibleRefRegExp = RegExp(
+          r'^((?:[1-3]\s*)?[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?:\s+[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)*\s+\d+:\d+(?:-\d+)?)(?:\s+[A-Za-z0-9]+)?$'
+        );
+        if (bibleRefRegExp.hasMatch(firstLine)) {
+          extractedTitle = firstLine;
+        }
+      }
+    }
+
     setState(() {
-      _contentController.text = text;
+      if (extractedTitle != null) {
+        _titleController.text = extractedTitle;
+      }
+      _contentController.text = text; // Raw content remains as pasted
       _contentController.selection = TextSelection.collapsed(
         offset: _contentController.text.length,
       );
@@ -80,20 +112,12 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
     Navigator.pushNamed(context, AppRoutes.iniciar);
   }
 
-  void _segmentContent() {
-    final cards = AppScope.of(
-      context,
-    ).segmentContent(_contentController.text, title: _titleController.text);
-    setState(() => _segmentedCards = cards);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          cards.isEmpty
-              ? 'No hay texto para segmentar.'
-              : '${cards.length} tarjetas segmentadas.',
-        ),
-      ),
-    );
+  void _clearAll() {
+    setState(() {
+      _titleController.clear();
+      _contentController.clear();
+      _segmentedCards = const [];
+    });
   }
 
   void _updateSegmentedCard(int index, {String? front, String? back}) {
@@ -266,8 +290,13 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
                     ),
                     const SizedBox(width: 6),
                     GestureDetector(
-                      onTap: _segmentContent,
-                      child: const _ToolChip('✨ Segmentar'),
+                      onTap: _clearAll,
+                      child: const _ToolChip('🧹 Limpiar'),
+                    ),
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: () => Navigator.pushNamed(context, AppRoutes.settings),
+                      child: const _ToolChip('⚙️ Ajustes'),
                     ),
                   ],
                 ),

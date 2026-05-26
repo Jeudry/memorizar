@@ -499,6 +499,15 @@ void _showAccountMenu(BuildContext context) {
                 },
               ),
             _AccountMenuRow(
+              icon: Icons.settings_outlined,
+              label: 'Ajustes',
+              subtitle: 'Tema, idioma, accesibilidad, recordatorios',
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                Navigator.pushNamed(context, '/settings');
+              },
+            ),
+            _AccountMenuRow(
               icon: Icons.gavel_rounded,
               label: 'Legal y privacidad',
               subtitle: 'Términos, Privacidad, DMCA, Comunidad',
@@ -621,7 +630,9 @@ class _AppHeader extends StatelessWidget {
                 ),
                 child: Center(
                   child: Text(
-                    store.currentUser?.initial ?? 'A',
+                    store.isLoggedIn
+                        ? (store.currentUser?.initial ?? 'U')
+                        : '?',
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       color: Colors.white,
@@ -676,7 +687,9 @@ class _AppHeader extends StatelessWidget {
                 ),
               ),
               Text(
-                'Hola Ana',
+                store.isLoggedIn
+                    ? 'Hola ${store.currentUser?.displayName ?? "Usuario"}'
+                    : 'Invitado',
                 style: const TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
@@ -685,7 +698,10 @@ class _AppHeader extends StatelessWidget {
             ],
           ),
         ),
-        _IconButton(onPressed: () {}, icon: Icons.wb_sunny_outlined),
+        _IconButton(
+          onPressed: () => Navigator.pushNamed(context, '/settings'),
+          icon: Icons.settings_outlined,
+        ),
         const SizedBox(width: 8),
         _IconButton(
           onPressed: () {},
@@ -802,6 +818,77 @@ class _HeroSection extends StatelessWidget {
                 color: AppColors.inkMuted,
                 fontSize: 12,
                 height: 1.35,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    if (dueCards.isEmpty) {
+      return GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: AppColors.glassStrong,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.accentLime.withValues(alpha: 0.3)),
+              ),
+              child: const Center(
+                child: Text(
+                  '🧠',
+                  style: TextStyle(fontSize: 24),
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'TODO AL DÍA',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.2,
+                          color: AppColors.accentLime,
+                        ),
+                      ),
+                      Text(
+                        '100% completado',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.accentLime.withValues(alpha: 0.8),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    '¡Mente totalmente afilada!',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Repasos completados. ¡Excelente constancia!',
+                    style: TextStyle(
+                      color: AppColors.inkMuted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

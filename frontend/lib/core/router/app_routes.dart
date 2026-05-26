@@ -46,6 +46,7 @@ class AppRoutes {
   // Auth + cuenta + bandeja de compartidos.
   static const login = '/login';
   static const account = '/account';
+  static const settings = '/settings';
   static const shareInbox = '/inbox';
   static const verifyEmail = '/verify-email';
   static const passwordReset = '/password-reset';
@@ -140,7 +141,7 @@ class AppRoutes {
     if (builder == null) return null;
 
     // Pantallas que se sienten como "modales" → fadeScale.
-    const modalLike = {login, account, shareInbox, legalMenu};
+    const modalLike = {login, account, AppRoutes.settings, shareInbox, legalMenu};
     if (modalLike.contains(name)) {
       return fadeScaleRoute(name);
     }

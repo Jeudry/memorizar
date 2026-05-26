@@ -365,12 +365,24 @@ class AppStore extends ChangeNotifier {
 
   static const _kThemeModeKey = 'memorizar.theme.mode';
   static const _kLocaleKey = 'memorizar.locale';
+  static const _kDyslexiaModeKey = 'memorizar.dyslexia.mode';
+  static const _kBigFontKey = 'memorizar.big.font';
+  static const _kReminderEnabledKey = 'memorizar.reminder.enabled';
+  static const _kReminderHourKey = 'memorizar.reminder.hour';
 
   ThemeMode _themeMode = ThemeMode.dark;
   String _locale = 'es';
+  bool _dyslexiaMode = false;
+  bool _bigFont = false;
+  bool _reminderEnabled = false;
+  int _reminderHour = 20;
 
   ThemeMode get themeMode => _themeMode;
   String get locale => _locale;
+  bool get dyslexiaMode => _dyslexiaMode;
+  bool get bigFont => _bigFont;
+  bool get reminderEnabled => _reminderEnabled;
+  int get reminderHour => _reminderHour;
 
   Future<void> bootstrapPreferences() async {
     final prefs = await SharedPreferences.getInstance();
@@ -380,6 +392,12 @@ class AppStore extends ChangeNotifier {
     if (tm == 'dark') _themeMode = ThemeMode.dark;
     final loc = prefs.getString(_kLocaleKey);
     if (loc != null && loc.isNotEmpty) _locale = loc;
+    
+    _dyslexiaMode = prefs.getBool(_kDyslexiaModeKey) ?? false;
+    _bigFont = prefs.getBool(_kBigFontKey) ?? false;
+    _reminderEnabled = prefs.getBool(_kReminderEnabledKey) ?? false;
+    _reminderHour = prefs.getInt(_kReminderHourKey) ?? 20;
+    
     notifyListeners();
   }
 
@@ -401,6 +419,34 @@ class AppStore extends ChangeNotifier {
     _locale = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kLocaleKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setDyslexiaMode(bool value) async {
+    _dyslexiaMode = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kDyslexiaModeKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setBigFont(bool value) async {
+    _bigFont = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kBigFontKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setReminderEnabled(bool value) async {
+    _reminderEnabled = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kReminderEnabledKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setReminderHour(int value) async {
+    _reminderHour = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_kReminderHourKey, value);
     notifyListeners();
   }
 
@@ -703,7 +749,8 @@ class AppStore extends ChangeNotifier {
   List<MemoryCardData> get dueCards {
     final cards = [
       for (final deck in _decks)
-        for (final card in deck.cards) card,
+        for (final card in deck.cards)
+          if (card.retention < 60) card,
     ];
     cards.sort((a, b) => a.retention.compareTo(b.retention));
     return cards.take(5).toList();
@@ -1232,6 +1279,11 @@ class AppStore extends ChangeNotifier {
         .where((card) => card.back.isNotEmpty)
         .toList();
     if (cleanCards.isEmpty) return null;
+    final looksLikeBible = _BibleReferenceSeed.tryParse(title) != null ||
+        (cleanCards.isNotEmpty && (
+           cleanCards.first.front.contains('Versículo') ||
+           RegExp(r'^((?:[1-3]\s*)?[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?:\s+[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)*\s+\d+:\d+(?:-\d+)?)$').hasMatch(cleanCards.first.front)
+        ));
     final deck = MemoryDeckData(
       id: 'custom-${DateTime.now().microsecondsSinceEpoch}',
       title: title.trim().isEmpty ? 'Contenido nuevo' : title.trim(),
@@ -1239,6 +1291,7 @@ class AppStore extends ChangeNotifier {
       icon: icon,
       createdAt: DateTime.now(),
       cards: cleanCards,
+      isBible: looksLikeBible,
     );
     _decks.insert(0, deck);
     setActiveDeck(deck.id);
@@ -1250,22 +1303,65 @@ class AppStore extends ChangeNotifier {
     String icon = '🧠',
     String? title,
   }) {
-    final normalized = content.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-    var segments = normalized
+    // 1. Clean URLs
+    var cleaned = content.replaceAll(RegExp(r'https?://\S+|www\.\S+'), '');
+
+    // 2. Split same-line verse markers like [2], (3), v4, 5. into newlines
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'(?<=\s|[.,;!?]|^)(?:\[(\d+)\]|\((\d+)\)|v\.?(\d+)|(\d+)(?=[\s).]))(?=\s|$)'),
+      (match) {
+        final numVal = match.group(1) ?? match.group(2) ?? match.group(3) ?? match.group(4);
+        return '\n[$numVal] ';
+      },
+    );
+
+    final normalized = cleaned.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    var lines = normalized
         .split('\n')
-        .map(_normalizeSegment)
+        .map((l) => l.trim())
         .where((line) => line.isNotEmpty)
         .toList();
-    if (segments.isEmpty) return const [];
+
+    if (lines.isEmpty) return const [];
+
+    // 3. Auto-detect title from the first line
+    String? finalTitle = title?.trim();
+    final firstLine = lines.first;
+    final bibleRefRegExp = RegExp(
+      r'^((?:[1-3]\s*)?[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?:\s+[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)*\s+\d+:\d+(?:-\d+)?)(?:\s+[A-Za-z0-9]+)?$'
+    );
+    if (bibleRefRegExp.hasMatch(firstLine)) {
+      if (finalTitle == null || finalTitle.isEmpty) {
+        finalTitle = firstLine;
+      }
+      lines.removeAt(0); // Exclude from cards
+    }
+
+    if (lines.isEmpty) return const [];
+
+    // 4. Try segmenting as Bible verses
     final verseCards = _segmentBibleVerseLines(
-      segments,
+      lines,
       icon: icon,
-      title: title,
+      title: finalTitle,
     );
     if (verseCards.isNotEmpty) return verseCards;
-    if (segments.length == 1) {
-      final sentences = _splitSentences(segments.single);
-      if (sentences.length > 1) segments = sentences;
+
+    // Fallback to sentences or plain lines
+    var segments = lines;
+    if (!_looksLikeList(lines)) {
+      final joined = lines.join(' ');
+      final sentences = _splitSentences(joined);
+      if (sentences.isNotEmpty) {
+        segments = sentences;
+      } else {
+        segments = [joined];
+      }
+    } else {
+      if (segments.length == 1) {
+        final sentences = _splitSentences(segments.single);
+        if (sentences.length > 1) segments = sentences;
+      }
     }
     return [
       for (var i = 0; i < segments.length; i++)
@@ -1382,12 +1478,17 @@ List<MemoryCardData> _segmentBibleVerseLines(
       continue;
     }
 
-    final numbered = RegExp(r'^(\d{1,3})(?:[\).])?\s*(.+)$').firstMatch(line);
+    final numbered = RegExp(r'^\s*[\[\(]?(\d{1,3})[\]\)]?(?:[\).])?\s*(.+)$').firstMatch(line);
     if (numbered != null) {
+      final verse = int.parse(numbered.group(1)!);
+      if (cards.isEmpty && firstVerseMarker == null) {
+        // First buffered lines represent the preceding verse (e.g. verse - 1)
+        final prevVerse = verse > 1 ? verse - 1 : 1;
+        front = seed?.frontFor(prevVerse) ?? 'Versículo $prevVerse';
+      }
       foundVerseMarker = true;
       verseMarkerCount++;
       flush();
-      final verse = int.parse(numbered.group(1)!);
       firstVerseMarker ??= verse;
       front = seed?.frontFor(verse) ?? 'Versículo $verse';
       buffer.write(numbered.group(2)!.trim());
@@ -1402,8 +1503,7 @@ List<MemoryCardData> _segmentBibleVerseLines(
   final looksLikeVerseBlock =
       seed != null ||
       foundFullReference ||
-      verseMarkerCount > 1 ||
-      firstVerseMarker == 1;
+      verseMarkerCount > 0;
   return foundVerseMarker && looksLikeVerseBlock ? cards : const [];
 }
 
@@ -1440,6 +1540,25 @@ List<String> _splitSentences(String value) {
       .map(_normalizeSegment)
       .where((sentence) => sentence.length > 12)
       .toList();
+}
+
+bool _looksLikeList(List<String> lines) {
+  if (lines.isEmpty) return false;
+  var listMarkerLines = 0;
+  var keyValueLines = 0;
+  final listMarkerRegExp = RegExp(r'^\s*(?:[-*•+]|[\[\(]?\d+[\]\)]?(?:[\).])?)\s+');
+  for (final line in lines) {
+    if (listMarkerRegExp.hasMatch(line)) {
+      listMarkerLines++;
+    }
+    final parsed = _parseFrontBack(_stripLeadingMarker(line));
+    if (parsed.$1.isNotEmpty) {
+      keyValueLines++;
+    }
+  }
+  if (listMarkerLines > 0) return true;
+  if (keyValueLines >= (lines.length / 2)) return true;
+  return false;
 }
 
 (String, String) _parseFrontBack(String line) {

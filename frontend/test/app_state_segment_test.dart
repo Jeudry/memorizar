@@ -88,4 +88,88 @@ O expresar toda Su alabanza?
     expect(cards.first.front, 'Tarjeta 1');
     expect(cards.first.back, 'Primera idea importante.');
   });
+
+  test('segmentContent matches verse numbers in brackets and parentheses', () {
+    final store = AppStore();
+    final cards = store.segmentContent('''
+[1] Den gracias al Señor, porque Él es bueno;
+(2) Díganlo los redimidos
+''', title: 'Salmo 107:1-2');
+
+    expect(cards, hasLength(2));
+    expect(cards.first.front, 'Salmo 107:1');
+    expect(cards.first.back, 'Den gracias al Señor, porque Él es bueno;');
+    expect(cards.last.front, 'Salmo 107:2');
+    expect(cards.last.back, 'Díganlo los redimidos');
+  });
+
+  test('segmentContent performs ultimate smart title extraction, url stripping, and same-line verse splitting', () {
+    final store = AppStore();
+    final cards = store.segmentContent('''
+Salmo 107:1-2 NBLA
+[1] Den gracias al Señor, porque Él es bueno; Porque para siempre es Su misericordia. [2] Díganlo los redimidos del Señor, A quienes ha redimido de la mano del adversario,
+
+https://bible.com/bible/103/psa.107.1-2.NBLA
+''');
+
+    expect(cards, hasLength(2));
+    expect(cards.first.front, 'Salmo 107:1');
+    expect(cards.first.back, 'Den gracias al Señor, porque Él es bueno; Porque para siempre es Su misericordia.');
+    expect(cards.last.front, 'Salmo 107:2');
+    expect(cards.last.back, 'Díganlo los redimidos del Señor, A quienes ha redimido de la mano del adversario,');
+  });
+
+  test('segmentContent performs dynamic verse grouping even when first verse marker is eaten or omitted', () {
+    final store = AppStore();
+    final cards = store.segmentContent('''
+Den gracias al Señor, porque Él es bueno;
+Porque para siempre es Su misericordia.
+2 Díganlo los redimidos del Señor,
+A quienes ha redimido de la mano del adversario,
+''');
+
+    expect(cards, hasLength(2));
+    expect(cards.first.front, 'Versículo 1');
+    expect(cards.first.back, 'Den gracias al Señor, porque Él es bueno; Porque para siempre es Su misericordia.');
+    expect(cards.last.front, 'Versículo 2');
+    expect(cards.last.back, 'Díganlo los redimidos del Señor, A quienes ha redimido de la mano del adversario,');
+  });
+
+  test('segmentContent handles key-value lists and bullet lists separately per line', () {
+    final store = AppStore();
+    final listCards = store.segmentContent('''
+Capital: Santo Domingo
+Moneda: Peso
+Idioma: Español
+''');
+    expect(listCards, hasLength(3));
+    expect(listCards[0].front, 'Capital');
+    expect(listCards[0].back, 'Santo Domingo');
+    expect(listCards[1].front, 'Moneda');
+    expect(listCards[1].back, 'Peso');
+    expect(listCards[2].front, 'Idioma');
+    expect(listCards[2].back, 'Español');
+
+    final bulletCards = store.segmentContent('''
+- Primera cosa importante
+- Segunda cosa importante
+''');
+    expect(bulletCards, hasLength(2));
+    expect(bulletCards[0].front, 'Tarjeta 1');
+    expect(bulletCards[0].back, 'Primera cosa importante');
+    expect(bulletCards[1].front, 'Tarjeta 2');
+    expect(bulletCards[1].back, 'Segunda cosa importante');
+  });
+
+  test('segmentContent joins wrapped paragraph lines into a single sentence card', () {
+    final store = AppStore();
+    final cards = store.segmentContent('''
+En la antigüedad, las personas
+solían memorizar textos enteros
+de memoria para preservar su cultura.
+''');
+    expect(cards, hasLength(1));
+    expect(cards[0].front, 'Tarjeta 1');
+    expect(cards[0].back, 'En la antigüedad, las personas solían memorizar textos enteros de memoria para preservar su cultura.');
+  });
 }
