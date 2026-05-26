@@ -400,6 +400,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   bool _fogShowHintTemp = false;
 
   @override
+  void reassemble() {
+    super.reassemble();
+    _completionCardId = null;
+    _letterCardId = null;
+  }
+
+  @override
   void dispose() {
     _soloLecturaTimer?.cancel();
     _completionTimer?.cancel();
