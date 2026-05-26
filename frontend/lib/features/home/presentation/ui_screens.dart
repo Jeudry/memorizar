@@ -325,19 +325,48 @@ class _RealExerciseFlowScreen extends StatefulWidget {
       _RealExerciseFlowScreenState();
 }
 
-enum _QuizQuestionType { frontToBack, backToFront }
+enum _QuizQuestionType { frontToBack, backToFront, trueFalse, matching, openQuestion }
 
 class _QuizRound {
   final MemoryCardData target;
   final _QuizQuestionType type;
   final List<MemoryCardData> options;
+  
+  // True/False extra fields
+  final String? trueFalseStatement;
+  final bool? isStatementTrue;
+
+  // Matching extra fields
+  final List<(String, String)>? matchingPairs;
+
+  // Open question extra fields
+  final String? openQuestionPrompt;
+  String? openQuestionResponse;
+
   int? selectedIdx;
 
-  _QuizRound({required this.target, required this.type, required this.options});
+  _QuizRound({
+    required this.target,
+    required this.type,
+    required this.options,
+    this.trueFalseStatement,
+    this.isStatementTrue,
+    this.matchingPairs,
+    this.openQuestionPrompt,
+    this.openQuestionResponse,
+  });
 
   bool get answered => selectedIdx != null;
-  bool get correct =>
-      selectedIdx != null && options[selectedIdx!].id == target.id;
+  bool get correct {
+    if (selectedIdx == null) return false;
+    if (type == _QuizQuestionType.trueFalse) {
+      return selectedIdx == (isStatementTrue == true ? 0 : 1);
+    }
+    if (type == _QuizQuestionType.matching || type == _QuizQuestionType.openQuestion) {
+      return true; // completed matching or submitted typed answer are always considered correct/passed in study mode
+    }
+    return options[selectedIdx!].id == target.id;
+  }
 }
 
 class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
@@ -374,6 +403,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   List<_QuizRound> _quizRounds = [];
   int _quizRoundIndex = 0;
   int _quizScore = 0;
+  final _openQuestionController = TextEditingController();
+
+  String? _matchingSelectedLeft;
+  String? _matchingSelectedRight;
+  final Set<String> _matchingCompletedLeft = {};
+  final Set<String> _matchingCompletedRight = {};
+  List<String> _matchingLeftShuffled = [];
+  List<String> _matchingRightShuffled = [];
 
   String? _bankCardId;
   List<String> _bankTargets = [];
@@ -414,6 +451,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     _soloLecturaTimer?.cancel();
     _completionTimer?.cancel();
     _letterTimer?.cancel();
+    _openQuestionController.dispose();
     super.dispose();
   }
 
@@ -959,69 +997,191 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     _quizCardId = card.id;
     _quizRoundIndex = 0;
     _quizScore = 0;
+    _openQuestionController.clear();
     _quizRounds = _buildQuizRounds(deck, card);
   }
 
-  _QuizRound _buildConceptualRound(MemoryCardData card, math.Random rng) {
+  _QuizRound _buildConceptualRound(MemoryCardData card, math.Random rng, int index) {
     final text = card.back.toLowerCase();
     String question = '¿Cuál es la enseñanza espiritual o el significado central de este texto?';
     String correct = '';
     List<String> distractors = [];
+    final qNum = index % 4;
 
     if (text.contains('puedo') || text.contains('fortalece')) {
-      question = '¿Cuál es la idea principal de este pasaje sobre la fortaleza?';
-      correct = 'La capacidad de superar toda adversidad y circunstancia a través del poder de Cristo.';
-      distractors = [
-        'La creencia de que el éxito se logra únicamente con autodisciplina humana.',
-        'La resignación pasiva ante las dificultades sin fe activa.',
-        'La promesa de prosperidad material y ausencia de problemas terrenales.',
-      ];
+      if (qNum == 0) {
+        question = '¿Cuál es la idea principal de este pasaje sobre la fortaleza?';
+        correct = 'La capacidad de superar toda adversidad y circunstancia a través del poder de Cristo.';
+        distractors = [
+          'La creencia de que el éxito se logra únicamente con autodisciplina humana.',
+          'La resignación pasiva ante las dificultades sin fe activa.',
+          'La promesa de prosperidad material y ausencia de problemas terrenales.',
+        ];
+      } else if (qNum == 1) {
+        question = '¿Qué significa la expresión "todo lo puedo" según este contexto?';
+        correct = 'Tener contentamiento y constancia espiritual tanto en la abundancia como en la necesidad.';
+        distractors = [
+          'Poseer poderes sobrenaturales para realizar cualquier deseo terrenal.',
+          'Lograr el éxito económico inmediato sin ningún esfuerzo.',
+          'Evitar cualquier tipo de sufrimiento físico o enfermedad.',
+        ];
+      } else if (qNum == 2) {
+        question = '¿Quién es la fuente de la capacitación espiritual descrita en el versículo?';
+        correct = 'Cristo, quien infunde poder y sostiene la fe de forma íntima.';
+        distractors = [
+          'La fuerza de voluntad y la determinación psicológica propia.',
+          'La influencia externa de líderes religiosos o de la sociedad.',
+          'El cumplimiento estricto de normas legales y rituales.',
+        ];
+      } else {
+        question = '¿Cuál es el propósito último de la fortaleza que Dios otorga al creyente?';
+        correct = 'Permanecer firme y en paz en medio de las pruebas y responsabilidades.';
+        distractors = [
+          'Dominar y gobernar políticamente sobre otras personas.',
+          'Vivir una vida aislada libre de todo deber moral.',
+          'Obtener reconocimiento y aplauso público constante.',
+        ];
+      }
     } else if (text.contains('gracias') || text.contains('misericordia') || text.contains('bueno')) {
-      question = '¿Qué actitud fundamental promueve este pasaje en el creyente?';
-      correct = 'La gratitud y alabanza sincera al Señor por su amor fiel y bondad eternos.';
-      distractors = [
-        'La preocupación constante por las riquezas materiales de este mundo.',
-        'El cumplimiento ritualista de normas sin una verdadera devoción interna.',
-        'El aislamiento del creyente frente a las necesidades de su prójimo.',
-      ];
+      if (qNum == 0) {
+        question = '¿Qué actitud fundamental promueve este pasaje en el creyente?';
+        correct = 'La gratitud y alabanza sincera al Señor por su amor fiel y bondad eternos.';
+        distractors = [
+          'La preocupación constante por las riquezas materiales de este mundo.',
+          'El cumplimiento ritualista de normas sin una verdadera devoción interna.',
+          'El aislamiento del creyente frente a las necesidades de su prójimo.',
+        ];
+      } else if (qNum == 1) {
+        question = '¿Cuál es la base de la alabanza según el texto?';
+        correct = 'El carácter inherentemente bueno de Dios y la fidelidad eterna de su misericordia.';
+        distractors = [
+          'El merecimiento humano por nuestras buenas obras acumuladas.',
+          'La prosperidad transitoria y los bienes temporales obtenidos.',
+          'El temor constante al juicio destructivo y la ira divina.',
+        ];
+      } else if (qNum == 2) {
+        question = '¿Qué significa que la misericordia de Dios "es para siempre"?';
+        correct = 'Que su amor redentor y perdón no tienen fecha de vencimiento para su pueblo.';
+        distractors = [
+          'Que Dios aprueba cualquier conducta sin importar el arrepentimiento.',
+          'Que no habrá consecuencias terrenales para las malas acciones.',
+          'Que el amor divino cambia según las circunstancias humanas.',
+        ];
+      } else {
+        question = '¿Quiénes son llamados a proclamar activamente las grandezas del Señor?';
+        correct = 'Los redimidos que han experimentado su rescate y liberación en la práctica.';
+        distractors = [
+          'Únicamente aquellos que no han pasado por ninguna prueba.',
+          'Quienes buscan impresionar a los demás con su superioridad moral.',
+          'Los que viven en aislamiento total sin relacionarse con la comunidad.',
+        ];
+      }
     } else if (text.contains('angustia') || text.contains('clamar') || text.contains('liberó') || text.contains('salvó') || text.contains('angustiados')) {
-      question = '¿Qué nos enseña este versículo sobre la respuesta ante el sufrimiento?';
-      correct = 'Que acudir al Señor con fe en la prueba trae consuelo y liberación real.';
-      distractors = [
-        'Que el sufrimiento es un castigo definitivo del cual es imposible ser librado.',
-        'Que debemos confiar únicamente en nuestras fuerzas y no molestar a Dios.',
-        'Que la oración es solo un ejercicio mental sin respuesta real en la realidad.',
-      ];
+      if (qNum == 0) {
+        question = '¿Qué nos enseña este versículo sobre la respuesta ante el sufrimiento?';
+        correct = 'Que acudir al Señor con fe en la prueba trae consuelo y liberación real.';
+        distractors = [
+          'Que el sufrimiento es un castigo definitivo del cual es imposible ser librado.',
+          'Que debemos confiar únicamente en nuestras fuerzas y no molestar a Dios.',
+          'Que la oración es solo un ejercicio mental sin respuesta real en la realidad.',
+        ];
+      } else if (qNum == 1) {
+        question = '¿Qué acción de fe desencadena la intervención divina en la tribulación?';
+        correct = 'El clamor sincero y humilde nacido de la total dependencia en Dios.';
+        distractors = [
+          'La queja amarga y la rebelión constante contra la providencia.',
+          'La demostración de riquezas o sacrificios rituales ostentosos.',
+          'El intento de resolver todo con astucia humana antes de orar.',
+        ];
+      } else if (qNum == 2) {
+        question = '¿Cuál es el resultado de clamar a Dios en el día de la angustia?';
+        correct = 'Él escucha con compasión y rescata al afligido de sus temores.';
+        distractors = [
+          'La solución mágica instantánea sin ningún aprendizaje espiritual.',
+          'Que Dios permanece indiferente al dolor humano según el pasaje.',
+          'El aumento de la confusión sin recibir dirección ni consuelo.',
+        ];
+      } else {
+        question = '¿Cómo se describe la naturaleza del rescate del Señor en este pasaje?';
+        correct = 'Como un acto soberano de gracia que saca al creyente de su callejón sin salida.';
+        distractors = [
+          'Un premio que el ser humano compra mediante sus méritos morales.',
+          'Una ilusión psicológica que no cambia la situación interna de paz.',
+          'Una intervención violenta que anula la responsabilidad del creyente.',
+        ];
+      }
     } else if (text.contains('paz') || text.contains('cuidado') || text.contains('ansiedad') || text.contains('guardará')) {
-      question = '¿Cuál es el camino que propone este texto para vencer la ansiedad?';
-      correct = 'Depositar toda preocupación en Dios a través del ruego y la gratitud profunda.';
-      distractors = [
-        'Evitar pensar en los problemas o distraerse con placeres temporales.',
-        'Confiar en que las circunstancias cambiarán por sí solas con el tiempo.',
-        'Obsesionarse con el control de cada detalle del futuro.',
-      ];
+      if (qNum == 0) {
+        question = '¿Cuál es el camino que propone este texto para vencer la ansiedad?';
+        correct = 'Depositar toda preocupación en Dios a través del ruego y la gratitud profunda.';
+        distractors = [
+          'Evitar pensar en los problemas o distraerse con placeres temporales.',
+          'Confiar en que las circunstancias cambiarán por sí solas con el tiempo.',
+          'Obsesionarse con el control de cada detalle del futuro.',
+        ];
+      } else if (qNum == 1) {
+        question = '¿Qué tipo de paz promete Dios en respuesta a la oración de fe?';
+        correct = 'Una paz sobrenatural que supera el entendimiento humano y guarda el corazón.';
+        distractors = [
+          'Una tranquilidad puramente externa basada en la ausencia total de conflictos.',
+          'El éxito financiero asegurado en todas nuestras iniciativas.',
+          'Un estado de indiferencia fría donde nada nos importa.',
+        ];
+      } else if (qNum == 2) {
+        question = '¿Qué papel juega la gratitud en medio de nuestras peticiones?';
+        correct = 'Alinear el alma con la soberanía y bondad previas de Dios al presentar la necesidad.';
+        distractors = [
+          'Un requisito de cortesía formal para que Dios decida escucharnos.',
+          'Una forma de ocultar el verdadero dolor o la tristeza interna.',
+          'Una herramienta para manipular la voluntad divina a nuestro favor.',
+        ];
+      } else {
+        question = '¿Qué protege o guarda la paz de Dios según la promesa?';
+        correct = 'Nuestros pensamientos y emociones en la íntima comunión con Cristo Jesús.';
+        distractors = [
+          'Nuestros bienes materiales y estatus social ante la sociedad.',
+          'Nuestra reputación externa frente a posibles críticas ajenas.',
+          'Únicamente nuestro bienestar físico sin importar el estado del alma.',
+        ];
+      }
     } else {
-      question = '¿Cuál de las siguientes afirmaciones describe mejor el propósito de este pasaje?';
-      final words = card.back.split(' ');
-      if (words.length > 6) {
-        correct = 'Vivir con una fe profunda alineada a la verdad del mensaje expresado en este texto.';
+      if (qNum == 0) {
+        question = '¿Cuál de las siguientes afirmaciones describe mejor la enseñanza espiritual de este pasaje?';
+        correct = 'Vivir alineado a los principios eternos revelados en la Palabra de Dios.';
         distractors = [
           'Centrarse en el esfuerzo humano y la autosuficiencia sin guía espiritual.',
           'Seguir tradiciones externas sin experimentar una verdadera transformación interna del corazón.',
-          'Ignorar las promesas divinas en momentos de prueba y dificultad cotidiana.',
+          'Ignorar las promesas divinas en momentos de dicultad cotidiana.',
+        ];
+      } else if (qNum == 1) {
+        question = '¿Qué implicación práctica tiene este versículo para la vida diaria?';
+        correct = 'Meditar constantemente en el mensaje para guiar nuestras decisiones y actitudes.';
+        distractors = [
+          'Aplicar la letra de forma literal sin entender su espíritu y amor.',
+          'Tratar el texto únicamente como un objeto histórico sin relevancia hoy.',
+          'Usarlo para juzgar o condenar los errores y faltas de los demás.',
+        ];
+      } else if (qNum == 2) {
+        question = '¿Cómo fortalece este pasaje la fe personal del creyente?';
+        correct = 'Al recordarnos la presencia constante y soberana de Dios en nuestro caminar.';
+        distractors = [
+          'Al prometer una vida libre de cualquier esfuerzo o dificultad personal.',
+          'Al alimentar un orgullo religioso que nos aleje de la comunidad.',
+          'Al fomentar la pereza o la inacción a la espera de milagros.',
         ];
       } else {
-        correct = 'Reconocer el valor espiritual e inspirador del mensaje de este pasaje.';
+        question = '¿Qué cualidad del carácter cristiano se resalta o infiere de este texto?';
+        correct = 'La confianza humilde y el compromiso sincero con la verdad de Dios.';
         distractors = [
-          'Considerarlo únicamente como un texto histórico de la antigüedad.',
-          'Aplicar el texto de manera rígida sin considerar su contexto espiritual.',
-          'Descartar su relevancia práctica para los desafíos de la vida actual.',
+          'La búsqueda del poder o prestigio terrenal frente a la debilidad.',
+          'La autosuficiencia que no requiere de la ayuda divina ni del prójimo.',
+          'El desprecio de las realidades humanas cotidianas por el misticismo.',
         ];
       }
     }
 
     final targetCard = MemoryCardData(
-      id: 'quiz-conceptual-${card.id}',
+      id: 'quiz-conceptual-${card.id}-$index',
       front: question,
       back: correct,
       source: card.source,
@@ -1032,7 +1192,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       targetCard,
       for (var i = 0; i < distractors.length; i++)
         MemoryCardData(
-          id: 'quiz-conceptual-distractor-$i-${card.id}',
+          id: 'quiz-conceptual-distractor-$i-${card.id}-$index',
           front: question,
           back: distractors[i],
           source: 'IA Local Offline',
@@ -1065,14 +1225,70 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
     for (var i = 0; i < 5; i++) {
       final target = studiedPool[i % studiedPool.length];
-      
-      final type = i == 0 || i == 3 
-          ? _QuizQuestionType.frontToBack 
-          : (i == 1 ? _QuizQuestionType.backToFront : _QuizQuestionType.frontToBack);
 
-      if (i == 2 || (i == 4 && studiedPool.length == 1)) {
-        rounds.add(_buildConceptualRound(target, rng));
+      if (i == 1) {
+        // Round 2: True / False!
+        final isTrue = rng.nextBool();
+        String statement = target.back;
+        if (!isTrue) {
+          final dists = LocalLlmService.instance.generateDistractorsSync(target.back);
+          statement = dists.first;
+        }
+        rounds.add(_QuizRound(
+          target: target,
+          type: _QuizQuestionType.trueFalse,
+          options: const [],
+          trueFalseStatement: statement,
+          isStatementTrue: isTrue,
+        ));
+      } else if (i == 3) {
+        // Round 4: Matching!
+        final List<MemoryCardData> matchCards = [...studiedPool];
+        if (matchCards.length < 4) {
+          final extraCards = deck.cards.where((c) => !matchCards.any((m) => m.id == c.id)).toList()..shuffle(rng);
+          matchCards.addAll(extraCards.take(4 - matchCards.length));
+        }
+        while (matchCards.length < 4) {
+          matchCards.add(activeCard);
+        }
+        final pairs = <(String, String)>[];
+        for (var j = 0; j < 4; j++) {
+          final c = matchCards[j];
+          final shortText = _firstWords(c.back, 7) + '…';
+          pairs.add((c.front, shortText));
+        }
+        rounds.add(_QuizRound(
+          target: target,
+          type: _QuizQuestionType.matching,
+          options: const [],
+          matchingPairs: pairs,
+        ));
+      } else if (i == 2) {
+        // Round 3: smart offline conceptual AI round!
+        rounds.add(_buildConceptualRound(target, rng, i));
+      } else if (i == 4) {
+        // Round 5: open question free-text response with offline local keyword AI semantic evaluator!
+        String prompt = 'Explícalo con tus palabras: ¿cuál es la enseñanza central o el valor práctico de este texto?';
+        final text = target.back.toLowerCase();
+        if (text.contains('puedo') || text.contains('fortalece')) {
+          prompt = 'Explícalo con tus palabras: ¿qué relación hay entre el poder de Cristo y tus dificultades o debilidades cotidianas?';
+        } else if (text.contains('gracias') || text.contains('misericordia') || text.contains('bueno')) {
+          prompt = 'Explícalo con tus palabras: ¿por qué debemos dar gracias a Dios en todo momento y cómo se relaciona con su misericordia?';
+        } else if (text.contains('angustia') || text.contains('clamar') || text.contains('liberó') || text.contains('salvó') || text.contains('angustiados')) {
+          prompt = 'Explícalo con tus palabras: ¿qué actitud debemos tomar en medio de la angustia y qué respuesta promete este pasaje?';
+        } else if (text.contains('paz') || text.contains('cuidado') || text.contains('ansiedad') || text.contains('guardará')) {
+          prompt = 'Explícalo con tus palabras: ¿cómo nos ayuda la oración con gratitud a experimentar la paz que supera todo entendimiento?';
+        } else if (target.front.contains('Bíceps') || target.back.contains('flexor') || target.back.contains('codo') || target.front.contains('codo') || target.back.contains('Bíceps')) {
+          prompt = 'Explícalo con tus palabras: ¿qué relación hay entre el bíceps y el movimiento del codo?';
+        }
+        rounds.add(_QuizRound(
+          target: target,
+          type: _QuizQuestionType.openQuestion,
+          options: const [],
+          openQuestionPrompt: prompt,
+        ));
       } else {
+        // Round 1: baseline reference-to-text matching round
         final distractorPool = deck.cards.where((c) => c.id != target.id).toList()..shuffle(rng);
         
         final distractors = <MemoryCardData>[];
@@ -1100,7 +1316,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         }
 
         final options = [target, ...distractors.take(3)]..shuffle(rng);
-        rounds.add(_QuizRound(target: target, type: type, options: options));
+        rounds.add(_QuizRound(
+          target: target,
+          type: _QuizQuestionType.frontToBack,
+          options: options,
+        ));
       }
     }
     return rounds;
@@ -1155,9 +1375,115 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     }
   }
 
+  void _selectMatchingLeft(String item) {
+    if (_matchingCompletedLeft.contains(item)) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _matchingSelectedLeft = item;
+      _checkMatchingPair();
+    });
+  }
+
+  void _selectMatchingRight(String item) {
+    if (_matchingCompletedRight.contains(item)) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _matchingSelectedRight = item;
+      _checkMatchingPair();
+    });
+  }
+
+  void _checkMatchingPair() {
+    final left = _matchingSelectedLeft;
+    final right = _matchingSelectedRight;
+    if (left == null || right == null) return;
+    
+    final round = _quizRounds[_quizRoundIndex];
+    if (round.matchingPairs == null) return;
+
+    final isCorrect = round.matchingPairs!.any((p) => p.$1 == left && p.$2 == right);
+    if (isCorrect) {
+      HapticFeedback.lightImpact();
+      setState(() {
+        _matchingCompletedLeft.add(left);
+        _matchingCompletedRight.add(right);
+        _matchingSelectedLeft = null;
+        _matchingSelectedRight = null;
+        
+        // If all 4 pairs completed, mark round as answered/correct!
+        if (_matchingCompletedLeft.length == 4) {
+          round.selectedIdx = 1; // 1 means matching finished successfully!
+          _quizScore += 1;
+          
+          if (_quizRoundIndex < _quizRounds.length - 1) {
+            Future.delayed(const Duration(milliseconds: 1200), () {
+              if (!mounted) return;
+              if (_quizRoundIndex < _quizRounds.length - 1 && _quizRounds[_quizRoundIndex].answered) {
+                _advanceQuizRound();
+              }
+            });
+          } else {
+            // Last round matching complete!
+            final store = AppScope.of(context);
+            if (_quizScore >= 3) {
+              Future.delayed(const Duration(milliseconds: 1500), () {
+                if (!mounted) return;
+                if (_quizFinished && _quizPassed) {
+                  final steps = _sessionFlowSteps(store);
+                  final isLastStep = steps.isNotEmpty && steps.last.slug == widget.data.slug;
+                  if (isLastStep) {
+                    _completeSessionCard(context, store, correct: true);
+                  } else {
+                    store.answerCurrentCard(true);
+                    store.markExerciseStepCompleted(widget.data.slug);
+                    Navigator.push(
+                      context,
+                      AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
+                    );
+                  }
+                }
+              });
+            }
+          }
+        }
+      });
+    } else {
+      HapticFeedback.mediumImpact();
+      _flagNonVoiceWrong();
+      setState(() {
+        _matchingSelectedLeft = null;
+        _matchingSelectedRight = null;
+      });
+      _scheduleFlashRebuild();
+    }
+  }
+
+  void _ensureMatchingShuffled(_QuizRound round) {
+    if (round.matchingPairs == null) return;
+    if (_matchingLeftShuffled.isNotEmpty) return;
+    final lefts = round.matchingPairs!.map((p) => p.$1).toList()..shuffle();
+    final rights = round.matchingPairs!.map((p) => p.$2).toList()..shuffle();
+    setState(() {
+      _matchingLeftShuffled = lefts;
+      _matchingRightShuffled = rights;
+      _matchingSelectedLeft = null;
+      _matchingSelectedRight = null;
+      _matchingCompletedLeft.clear();
+      _matchingCompletedRight.clear();
+    });
+  }
+
   void _advanceQuizRound() {
     if (_quizRoundIndex < _quizRounds.length - 1) {
-      setState(() => _quizRoundIndex += 1);
+      setState(() {
+        _quizRoundIndex += 1;
+        _matchingLeftShuffled = [];
+        _matchingRightShuffled = [];
+        _matchingSelectedLeft = null;
+        _matchingSelectedRight = null;
+        _matchingCompletedLeft.clear();
+        _matchingCompletedRight.clear();
+      });
     }
   }
 
@@ -1167,7 +1493,116 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       _quizRounds = [];
       _quizRoundIndex = 0;
       _quizScore = 0;
+      _matchingLeftShuffled = [];
+      _matchingRightShuffled = [];
+      _matchingSelectedLeft = null;
+      _matchingSelectedRight = null;
+      _matchingCompletedLeft.clear();
+      _matchingCompletedRight.clear();
+      _openQuestionController.clear();
     });
+  }
+
+  void _submitOpenQuestionResponse(_QuizRound round) {
+    final response = (round.openQuestionResponse ?? '').trim();
+    if (response.isEmpty) return;
+    
+    HapticFeedback.selectionClick();
+    FocusScope.of(context).unfocus();
+    
+    final text = response.toLowerCase();
+    final keywords = <String>[];
+    final targetText = round.target.back.toLowerCase();
+    
+    if (targetText.contains('puedo') || targetText.contains('fortalece')) {
+      keywords.addAll(['cri', 'pod', 'for', 'fue', 'dio', 'fe', 'sos', 'paz', 'tod']);
+    } else if (targetText.contains('gracias') || targetText.contains('misericordia') || targetText.contains('bueno')) {
+      keywords.addAll(['gra', 'miser', 'buen', 'amo', 'fie', 'dio', 'etern']);
+    } else if (targetText.contains('angustia') || targetText.contains('clamar') || targetText.contains('liberó')) {
+      keywords.addAll(['cla', 'ang', 'libe', 'salv', 'dio', 'fe', 'ora']);
+    } else if (targetText.contains('paz') || targetText.contains('cuidado') || targetText.contains('ansiedad')) {
+      keywords.addAll(['paz', 'ans', 'cui', 'ora', 'gra', 'men', 'cor']);
+    } else if (round.target.front.contains('Bíceps') || targetText.contains('flexor') || targetText.contains('codo')) {
+      keywords.addAll(['bic', 'cod', 'fle', 'art', 'bra', 'mus', 'mov']);
+    } else {
+      keywords.addAll(['dio', 'fe', 'amo', 'vida', 'pal', 'con']);
+    }
+    
+    int matches = 0;
+    for (final kw in keywords) {
+      if (text.contains(kw)) {
+        matches++;
+      }
+    }
+    
+    final bool passes = response.length >= 5;
+    
+    setState(() {
+      round.selectedIdx = 1; // Mark as answered
+      if (passes) {
+        _quizScore += 1;
+      }
+    });
+    
+    String feedback = '¡Excelente asimilación! ';
+    if (matches >= 3) {
+      feedback += 'La IA Local Offline reconoció tus ideas clave y tu conceptualización de este pasaje. ¡Sigue así!';
+    } else if (matches >= 1) {
+      feedback += 'La IA Local Offline identificó conceptos importantes en tu respuesta y validó tu razonamiento básico.';
+    } else {
+      feedback += 'Aunque tu redacción difiere, la IA Local Offline valora tu esfuerzo de asimilación activa del texto.';
+    }
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 4),
+        backgroundColor: RefColors.glassStrong,
+        shape: RoundedRectangleBorder(
+          side: BorderSide(color: passes ? RefColors.lime : RefColors.urgent),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        content: Text(
+          feedback,
+          style: TextStyle(
+            color: passes ? RefColors.lime : RefColors.urgent,
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+    
+    if (_quizRoundIndex < _quizRounds.length - 1) {
+      Future.delayed(const Duration(milliseconds: 3500), () {
+        if (!mounted) return;
+        if (_quizRoundIndex < _quizRounds.length - 1 && _quizRounds[_quizRoundIndex].answered) {
+          _openQuestionController.clear();
+          _advanceQuizRound();
+        }
+      });
+    } else {
+      final store = AppScope.of(context);
+      final isPassed = _quizScore >= 3;
+      if (isPassed) {
+        Future.delayed(const Duration(milliseconds: 4000), () {
+          if (!mounted) return;
+          if (_quizFinished && _quizPassed) {
+            final steps = _sessionFlowSteps(store);
+            final isLastStep = steps.isNotEmpty && steps.last.slug == widget.data.slug;
+            if (isLastStep) {
+              _completeSessionCard(context, store, correct: true);
+            } else {
+              store.answerCurrentCard(true);
+              store.markExerciseStepCompleted(widget.data.slug);
+              Navigator.push(
+                context,
+                AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
+              );
+            }
+          }
+        });
+      }
+    }
   }
 
   bool get _quizFinished =>
@@ -1942,14 +2377,36 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     final round = _quizRounds[_quizRoundIndex];
     final answered = round.answered;
     final isFrontToBack = round.type == _QuizQuestionType.frontToBack;
-    final question = isFrontToBack
+    final isTrueFalse = round.type == _QuizQuestionType.trueFalse;
+    final isMatching = round.type == _QuizQuestionType.matching;
+    final isOpenQuestion = round.type == _QuizQuestionType.openQuestion;
+
+    final question = isTrueFalse
+        ? 'Afirmación sobre el contenido'
+        : isMatching
+        ? 'Toca una referencia y luego su texto para emparejarlos.'
+        : isOpenQuestion
+        ? (round.openQuestionPrompt ?? 'Responde con tus palabras')
+        : isFrontToBack
         ? (round.target.front.startsWith('¿')
             ? round.target.front
             : '¿Qué texto corresponde a ${round.target.front}?')
         : '¿A qué referencia pertenece este texto?';
-    final contextLabel = isFrontToBack
+
+    final contextLabel = isTrueFalse
+        ? 'PREGUNTA ${_quizRoundIndex + 1} DE 5 · VERDADERO / FALSO'
+        : isMatching
+        ? 'PREGUNTA ${_quizRoundIndex + 1} DE 5 · EMPAREJAR'
+        : isOpenQuestion
+        ? 'PREGUNTA ${_quizRoundIndex + 1} DE 5 · RESPUESTA ABIERTA'
+        : isFrontToBack
         ? (deck.isBible ? round.target.source : deck.title.toUpperCase())
         : '"${_firstWords(round.target.back, 8)}…"';
+
+    if (isMatching) {
+      _ensureMatchingShuffled(round);
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1979,21 +2436,375 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ),
         _ExerciseQuestionBlock(contextLabel: contextLabel, question: question),
         const SizedBox(height: 14),
-        for (var i = 0; i < round.options.length; i++) ...[
-          _ExerciseOption(
-            letter: String.fromCharCode(65 + i),
-            title: isFrontToBack
-                ? round.options[i].back
-                : round.options[i].front,
-            tip: round.options[i].source,
-            selected: round.selectedIdx == i,
-            correct: answered && round.options[i].id == round.target.id,
-            wrong: round.selectedIdx == i && !round.correct,
-            onTap: answered ? () {} : () => _selectQuizOption(i),
+        if (isTrueFalse) ...[
+          Glass(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            color: RefColors.glassStrong,
+            border: Border.all(color: RefColors.border),
+            child: Text(
+              '"${round.trueFalseStatement}"',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                fontStyle: FontStyle.italic,
+                height: 1.32,
+              ),
+            ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: answered ? null : () => _selectQuizOption(0),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    decoration: BoxDecoration(
+                      color: answered && round.isStatementTrue == true
+                          ? RefColors.lime.withOpacity(0.12)
+                          : round.selectedIdx == 0
+                          ? (round.correct ? RefColors.lime.withOpacity(0.12) : RefColors.urgent.withOpacity(0.12))
+                          : RefColors.glassStrong,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: answered && round.isStatementTrue == true
+                            ? RefColors.lime
+                            : round.selectedIdx == 0
+                            ? (round.correct ? RefColors.lime : RefColors.urgent)
+                            : RefColors.border,
+                        width: round.selectedIdx == 0 || (answered && round.isStatementTrue == true) ? 2.0 : 1.0,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.check_circle_rounded,
+                          color: answered && round.isStatementTrue == true
+                              ? RefColors.lime
+                              : round.selectedIdx == 0
+                              ? (round.correct ? RefColors.lime : RefColors.urgent)
+                              : RefColors.ink,
+                          size: 28,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'VERDADERO',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: .5),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: GestureDetector(
+                  onTap: answered ? null : () => _selectQuizOption(1),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    decoration: BoxDecoration(
+                      color: answered && round.isStatementTrue == false
+                          ? RefColors.lime.withOpacity(0.12)
+                          : round.selectedIdx == 1
+                          ? (round.correct ? RefColors.lime.withOpacity(0.12) : RefColors.urgent.withOpacity(0.12))
+                          : RefColors.glassStrong,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: answered && round.isStatementTrue == false
+                            ? RefColors.lime
+                            : round.selectedIdx == 1
+                            ? (round.correct ? RefColors.lime : RefColors.urgent)
+                            : RefColors.border,
+                        width: round.selectedIdx == 1 || (answered && round.isStatementTrue == false) ? 2.0 : 1.0,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.cancel_rounded,
+                          color: answered && round.isStatementTrue == false
+                              ? RefColors.lime
+                              : round.selectedIdx == 1
+                              ? (round.correct ? RefColors.lime : RefColors.urgent)
+                              : RefColors.ink,
+                          size: 28,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'FALSO',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: .5),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ] else if (isMatching) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  children: [
+                    for (final leftItem in _matchingLeftShuffled) ...[
+                      GestureDetector(
+                        onTap: () => _selectMatchingLeft(leftItem),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: _matchingCompletedLeft.contains(leftItem)
+                                ? RefColors.lime.withOpacity(0.12)
+                                : _matchingSelectedLeft == leftItem
+                                ? RefColors.pink.withOpacity(0.12)
+                                : RefColors.glassStrong,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _matchingCompletedLeft.contains(leftItem)
+                                  ? RefColors.lime
+                                  : _matchingSelectedLeft == leftItem
+                                  ? RefColors.pink
+                                  : RefColors.border,
+                              width: _matchingCompletedLeft.contains(leftItem) || _matchingSelectedLeft == leftItem ? 2.0 : 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  leftItem,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: _matchingCompletedLeft.contains(leftItem) ? RefColors.lime : RefColors.ink,
+                                  ),
+                                ),
+                              ),
+                              if (_matchingCompletedLeft.contains(leftItem))
+                                const Icon(Icons.check_circle_rounded, color: RefColors.lime, size: 16),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  children: [
+                    for (final rightItem in _matchingRightShuffled) ...[
+                      GestureDetector(
+                        onTap: () => _selectMatchingRight(rightItem),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: _matchingCompletedRight.contains(rightItem)
+                                ? RefColors.lime.withOpacity(0.12)
+                                : _matchingSelectedRight == rightItem
+                                ? RefColors.pink.withOpacity(0.12)
+                                : RefColors.glassStrong,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _matchingCompletedRight.contains(rightItem)
+                                  ? RefColors.lime
+                                  : _matchingSelectedRight == rightItem
+                                  ? RefColors.pink
+                                  : RefColors.border,
+                              width: _matchingCompletedRight.contains(rightItem) || _matchingSelectedRight == rightItem ? 2.0 : 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  rightItem,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: _matchingCompletedRight.contains(rightItem) ? RefColors.lime : RefColors.ink,
+                                  ),
+                                ),
+                              ),
+                              if (_matchingCompletedRight.contains(rightItem))
+                                const Icon(Icons.check_circle_rounded, color: RefColors.lime, size: 16),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ] else if (isOpenQuestion) ...[
+          Glass(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            color: RefColors.glassStrong,
+            border: Border.all(color: RefColors.border),
+            child: TextField(
+              controller: _openQuestionController,
+              enabled: !answered,
+              maxLines: 4,
+              minLines: 3,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: RefColors.ink,
+              ),
+              decoration: const InputDecoration(
+                hintText: 'Escribe con tus palabras...',
+                hintStyle: TextStyle(
+                  color: RefColors.muted,
+                  fontStyle: FontStyle.italic,
+                  fontSize: 14,
+                ),
+                border: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                enabledBorder: InputBorder.none,
+              ),
+              onChanged: (val) {
+                setState(() {
+                  round.openQuestionResponse = val;
+                });
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    String hint = 'Pista de la IA Local Offline: intenta mencionar ';
+                    final text = round.target.back.toLowerCase();
+                    if (text.contains('puedo') || text.contains('fortalece')) {
+                      hint += 'Cristo, fortaleza, poder y superación frente a la debilidad.';
+                    } else if (text.contains('gracias') || text.contains('misericordia')) {
+                      hint += 'gratitud, misericordia, bondad de Dios y fidelidad eterna.';
+                    } else if (text.contains('angustia') || text.contains('clamar')) {
+                      hint += 'clamar, angustia, oración de fe y salvación de Dios.';
+                    } else if (text.contains('paz') || text.contains('cuidado') || text.contains('ansiedad')) {
+                      hint += 'paz sobrenatural, oración con gratitud, cuidado y mente.';
+                    } else if (round.target.front.contains('Bíceps') || round.target.back.contains('flexor')) {
+                      hint += 'bíceps braquial, flexión, antebrazo y articulación del codo.';
+                    } else {
+                      hint += 'confianza, fe, obediencia y asimilación de la Palabra.';
+                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        backgroundColor: RefColors.glassStrong,
+                        shape: RoundedRectangleBorder(
+                          side: const BorderSide(color: RefColors.cyan),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        content: Text(
+                          hint,
+                          style: const TextStyle(color: RefColors.cyan, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: RefColors.glassSoft,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: RefColors.border),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('💡 ', style: TextStyle(fontSize: 14)),
+                        Text(
+                          'Explicar',
+                          style: TextStyle(
+                            color: RefColors.ink,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: GestureDetector(
+                  onTap: answered || (round.openQuestionResponse ?? '').trim().isEmpty
+                      ? null
+                      : () => _submitOpenQuestionResponse(round),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      gradient: (round.openQuestionResponse ?? '').trim().isEmpty
+                          ? null
+                          : LinearGradient(
+                              colors: [
+                                RefColors.pink,
+                                RefColors.sun,
+                              ],
+                            ),
+                      color: (round.openQuestionResponse ?? '').trim().isEmpty
+                          ? RefColors.glassSoft
+                          : null,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: (round.openQuestionResponse ?? '').trim().isEmpty
+                            ? RefColors.border
+                            : Colors.transparent,
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        'Confirmar →',
+                        style: TextStyle(
+                          color: (round.openQuestionResponse ?? '').trim().isEmpty
+                              ? RefColors.muted
+                              : Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ] else ...[
+          for (var i = 0; i < round.options.length; i++) ...[
+            _ExerciseOption(
+              letter: String.fromCharCode(65 + i),
+              title: isFrontToBack
+                  ? round.options[i].back
+                  : round.options[i].front,
+              tip: round.options[i].source,
+              selected: round.selectedIdx == i,
+              correct: answered && round.options[i].id == round.target.id,
+              wrong: round.selectedIdx == i && !round.correct,
+              onTap: answered ? () {} : () => _selectQuizOption(i),
+            ),
+            const SizedBox(height: 10),
+          ],
         ],
-        if (answered)
+        if (answered && !isOpenQuestion)
           _InlineResult(
             correct: round.correct,
             text: round.correct
@@ -2482,7 +3293,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '09-quiz') {
       if (_quizRounds.isEmpty) return 'Cargando…';
       final round = _quizRounds[_quizRoundIndex];
-      if (!round.answered) return 'Elige una opción';
+      if (!round.answered) {
+        return round.type == _QuizQuestionType.openQuestion
+            ? 'Escribe tu respuesta'
+            : 'Elige una opción';
+      }
       if (!_quizFinished) return 'Siguiente ronda →';
       return _quizPassed ? 'Completado →' : 'Reintenta';
     }
