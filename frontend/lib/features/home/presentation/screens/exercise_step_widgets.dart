@@ -769,7 +769,7 @@ class _VoiceRecitationPracticeCardState
 
   bool _isModelDownloaded = false;
   bool _isDownloadingModel = false;
-  bool _isModelInitializing = false;
+  bool _isModelInitializing = true;
   double _modelDownloadProgress = 0.0;
   String _modelStatus = '';
   String? _recordedPath;
@@ -786,7 +786,13 @@ class _VoiceRecitationPracticeCardState
     );
     _targetBlocks = _splitIntoBlocks(widget.targetText);
     _blockSolved = List<bool>.filled(_targetBlocks.length, false);
-    _checkModelStatus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (mounted) {
+          _checkModelStatus();
+        }
+      });
+    });
   }
 
   @override
@@ -958,6 +964,10 @@ class _VoiceRecitationPracticeCardState
     _pulse.stop();
     _pulse.value = 0;
     try {
+      final isRecording = await _audioRecorder.isRecording();
+      if (!isRecording) {
+        throw Exception('El micrófono no está grabando. Verifica permisos del sistema.');
+      }
       final path = await _audioRecorder.stop();
       if (path != null) {
         final wavPath = await _convertPcmToWav(path);
@@ -981,6 +991,7 @@ class _VoiceRecitationPracticeCardState
       debugPrint('Error transcribing recitation: $e');
       if (mounted) {
         setState(() {
+          _listening = false;
           _recognized = 'Error: $e';
         });
       }

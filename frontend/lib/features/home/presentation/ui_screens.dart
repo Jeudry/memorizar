@@ -2664,10 +2664,7 @@ class _ProgressiveFragmentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final words = _studyWords(_cardStudyText(context));
     final safeVisible = visibleWords.clamp(0, words.length);
-    final store = AppScope.of(context);
-    final source = store.activeDeck.isBible
-        ? '${_cardSourceText(context)} · RV1909'
-        : _cardSourceText(context);
+    final source = _cardSourceText(context);
     return GestureDetector(
       onTap: safeVisible >= words.length ? null : onTap,
       child: Glass(

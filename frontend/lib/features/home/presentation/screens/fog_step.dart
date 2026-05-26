@@ -25,7 +25,7 @@ class _FogStepState extends State<_FogStep>
     with SingleTickerProviderStateMixin {
   final _audioRecorder = AudioRecorder();
   bool _isModelDownloaded = false;
-  bool _isModelInitializing = false;
+  bool _isModelInitializing = true;
   bool _isDownloadingModel = false;
   double _modelDownloadProgress = 0.0;
   String _modelStatus = '';
@@ -52,7 +52,13 @@ class _FogStepState extends State<_FogStep>
       duration: const Duration(milliseconds: 1400),
     );
     _allWords = _studyWords(widget.targetText);
-    _checkModelStatus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (mounted) {
+          _checkModelStatus();
+        }
+      });
+    });
   }
 
   @override
@@ -251,6 +257,10 @@ class _FogStepState extends State<_FogStep>
     _pulse.stop();
     _pulse.value = 0;
     try {
+      final isRecording = await _audioRecorder.isRecording();
+      if (!isRecording) {
+        throw Exception('El micrófono no está grabando. Verifica permisos del sistema.');
+      }
       final path = await _audioRecorder.stop();
       if (path != null) {
         final wavPath = await _convertPcmToWav(path);

@@ -320,7 +320,9 @@ class _BibleSearchResults extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final results = AppScope.of(context).searchBible(query);
+    final store = AppScope.of(context);
+    final results = store.searchBible(query);
+    final bibleName = AppStore.bundledBibles[store.bibleVersion]?.name ?? 'la Biblia';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -361,9 +363,9 @@ class _BibleSearchResults extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'No encontré coincidencias en Reina Valera 1909. Prueba con una referencia como Salmos 23, Juan 3:16 o una palabra del texto.',
-                  style: TextStyle(
+                Text(
+                  'No encontré coincidencias en $bibleName. Prueba con una referencia como Salmos 23, Juan 3:16 o una palabra del texto.',
+                  style: const TextStyle(
                     color: RefColors.muted,
                     fontSize: 12,
                     height: 1.45,
@@ -372,7 +374,7 @@ class _BibleSearchResults extends StatelessWidget {
               ] else
                 for (final verse in results) ...[
                   Text(
-                    '${verse.ref} · RV1909',
+                    '${verse.ref} · ${store.bibleVersion.toUpperCase()}',
                     style: const TextStyle(
                       color: RefColors.pink,
                       fontSize: 12,
@@ -1958,8 +1960,9 @@ List<({int number, String text})> _currentBatchVerses(BuildContext context) {
   final store = AppScope.of(context);
   final deck = store.activeDeck;
   final List<MemoryCardData> batch;
-  if (deck.isBible && deck.cards.length > 1) {
-    batch = deck.cards;
+  if (deck.isBible && deck.cards.length > 1 && store.sessionDailyTarget > 1) {
+    final count = store.sessionDailyTarget.clamp(1, deck.cards.length);
+    batch = deck.cards.take(count).toList();
   } else {
     batch = [store.activeCard];
   }

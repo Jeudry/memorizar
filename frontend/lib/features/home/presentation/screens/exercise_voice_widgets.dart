@@ -27,7 +27,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
   
   bool _isModelDownloaded = false;
   bool _isDownloadingModel = false;
-  bool _isModelInitializing = false;
+  bool _isModelInitializing = true;
   double _modelDownloadProgress = 0.0;
   String _modelStatus = '';
 
@@ -35,11 +35,15 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
   String _recognized = '';
   /// Texto acumulado.
   String _accumulated = '';
-  String _status = 'Toca el micrófono y lee el texto.';
+  String _status = 'Iniciando micrófono...';
   double _score = 0;
   final _audioRecorder = AudioRecorder();
   String? _recordedPath;
   Timer? _autoStopTimer;
+  // Buffer del stream PCM (modo stream evita AVCaptureAudioFileOutput
+  // deprecated que falla silenciosamente en macOS sandboxed).
+  StreamSubscription<Uint8List>? _pcmSub;
+  final BytesBuilder _pcmBuffer = BytesBuilder(copy: false);
   /// Controla el scroll interno del target text (versos para leer).
   final _targetScrollCtrl = ScrollController();
   late AnimationController _pulse;
@@ -51,7 +55,13 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     );
-    _checkModelStatus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (mounted) {
+          _checkModelStatus();
+        }
+      });
+    });
   }
 
   Future<void> _checkModelStatus() async {
@@ -172,6 +182,7 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
   }
 
   Future<void> _toggleListening() async {
+    debugPrint('[ReadAloud] _toggleListening tap. ready=$_ready listening=$_listening modelDl=$_isModelDownloaded');
     if (!_ready || !_isModelDownloaded) {
       if (!_isModelDownloaded && !_isDownloadingModel && !_isModelInitializing) {
         _downloadModels();
@@ -205,17 +216,26 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
     try {
       if (await _audioRecorder.hasPermission()) {
         final dir = await getTemporaryDirectory();
-        final path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.raw';
-        await _audioRecorder.start(
+        final path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.wav';
+        // Modo stream: el plugin macOS usa AVAudioEngine (no
+        // AVCaptureAudioFileOutput deprecated). Bufferamos los bytes
+        // PCM y escribimos el WAV nosotros en _finishCapture.
+        _pcmBuffer.clear();
+        final stream = await _audioRecorder.startStream(
           const RecordConfig(
             encoder: AudioEncoder.pcm16bits,
             sampleRate: 16000,
             numChannels: 1,
           ),
-          path: path,
+        );
+        _pcmSub?.cancel();
+        _pcmSub = stream.listen(
+          (chunk) => _pcmBuffer.add(chunk),
+          onError: (Object e) => debugPrint('[ReadAloud] PCM stream error: $e'),
         );
         _recordedPath = path;
         _pulse.repeat();
+        debugPrint('[ReadAloud] startStream OK, buffering to $path');
       }
     } catch (e) {
       debugPrint('Audio Recorder Error: $e');
@@ -252,34 +272,62 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
 
   bool _finalizing = false;
   Future<void> _finishCapture() async {
+    debugPrint('[ReadAloud] _finishCapture invoked. _finalizing=$_finalizing');
     if (_finalizing) return;
     _finalizing = true;
     _autoStopTimer?.cancel();
     _autoStopTimer = null;
     _pulse.stop();
     _pulse.value = 0;
-    try {
-      final path = await _audioRecorder.stop();
-      if (path != null) {
-        final wavPath = await _convertPcmToWav(path);
-        _recordedPath = wavPath;
-      }
-      if (!mounted) return;
+
+    // Actualiza UI INMEDIATAMENTE — no esperes a que stop() resuelva.
+    // En macOS stop() puede colgarse y el usuario percibe que el botón
+    // "no hace nada". Mostramos "Analizando tu voz..." de una.
+    if (mounted) {
       setState(() {
         _listening = false;
         _status = 'Analizando tu voz...';
       });
+    }
 
-      if (_recordedPath != null) {
-        final text = await WhisperService.instance.transcribe(_recordedPath!);
-        _gradeReal(text);
-      } else {
-        setState(() {
-          _status = 'No se grabó ningún audio.';
-        });
+    try {
+      debugPrint('[ReadAloud] Stopping stream. Buffered bytes=${_pcmBuffer.length}');
+      // Detener stream + recorder sin bloquear si el plugin se cuelga.
+      await _pcmSub?.cancel();
+      _pcmSub = null;
+      unawaited(
+        _audioRecorder
+            .stop()
+            .timeout(const Duration(seconds: 2), onTimeout: () => null)
+            .catchError((Object e) {
+          debugPrint('[ReadAloud] recorder.stop error: $e');
+          return null;
+        }),
+      );
+
+      final pcmBytes = _pcmBuffer.toBytes();
+      _pcmBuffer.clear();
+      if (pcmBytes.isEmpty || _recordedPath == null) {
+        if (mounted) {
+          setState(() => _status = 'No se capturó audio. Verifica el micrófono.');
+        }
+        return;
       }
-    } catch (e) {
-      debugPrint('Error al detener/transcribir la grabación: $e');
+
+      // Escribir WAV (header + PCM) en disco para Whisper.
+      final wavFile = File(_recordedPath!);
+      await wavFile.parent.create(recursive: true);
+      final builder = BytesBuilder()
+        ..add(_buildWavHeader(pcmBytes.length))
+        ..add(pcmBytes);
+      await wavFile.writeAsBytes(builder.toBytes(), flush: true);
+      debugPrint('[ReadAloud] WAV written: ${wavFile.path} (${pcmBytes.length} bytes PCM)');
+
+      if (!mounted) return;
+      final text = await WhisperService.instance.transcribe(_recordedPath!);
+      _gradeReal(text);
+    } catch (e, st) {
+      debugPrint('[ReadAloud] Error al detener/transcribir: $e\n$st');
       if (mounted) {
         setState(() {
           _status = 'Error en reconocimiento local: $e';
@@ -291,6 +339,10 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
   }
 
   Future<String> _convertPcmToWav(String rawPath) async {
+    // Si ya es .wav (caso macOS/iOS donde el package escribe WAV nativo),
+    // no hay nada que convertir.
+    if (rawPath.endsWith('.wav')) return rawPath;
+
     final file = File(rawPath);
     if (!await file.exists()) return rawPath;
 
@@ -1348,6 +1400,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
   int _wordIndex = 0;
   int _ttsStartWordOffset = 0;
   int _lastSkipTime = 0;
+  bool _isSkipping = false;
 
   @override
   void initState() {
@@ -1358,6 +1411,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
       if (mounted) setState(() => _playing = true);
     });
     _tts.setCompletionHandler(() {
+      if (_isSkipping) return;
       final now = DateTime.now().millisecondsSinceEpoch;
       if (now - _lastSkipTime < 600) {
         return;
@@ -1393,6 +1447,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
   }
 
   void stopPlayback() {
+    _isSkipping = true;
     _tts.stop();
     if (mounted) {
       setState(() {
@@ -1400,6 +1455,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
         _wordIndex = 0;
       });
     }
+    _isSkipping = false;
   }
 
   @override
@@ -1451,7 +1507,9 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
   }
 
   Future<void> _restart(String text) async {
+    _isSkipping = true;
     await _tts.stop();
+    await Future.delayed(const Duration(milliseconds: 150));
     if (mounted) {
       setState(() {
         _wordIndex = 0;
@@ -1460,6 +1518,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
       });
     }
     await _toggle(text);
+    _isSkipping = false;
   }
 
   Future<void> _speakFromCurrent(String text) async {
@@ -1474,8 +1533,10 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
     final words = _studyWords(text);
     final nextIndex = _wordIndex + 12;
     
+    _isSkipping = true;
     _lastSkipTime = DateTime.now().millisecondsSinceEpoch;
     await _tts.stop();
+    await Future.delayed(const Duration(milliseconds: 150));
     
     if (nextIndex >= words.length) {
       if (mounted) {
@@ -1483,6 +1544,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
           _wordIndex = 0;
           _playing = false;
           _completed = true;
+          _isSkipping = false;
         });
         widget.onCompleted?.call();
       }
@@ -1497,6 +1559,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
     }
     _scrollToProgress(nextIndex, words.length);
     await _toggle(text);
+    _isSkipping = false;
   }
 
   /// Renderiza el texto del paso Escuchar verso-por-verso (cuando el grupo
@@ -1507,8 +1570,23 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
   Widget _buildVersedListenText(BuildContext context, int globalIndex) {
     final verses = _currentBatchVerses(context);
     if (verses.length == 1) {
-      // Single-item: render plano como antes (lead + highlight + tail).
       final words = _studyWords(verses.first.text);
+      if (_completed) {
+        return Text.rich(
+          TextSpan(
+            text: words.join(' '),
+            style: const TextStyle(color: RefColors.lime),
+          ),
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 26,
+            height: 1.34,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -.35,
+          ),
+        );
+      }
+      // Single-item: render plano como antes (lead + highlight + tail).
       final safe = globalIndex.clamp(0, words.length - 1);
       final lead = words.take(safe).join(' ');
       final current = words.isEmpty ? '' : words[safe];
@@ -1578,6 +1656,12 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
               height: 1.32,
             ),
             wordStyle: (idx) {
+              if (_completed) {
+                return const TextStyle(
+                  color: RefColors.lime,
+                  fontWeight: FontWeight.w900,
+                );
+              }
               // Verso entero "ya leído": lime suave.
               if (activeVerse != null && i < activeVerse!) {
                 return const TextStyle(
@@ -1621,7 +1705,9 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
     final source = _cardSourceText(context).toUpperCase();
     final text = _cardStudyText(context);
     final safeIndex = _wordIndex.clamp(0, words.isEmpty ? 0 : words.length - 1);
-    final progress = words.isEmpty ? 0.0 : ((safeIndex + 1) / words.length);
+    final progress = _completed
+        ? 1.0
+        : (words.isEmpty ? 0.0 : ((safeIndex + 1) / words.length));
     return Glass(
       padding: const EdgeInsets.fromLTRB(22, 30, 22, 20),
       gradient: LinearGradient(
@@ -1672,7 +1758,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
               ),
               const Spacer(),
               Text(
-                '${safeIndex + 1}/${words.length} palabras',
+                '${_completed ? words.length : (safeIndex + 1)}/${words.length} palabras',
                 style: const TextStyle(
                   color: RefColors.muted,
                   fontSize: 11,

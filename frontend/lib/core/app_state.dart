@@ -631,18 +631,22 @@ class AppStore extends ChangeNotifier {
   MemoryCardData get activeCard {
     if (activeDeck.cards.isEmpty) return emptyCard;
     final deck = activeDeck;
-    if (deck.isBible && deck.cards.length > 1) {
-      final combinedFront = deck.cards.map((c) => c.front).join('; ');
-      final combinedBack = deck.cards.map((c) => c.back.trim()).join(' ');
+    // Si es Biblia, hay más de un versículo, y el usuario configuró estudiar más de 1 a la vez, se combinan.
+    if (deck.isBible && deck.cards.length > 1 && _sessionDailyTarget > 1) {
+      final count = _sessionDailyTarget.clamp(1, deck.cards.length);
+      final subList = deck.cards.take(count).toList();
+      final combinedFront = subList.map((c) => c.front).join('; ');
+      final combinedBack = subList.map((c) => c.back.trim()).join(' ');
       return MemoryCardData(
-        id: 'combined-${deck.id}',
+        id: 'combined-${deck.id}-$count',
         front: combinedFront,
         back: combinedBack,
-        source: deck.cards.first.source,
-        icon: deck.cards.first.icon,
-        retention: deck.cards.first.retention,
+        source: subList.first.source,
+        icon: subList.first.icon,
+        retention: subList.first.retention,
       );
     }
+    // De lo contrario (target = 1 o no es Biblia), estudiamos de a 1 por 1.
     return activeDeck.cards[_currentCardIndex.clamp(
       0,
       activeDeck.cards.length - 1,
@@ -727,7 +731,7 @@ class AppStore extends ChangeNotifier {
   final Map<String, List<BibleVerseData>> _bibleByVersion = {};
 
   /// Versión activa que se usa para `versesFor`, búsqueda y selección.
-  String _bibleVersion = 'rv1909';
+  String _bibleVersion = 'rvg';
 
   String get bibleVersion => _bibleVersion;
 
@@ -911,8 +915,8 @@ class AppStore extends ChangeNotifier {
     required int dailyTarget,
   }) {
     _sessionDifficulty = difficulty.clamp(0, 2);
-    final isCombinedBible = activeDeck.isBible && activeDeck.cards.length > 1;
-    final total = isCombinedBible ? 1 : activeDeck.cards.length;
+    // El total configurable siempre es el número real de tarjetas en el mazo.
+    final total = activeDeck.cards.length;
     _sessionDailyTarget = dailyTarget.clamp(1, total <= 0 ? 1 : total);
     _sessionCardsCompleted = 0;
     _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
@@ -927,7 +931,7 @@ class AppStore extends ChangeNotifier {
   /// Retorna `true` si todavía queda otra tarjeta dentro del target diario;
   /// `false` cuando la sesión ya completó su cuota y debe ir al review final.
   bool advanceToNextSessionCard({required bool correct}) {
-    final isCombinedBible = activeDeck.isBible && activeDeck.cards.length > 1;
+    final isCombinedBible = activeDeck.isBible && activeDeck.cards.length > 1 && _sessionDailyTarget > 1;
     answerCurrentCard(correct);
     if (isCombinedBible) {
       _sessionCardsCompleted = _sessionDailyTarget;
@@ -1189,7 +1193,7 @@ class AppStore extends ChangeNotifier {
             id: '${verse.book}-${verse.chapter}-${verse.verse}',
             front: verse.ref,
             back: verse.text,
-            source: 'RV1909',
+            source: bibleVersion.toUpperCase(),
             icon: '✝️',
             retention: 74,
           ),
@@ -1275,7 +1279,8 @@ class AppStore extends ChangeNotifier {
     if (deckIndex < 0) return;
     final deck = activeDeck;
     final cards = [...deck.cards];
-    if (deck.isBible && deck.cards.length > 1) {
+    final isCombinedBible = deck.isBible && deck.cards.length > 1 && _sessionDailyTarget > 1;
+    if (isCombinedBible) {
       for (var i = 0; i < cards.length; i++) {
         final card = cards[i];
         cards[i] = card.copyWith(
