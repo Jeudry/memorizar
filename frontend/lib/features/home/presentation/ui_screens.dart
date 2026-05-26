@@ -1221,6 +1221,47 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
   }
 
+  String _generateTrueFalseStatement(MemoryCardData target, bool isTrue, math.Random rng) {
+    final text = target.back.toLowerCase();
+    if (isTrue) {
+      if (text.contains('ángel') || text.contains('ángeles')) {
+        return 'El texto menciona la intervención de ángeles o mensajeros celestiales.';
+      } else if (text.contains('pastor') || text.contains('pastoreará') || text.contains('pastores')) {
+        return 'El pasaje utiliza la metáfora de un pastor para ilustrar el cuidado personal de Dios.';
+      } else if (text.contains('redimidos') || text.contains('redimió') || text.contains('adversario')) {
+        return 'El versículo afirma que Dios ha rescatado y redimido a su pueblo del poder del adversario.';
+      } else if (text.contains('gracias') || text.contains('misericordia') || text.contains('bueno')) {
+        return 'El pasaje nos exhorta a alabar y dar gracias a Dios reconociendo su bondad eterna.';
+      } else if (text.contains('angustia') || text.contains('clamaron') || text.contains('salvó')) {
+        return 'El pasaje enseña que en medio de la aflicción y la angustia, el clamor a Dios es respondido.';
+      } else if (text.contains('creó') || text.contains('principio') || text.contains('tierra')) {
+        return 'El versículo declara que en el inicio absoluto de todo, Dios creó los cielos y la tierra.';
+      } else if (text.contains('paz') || text.contains('cuidado') || text.contains('ansiedad')) {
+        return 'El pasaje promete que la paz divina guardará los corazones contra toda ansiedad.';
+      } else {
+        return 'El texto enseña un principio de confianza, superación moral y guía divina para nuestras vidas.';
+      }
+    } else {
+      if (text.contains('ángel') || text.contains('ángeles')) {
+        return 'El pasaje afirma que los ángeles fueron creados para gobernar a los hombres con severidad.';
+      } else if (text.contains('pastor') || text.contains('pastoreará') || text.contains('pastores')) {
+        return 'El texto dice que el pastor guiará a las ovejas únicamente a caminos de desierto y sequía.';
+      } else if (text.contains('redimidos') || text.contains('redimió') || text.contains('adversario')) {
+        return 'El pasaje instruye que los redimidos deben callar su testimonio y ocultar su liberación.';
+      } else if (text.contains('gracias') || text.contains('misericordia') || text.contains('bueno')) {
+        return 'El versículo aconseja que sólo debemos alabar a Dios cuando las circunstancias sean fáciles y cómodas.';
+      } else if (text.contains('angustia') || text.contains('clamaron') || text.contains('salvó')) {
+        return 'El texto sugiere que los seres humanos deben resolver sus problemas con sus propias fuerzas sin buscar a Dios.';
+      } else if (text.contains('creó') || text.contains('principio') || text.contains('tierra')) {
+        return 'El versículo sostiene que los cielos y la tierra existían eternamente antes del Creador.';
+      } else if (text.contains('paz') || text.contains('cuidado') || text.contains('ansiedad')) {
+        return 'El pasaje advierte que es imposible librar la mente de la ansiedad cotidiana y el temor constante.';
+      } else {
+        return 'El texto sugiere que el destino humano está predeterminado por el azar sin ningún propósito o esperanza.';
+      }
+    }
+  }
+
   List<_QuizRound> _buildQuizRounds(
     MemoryDeckData deck,
     MemoryCardData activeCard,
@@ -1243,11 +1284,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       if (i == 1) {
         // Round 2: True / False!
         final isTrue = rng.nextBool();
-        String statement = target.back;
-        if (!isTrue) {
-          final dists = LocalLlmService.instance.generateDistractorsSync(target.back);
-          statement = dists.first;
-        }
+        final statement = _generateTrueFalseStatement(target, isTrue, rng);
         rounds.add(_QuizRound(
           target: target,
           type: _QuizQuestionType.trueFalse,
@@ -1256,26 +1293,32 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           isStatementTrue: isTrue,
         ));
       } else if (i == 3) {
-        // Round 4: Matching!
-        final List<MemoryCardData> matchCards = [...studiedPool];
-        if (matchCards.length < 4) {
-          final extraCards = deck.cards.where((c) => !matchCards.any((m) => m.id == c.id)).toList()..shuffle(rng);
-          matchCards.addAll(extraCards.take(4 - matchCards.length));
+        // Round 4: Reference selection (back to front), seen cards only!
+        final distractors = <MemoryCardData>[];
+        final otherStudied = studiedPool.where((c) => c.id != target.id).toList()..shuffle(rng);
+        distractors.addAll(otherStudied.take(3));
+
+        // Generate synthetic reference distractors if not enough studied pool to avoid non-studied exposure
+        var fakeIndex = 1;
+        while (distractors.length < 3) {
+          final isBible = deck.isBible;
+          final fakeRef = isBible ? '${target.front.split(':').first}:${rng.nextInt(50) + 1}' : 'Referencia ficticia ${fakeIndex++}';
+          distractors.add(
+            MemoryCardData(
+              id: 'ai-dist-ref-${distractors.length}-${target.id}',
+              front: fakeRef,
+              back: 'Texto alternativo',
+              source: 'IA',
+              icon: target.icon,
+            ),
+          );
         }
-        while (matchCards.length < 4) {
-          matchCards.add(activeCard);
-        }
-        final pairs = <(String, String)>[];
-        for (var j = 0; j < 4; j++) {
-          final c = matchCards[j];
-          final shortText = _firstWords(c.back, 7) + '…';
-          pairs.add((c.front, shortText));
-        }
+
+        final options = [target, ...distractors.take(3)]..shuffle(rng);
         rounds.add(_QuizRound(
           target: target,
-          type: _QuizQuestionType.matching,
-          options: const [],
-          matchingPairs: pairs,
+          type: _QuizQuestionType.backToFront,
+          options: options,
         ));
       } else if (i == 2) {
         // Round 3: smart offline conceptual AI round!
@@ -2384,7 +2427,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     final isOpenQuestion = round.type == _QuizQuestionType.openQuestion;
 
     final question = isTrueFalse
-        ? 'Afirmación sobre el contenido'
+        ? '¿Es verdadera o falsa esta afirmación sobre ${round.target.front}?'
         : isMatching
         ? 'Toca una referencia y luego su texto para emparejarlos.'
         : isOpenQuestion
