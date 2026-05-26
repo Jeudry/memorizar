@@ -375,7 +375,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   String? _bankCardId;
   List<String> _bankTargets = [];
   List<String?> _bankAnswers = [];
-  List<String> _bankAvailable = [];
+  List<_BankWord> _bankAvailable = [];
   final Set<String> _bankRemoving = <String>{};
   int _bankActiveIndex = 0;
   int _bankMistakes = 0;
@@ -520,7 +520,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         .where((w) => w.isNotEmpty)
         .toList();
     final rng = math.Random(DateTime.now().microsecondsSinceEpoch);
-    _bankAvailable = [...cleanWords]..shuffle(rng);
+    final tempAvailable = <_BankWord>[];
+    for (var i = 0; i < cleanWords.length; i++) {
+      tempAvailable.add(_BankWord(id: 'bank-el-$i', word: cleanWords[i]));
+    }
+    _bankAvailable = tempAvailable..shuffle(rng);
     _bankActiveIndex = 0;
     _bankMistakes = 0;
     _bankPartIndex = 0;
@@ -562,9 +566,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     return true;
   }
 
-  void _selectBankWord(String word) {
+  void _selectBankWord(_BankWord word) {
     if (_bankTargets.isEmpty || _bankComplete()) return;
-    if (_bankRemoving.contains(word)) return;
+    if (_bankRemoving.contains(word.id)) return;
     final (partStart, partEnd) = _bankPartRange();
     // Clamp the active blank to the current part — if the active index drifted
     // to a later part, snap it back to the first unfilled blank in this part.
@@ -580,11 +584,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       if (idx == -1) return;
       _bankActiveIndex = idx;
     }
-    final correct = _sameAnswer(word, _bankTargets[idx]);
+    final correct = _sameAnswer(word.word, _bankTargets[idx]);
     if (correct) {
       setState(() {
-        _bankAnswers[idx] = word;
-        _bankRemoving.add(word);
+        _bankAnswers[idx] = word.word;
+        _bankRemoving.add(word.id);
         // Find next unfilled blank inside the current part.
         var next = -1;
         for (var i = partStart; i < partEnd; i++) {
@@ -601,10 +605,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       Future<void>.delayed(const Duration(milliseconds: 320), () {
         if (!mounted) return;
         setState(() {
-          final removeAt =
-              _bankAvailable.indexWhere((w) => _sameAnswer(w, word));
-          if (removeAt >= 0) _bankAvailable.removeAt(removeAt);
-          _bankRemoving.remove(word);
+          _bankAvailable.removeWhere((w) => w.id == word.id);
+          _bankRemoving.remove(word.id);
           if (_bankPartComplete()) {
             if (_bankPartIndex + 1 < _bankPartCount()) {
               // Advance to next part: highlight the next part's first blank.
@@ -1666,9 +1668,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         final key = clean(_bankTargets[i]);
         neededCounts[key] = (neededCounts[key] ?? 0) + 1;
       }
-      final partAvailable = <String>[];
+      final partAvailable = <_BankWord>[];
       for (final w in _bankAvailable) {
-        final key = clean(w);
+        final key = clean(w.word);
         final left = neededCounts[key] ?? 0;
         if (left > 0) {
           partAvailable.add(w);
@@ -1768,17 +1770,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     children: [
                       for (final word in partAvailable)
                         AnimatedScale(
-                          key: ValueKey('bank-$word'),
+                          key: ValueKey(word.id),
                           duration: const Duration(milliseconds: 280),
                           curve: Curves.easeInBack,
-                          scale: _bankRemoving.contains(word) ? 0.0 : 1.0,
+                          scale: _bankRemoving.contains(word.id) ? 0.0 : 1.0,
                           child: AnimatedOpacity(
                             duration: const Duration(milliseconds: 240),
                             opacity:
-                                _bankRemoving.contains(word) ? 0.0 : 1.0,
+                                _bankRemoving.contains(word.id) ? 0.0 : 1.0,
                             child: GestureDetector(
                               onTap: () => _selectBankWord(word),
-                              child: _WordChip(word, active: false),
+                              child: _WordChip(word.word, active: false),
                             ),
                           ),
                         ),
@@ -2968,4 +2970,10 @@ class _CustomReorderableDelayedDragStartListener extends ReorderableDragStartLis
       delay: const Duration(milliseconds: 175), // Highly responsive 175ms delay based on user preference
     );
   }
+}
+
+class _BankWord {
+  final String id;
+  final String word;
+  _BankWord({required this.id, required this.word});
 }
