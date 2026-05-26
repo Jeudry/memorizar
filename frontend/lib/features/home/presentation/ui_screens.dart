@@ -931,7 +931,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_letterLost) return;
     final currentIndex = _activeLetterIndex.clamp(0, _letterTargets.length - 1);
     final target = _letterTargets[currentIndex];
-    final correct = _sameAnswer(letter, target.substring(0, 1));
+    final cleanTarget = target.replaceAll(RegExp(r'[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]'), '');
+    final firstLetter = cleanTarget.isNotEmpty ? cleanTarget.substring(0, 1) : '';
+    final correct = _sameAnswer(letter, firstLetter);
     setState(() {
       _checked = true;
       if (correct) {
