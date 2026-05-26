@@ -2445,8 +2445,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         : isOpenQuestion
         ? 'PREGUNTA ${_quizRoundIndex + 1} DE 5 · RESPUESTA ABIERTA'
         : isFrontToBack
-        ? (deck.isBible ? round.target.source : deck.title.toUpperCase())
-        : '"${_firstWords(round.target.back, 8)}…"';
+        ? (deck.isBible ? 'BIBLIA · ${round.target.front.toUpperCase()}' : deck.title.toUpperCase())
+        : (deck.isBible ? 'BIBLIA · ASOCIACIÓN CONCEPTUAL' : '"${_firstWords(round.target.back, 8)}…"');
 
     if (isMatching) {
       _ensureMatchingShuffled(round);
