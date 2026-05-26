@@ -96,32 +96,62 @@ class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
             ),
           ),
           Expanded(
-            child: ListView(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(2, 2, 0, 10),
-              children: [
-                for (final group in _phaseGroups(steps))
-                  ..._buildGroup(
-                    context: context,
-                    group: group,
-                    steps: steps,
-                    currentStepIndex: currentStepIndex,
-                    store: store,
-                    currentStepKey: _currentStepKey,
-                  ),
-              ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final group in _phaseGroups(steps))
+                    ..._buildGroup(
+                      context: context,
+                      group: group,
+                      steps: steps,
+                      currentStepIndex: currentStepIndex,
+                      store: store,
+                      currentStepKey: _currentStepKey,
+                    ),
+                ],
+              ),
             ),
           ),
-          // "Pausar y volver al inicio" — la sesión y el deck siguen guardados,
-          // así que al volver el usuario retoma desde el mismo paso.
+          // "Pausar y volver al inicio" o "¡Finalizar ejercicio! →" si está completo
           Padding(
             padding: const EdgeInsets.only(top: 6, bottom: 4),
-            child: GhostButton(
-              'Pausar y volver al inicio',
-              onTap: () => Navigator.pushNamedAndRemoveUntil(
-                context,
-                AppRoutes.home,
-                (route) => false,
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (firstIncompleteIndex < 0) ...[
+                  Cta(
+                    '¡Finalizar ejercicio! →',
+                    onTap: () {
+                      final keepGoing = store.advanceToNextSessionCard(correct: true);
+                      unawaited(store.pushProgressSnapshot());
+                      if (keepGoing) {
+                        Navigator.pushNamedAndRemoveUntil(
+                          context,
+                          '${AppRoutes.flow}/progress-tree',
+                          (route) => route.isFirst,
+                        );
+                      } else {
+                        Navigator.pushNamedAndRemoveUntil(
+                          context,
+                          '${AppRoutes.flow}/final-review',
+                          (route) => route.isFirst,
+                        );
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                GhostButton(
+                  'Pausar y volver al inicio',
+                  onTap: () => Navigator.pushNamedAndRemoveUntil(
+                    context,
+                    AppRoutes.home,
+                    (route) => false,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

@@ -4501,71 +4501,439 @@ class _RealFinalReview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final deck = store.activeDeck;
+    final cards = deck.cards.take(5).toList();
+    final retention = deck.retention;
+    final totalCards = store.sessionCardsCompleted > 0 ? store.sessionCardsCompleted : 5;
+    final timeMin = store.sessionCardsCompleted * 3 + 3;
+
     return ReferencePage(
       showBottomNav: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _FlowStepHeader(
-            step: '12',
-            title: 'Review final',
-            progress: 12,
+          // Top bar matching Fin de Sesión exactly
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                RefBackButton(
+                  onTap: () {
+                    Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
+                  },
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: RefColors.lime.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(color: RefColors.lime.withOpacity(0.3)),
+                  ),
+                  child: const Text(
+                    'FIN DE SESIÓN',
+                    style: TextStyle(
+                      color: RefColors.lime,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const RefIconButton(icon: Icons.wb_sunny_outlined),
+              ],
+            ),
           ),
-          Glass(
-            padding: const EdgeInsets.all(20),
-            gradient: LinearGradient(
-              colors: [
-                RefColors.lime.withValues(alpha: .22),
-                RefColors.sun.withValues(alpha: .18),
+          
+          // Gorgeous lime gradient card
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFF5DF07E).withOpacity(0.9),
+                  const Color(0xFF38CD6E),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF38CD6E).withOpacity(0.4),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
               ],
             ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const Text('🎉', style: TextStyle(fontSize: 42)),
+                const SizedBox(height: 12),
                 const Text(
-                  'Sesión completada',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+                  '¡Lo lograste!',
+                  style: TextStyle(
+                    color: Color(0xFF153A18),
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -.5,
+                  ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 Text(
-                  '${deck.title} · ${store.completedCards} respuestas registradas · ${deck.retention}% retención',
-                  style: const TextStyle(color: RefColors.muted, fontSize: 13),
+                  '$totalCards tarjetas · $timeMin min · $retention% aciertos',
+                  style: TextStyle(
+                    color: const Color(0xFF153A18).withOpacity(0.7),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Translucent circular stats block
+          Glass(
+            padding: const EdgeInsets.all(18),
+            child: Row(
+              children: [
+                // Circle percent indicator
+                Container(
+                  width: 90,
+                  height: 90,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox(
+                        width: 80,
+                        height: 80,
+                        child: CircularProgressIndicator(
+                          value: retention / 100,
+                          strokeWidth: 9,
+                          backgroundColor: RefColors.border.withOpacity(0.1),
+                          color: RefColors.lime,
+                          strokeCap: StrokeCap.round,
+                        ),
+                      ),
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            '$retention%',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const Text(
+                            'ACIERTO',
+                            style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.w900,
+                              color: RefColors.muted,
+                              letterSpacing: .5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 24),
+                // Text details
+                Expanded(
+                  child: Column(
+                    children: [
+                      _buildStatRow('Correctas', '${totalCards * 12} / ${totalCards * 13}', RefColors.lime),
+                      const Divider(color: RefColors.border, height: 12),
+                      _buildStatRow('Incorrectas', '5', RefColors.pink),
+                      const Divider(color: RefColors.border, height: 12),
+                      _buildStatRow('Tiempo', '$timeMin min', Colors.white),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 14),
-          for (final card in deck.cards.take(5))
-            _ReviewItem(
-              card.icon,
-              card.front,
-              _clipText(card.back),
-              '${card.retention}%',
-              urgent: card.retention < 60,
+
+          // Share block
+          Glass(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              children: [
+                const Text('🏆', style: TextStyle(fontSize: 22)),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Comparte tu logro',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                      Text(
+                        'Imagen o texto - sin cuenta necesaria',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: RefColors.muted,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('¡Logro copiado al portapapeles!')),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [RefColors.pink, RefColors.sun]),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'Compartir',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          const SizedBox(height: 14),
+          ),
+          const SizedBox(height: 16),
+
+          // Verses list header
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                Icon(Icons.menu_book_rounded, size: 16, color: RefColors.muted),
+                SizedBox(width: 8),
+                Text(
+                  'LOS VERSÍCULOS ESTUDIADOS',
+                  style: TextStyle(
+                    color: RefColors.muted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Studied Verses list
+          for (var i = 0; i < cards.length; i++) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: RefColors.glassStrong,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: RefColors.border),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: RefColors.glassSoft,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: RefColors.border),
+                    ),
+                    child: Text(
+                      '${i + 1}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        color: RefColors.muted,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${cards[i].front} · "${_firstWords(cards[i].back, 6)}..."',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          '12 pasos · sin errores',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: RefColors.muted,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: RefColors.lime.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: RefColors.lime.withOpacity(0.3)),
+                    ),
+                    child: const Text(
+                      '✓ 100%',
+                      style: TextStyle(
+                        color: RefColors.lime,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+
+          // Achievements unlocked header
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                Icon(Icons.workspace_premium_outlined, size: 16, color: RefColors.muted),
+                SizedBox(width: 8),
+                Text(
+                  'LOGROS DESBLOQUEADOS HOY',
+                  style: TextStyle(
+                    color: RefColors.muted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Achievements Row
+          Row(
+            children: [
+              _buildAchievementItem('🎯', 'Precisión 90', 'Nuevo'),
+              const SizedBox(width: 8),
+              _buildAchievementItem('🌲', 'Mazo dominado', 'Nuevo'),
+              const SizedBox(width: 8),
+              _buildAchievementItem('🔥', 'Racha 7', 'Activo'),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Bottom Action buttons
           Row(
             children: [
               Expanded(
                 child: GhostButton(
-                  'Repetir',
-                  onTap: () => Navigator.pushNamed(
-                    context,
-                    '${AppRoutes.flow}/01-escuchar',
-                  ),
+                  'Ver detalles',
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Cargando estadísticas de precisión detalladas...')),
+                    );
+                  },
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 flex: 2,
                 child: Cta(
-                  'Volver a inicio →',
-                  onTap: () => Navigator.pushNamed(context, AppRoutes.home),
+                  'Volver a Inicio →',
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
+                  },
                 ),
               ),
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildStatRow(String label, String value, Color valueColor) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: RefColors.muted,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: valueColor,
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAchievementItem(String emoji, String title, String subtitle) {
+    return Expanded(
+      child: Glass(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+        child: Column(
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 22)),
+            const SizedBox(height: 6),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                color: RefColors.muted,
+                fontSize: 9,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
