@@ -43,107 +43,258 @@ class FlashcardsScreen extends StatelessWidget {
   }
 }
 
-class PremiumScreen extends StatelessWidget {
+class PremiumScreen extends StatefulWidget {
   const PremiumScreen({super.key});
+
+  @override
+  State<PremiumScreen> createState() => _PremiumScreenState();
+}
+
+class _PremiumScreenState extends State<PremiumScreen> {
+  bool _downloading = false;
 
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
+    final llmService = LocalLlmService.instance;
+
     return ReferencePage(
       showBottomNav: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const RefTopBar(title: 'Premium'),
-          Glass(
-            padding: const EdgeInsets.all(20),
-            gradient: LinearGradient(
-              colors: [
-                RefColors.pink.withValues(alpha: .28),
-                RefColors.sun.withValues(alpha: .30),
-                RefColors.violet.withValues(alpha: .22),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    color: RefColors.glassStrong,
-                    borderRadius: BorderRadius.circular(15),
-                    border: Border.all(color: RefColors.border),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const RefTopBar(title: 'Función Premium'),
+            Glass(
+              padding: const EdgeInsets.all(20),
+              gradient: LinearGradient(
+                colors: [
+                  RefColors.violet.withValues(alpha: .28),
+                  RefColors.pink.withValues(alpha: .20),
+                  RefColors.sun.withValues(alpha: .15),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: RefColors.glassStrong,
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(color: RefColors.border),
+                        ),
+                        child: const Icon(Icons.psychology_rounded, color: RefColors.pink, size: 26),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Cuestionario con IA Local',
+                              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              store.isPremium ? '✓ Acceso Desbloqueado' : '🔒 Requiere Premium',
+                              style: TextStyle(
+                                color: store.isPremium ? RefColors.lime : RefColors.pink,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  child: const Icon(Icons.workspace_premium_rounded),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'Esta función despierta una red neuronal artificial directamente dentro de tu teléfono. Analiza tu progreso y crea cuestionarios únicos y distractores inteligentes de forma 100% privada, sin anuncios y sin consumir tus datos de internet.',
+                    style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 13,
+                      height: 1.45,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Si el usuario no es premium, mostrar el paywall/upsell hermoso
+            if (!store.isPremium) ...[
+              Glass(
+                padding: const EdgeInsets.all(16),
+                color: Colors.black.withValues(alpha: 0.2),
+                border: Border.all(color: RefColors.border),
+                child: Column(
+                  children: [
+                    const Icon(Icons.workspace_premium_rounded, color: RefColors.sun, size: 36),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Únete a Memorizar Premium',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Activa la versión de prueba premium para desbloquear la Inteligencia Artificial local y todos los ejercicios de alta fidelidad.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: RefColors.muted, fontSize: 12, height: 1.35, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 16),
+                    Cta(
+                      'Activar Prueba Premium Gratis',
+                      onTap: () {
+                        store.setPremiumPreview(true);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('¡Modo Premium activado! Ahora puedes descargar la IA local.'),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Memorizar Premium',
-                  style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 7),
-                const Text(
-                  'Sin anuncios y con ejercicios inteligentes cuando conectemos IA real.',
+              ),
+            ] else ...[
+              // Si ya es premium, mostrar la opción de descargar el cerebro de IA
+              ValueListenableBuilder<String>(
+                valueListenable: llmService.statusNotifier,
+                builder: (context, status, _) {
+                  return ValueListenableBuilder<double>(
+                    valueListenable: llmService.downloadProgress,
+                    builder: (context, progress, _) {
+                      final isReady = llmService.isReady || progress >= 1.0;
+                      
+                      return Glass(
+                        padding: const EdgeInsets.all(16),
+                        color: RefColors.glassStrong,
+                        border: Border.all(color: isReady ? RefColors.lime.withValues(alpha: 0.4) : RefColors.border),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  isReady ? Icons.check_circle_rounded : Icons.cloud_download_rounded,
+                                  color: isReady ? RefColors.lime : RefColors.pink,
+                                  size: 26,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        isReady ? 'Cerebro de IA Instalado' : 'Instalar Red Neuronal Local',
+                                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        status.isEmpty ? 'Requiere descarga única (~1.4 GB)' : status,
+                                        style: const TextStyle(color: RefColors.muted, fontSize: 11, fontWeight: FontWeight.w700),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (!isReady) ...[
+                              const SizedBox(height: 14),
+                              if (_downloading) ...[
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(99),
+                                  child: LinearProgressIndicator(
+                                    value: progress,
+                                    backgroundColor: Colors.white12,
+                                    color: RefColors.pink,
+                                    minHeight: 6,
+                                  ),
+                                ),
+                              ] else ...[
+                                Cta(
+                                  'Descargar Motor de IA Offline',
+                                  onTap: () async {
+                                    setState(() {
+                                      _downloading = true;
+                                    });
+                                    try {
+                                      await llmService.downloadModel();
+                                    } catch (_) {}
+                                    setState(() {
+                                      _downloading = false;
+                                    });
+                                  },
+                                ),
+                              ],
+                            ] else ...[
+                              const SizedBox(height: 12),
+                              const Text(
+                                '¡Felicidades! La IA local está lista y funcionando en la GPU de tu dispositivo. Todos tus cuestionarios se procesarán de forma ultra-rápida y privada.',
+                                style: TextStyle(color: RefColors.lime, fontSize: 12, height: 1.3, fontWeight: FontWeight.w700),
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ],
+            
+            const SizedBox(height: 16),
+            const _PremiumBenefit(
+              icon: Icons.quiz_rounded,
+              title: 'Cuestionarios Dinámicos',
+              body: 'Opciones de respuestas trampa generadas contextualmente para tu mazo.',
+            ),
+            const SizedBox(height: 10),
+            const _PremiumBenefit(
+              icon: Icons.offline_bolt_rounded,
+              title: 'Funcionamiento 100% Offline',
+              body: 'Estudia en el avión, el campo o el sótano. Sin requerir conexión ni wifi.',
+            ),
+            const SizedBox(height: 10),
+            const _PremiumBenefit(
+              icon: Icons.shield_rounded,
+              title: 'Privacidad Absoluta',
+              body: 'Tus datos de estudio nunca salen de tu teléfono. Sin servidores externos.',
+            ),
+            
+            if (store.isPremium) ...[
+              const SizedBox(height: 16),
+              GestureDetector(
+                onTap: () {
+                  store.setPremiumPreview(false);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Preview premium desactivado.')),
+                  );
+                },
+                child: const Text(
+                  'Desactivar Preview de Desarrollo',
+                  textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: RefColors.muted,
-                    fontSize: 13,
-                    height: 1.38,
-                    fontWeight: FontWeight.w600,
+                    color: RefColors.pink,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    decoration: TextDecoration.underline,
                   ),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          const _PremiumBenefit(
-            icon: Icons.quiz_rounded,
-            title: 'Quizes inteligentes',
-            body:
-                'Preguntas y opciones generadas para el contenido que estás memorizando.',
-          ),
-          const SizedBox(height: 10),
-          const _PremiumBenefit(
-            icon: Icons.block_rounded,
-            title: 'Sin anuncios',
-            body: 'La sesión queda limpia y sin interrupciones.',
-          ),
-          const SizedBox(height: 10),
-          const _PremiumBenefit(
-            icon: Icons.auto_awesome_rounded,
-            title: 'Más ejercicios avanzados',
-            body:
-                'Variantes de examen para que cada intento se sienta distinto.',
-          ),
-          const SizedBox(height: 16),
-          Cta(
-            store.isPremium ? 'Premium activo' : 'Activar cuando esté listo',
-            onTap: () {
-              store.setPremiumPreview(!store.isPremium);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    store.isPremium
-                        ? 'Preview premium activado para probar quizes.'
-                        : 'Preview premium desactivado.',
-                  ),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'Esto es un preview local. El cobro real se conecta luego con StoreKit/RevenueCat.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: RefColors.muted,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
+              ),
+            ],
+            const SizedBox(height: 24),
+          ],
+        ),
       ),
     );
   }

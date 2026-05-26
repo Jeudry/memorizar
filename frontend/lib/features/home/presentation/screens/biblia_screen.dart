@@ -2139,7 +2139,7 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     '11-primera-letra-n2',
   ];
   final level3Optional = <String>[
-    if (store.isPremium) '09-quiz',
+    '09-quiz',
     '12-completar-n3',
     '13-primera-letra-n3',
     '15-banco-completo',
