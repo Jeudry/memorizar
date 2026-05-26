@@ -5,9 +5,12 @@ library memorizar_screens;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -40,6 +43,7 @@ import 'home_screen.dart';
 import '../../../core/router/app_routes.dart';
 import '../../../core/theme/ref_colors.dart';
 import '../../../core/ui/widgets.dart';
+import '../../../core/services/whisper_service.dart';
 
 part 'screens/biblia_screen.dart';
 part 'screens/especificar_screen.dart';
@@ -53,7 +57,6 @@ part 'screens/flashcards_screen.dart';
 part 'screens/ejercicios_screen.dart';
 part 'screens/progress_tree_screen.dart';
 part 'screens/fog_step.dart';
-part 'screens/recitation_step.dart';
 part 'screens/exercise_flow_screens.dart';
 part 'screens/exercise_review_widgets.dart';
 part 'screens/exercise_voice_widgets.dart';
@@ -209,8 +212,10 @@ class ExerciseFlowData {
 }
 
 const flowScreens = [
+  ExerciseFlowData('00-solo-lectura', 'Solo lectura', 'Lee el texto con atención'),
   ExerciseFlowData('01-escuchar', 'Escuchar', 'Primero absorbe la idea'),
   ExerciseFlowData('02-lectura-frag', 'Lectura fragmentada', 'Divide y repite'),
+  ExerciseFlowData('02-niebla-n1', 'Niebla N1', 'Recita mientras se nubla un poco'),
   ExerciseFlowData('03-leer-voz', 'Leer en voz', 'Activa memoria auditiva'),
   ExerciseFlowData('04-escuchar-voz', 'Escuchar voz', 'Reconoce sin mirar'),
   ExerciseFlowData('05-bloques', 'Bloques', 'Ordena piezas clave'),
@@ -220,10 +225,10 @@ const flowScreens = [
     'Primera letra N1',
     'Menos pistas, más memoria',
   ),
-  ExerciseFlowData('08-voz-guiada', 'Voz guiada', 'Responde en voz alta'),
-  ExerciseFlowData('09-quiz', 'Quiz', 'Elige la respuesta correcta'),
+  ExerciseFlowData('17-niebla-n2', 'Niebla N2', 'Recitación con difuminado medio'),
   ExerciseFlowData('10-completar-n2', 'Completar N2', 'Recuerdo más fuerte'),
   ExerciseFlowData('11-primera-letra-n2', 'Primera letra N2', 'Casi sin ayuda'),
+  ExerciseFlowData('09-quiz', 'Quiz', 'Elige la respuesta correcta'),
   ExerciseFlowData('12-completar-n3', 'Completado N3', 'Más huecos visibles'),
   ExerciseFlowData(
     '13-primera-letra-n3',
@@ -239,6 +244,11 @@ const flowScreens = [
     '16-niebla',
     'Niebla',
     'Recita mientras se nubla más',
+  ),
+  ExerciseFlowData(
+    '16-niebla-n3',
+    'Niebla N3',
+    'Recitación con difuminado denso',
   ),
   ExerciseFlowData('14-voz-final', 'Voz final', 'Demuestra dominio'),
   ExerciseFlowData('mini-review', 'Mini review', 'Cierre rápido'),
@@ -330,6 +340,9 @@ class _QuizRound {
 class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   bool _checked = false;
   int _fragmentVisibleWords = 8;
+  int _soloLecturaVisibleChars = 0;
+  Timer? _soloLecturaTimer;
+  DateTime? _soloLecturaPauseUntil;
   String? _blockOrderCardId;
   List<int> _blockOrderIndexes = [];
   int? _selectedBlockPosition;
@@ -346,6 +359,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   String? _letterCardId;
   int _letterLevel = 1;
   List<String> _letterTargets = [];
+  List<int> _letterTargetPositions = [];
   List<String?> _letterAnswers = [];
   int _activeLetterIndex = 0;
   int _letterMistakes = 0;
@@ -382,11 +396,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 
   String? _fogCardId;
-  int _fogRound = 0;
   bool _fogFinished = false;
+  bool _fogShowHintTemp = false;
 
   @override
   void dispose() {
+    _soloLecturaTimer?.cancel();
     _completionTimer?.cancel();
     _letterTimer?.cancel();
     super.dispose();
@@ -643,19 +658,15 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   void _ensureFogState(String cardId) {
     if (_fogCardId == cardId) return;
     _fogCardId = cardId;
-    _fogRound = 0;
     _fogFinished = false;
   }
 
   void _onFogRoundCompleted() {
     setState(() {
-      if (_fogRound >= 2) {
-        _fogFinished = true;
-        HapticFeedback.heavyImpact();
-      } else {
-        _fogRound += 1;
-        HapticFeedback.lightImpact();
-      }
+      _fogFinished = true;
+      HapticFeedback.heavyImpact();
+      final store = AppScope.of(context);
+      store.markExerciseStepCompleted(widget.data.slug);
     });
   }
 
@@ -884,7 +895,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_letterCardId == cardId && _letterLevel == level) return;
     _letterCardId = cardId;
     _letterLevel = level;
-    _letterTargets = _firstLetterTargets(text, level: level);
+    final (targets, positions) = _firstLetterTargetsWithPositions(text, level: level);
+    _letterTargets = targets;
+    _letterTargetPositions = positions;
     _letterAnswers = List<String?>.filled(_letterTargets.length, null);
     _activeLetterIndex = 0;
     _letterMistakes = 0;
@@ -1044,12 +1057,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '02-lectura-frag' && store.isExerciseStepCompleted(slug)) {
       _fragmentVisibleWords = _studyWords(card.back).length;
     }
+    if (slug == '00-solo-lectura' && store.isExerciseStepCompleted(slug)) {
+      final verses = _currentBatchVerses(context);
+      _soloLecturaVisibleChars = verses.fold<int>(0, (sum, v) => sum + v.text.length);
+    }
     return ReferencePage(
       showBottomNav: false,
       scrollable:
           slug != '01-escuchar' &&
-          slug != '08-voz-guiada' &&
-          !_isFinalVoiceSlug(slug), // Allow voice/listen steps to expand
+          !_isFirstLetterSlug(slug) &&
+          !_isFogSlug(slug) &&
+          !_isFinalVoiceSlug(slug),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1060,7 +1078,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             progress: step.clamp(1, totalSteps),
           ),
           if (slug == '01-escuchar' ||
-              slug == '08-voz-guiada' ||
+              _isFirstLetterSlug(slug) ||
+              _isFogSlug(slug) ||
               _isFinalVoiceSlug(slug))
             Expanded(
               child: _RedFlash(
@@ -1087,6 +1106,148 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     MemoryDeckData deck,
     String slug,
   ) {
+    if (slug == '00-solo-lectura') {
+      final verses = _currentBatchVerses(context);
+      final totalChars = verses.fold<int>(0, (sum, v) => sum + v.text.length);
+      final fullText = verses.map((v) => v.text).join("");
+      final verseEnds = <int>[];
+      var tempSum = 0;
+      for (var i = 0; i < verses.length - 1; i++) {
+        tempSum += verses[i].text.length;
+        verseEnds.add(tempSum);
+      }
+
+      if (!store.isExerciseStepCompleted(slug) && _soloLecturaTimer == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _startSoloLecturaAnimation(store, totalChars, verseEnds, fullText);
+        });
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GestureDetector(
+            onTap: () {
+              if (!store.isExerciseStepCompleted(slug)) {
+                _soloLecturaTimer?.cancel();
+                _soloLecturaTimer = null;
+                _soloLecturaPauseUntil = null;
+                setState(() {
+                  _soloLecturaVisibleChars = totalChars;
+                });
+                store.markExerciseStepCompleted('00-solo-lectura');
+              }
+            },
+            child: Glass(
+              padding: const EdgeInsets.fromLTRB(18, 22, 18, 22),
+              gradient: LinearGradient(
+                colors: [
+                  RefColors.violet.withValues(alpha: .28),
+                  RefColors.sun.withValues(alpha: .34),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    deck.isBible ? card.front.toUpperCase() : 'CITA',
+                    style: const TextStyle(
+                      color: RefColors.pink,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    constraints: const BoxConstraints(minHeight: 120),
+                    alignment: Alignment.center,
+                    child: _buildSoloLecturaText(context, _soloLecturaVisibleChars),
+                  ),
+                  if (!store.isExerciseStepCompleted(slug)) ...[
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.touch_app_outlined,
+                          size: 13,
+                          color: RefColors.pink.withValues(alpha: .55),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'TOCA EL TEXTO PARA OMITIR',
+                          style: TextStyle(
+                            color: RefColors.pink.withValues(alpha: .55),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (store.isExerciseStepCompleted(slug)) ...[
+                    const SizedBox(height: 18),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.check_circle_outline, size: 16, color: RefColors.lime),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Lectura completada',
+                          style: TextStyle(
+                            color: RefColors.lime,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(width: 20),
+                        GestureDetector(
+                          onTap: () {
+                            _soloLecturaTimer?.cancel();
+                            _soloLecturaTimer = null;
+                            _soloLecturaPauseUntil = null;
+                            store.resetExerciseStepCompleted(slug);
+                            setState(() {
+                              _soloLecturaVisibleChars = 0;
+                            });
+                            _startSoloLecturaAnimation(store, totalChars, verseEnds, fullText);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: RefColors.cyan.withValues(alpha: .15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.replay_rounded, size: 16, color: RefColors.cyan),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Repetir',
+                                  style: TextStyle(
+                                    color: RefColors.cyan,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     if (slug == '01-escuchar') {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1147,15 +1308,16 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       );
     }
 
-    if (slug == '08-voz-guiada' || _isFinalVoiceSlug(slug)) {
-      final hidden = _isFinalVoiceSlug(slug);
-      return _RecitationStep(
+    if (_isFinalVoiceSlug(slug)) {
+      _ensureFogState(card.id);
+      return _FogStep(
         targetText: card.back,
-        finalMode: hidden,
-        colorMode: hidden ? _ListeningColorMode.pink : _ListeningColorMode.blue,
-        onCompleted: (passed) {
-          store.markExerciseStepCompleted(slug);
-          if (hidden) store.answerCurrentCard(passed);
+        finished: _fogFinished,
+        level: 3, // Final voice test blurs 100% of the words!
+        showHintTemp: _fogShowHintTemp,
+        onRoundCompleted: () {
+          _onFogRoundCompleted();
+          store.answerCurrentCard(true); // completed!
         },
       );
     }
@@ -1172,39 +1334,25 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         children: [
           Glass(
             radius: 18,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-            child: Row(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: const Row(
               children: [
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: hasInteracted
-                            ? '$correctCount / ${blocks.length}'
-                            : '${blocks.length} bloques',
-                        style: const TextStyle(
-                          color: RefColors.ink,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      TextSpan(text: hasInteracted ? ' correctos' : ''),
-                    ],
-                  ),
-                  style: const TextStyle(
-                    color: RefColors.muted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
+                Icon(
+                  Icons.info_outline,
+                  color: RefColors.cyan,
+                  size: 16,
                 ),
-                const Spacer(),
-                RefChip(
-                  hasInteracted && allCorrect
-                      ? 'Correcto'
-                      : selectingDestination
-                      ? 'Elige destino'
-                      : 'Toca un bloque',
-                  dense: true,
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Mantén presionado un bloque para arrastrarlo a su lugar, o toca dos bloques para intercambiar sus posiciones.',
+                    style: TextStyle(
+                      color: RefColors.dim,
+                      fontSize: 11,
+                      height: 1.35,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -1237,7 +1385,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               itemCount: _blockOrderIndexes.length,
               itemBuilder: (context, index) {
                 final blockText = blocks[_blockOrderIndexes[index]];
-                return ReorderableDragStartListener(
+                return _CustomReorderableDelayedDragStartListener(
                   key: ValueKey('block-$index-${_blockOrderIndexes[index]}'),
                   index: index,
                   child: Padding(
@@ -1436,13 +1584,16 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             timeValue: _formatMmSs(_letterSecondsLeft),
           ),
           const SizedBox(height: 12),
-          _FirstLetterSentence(
-            text: card.back,
-            level: level,
-            targets: _letterTargets,
-            answers: _letterAnswers,
-            activeIndex: _activeLetterIndex,
-            onBlankTap: _activateLetterBlank,
+          Expanded(
+            child: _FirstLetterSentence(
+              text: card.back,
+              level: level,
+              targets: _letterTargets,
+              targetPositions: _letterTargetPositions,
+              answers: _letterAnswers,
+              activeIndex: _activeLetterIndex,
+              onBlankTap: _activateLetterBlank,
+            ),
           ),
           const SizedBox(height: 14),
           if (complete)
@@ -1479,28 +1630,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 ],
               ),
             )
-          else if (_letterLost)
+          else if (_letterLost || remainingAttempts == 0)
             _LostPanel(
-              title: '¡Tiempo agotado!',
-              subtitle: 'Se acabó el tiempo. Inténtalo de nuevo.',
+              title: _letterLost ? '¡Tiempo agotado!' : '¡Sin intentos!',
+              subtitle: _letterLost
+                  ? 'Se acabó el tiempo. Inténtalo de nuevo.'
+                  : 'Cometiste demasiados errores. Inténtalo de nuevo.',
               onRetry: _retryLetter,
             )
           else ...[
             _KeyboardCard(
-              onLetterTap: remainingAttempts == 0 ? null : _selectFirstLetter,
+              onLetterTap: _selectFirstLetter,
             ),
-            if (hasInput && !complete && remainingAttempts == 0) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Sin intentos restantes.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: RefColors.urgent,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
           ],
         ],
       );
@@ -1654,8 +1795,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       _ensureFogState(card.id);
       return _FogStep(
         targetText: card.back,
-        round: _fogRound,
         finished: _fogFinished,
+        level: _fogLevelForSlug(slug),
+        showHintTemp: _fogShowHintTemp,
         onRoundCompleted: _onFogRoundCompleted,
       );
     }
@@ -1759,6 +1901,129 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
   }
 
+  Widget _buildSoloLecturaText(BuildContext context, int visibleChars) {
+    final verses = _currentBatchVerses(context);
+    const style = TextStyle(
+      fontSize: 20,
+      height: 1.38,
+      fontWeight: FontWeight.w900,
+      fontFamily: 'Outfit',
+    );
+
+    if (verses.length == 1) {
+      final text = verses.first.text;
+      final safeGreen = visibleChars.clamp(0, text.length);
+      final lead = text.substring(0, safeGreen);
+      final tail = text.substring(safeGreen);
+      return Text.rich(
+        TextSpan(
+          style: style,
+          children: [
+            TextSpan(
+              text: lead,
+              style: const TextStyle(color: RefColors.lime),
+            ),
+            TextSpan(
+              text: tail,
+              style: const TextStyle(color: Colors.transparent),
+            ),
+          ],
+        ),
+        textAlign: TextAlign.center,
+      );
+    }
+
+    var charsShown = 0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < verses.length; i++) ...[
+          () {
+            final versoText = verses[i].text;
+            final safeGreen = (visibleChars - charsShown).clamp(0, versoText.length);
+            charsShown += versoText.length;
+
+            final lead = versoText.substring(0, safeGreen);
+            final tail = versoText.substring(safeGreen);
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: i == verses.length - 1 ? 0 : 10,
+              ),
+              child: Text.rich(
+                TextSpan(
+                  style: style,
+                  children: [
+                    TextSpan(
+                      text: '${verses[i].number}  ',
+                      style: const TextStyle(
+                        color: RefColors.pink,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    TextSpan(
+                      text: lead,
+                      style: const TextStyle(color: RefColors.lime),
+                    ),
+                    TextSpan(
+                      text: tail,
+                      style: const TextStyle(color: Colors.transparent),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }(),
+        ],
+      ],
+    );
+  }
+
+  void _startSoloLecturaAnimation(AppStore store, int totalChars, List<int> verseEnds, String fullText) {
+    _soloLecturaTimer?.cancel();
+    _soloLecturaPauseUntil = null;
+    _soloLecturaTimer = Timer.periodic(const Duration(milliseconds: 75), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_soloLecturaPauseUntil != null && DateTime.now().isBefore(_soloLecturaPauseUntil!)) {
+        return;
+      }
+      final nextVisible = _soloLecturaVisibleChars + 1;
+      if (nextVisible >= totalChars) {
+        timer.cancel();
+        _soloLecturaTimer = null;
+        _soloLecturaPauseUntil = null;
+        setState(() {
+          _soloLecturaVisibleChars = totalChars;
+        });
+        store.markExerciseStepCompleted('00-solo-lectura');
+      } else {
+        var pauseDuration = 0;
+        if (verseEnds.contains(nextVisible)) {
+          pauseDuration = 750;
+        } else if (nextVisible - 1 < fullText.length) {
+          final char = fullText[nextVisible - 1];
+          if (char == '.' || char == '?' || char == '!') {
+            pauseDuration = 450;
+          } else if (char == ',' || char == ';' || char == ':') {
+            pauseDuration = 250;
+          }
+        }
+
+        if (pauseDuration > 0) {
+          _soloLecturaPauseUntil = DateTime.now().add(Duration(milliseconds: pauseDuration));
+        }
+
+        setState(() {
+          _soloLecturaVisibleChars = nextVisible;
+        });
+      }
+    });
+  }
+
   Widget _realExerciseFooter(
     BuildContext context,
     AppStore store,
@@ -1788,6 +2053,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   : 'Revela todo para continuar',
               enabled: completed,
               onTap: () {
+                ActiveMediaRegistry.stopAll();
                 Navigator.push(
                   context,
                   AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
@@ -1798,23 +2064,24 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ],
       );
     }
-    if (slug == '01-escuchar' ||
+    if (slug == '00-solo-lectura' ||
+        slug == '01-escuchar' ||
         slug == '03-leer-voz' ||
-        slug == '04-escuchar-voz' ||
-        slug == '08-voz-guiada' ||
-        _isFinalVoiceSlug(slug)) {
+        slug == '04-escuchar-voz') {
       final showSkip =
+          slug == '01-escuchar' ||
           slug == '03-leer-voz' ||
-          slug == '04-escuchar-voz' ||
-          slug == '08-voz-guiada' ||
-          _isFinalVoiceSlug(slug);
+          slug == '04-escuchar-voz';
       final cta = _ActionCta(
         label: _footerLabel(slug, checked: _checked, completed: completed),
         enabled: completed,
-        onTap: () => Navigator.push(
-          context,
-          AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-        ),
+        onTap: () {
+          ActiveMediaRegistry.stopAll();
+          Navigator.push(
+            context,
+            AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
+          );
+        },
       );
       if (!showSkip) return cta;
       return Row(
@@ -1822,8 +2089,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           SizedBox(
             width: 118,
             child: GhostButton(
-              'Saltar',
+              'Omitir',
               onTap: () {
+                ActiveMediaRegistry.stopAll();
                 store.markExerciseStepCompleted(slug);
                 Navigator.push(
                   context,
@@ -1837,13 +2105,74 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ],
       );
     }
+    if (_isFogSlug(slug) || _isFinalVoiceSlug(slug)) {
+      final label = _footerLabel(slug, checked: _checked, completed: completed);
+      final enabled = completed;
+      return Row(
+        children: [
+          SizedBox(
+            width: 118,
+            child: GhostButton(
+              'Omitir',
+              onTap: () {
+                ActiveMediaRegistry.stopAll();
+                store.markExerciseStepCompleted(slug);
+                if (_isFinalVoiceSlug(slug)) {
+                  _completeSessionCard(context, store, correct: true);
+                  return;
+                }
+                Navigator.push(
+                  context,
+                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
+                );
+              },
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _ActionCta(
+              label: label,
+              enabled: enabled,
+              onTap: () {
+                ActiveMediaRegistry.stopAll();
+                if (_isFinalVoiceSlug(slug)) {
+                  _completeSessionCard(context, store, correct: true);
+                  return;
+                }
+                Navigator.push(
+                  context,
+                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
+                );
+              },
+            ),
+          ),
+        ],
+      );
+    }
+    final showOmitirForDefault =
+        slug == '05-bloques' ||
+        _isFirstLetterSlug(slug) ||
+        slug == '09-quiz';
+
     return Row(
       children: [
         SizedBox(
           width: 118,
           child: GhostButton(
-            'Pista',
+            showOmitirForDefault ? 'Omitir' : 'Pista',
             onTap: () {
+              if (showOmitirForDefault) {
+                ActiveMediaRegistry.stopAll();
+                store.markExerciseStepCompleted(slug);
+                if (slug == '09-quiz') {
+                  store.answerCurrentCard(true);
+                }
+                Navigator.push(
+                  context,
+                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
+                );
+                return;
+              }
               if (slug == '05-bloques') {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -1870,6 +2199,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               completed: completed,
             ),
             onTap: () {
+              ActiveMediaRegistry.stopAll();
               if (_isPassiveStep(slug)) {
                 if (!completed) {
                   store.markExerciseStepCompleted(slug);
@@ -1974,6 +2304,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     required bool checked,
     required bool completed,
   }) {
+    if (slug == '00-solo-lectura') {
+      return completed ? 'Siguiente →' : 'Toca el texto para revelar palabras';
+    }
     if (slug == '01-escuchar') {
       return completed ? 'Siguiente →' : 'Escucha completa requerida';
     }
@@ -1983,7 +2316,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '04-escuchar-voz') {
       return completed ? 'Siguiente →' : 'Escucha tu lectura para continuar';
     }
-    if (slug == '08-voz-guiada') {
+    if (_isFogSlug(slug)) {
       return completed ? 'Siguiente →' : 'Recita para continuar';
     }
     if (_isFinalVoiceSlug(slug)) {
@@ -2331,10 +2664,7 @@ class _ProgressiveFragmentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final words = _studyWords(_cardStudyText(context));
     final safeVisible = visibleWords.clamp(0, words.length);
-    final store = AppScope.of(context);
-    final source = store.activeDeck.isBible
-        ? '${_cardSourceText(context)} · RV1909'
-        : _cardSourceText(context);
+    final source = _cardSourceText(context);
     return GestureDetector(
       onTap: safeVisible >= words.length ? null : onTap,
       child: Glass(
@@ -2620,6 +2950,22 @@ class _RealFinalReview extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CustomReorderableDelayedDragStartListener extends ReorderableDragStartListener {
+  const _CustomReorderableDelayedDragStartListener({
+    required super.child,
+    required super.index,
+    super.key,
+    super.enabled,
+  });
+
+  @override
+  MultiDragGestureRecognizer createRecognizer() {
+    return DelayedMultiDragGestureRecognizer(
+      delay: const Duration(milliseconds: 175), // Highly responsive 175ms delay based on user preference
     );
   }
 }

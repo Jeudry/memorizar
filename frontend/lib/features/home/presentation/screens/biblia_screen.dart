@@ -320,7 +320,9 @@ class _BibleSearchResults extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final results = AppScope.of(context).searchBible(query);
+    final store = AppScope.of(context);
+    final results = store.searchBible(query);
+    final bibleName = AppStore.bundledBibles[store.bibleVersion]?.name ?? 'la Biblia';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -361,9 +363,9 @@ class _BibleSearchResults extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'No encontré coincidencias en Reina Valera 1909. Prueba con una referencia como Salmos 23, Juan 3:16 o una palabra del texto.',
-                  style: TextStyle(
+                Text(
+                  'No encontré coincidencias en $bibleName. Prueba con una referencia como Salmos 23, Juan 3:16 o una palabra del texto.',
+                  style: const TextStyle(
                     color: RefColors.muted,
                     fontSize: 12,
                     height: 1.45,
@@ -372,7 +374,7 @@ class _BibleSearchResults extends StatelessWidget {
               ] else
                 for (final verse in results) ...[
                   Text(
-                    '${verse.ref} · RV1909',
+                    '${verse.ref} · ${store.bibleVersion.toUpperCase()}',
                     style: const TextStyle(
                       color: RefColors.pink,
                       fontSize: 12,
@@ -1956,17 +1958,18 @@ String _cardStudyText(BuildContext context) {
 /// el front no es una referencia, el número es secuencial 1..N.
 List<({int number, String text})> _currentBatchVerses(BuildContext context) {
   final store = AppScope.of(context);
-  final batch = store.currentBatchCards;
-  if (batch.isEmpty) {
-    final card = store.activeCard;
-    final m = RegExp(r':(\d+)$').firstMatch(card.front.trim());
-    return [(number: int.tryParse(m?.group(1) ?? '') ?? 1, text: card.back)];
+  final deck = store.activeDeck;
+  final List<MemoryCardData> batch;
+  if (deck.isBible && deck.cards.length > 1 && store.sessionDailyTarget > 1) {
+    final count = store.sessionDailyTarget.clamp(1, deck.cards.length);
+    batch = deck.cards.take(count).toList();
+  } else {
+    batch = [store.activeCard];
   }
   return [
     for (var i = 0; i < batch.length; i++)
       () {
-        final m =
-            RegExp(r':(\d+)$').firstMatch(batch[i].front.trim());
+        final m = RegExp(r':(\d+)$').firstMatch(batch[i].front.trim());
         final num = int.tryParse(m?.group(1) ?? '') ?? (i + 1);
         return (number: num, text: batch[i].back);
       }()
@@ -2083,6 +2086,7 @@ int _flowStepNumber(String slug) {
 }
 
 String _realStepTitle(String slug) {
+  if (slug == '00-solo-lectura') return 'Solo lectura';
   if (slug == '01-escuchar') return 'Escuchar';
   if (slug == '02-niebla-n1') return 'Niebla N1';
   if (slug == '03-leer-voz') return 'Leer en voz';
@@ -2095,7 +2099,6 @@ String _realStepTitle(String slug) {
   if (slug == '15-banco-completo') return 'Banco completo';
   if (slug == '17-niebla-n2') return 'Niebla N2';
   if (slug == '16-niebla' || slug == '16-niebla-n3') return 'Niebla N3';
-  if (slug == '18-recit-n1') return 'Completar recitación';
   if (slug.contains('voz')) return 'Recitación';
   return 'Estudio activo';
 }
@@ -2119,6 +2122,7 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
 
   // Intro: pasos básicos de preparación (escuchar / leer / bloques).
   final intro = <String>[
+    '00-solo-lectura',
     '01-escuchar',
     '03-leer-voz',
     '04-escuchar-voz',
@@ -2127,11 +2131,8 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
   final level1 = <String>[
     '06-completar-n1',
     '07-primera-letra-n1',
-    '18-recit-n1', // completar recitación (un trozo seguido a recitar)
   ];
   final level2 = <String>[
-    '08-voz-guiada',
-    '17-niebla-n2', // recitación intermedia, blur medio
     '10-completar-n2',
     '11-primera-letra-n2',
   ];
@@ -2140,17 +2141,25 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     '12-completar-n3',
     '13-primera-letra-n3',
     '15-banco-completo',
-    '16-niebla-n3', // niebla densa (el "16-niebla" original ahora renombrado)
   ];
 
   final slugs = <String>[
     ...intro,
-    // Niebla N1: primer ejercicio activo de recitación → bloque de práctica,
-    // no el bloque inicial. El usuario recita el texto borroso con el mic.
-    '02-niebla-n1',
+    // Nivel 1: práctica activa + niebla N1 al final del nivel 1
     ...pick(level1, difficulty == 0 ? 1 : 2),
-    if (difficulty >= 1) ...pick(level2, difficulty == 1 ? 2 : 3),
-    if (difficulty >= 1) ...pick(level3Optional, difficulty == 1 ? 2 : 3),
+    '02-niebla-n1',
+    
+    // Nivel 2: práctica activa + niebla N2 al final del nivel 2
+    if (difficulty >= 1) ...[
+      ...pick(level2, difficulty == 1 ? 2 : 3),
+      '17-niebla-n2',
+    ],
+    
+    // Nivel 3: práctica premium/avanzada + niebla N3 al final del nivel 3
+    if (difficulty >= 1) ...[
+      ...pick(level3Optional, difficulty == 1 ? 2 : 3),
+      '16-niebla-n3',
+    ],
     '14-voz-final',
   ];
   return slugs.map(_flowData).toList();
@@ -2325,9 +2334,9 @@ String _firstLetterAnswer(String text, {required int level}) {
   return words.map((word) => word.substring(0, 1)).join('');
 }
 
-List<String> _firstLetterTargets(String text, {required int level}) {
+(List<String>, List<int>) _firstLetterTargetsWithPositions(String text, {required int level}) {
   final words = _studyWords(text);
-  if (words.isEmpty) return [];
+  if (words.isEmpty) return ([], []);
   final targetCount = switch (level) {
     1 => 4,
     2 => (words.length * 0.7).round(),
@@ -2340,14 +2349,20 @@ List<String> _firstLetterTargets(String text, {required int level}) {
   };
   final rng = math.Random();
   final available = words.skip(visibleWords).toList();
-  if (available.isEmpty) return words.take(1).toList();
+  if (available.isEmpty) return ([words.first], [0]);
   final indexes = List.generate(available.length, (i) => i);
   indexes.shuffle(rng);
   final selected = indexes
       .take(targetCount.clamp(1, available.length).toInt())
       .toList();
-  selected.sort();
-  return selected.map((i) => available[i]).toList();
+  selected.sort((a, b) => a.compareTo(b));
+  final targets = selected.map((i) => available[i]).toList();
+  final positions = selected.map((i) => i + visibleWords).toList();
+  return (targets, positions);
+}
+
+List<String> _firstLetterTargets(String text, {required int level}) {
+  return _firstLetterTargetsWithPositions(text, level: level).$1;
 }
 
 int _editDistance(String a, String b) {
@@ -2529,10 +2544,11 @@ int _levenshtein(String a, String b) {
 List<String> _studyBlocks(BuildContext context) {
   final words = _studyWords(_cardStudyText(context));
   final blocks = <String>[];
-  for (var i = 0; i < words.length; i += 2) {
-    blocks.add(words.skip(i).take(2).join(' '));
+  final size = words.length > 18 ? 3 : 2;
+  for (var i = 0; i < words.length; i += size) {
+    blocks.add(words.skip(i).take(size).join(' '));
   }
-  return blocks.take(4).toList();
+  return blocks;
 }
 
 String _maskedStudyLine(BuildContext context, {required int visibleWords}) {
@@ -2867,8 +2883,8 @@ class _ThemesBrowse extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 12),
-        const _PlansEntry(),
+        // const SizedBox(height: 12),
+        // const _PlansEntry(),
       ],
     );
   }
@@ -2881,7 +2897,7 @@ class _PlansEntry extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       borderRadius: BorderRadius.circular(14),
-      onTap: () => Navigator.pushNamed(context, AppRoutes.plans),
+      onTap: () => Navigator.pushNamed(context, AppRoutes.home),
       child: Glass(
         radius: 14,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),

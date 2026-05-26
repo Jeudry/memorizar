@@ -445,6 +445,7 @@ class _FirstLetterSentence extends StatelessWidget {
   final String? text;
   final int level;
   final List<String>? targets;
+  final List<int>? targetPositions;
   final List<String?>? answers;
   final int activeIndex;
   final ValueChanged<int>? onBlankTap;
@@ -453,6 +454,7 @@ class _FirstLetterSentence extends StatelessWidget {
     this.text,
     required this.level,
     this.targets,
+    this.targetPositions,
     this.answers,
     this.activeIndex = 0,
     this.onBlankTap,
@@ -463,8 +465,11 @@ class _FirstLetterSentence extends StatelessWidget {
     final isHarder = level >= 2;
     final sourceText = text ?? _cardStudyText(context);
     final words = _studyWords(sourceText);
-    final targetWords =
-        targets ?? _firstLetterTargets(sourceText, level: level);
+    final targetsData = targetPositions != null && targets != null
+        ? (targets!, targetPositions!)
+        : _firstLetterTargetsWithPositions(sourceText, level: level);
+    final targetWords = targetsData.$1;
+    final positions = targetsData.$2;
     final answerWords =
         answers ?? List<String?>.filled(targetWords.length, null);
     final visibleWords = switch (level) {
@@ -472,9 +477,8 @@ class _FirstLetterSentence extends StatelessWidget {
       2 => 1,
       _ => 0,
     };
-    final usedTargetIndexes = <int>{};
     return Glass(
-      padding: const EdgeInsets.fromLTRB(18, 32, 18, 32),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
       gradient: LinearGradient(
         colors: [
           RefColors.violet.withValues(alpha: .28),
@@ -483,64 +487,52 @@ class _FirstLetterSentence extends StatelessWidget {
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ),
-      child: Center(
-        child: Wrap(
-          spacing: isHarder ? 8 : 10,
-          runSpacing: isHarder ? 12 : 14,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          alignment: WrapAlignment.center,
-          children: [
-            for (var wordIndex = 0; wordIndex < words.length; wordIndex++)
-              if (wordIndex < visibleWords)
-                _LetterWord(words[wordIndex])
-              else
-                _letterWidget(
-                  words[wordIndex],
-                  usedTargetIndexes,
-                  targetWords,
-                  answerWords,
-                ),
-            const Text(
-              '.',
-              style: TextStyle(fontSize: 23, fontWeight: FontWeight.w900),
-            ),
-          ],
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        child: Container(
+          width: double.infinity,
+          alignment: Alignment.center,
+          child: Wrap(
+            spacing: isHarder ? 8 : 10,
+            runSpacing: isHarder ? 12 : 14,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.center,
+            children: [
+              for (var wordIndex = 0; wordIndex < words.length; wordIndex++)
+                if (wordIndex < visibleWords)
+                  _LetterWord(words[wordIndex])
+                else
+                  _letterWidget(
+                    wordIndex,
+                    words[wordIndex],
+                    positions,
+                    answerWords,
+                  ),
+              const Text(
+                '.',
+                style: TextStyle(fontSize: 23, fontWeight: FontWeight.w900),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _letterWidget(
+    int wordIndex,
     String word,
-    Set<int> usedTargetIndexes,
-    List<String> targetWords,
+    List<int> targetPositions,
     List<String?> answerWords,
   ) {
-    final targetIndex = _matchingUnusedTargetIndex(
-      word,
-      usedTargetIndexes,
-      targetWords,
-    );
-    if (targetIndex == null) return _LetterWord(word);
-    usedTargetIndexes.add(targetIndex);
+    final targetIndex = targetPositions.indexOf(wordIndex);
+    if (targetIndex == -1) return _LetterWord(word);
     return _LetterBlank(
       answer: answerWords[targetIndex],
       active: activeIndex == targetIndex && answerWords[targetIndex] == null,
       wordLength: word.length,
       onTap: () => onBlankTap?.call(targetIndex),
     );
-  }
-
-  int? _matchingUnusedTargetIndex(
-    String word,
-    Set<int> usedTargetIndexes,
-    List<String> targetWords,
-  ) {
-    for (var index = 0; index < targetWords.length; index++) {
-      if (usedTargetIndexes.contains(index)) continue;
-      if (_sameAnswer(word, targetWords[index])) return index;
-    }
-    return null;
   }
 }
 
@@ -562,7 +554,7 @@ class _LetterWord extends StatelessWidget {
   }
 }
 
-class _LetterBlank extends StatelessWidget {
+class _LetterBlank extends StatefulWidget {
   final String? answer;
   final bool active;
   final int wordLength;
@@ -576,30 +568,64 @@ class _LetterBlank extends StatelessWidget {
   });
 
   @override
+  State<_LetterBlank> createState() => _LetterBlankState();
+}
+
+class _LetterBlankState extends State<_LetterBlank> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.active) {
+      _ensureVisible();
+    }
+  }
+
+  @override
+  void didUpdateWidget(_LetterBlank oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !oldWidget.active) {
+      _ensureVisible();
+    }
+  }
+
+  void _ensureVisible() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeInOutCubic,
+          alignment: 0.5,
+        );
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final complete = answer != null;
+    final complete = widget.answer != null;
     final accent = complete
         ? RefColors.lime
-        : active
+        : widget.active
         ? RefColors.cyan
         : RefColors.border;
-    final length = wordLength.clamp(1, 14);
+    final length = widget.wordLength.clamp(1, 14);
     return GestureDetector(
-      onTap: complete ? null : onTap,
+      onTap: complete ? null : widget.onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         constraints: BoxConstraints(minWidth: (length * 10.0).clamp(28, 160)),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
         decoration: BoxDecoration(
-          color: active
+          color: widget.active
               ? accent.withValues(alpha: .35)
               : accent.withValues(alpha: complete ? .16 : .08),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: accent.withValues(alpha: active ? 1.0 : .5),
-            width: active ? 2.4 : 1.5,
+            color: accent.withValues(alpha: widget.active ? 1.0 : .5),
+            width: widget.active ? 2.4 : 1.5,
           ),
-          boxShadow: active
+          boxShadow: widget.active
               ? [
                   BoxShadow(
                     color: accent.withValues(alpha: .6),
@@ -610,7 +636,7 @@ class _LetterBlank extends StatelessWidget {
               : null,
         ),
         child: Text(
-          answer ?? '_' * length,
+          widget.answer ?? '_' * length,
           textAlign: TextAlign.center,
           style: TextStyle(
             color: complete ? RefColors.lime : RefColors.ink,
@@ -727,7 +753,8 @@ class _VoiceRecitationPracticeCard extends StatefulWidget {
 }
 
 class _VoiceRecitationPracticeCardState
-    extends State<_VoiceRecitationPracticeCard> {
+    extends State<_VoiceRecitationPracticeCard>
+    with SingleTickerProviderStateMixin {
   bool _ready = false;
   bool _listening = false;
   bool _completed = false;
@@ -739,14 +766,33 @@ class _VoiceRecitationPracticeCardState
   late List<String> _targetBlocks;
   late List<bool> _blockSolved;
   final _audioRecorder = AudioRecorder();
-  Timer? _blockTimer;
+
+  bool _isModelDownloaded = false;
+  bool _isDownloadingModel = false;
+  bool _isModelInitializing = true;
+  double _modelDownloadProgress = 0.0;
+  String _modelStatus = '';
+  String? _recordedPath;
+  bool _finalizing = false;
+  Timer? _autoStopTimer;
+  late AnimationController _pulse;
 
   @override
   void initState() {
     super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
     _targetBlocks = _splitIntoBlocks(widget.targetText);
     _blockSolved = List<bool>.filled(_targetBlocks.length, false);
-    _initRecorder();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (mounted) {
+          _checkModelStatus();
+        }
+      });
+    });
   }
 
   @override
@@ -762,6 +808,82 @@ class _VoiceRecitationPracticeCardState
     }
   }
 
+  Future<void> _checkModelStatus() async {
+    final exists = await WhisperService.instance.checkModelsExist();
+    if (!mounted) return;
+    setState(() {
+      _isModelDownloaded = exists;
+    });
+    if (exists) {
+      await _initWhisper();
+    }
+  }
+
+  Future<void> _initWhisper() async {
+    setState(() {
+      _isModelInitializing = true;
+    });
+    try {
+      await WhisperService.instance.initWhisper();
+      if (!mounted) return;
+      setState(() {
+        _isModelDownloaded = true;
+        _isModelInitializing = false;
+      });
+      await _initRecorder();
+    } catch (e) {
+      debugPrint('Whisper init error in recitation: $e');
+      if (mounted) {
+        setState(() {
+          _isModelInitializing = false;
+        });
+      }
+    }
+  }
+
+  void _downloadModels() {
+    setState(() {
+      _isDownloadingModel = true;
+      _modelDownloadProgress = 0.0;
+      _modelStatus = 'Descargando...';
+    });
+
+    final service = WhisperService.instance;
+    service.downloadProgress.addListener(_onDownloadProgressChanged);
+    service.statusNotifier.addListener(_onStatusChanged);
+
+    service.downloadModels().then((_) async {
+      service.downloadProgress.removeListener(_onDownloadProgressChanged);
+      service.statusNotifier.removeListener(_onStatusChanged);
+      if (!mounted) return;
+      await _initWhisper();
+    }).catchError((e) {
+      service.downloadProgress.removeListener(_onDownloadProgressChanged);
+      service.statusNotifier.removeListener(_onStatusChanged);
+      if (mounted) {
+        setState(() {
+          _isDownloadingModel = false;
+        });
+      }
+    });
+  }
+
+  void _onDownloadProgressChanged() {
+    if (mounted) {
+      setState(() {
+        _modelDownloadProgress = WhisperService.instance.downloadProgress.value;
+      });
+    }
+  }
+
+  void _onStatusChanged() {
+    if (mounted) {
+      setState(() {
+        _modelStatus = WhisperService.instance.statusNotifier.value;
+      });
+    }
+  }
+
   Future<void> _initRecorder() async {
     try {
       final available = await _audioRecorder.hasPermission();
@@ -772,81 +894,230 @@ class _VoiceRecitationPracticeCardState
     }
   }
 
-  void _startSimulatedBlocks() {
-    _blockTimer?.cancel();
-    // Resuelve un bloque cada 2.2 segundos para simular una recitación fluida
-    const blockDuration = Duration(milliseconds: 2200);
-
-    _blockTimer = Timer.periodic(blockDuration, (timer) {
-      if (!mounted || !_listening || _completed) {
-        timer.cancel();
-        return;
-      }
-
-      if (_currentBlock < _targetBlocks.length) {
-        final solvedIndex = _currentBlock;
-        setState(() {
-          _blockSolved[solvedIndex] = true;
-          _currentBlock += 1;
-          _recognized = _targetBlocks[solvedIndex];
-        });
-
-        if (_currentBlock >= _targetBlocks.length) {
-          timer.cancel();
-          _completed = true;
-          _stopAndCancelSimulation(passed: true);
-        }
-      }
-    });
-  }
-
-  Future<void> _stopAndCancelSimulation({required bool passed}) async {
-    _blockTimer?.cancel();
-    try {
-      await _audioRecorder.stop();
-    } catch (e) {
-      debugPrint('Error stopping recitation recorder: $e');
-    }
-    if (!mounted) return;
-    setState(() {
-      _listening = false;
-      if (passed) {
-        _completed = true;
-      }
-    });
-    widget.onCompleted(passed);
-  }
-
   @override
   void dispose() {
-    _blockTimer?.cancel();
+    _autoStopTimer?.cancel();
+    _pulse.dispose();
+    try {
+      WhisperService.instance.downloadProgress.removeListener(_onDownloadProgressChanged);
+      WhisperService.instance.statusNotifier.removeListener(_onStatusChanged);
+    } catch (_) {}
     _audioRecorder.stop().then((_) => _audioRecorder.dispose());
     super.dispose();
   }
 
   Future<void> _toggleListening() async {
-    if (!_ready) {
-      await _initRecorder();
+    if (!_ready || !_isModelDownloaded) {
+      if (!_isModelDownloaded && !_isDownloadingModel && !_isModelInitializing) {
+        _downloadModels();
+      } else {
+        await _initRecorder();
+      }
       return;
     }
     if (_listening) {
-      await _stopAndCancelSimulation(passed: false);
+      await _finishCapture();
       return;
     }
     setState(() {
       _listening = true;
       _recognized = '';
     });
+
+    _autoStopTimer?.cancel();
+    if (_currentBlock < _targetBlocks.length) {
+      final blockText = _targetBlocks[_currentBlock];
+      final words = blockText.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+      final limitSeconds = ((words / 1.5).ceil() + 6).clamp(8, 90);
+      _autoStopTimer = Timer(Duration(seconds: limitSeconds), () {
+        if (mounted && _listening) {
+          _finishCapture();
+        }
+      });
+    }
     try {
       if (await _audioRecorder.hasPermission()) {
         final dir = await getTemporaryDirectory();
-        final path = '${dir.path}/recit_${DateTime.now().millisecondsSinceEpoch}.m4a';
-        await _audioRecorder.start(const RecordConfig(), path: path);
-        _startSimulatedBlocks();
+        final path = '${dir.path}/recit_${DateTime.now().millisecondsSinceEpoch}.raw';
+        await _audioRecorder.start(
+          const RecordConfig(
+            encoder: AudioEncoder.pcm16bits,
+            sampleRate: 16000,
+            numChannels: 1,
+          ),
+          path: path,
+        );
+        _recordedPath = path;
+        _pulse.repeat();
       }
     } catch (e) {
       debugPrint('Recitation Audio Recorder Error: $e');
       if (mounted) setState(() => _listening = false);
+    }
+  }
+
+  Future<void> _finishCapture() async {
+    if (_finalizing) return;
+    _finalizing = true;
+    _autoStopTimer?.cancel();
+    _autoStopTimer = null;
+    _pulse.stop();
+    _pulse.value = 0;
+    try {
+      final isRecording = await _audioRecorder.isRecording();
+      if (!isRecording) {
+        throw Exception('El micrófono no está grabando. Verifica permisos del sistema.');
+      }
+      final path = await _audioRecorder.stop();
+      if (path != null) {
+        final wavPath = await _convertPcmToWav(path);
+        _recordedPath = wavPath;
+      }
+      if (!mounted) return;
+      setState(() {
+        _listening = false;
+        _recognized = 'Analizando tu voz...';
+      });
+
+      if (_recordedPath != null) {
+        final text = await WhisperService.instance.transcribe(_recordedPath!);
+        _evaluateBlock(text);
+      } else {
+        setState(() {
+          _recognized = '';
+        });
+      }
+    } catch (e) {
+      debugPrint('Error transcribing recitation: $e');
+      if (mounted) {
+        setState(() {
+          _listening = false;
+          _recognized = 'Error: $e';
+        });
+      }
+    } finally {
+      _finalizing = false;
+    }
+  }
+
+  Future<String> _convertPcmToWav(String rawPath) async {
+    final file = File(rawPath);
+    if (!await file.exists()) return rawPath;
+
+    final bytes = await file.readAsBytes();
+    final wavHeader = _buildWavHeader(bytes.length);
+
+    final wavPath = rawPath.replaceAll('.raw', '.wav');
+    final wavFile = File(wavPath);
+
+    final builder = BytesBuilder();
+    builder.add(wavHeader);
+    builder.add(bytes);
+
+    await wavFile.writeAsBytes(builder.toBytes());
+
+    try {
+      await file.delete();
+    } catch (e) {
+      debugPrint('Error deleting raw file: $e');
+    }
+
+    return wavPath;
+  }
+
+  Uint8List _buildWavHeader(int dataLength) {
+    final header = Uint8List(44);
+    final data = ByteData.view(header.buffer);
+
+    // "RIFF"
+    header[0] = 82; // R
+    header[1] = 73; // I
+    header[2] = 70; // F
+    header[3] = 70; // F
+
+    // Chunk Size (file length - 8)
+    data.setUint32(4, dataLength + 36, Endian.little);
+
+    // "WAVE"
+    header[8] = 87;  // W
+    header[9] = 65;  // A
+    header[10] = 86; // V
+    header[11] = 69; // E
+
+    // "fmt "
+    header[12] = 102; // f
+    header[13] = 109; // m
+    header[14] = 116; // t
+    header[15] = 32;  //  
+
+    // Subchunk 1 Size (16)
+    data.setUint32(16, 16, Endian.little);
+
+    // Audio Format (1 = PCM)
+    data.setUint16(20, 1, Endian.little);
+
+    // Num Channels (1 = Mono)
+    data.setUint16(22, 1, Endian.little);
+
+    // Sample Rate (16000)
+    data.setUint32(24, 16000, Endian.little);
+
+    // Byte Rate (SampleRate * NumChannels * BitsPerSample/8 = 16000 * 1 * 16/8 = 32000)
+    data.setUint32(28, 32000, Endian.little);
+
+    // Block Align (NumChannels * BitsPerSample/8 = 2)
+    data.setUint16(32, 2, Endian.little);
+
+    // Bits Per Sample (16)
+    data.setUint16(34, 16, Endian.little);
+
+    // "data"
+    header[36] = 100; // d
+    header[37] = 97;  // a
+    header[38] = 116; // t
+    header[39] = 97;  // a
+
+    // Subchunk 2 Size (data length)
+    data.setUint32(40, dataLength, Endian.little);
+
+    return header;
+  }
+
+  void _evaluateBlock(String text) {
+    if (!mounted) return;
+    if (text.isEmpty) {
+      setState(() {
+        _recognized = 'No se escuchó nada, intenta de nuevo.';
+      });
+      return;
+    }
+
+    final target = _targetBlocks[_currentBlock];
+    final isMatch = _blocksMatch(text, target);
+
+    if (isMatch) {
+      setState(() {
+        _blockSolved[_currentBlock] = true;
+        _currentBlock += 1;
+        _recognized = text;
+      });
+      HapticFeedback.lightImpact();
+
+      if (_currentBlock >= _targetBlocks.length) {
+        _completed = true;
+        widget.onCompleted(true);
+      }
+    } else {
+      setState(() {
+        _attemptsRemaining -= 1;
+        _lastWrongAt = DateTime.now().millisecondsSinceEpoch;
+        _recognized = text;
+      });
+      HapticFeedback.heavyImpact();
+
+      if (_attemptsRemaining <= 0) {
+        widget.onCompleted(false);
+      }
     }
   }
 
@@ -905,6 +1176,198 @@ class _VoiceRecitationPracticeCardState
 
   @override
   Widget build(BuildContext context) {
+    if (!_isModelDownloaded) {
+      final downloadPercent = (_modelDownloadProgress * 100).round();
+      final isBlue = widget.colorMode == _ListeningColorMode.blue;
+      final accent = isBlue ? RefColors.cyan : RefColors.pink;
+      final displayStatus = _isModelInitializing
+          ? 'Configurando módulo de voz...'
+          : _modelStatus.startsWith('Descargando')
+              ? 'Optimizando archivos...'
+              : _modelStatus.contains('con éxito')
+                  ? 'Verificando componentes...'
+                  : _modelStatus.isEmpty
+                      ? 'Iniciando instalación...'
+                      : _modelStatus;
+
+      return Glass(
+        radius: 18,
+        padding: const EdgeInsets.fromLTRB(20, 26, 20, 26),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Badge de Componente del Sistema
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: .10),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: accent.withValues(alpha: .25),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: accent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'COMPONENTE DE SISTEMA',
+                    style: TextStyle(
+                      color: RefColors.cyan,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Icono Central tipo Chip de IA
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: .10),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: accent.withValues(alpha: .20),
+                  width: 2,
+                ),
+              ),
+              child: Icon(
+                Icons.memory_rounded,
+                color: accent,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 18),
+
+            const Text(
+              'Motor de Voz de Alta Precisión',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: RefColors.ink,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.2,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Optimiza la app con reconocimiento de voz avanzado. Permite transcribir y recitar tus versos palabra por palabra de forma inmediata, segura y privada.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: RefColors.muted,
+                fontSize: 11,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 22),
+
+            if (_isDownloadingModel || _isModelInitializing) ...[
+              Text(
+                _isModelInitializing
+                    ? 'Configurando módulo...'
+                    : 'Preparando motor: $downloadPercent%',
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 10),
+              RefProgress(_modelDownloadProgress.clamp(0.02, 1.0)),
+              const SizedBox(height: 8),
+              Text(
+                displayStatus,
+                style: const TextStyle(
+                  color: RefColors.dim,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ] else ...[
+              GestureDetector(
+                onTap: _downloadModels,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 26,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: isBlue ? RefColors.cool : RefColors.primary,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: .20),
+                        blurRadius: 18,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.bolt_rounded, color: Colors.white, size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'Activar Reconocimiento de Voz',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Fichas técnicas sutiles
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.sd_storage_outlined, size: 12, color: RefColors.dim),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'Componente: 375 MB',
+                    style: TextStyle(
+                      color: RefColors.dim,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Icon(Icons.shield_outlined, size: 12, color: RefColors.dim),
+                  const SizedBox(width: 4),
+                  const Text(
+                    '100% Seguro y Privado',
+                    style: TextStyle(
+                      color: RefColors.dim,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
     final isBlue = widget.colorMode == _ListeningColorMode.blue;
     final accent = _completed
         ? RefColors.lime
@@ -917,132 +1380,248 @@ class _VoiceRecitationPracticeCardState
     return Glass(
       radius: 18,
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Stack(
         children: [
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (var i = 0; i < _targetBlocks.length; i++)
-                _RecitationBlock(
-                  text: _targetBlocks[i],
-                  solved: _blockSolved[i],
-                  active: i == _currentBlock && !_completed,
-                  accent: accent,
-                ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              GestureDetector(
-                onTap: _toggleListening,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 220),
-                  width: 58,
-                  height: 58,
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (var i = 0; i < _targetBlocks.length; i++)
+                    _RecitationBlock(
+                      text: _targetBlocks[i],
+                      solved: _blockSolved[i],
+                      active: i == _currentBlock && !_completed,
+                      accent: accent,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  GestureDetector(
+                    onTap: _toggleListening,
+                    child: SizedBox(
+                      width: 58,
+                      height: 58,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          if (_listening)
+                            AnimatedBuilder(
+                              animation: _pulse,
+                              builder: (context, _) {
+                                final t = _pulse.value;
+                                return Container(
+                                  width: 50 + 12 * t,
+                                  height: 50 + 12 * t,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: accent.withValues(alpha: 1 - t),
+                                      width: 2,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 220),
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: accent.withValues(
+                                alpha: _listening ? .55 : .18,
+                              ),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: accent.withValues(alpha: .85),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: accent.withValues(alpha: .35),
+                                  blurRadius: _listening ? 28 : 14,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ],
+                            ),
+                            child: Icon(
+                              _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                              color: RefColors.ink,
+                              size: 24,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: wrongRecent
+                            ? RefColors.urgent.withValues(alpha: .18)
+                            : HtmlRefColors.glassSoft,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: wrongRecent
+                              ? RefColors.urgent
+                              : HtmlRefColors.glassBorder,
+                        ),
+                      ),
+                      child: Text(
+                        _listening
+                            ? 'Escuchando tu voz...'
+                            : (_recognized.isEmpty ? 'Toca el mic y recita' : _recognized),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: (_recognized.isEmpty && !_listening)
+                              ? RefColors.dim
+                              : RefColors.ink,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: .18),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: accent.withValues(alpha: .6)),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '$_attemptsRemaining',
+                          style: TextStyle(
+                            color: _attemptsRemaining <= 1
+                                ? RefColors.urgent
+                                : accent,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          'intentos',
+                          style: TextStyle(
+                            color: accent.withValues(alpha: .85),
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                        Text(
+                          'restantes',
+                          style: TextStyle(
+                            color: accent.withValues(alpha: .85),
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              
+              if (_listening) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                   decoration: BoxDecoration(
-                    color: accent.withValues(alpha: _listening ? .55 : .18),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: accent.withValues(alpha: .85)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: accent.withValues(alpha: .35),
-                        blurRadius: _listening ? 28 : 16,
-                        offset: const Offset(0, 6),
+                    color: accent.withValues(alpha: .04),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: accent.withValues(alpha: .12),
+                      width: 1,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      _ListeningWaveIndicator(color: accent),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Grabando voz...',
+                        style: TextStyle(
+                          color: RefColors.dim,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                        ),
                       ),
                     ],
                   ),
-                  child: Icon(
-                    _listening ? Icons.stop_rounded : Icons.mic_rounded,
-                    color: RefColors.ink,
-                    size: 28,
-                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: wrongRecent
-                        ? RefColors.urgent.withValues(alpha: .18)
-                        : HtmlRefColors.glassSoft,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: wrongRecent
-                          ? RefColors.urgent
-                          : HtmlRefColors.glassBorder,
-                    ),
-                  ),
-                  child: Text(
-                    _recognized.isEmpty
-                        ? (_listening ? 'Escuchando…' : 'Toca el mic y recita')
-                        : _recognized,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: _recognized.isEmpty
-                          ? RefColors.dim
-                          : RefColors.ink,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: .18),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: accent.withValues(alpha: .6)),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '$_attemptsRemaining',
-                      style: TextStyle(
-                        color: _attemptsRemaining <= 1
-                            ? RefColors.urgent
-                            : accent,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    Text(
-                      'intentos',
-                      style: TextStyle(
-                        color: accent.withValues(alpha: .85),
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.1,
-                      ),
-                    ),
-                    Text(
-                      'restantes',
-                      style: TextStyle(
-                        color: accent.withValues(alpha: .85),
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.1,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              ],
             ],
           ),
+          if (_isModelInitializing)
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.25),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 36,
+                            height: 36,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 4,
+                              valueColor: AlwaysStoppedAnimation<Color>(accent),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.65),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: accent.withValues(alpha: 0.3)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.bolt_rounded, color: accent, size: 16),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  'Preparando motor de voz...',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

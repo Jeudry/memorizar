@@ -18,27 +18,133 @@ class _ReadAloudPracticeCard extends StatefulWidget {
   State<_ReadAloudPracticeCard> createState() => _ReadAloudPracticeCardState();
 }
 
-class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
+class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
+    with SingleTickerProviderStateMixin {
   static const _passScore = .60;
   bool _ready = false;
   bool _listening = false;
   bool _completed = false;
-  /// Texto reconocido de forma simulada a medida que pasa el tiempo.
+  
+  bool _isModelDownloaded = false;
+  bool _isDownloadingModel = false;
+  bool _isModelInitializing = true;
+  double _modelDownloadProgress = 0.0;
+  String _modelStatus = '';
+
+  /// Texto reconocido real por Whisper.
   String _recognized = '';
   /// Texto acumulado.
   String _accumulated = '';
-  String _status = 'Toca el micrófono y lee el texto.';
+  String _status = 'Iniciando micrófono...';
   double _score = 0;
   final _audioRecorder = AudioRecorder();
   String? _recordedPath;
+  Timer? _autoStopTimer;
+  // Buffer del stream PCM (modo stream evita AVCaptureAudioFileOutput
+  // deprecated que falla silenciosamente en macOS sandboxed).
+  StreamSubscription<Uint8List>? _pcmSub;
+  final BytesBuilder _pcmBuffer = BytesBuilder(copy: false);
   /// Controla el scroll interno del target text (versos para leer).
   final _targetScrollCtrl = ScrollController();
-  Timer? _simulatedTimer;
+  late AnimationController _pulse;
 
   @override
   void initState() {
     super.initState();
-    _initRecorder();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (mounted) {
+          _checkModelStatus();
+        }
+      });
+    });
+  }
+
+  Future<void> _checkModelStatus() async {
+    final exists = await WhisperService.instance.checkModelsExist();
+    if (!mounted) return;
+    setState(() {
+      _isModelDownloaded = exists;
+    });
+    if (exists) {
+      await _initWhisper();
+    } else {
+      setState(() {
+        _status = 'El modelo de reconocimiento local (375MB) no está descargado.';
+      });
+    }
+  }
+
+  Future<void> _initWhisper() async {
+    setState(() {
+      _isModelInitializing = true;
+      _status = 'Inicializando motor local...';
+    });
+    try {
+      await WhisperService.instance.initWhisper();
+      if (!mounted) return;
+      setState(() {
+        _isModelDownloaded = true;
+        _isModelInitializing = false;
+      });
+      await _initRecorder();
+    } catch (e) {
+      debugPrint('Whisper init error: $e');
+      if (mounted) {
+        setState(() {
+          _isModelInitializing = false;
+          _status = 'Error al inicializar el reconocimiento de voz.';
+        });
+      }
+    }
+  }
+
+  void _downloadModels() {
+    setState(() {
+      _isDownloadingModel = true;
+      _modelDownloadProgress = 0.0;
+      _modelStatus = 'Descargando...';
+    });
+
+    final service = WhisperService.instance;
+    service.downloadProgress.addListener(_onDownloadProgressChanged);
+    service.statusNotifier.addListener(_onStatusChanged);
+
+    service.downloadModels().then((_) async {
+      service.downloadProgress.removeListener(_onDownloadProgressChanged);
+      service.statusNotifier.removeListener(_onStatusChanged);
+      if (!mounted) return;
+      await _initWhisper();
+    }).catchError((e) {
+      service.downloadProgress.removeListener(_onDownloadProgressChanged);
+      service.statusNotifier.removeListener(_onStatusChanged);
+      if (mounted) {
+        setState(() {
+          _isDownloadingModel = false;
+          _status = 'Error al descargar el componente de voz: $e';
+        });
+      }
+    });
+  }
+
+  void _onDownloadProgressChanged() {
+    if (mounted) {
+      setState(() {
+        _modelDownloadProgress = WhisperService.instance.downloadProgress.value;
+      });
+    }
+  }
+
+  void _onStatusChanged() {
+    if (mounted) {
+      setState(() {
+        _modelStatus = WhisperService.instance.statusNotifier.value;
+      });
+    }
   }
 
   Future<void> _initRecorder() async {
@@ -64,50 +170,25 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
 
   @override
   void dispose() {
-    _simulatedTimer?.cancel();
+    _autoStopTimer?.cancel();
+    _pulse.dispose();
+    try {
+      WhisperService.instance.downloadProgress.removeListener(_onDownloadProgressChanged);
+      WhisperService.instance.statusNotifier.removeListener(_onStatusChanged);
+    } catch (_) {}
     _targetScrollCtrl.dispose();
     _audioRecorder.stop().then((_) => _audioRecorder.dispose());
     super.dispose();
   }
 
-  void _startSimulatedProgress() {
-    _simulatedTimer?.cancel();
-    final words = widget.targetText.split(' ').where((w) => w.isNotEmpty).toList();
-    if (words.isEmpty) return;
-
-    final totalWords = words.length;
-    // Estimación: 2.5 palabras por segundo para el progreso.
-    final intervalMs = 400;
-    final totalTicks = (totalWords * 1000 / (2.5 * intervalMs)).round().clamp(10, 150);
-    int currentTick = 0;
-
-    _simulatedTimer = Timer.periodic(Duration(milliseconds: intervalMs), (timer) {
-      if (!mounted || !_listening) {
-        timer.cancel();
-        return;
-      }
-      currentTick++;
-      final ratio = (currentTick / totalTicks).clamp(0.0, 1.0);
-      final currentWordsCount = (totalWords * ratio).round().clamp(0, totalWords);
-      final simulatedRecognized = words.sublist(0, currentWordsCount).join(' ');
-
-      setState(() {
-        _score = ratio * 0.95; // Escala hasta 95%
-        _recognized = simulatedRecognized;
-        _status = 'Grabando voz... Paso $currentWordsCount de $totalWords palabras.';
-      });
-
-      _maybeAutoScrollTarget(simulatedRecognized);
-
-      if (ratio >= 1.0) {
-        timer.cancel();
-      }
-    });
-  }
-
   Future<void> _toggleListening() async {
-    if (!_ready) {
-      await _initRecorder();
+    debugPrint('[ReadAloud] _toggleListening tap. ready=$_ready listening=$_listening modelDl=$_isModelDownloaded');
+    if (!_ready || !_isModelDownloaded) {
+      if (!_isModelDownloaded && !_isDownloadingModel && !_isModelInitializing) {
+        _downloadModels();
+      } else {
+        await _initRecorder();
+      }
       return;
     }
     if (_listening) {
@@ -123,13 +204,38 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
       _status = 'Grabando... lee el texto completo sin interrupciones.';
     });
 
+    _autoStopTimer?.cancel();
+    final words = widget.targetText.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+    final limitSeconds = ((words / 1.5).ceil() + 6).clamp(8, 90);
+    _autoStopTimer = Timer(Duration(seconds: limitSeconds), () {
+      if (mounted && _listening) {
+        _finishCapture();
+      }
+    });
+
     try {
       if (await _audioRecorder.hasPermission()) {
         final dir = await getTemporaryDirectory();
-        final path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-        await _audioRecorder.start(const RecordConfig(), path: path);
+        final path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.wav';
+        // Modo stream: el plugin macOS usa AVAudioEngine (no
+        // AVCaptureAudioFileOutput deprecated). Bufferamos los bytes
+        // PCM y escribimos el WAV nosotros en _finishCapture.
+        _pcmBuffer.clear();
+        final stream = await _audioRecorder.startStream(
+          const RecordConfig(
+            encoder: AudioEncoder.pcm16bits,
+            sampleRate: 16000,
+            numChannels: 1,
+          ),
+        );
+        _pcmSub?.cancel();
+        _pcmSub = stream.listen(
+          (chunk) => _pcmBuffer.add(chunk),
+          onError: (Object e) => debugPrint('[ReadAloud] PCM stream error: $e'),
+        );
         _recordedPath = path;
-        _startSimulatedProgress();
+        _pulse.repeat();
+        debugPrint('[ReadAloud] startStream OK, buffering to $path');
       }
     } catch (e) {
       debugPrint('Audio Recorder Error: $e');
@@ -166,33 +272,177 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
 
   bool _finalizing = false;
   Future<void> _finishCapture() async {
+    debugPrint('[ReadAloud] _finishCapture invoked. _finalizing=$_finalizing');
     if (_finalizing) return;
     _finalizing = true;
-    _simulatedTimer?.cancel();
+    _autoStopTimer?.cancel();
+    _autoStopTimer = null;
+    _pulse.stop();
+    _pulse.value = 0;
+
+    // Actualiza UI INMEDIATAMENTE — no esperes a que stop() resuelva.
+    // En macOS stop() puede colgarse y el usuario percibe que el botón
+    // "no hace nada". Mostramos "Analizando tu voz..." de una.
+    if (mounted) {
+      setState(() {
+        _listening = false;
+        _status = 'Analizando tu voz...';
+      });
+    }
+
     try {
-      final path = await _audioRecorder.stop();
-      if (path != null) _recordedPath = path;
+      debugPrint('[ReadAloud] Stopping stream. Buffered bytes=${_pcmBuffer.length}');
+      // Detener stream + recorder sin bloquear si el plugin se cuelga.
+      await _pcmSub?.cancel();
+      _pcmSub = null;
+      unawaited(
+        _audioRecorder
+            .stop()
+            .timeout(const Duration(seconds: 2), onTimeout: () => null)
+            .catchError((Object e) {
+          debugPrint('[ReadAloud] recorder.stop error: $e');
+          return null;
+        }),
+      );
+
+      final pcmBytes = _pcmBuffer.toBytes();
+      _pcmBuffer.clear();
+      if (pcmBytes.isEmpty || _recordedPath == null) {
+        if (mounted) {
+          setState(() => _status = 'No se capturó audio. Verifica el micrófono.');
+        }
+        return;
+      }
+
+      // Escribir WAV (header + PCM) en disco para Whisper.
+      final wavFile = File(_recordedPath!);
+      await wavFile.parent.create(recursive: true);
+      final builder = BytesBuilder()
+        ..add(_buildWavHeader(pcmBytes.length))
+        ..add(pcmBytes);
+      await wavFile.writeAsBytes(builder.toBytes(), flush: true);
+      debugPrint('[ReadAloud] WAV written: ${wavFile.path} (${pcmBytes.length} bytes PCM)');
+
       if (!mounted) return;
-      setState(() => _listening = false);
-      _grade();
-    } catch (e) {
-      debugPrint('Error al detener la grabación: $e');
+      final text = await WhisperService.instance.transcribe(_recordedPath!);
+      _gradeReal(text);
+    } catch (e, st) {
+      debugPrint('[ReadAloud] Error al detener/transcribir: $e\n$st');
+      if (mounted) {
+        setState(() {
+          _status = 'Error en reconocimiento local: $e';
+        });
+      }
     } finally {
       _finalizing = false;
     }
   }
 
-  void _grade() {
-    const score = 0.95;
-    const passed = true;
+  Future<String> _convertPcmToWav(String rawPath) async {
+    // Si ya es .wav (caso macOS/iOS donde el package escribe WAV nativo),
+    // no hay nada que convertir.
+    if (rawPath.endsWith('.wav')) return rawPath;
+
+    final file = File(rawPath);
+    if (!await file.exists()) return rawPath;
+
+    final bytes = await file.readAsBytes();
+    final wavHeader = _buildWavHeader(bytes.length);
+
+    final wavPath = rawPath.replaceAll('.raw', '.wav');
+    final wavFile = File(wavPath);
+
+    final builder = BytesBuilder();
+    builder.add(wavHeader);
+    builder.add(bytes);
+
+    await wavFile.writeAsBytes(builder.toBytes());
+
+    try {
+      await file.delete();
+    } catch (e) {
+      debugPrint('Error deleting raw file: $e');
+    }
+
+    return wavPath;
+  }
+
+  Uint8List _buildWavHeader(int dataLength) {
+    final header = Uint8List(44);
+    final data = ByteData.view(header.buffer);
+
+    // "RIFF"
+    header[0] = 82; // R
+    header[1] = 73; // I
+    header[2] = 70; // F
+    header[3] = 70; // F
+
+    // Chunk Size (file length - 8)
+    data.setUint32(4, dataLength + 36, Endian.little);
+
+    // "WAVE"
+    header[8] = 87;  // W
+    header[9] = 65;  // A
+    header[10] = 86; // V
+    header[11] = 69; // E
+
+    // "fmt "
+    header[12] = 102; // f
+    header[13] = 109; // m
+    header[14] = 116; // t
+    header[15] = 32;  //  
+
+    // Subchunk 1 Size (16)
+    data.setUint32(16, 16, Endian.little);
+
+    // Audio Format (1 = PCM)
+    data.setUint16(20, 1, Endian.little);
+
+    // Num Channels (1 = Mono)
+    data.setUint16(22, 1, Endian.little);
+
+    // Sample Rate (16000)
+    data.setUint32(24, 16000, Endian.little);
+
+    // Byte Rate (SampleRate * NumChannels * BitsPerSample/8 = 16000 * 1 * 16/8 = 32000)
+    data.setUint32(28, 32000, Endian.little);
+
+    // Block Align (NumChannels * BitsPerSample/8 = 2)
+    data.setUint16(32, 2, Endian.little);
+
+    // Bits Per Sample (16)
+    data.setUint16(34, 16, Endian.little);
+
+    // "data"
+    header[36] = 100; // d
+    header[37] = 97;  // a
+    header[38] = 116; // t
+    header[39] = 97;  // a
+
+    // Subchunk 2 Size (data length)
+    data.setUint32(40, dataLength, Endian.little);
+
+    return header;
+  }
+
+  void _gradeReal(String text) {
     if (!mounted) return;
+    final score = _speechSimilarity(text, widget.targetText);
+    final passed = score >= _passScore;
     setState(() {
       _score = score;
       _completed = passed;
-      _recognized = widget.targetText;
-      _status = 'Lectura completada y guardada con éxito.';
+      _recognized = text;
+      _status = passed 
+          ? 'Lectura completada y guardada con éxito.' 
+          : 'La similitud es muy baja (${(score * 100).round()}%). Lee de nuevo con claridad.';
     });
-    widget.onCompleted(widget.targetText, _recordedPath);
+    
+    _maybeAutoScrollTarget(text);
+
+    if (passed) {
+      widget.onCompleted(text, _recordedPath);
+    }
   }
 
   /// Renderiza el target verso-por-verso si la sesión es batched. Si es 1
@@ -221,9 +471,211 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
     ];
   }
 
-
   @override
   Widget build(BuildContext context) {
+    if (!_isModelDownloaded) {
+      final downloadPercent = (_modelDownloadProgress * 100).round();
+      final displayStatus = _isModelInitializing
+          ? 'Configurando módulo de voz...'
+          : _modelStatus.startsWith('Descargando')
+              ? 'Optimizando archivos...'
+              : _modelStatus.contains('con éxito')
+                  ? 'Verificando componentes...'
+                  : _modelStatus.isEmpty
+                      ? 'Iniciando instalación...'
+                      : _modelStatus;
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Glass(
+            padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                RefColors.violet.withValues(alpha: .18),
+                RefColors.cyan.withValues(alpha: .06),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Badge de Componente del Sistema
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: RefColors.cyan.withValues(alpha: .10),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: RefColors.cyan.withValues(alpha: .25),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: RefColors.cyan,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'COMPONENTE DE SISTEMA',
+                        style: TextStyle(
+                          color: RefColors.cyan,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                
+                // Icono Central tipo Chip de IA
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: RefColors.violet.withValues(alpha: .10),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: RefColors.violet.withValues(alpha: .20),
+                      width: 2,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.memory_rounded,
+                    color: RefColors.cyan,
+                    size: 40,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                
+                const Text(
+                  'Motor de Voz de Alta Precisión',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: RefColors.ink,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Descarga el componente de voz (375 MB) para recitar tus versos offline con total privacidad y seguridad.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: RefColors.muted,
+                    fontSize: 12,
+                    height: 1.45,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                
+                if (_isDownloadingModel || _isModelInitializing) ...[
+                  Text(
+                    _isModelInitializing
+                        ? 'Configurando módulo...'
+                        : 'Preparando motor: $downloadPercent%',
+                    style: const TextStyle(
+                      color: RefColors.cyan,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  RefProgress(_modelDownloadProgress.clamp(0.02, 1.0)),
+                  const SizedBox(height: 8),
+                  Text(
+                    displayStatus,
+                    style: const TextStyle(
+                      color: RefColors.dim,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ] else ...[
+                  // Botón de activación nativa
+                  GestureDetector(
+                    onTap: _downloadModels,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 28,
+                        vertical: 16,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: RefColors.cool,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: RefColors.cyan.withValues(alpha: .20),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
+                          SizedBox(width: 8),
+                          Text(
+                            'Activar Reconocimiento de Voz',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Fichas técnicas sutiles
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.sd_storage_outlined, size: 12, color: RefColors.dim),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Componente: 375 MB',
+                        style: TextStyle(
+                          color: RefColors.dim,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Icon(Icons.shield_outlined, size: 12, color: RefColors.dim),
+                      const SizedBox(width: 4),
+                      Text(
+                        '100% Seguro y Privado',
+                        style: TextStyle(
+                          color: RefColors.dim,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
     final percent = (_score * 100).round();
     final accent = _completed
         ? RefColors.lime
@@ -241,116 +693,337 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard> {
               RefColors.cyan.withValues(alpha: .10),
             ],
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: Stack(
             children: [
-              Text(
-                widget.source,
-                style: const TextStyle(
-                  color: RefColors.pink,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.4,
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Target text ARRIBA en un contenedor scrollable con max
-              // height fijo. Auto-scrollea perezosamente conforme el STT
-              // va reconociendo palabras — solo cuando la palabra activa
-              // pasa del 70% del viewport interno.
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 280),
-                child: SingleChildScrollView(
-                  controller: _targetScrollCtrl,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: _buildVersedDisplay(context),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Mic + score DEBAJO del texto a leer — siempre visible.
-              Row(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  GestureDetector(
-                    onTap: _toggleListening,
-                    child: Container(
-                      width: 64,
-                      height: 64,
+                  Text(
+                    widget.source,
+                    style: const TextStyle(
+                      color: RefColors.pink,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Target text ARRIBA en un contenedor scrollable con max
+                  // height fijo.
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 280),
+                    child: SingleChildScrollView(
+                      controller: _targetScrollCtrl,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: _buildVersedDisplay(context),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // Mic + score/ondas DEBAJO del texto a leer.
+                  Row(
+                    children: [
+                      GestureDetector(
+                        onTap: _toggleListening,
+                        child: SizedBox(
+                          width: 64,
+                          height: 64,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              if (_listening)
+                                AnimatedBuilder(
+                                  animation: _pulse,
+                                  builder: (context, _) {
+                                    final t = _pulse.value;
+                                    return Container(
+                                      width: 56 + 14 * t,
+                                      height: 56 + 14 * t,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: RefColors.cyan.withValues(alpha: 1 - t),
+                                          width: 2,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 220),
+                                width: 54,
+                                height: 54,
+                                decoration: BoxDecoration(
+                                  color: RefColors.cyan.withValues(
+                                    alpha: _listening ? .55 : .18,
+                                  ),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                      color: RefColors.cyan.withValues(alpha: .85)),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: RefColors.cyan.withValues(alpha: .35),
+                                      blurRadius: _listening ? 28 : 14,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                  ],
+                                ),
+                                child: Icon(
+                                  _listening
+                                      ? Icons.stop_rounded
+                                      : Icons.mic_rounded,
+                                  color: RefColors.ink,
+                                  size: 26,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (_listening) ...[
+                              const Text(
+                                'Grabando voz...',
+                                style: TextStyle(
+                                  color: RefColors.cyan,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ] else ...[
+                              if (_score > 0) ...[
+                                Text(
+                                  '$percent% parecido',
+                                  style: TextStyle(
+                                    color: accent,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                RefProgress(_score.clamp(.02, 1.0)),
+                                const SizedBox(height: 7),
+                              ],
+                              Text(
+                                _status,
+                                style: TextStyle(
+                                  color: _score > 0 ? RefColors.muted : RefColors.dim,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  if (_listening) ...[
+                    const SizedBox(height: 10),
+                    // Panel flotante animado de ondas de voz en tiempo real
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       decoration: BoxDecoration(
-                        gradient: _listening ? RefColors.primary : null,
-                        color: _listening ? null : RefColors.glassStrong,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: RefColors.border),
+                        color: RefColors.cyan.withValues(alpha: .04),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: RefColors.cyan.withValues(alpha: .15),
+                          width: 1,
+                        ),
                       ),
-                      child: Icon(
-                        _listening ? Icons.stop_rounded : Icons.mic_rounded,
-                        size: 30,
+                      child: const Column(
+                        children: [
+                          _ListeningWaveIndicator(color: RefColors.cyan),
+                        ],
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '$percent% parecido',
-                          style: TextStyle(
-                            color: accent,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        RefProgress(_score.clamp(.02, 1.0)),
-                        const SizedBox(height: 7),
-                        Text(
-                          _status,
-                          style: const TextStyle(
-                            color: RefColors.muted,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
+                  ],
+
+                  // Caja de texto reconocido — solo al final cuando no esté grabando y tenga texto
+                  if (!_listening && _recognized.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(13),
+                      decoration: BoxDecoration(
+                        color: HtmlRefColors.glassSoft,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: HtmlRefColors.glassBorder),
+                      ),
+                      child: Builder(
+                        builder: (context) {
+                          final fullTextToShow = _accumulated.isEmpty
+                              ? _recognized
+                              : '${_accumulated.trim()} ${_recognized.trim()}';
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.translate_rounded, size: 12, color: RefColors.cyan),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'TEXTO DETECTADO',
+                                    style: TextStyle(
+                                      color: RefColors.cyan,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 1.0,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                fullTextToShow,
+                                style: const TextStyle(
+                                  color: RefColors.ink,
+                                  fontSize: 13,
+                                  height: 1.35,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
-              const SizedBox(height: 16),
-              // Caja de texto reconocido — debajo del mic, todavía a la
-              // vista al arrancar a leer.
-              Container(
-                padding: const EdgeInsets.all(13),
-                decoration: BoxDecoration(
-                  color: HtmlRefColors.glassSoft,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: HtmlRefColors.glassBorder),
-                ),
-                child: Builder(
-                  builder: (context) {
-                    final fullTextToShow = _accumulated.isEmpty
-                        ? _recognized
-                        : '${_accumulated.trim()} ${_recognized.trim()}';
-                    return Text(
-                      fullTextToShow.isEmpty
-                          ? 'Aquí aparecerá lo que entendió el reconocimiento de voz.'
-                          : fullTextToShow,
-                      style: TextStyle(
-                        color: fullTextToShow.isEmpty ? RefColors.dim : RefColors.ink,
-                        fontSize: 13,
-                        height: 1.35,
-                        fontWeight: FontWeight.w700,
+              if (_isModelInitializing)
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                      child: Container(
+                        color: Colors.black.withValues(alpha: 0.25),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(
+                                width: 44,
+                                height: 44,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 4,
+                                  valueColor: AlwaysStoppedAnimation<Color>(RefColors.cyan),
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.65),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: RefColors.cyan.withValues(alpha: 0.3)),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.bolt_rounded, color: RefColors.cyan, size: 16),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'Preparando motor de voz...',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    );
-                  }
+                    ),
+                  ),
                 ),
-              ),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+// Widget premium de ondas de voz animadas
+class _ListeningWaveIndicator extends StatefulWidget {
+  final Color color;
+  const _ListeningWaveIndicator({this.color = RefColors.cyan});
+
+  @override
+  State<_ListeningWaveIndicator> createState() => _ListeningWaveIndicatorState();
+}
+
+class _ListeningWaveIndicatorState extends State<_ListeningWaveIndicator>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: List.generate(6, (index) {
+          return AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              final wave = math.sin((_controller.value * 2 * math.pi) - (index * 0.6));
+              final height = 12.0 + (wave.abs() * 32.0);
+              return Container(
+                width: 4,
+                height: height,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      widget.color,
+                      RefColors.violet,
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [
+                    BoxShadow(
+                      color: widget.color.withValues(alpha: .25),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        }),
+      ),
     );
   }
 }
@@ -382,7 +1055,7 @@ class _ListenOwnVoicePracticeCardState
   int _tab = 1;
   bool _playing = false;
   bool _completed = false;
-  int _highlightedCount = 0;
+  int _wordIndex = 0;
   Duration _audioDuration = Duration.zero;
 
   @override
@@ -390,6 +1063,7 @@ class _ListenOwnVoicePracticeCardState
     super.initState();
     _tts = FlutterTts();
     _audioPlayer = AudioPlayer();
+    ActiveMediaRegistry.register(stopPlayback);
 
     _audioPlayer.onPlayerStateChanged.listen((state) {
       if (mounted) {
@@ -407,11 +1081,9 @@ class _ListenOwnVoicePracticeCardState
       if (mounted && _audioDuration.inMilliseconds > 0 && _playing) {
         final progress =
             position.inMilliseconds / _audioDuration.inMilliseconds;
+        final words = _studyWords(_currentText);
         setState(() {
-          _highlightedCount = (progress * _currentText.length).toInt().clamp(
-            0,
-            _currentText.length,
-          );
+          _wordIndex = (progress * words.length).toInt().clamp(0, words.length);
         });
       }
     });
@@ -420,7 +1092,7 @@ class _ListenOwnVoicePracticeCardState
       if (!mounted) return;
       setState(() {
         _playing = false;
-        _highlightedCount = 0;
+        _wordIndex = 0;
         if (_tab == 1) _completed = true;
       });
       if (_tab == 1) widget.onCompleted();
@@ -432,8 +1104,9 @@ class _ListenOwnVoicePracticeCardState
 
     _tts.setProgressHandler((text, start, end, word) {
       if (mounted) {
+        final textBefore = _currentText.substring(0, end);
         setState(() {
-          _highlightedCount = end.clamp(0, _currentText.length);
+          _wordIndex = _studyWords(textBefore).length;
         });
       }
     });
@@ -442,7 +1115,7 @@ class _ListenOwnVoicePracticeCardState
       if (!mounted) return;
       setState(() {
         _playing = false;
-        _highlightedCount = 0;
+        _wordIndex = 0;
         if (_tab == 1 && widget.voiceText.trim().isNotEmpty) {
           _completed = true;
         }
@@ -455,14 +1128,26 @@ class _ListenOwnVoicePracticeCardState
       if (mounted) {
         setState(() {
           _playing = false;
-          _highlightedCount = 0;
+          _wordIndex = 0;
         });
       }
     });
   }
 
+  void stopPlayback() {
+    _tts.stop();
+    _audioPlayer.stop();
+    if (mounted) {
+      setState(() {
+        _playing = false;
+        _wordIndex = 0;
+      });
+    }
+  }
+
   @override
   void dispose() {
+    ActiveMediaRegistry.unregister(stopPlayback);
     _tts.stop();
     _audioPlayer.dispose();
     super.dispose();
@@ -482,7 +1167,7 @@ class _ListenOwnVoicePracticeCardState
       if (mounted) {
         setState(() {
           _playing = false;
-          _highlightedCount = 0;
+          _wordIndex = 0;
         });
       }
       return;
@@ -510,8 +1195,124 @@ class _ListenOwnVoicePracticeCardState
     setState(() {
       _tab = tab;
       _playing = false;
-      _highlightedCount = 0;
+      _wordIndex = 0;
     });
+  }
+
+  Widget _buildVersedText(BuildContext context, int globalIndex) {
+    final hasVoice = widget.voiceText.trim().isNotEmpty;
+    if (_tab == 1 && !hasVoice) {
+      return const Text(
+        'Primero completa el paso de leer en voz para guardar tu lectura.',
+        style: TextStyle(
+          color: RefColors.dim,
+          fontSize: 18,
+          fontWeight: FontWeight.w900,
+          fontFamily: 'Outfit',
+        ),
+      );
+    }
+
+    final verses = _currentBatchVerses(context);
+    if (verses.length == 1) {
+      final words = _studyWords(verses.first.text);
+      final safe = globalIndex.clamp(0, words.isEmpty ? 0 : words.length - 1);
+      final lead = words.take(safe).join(' ');
+      final current = words.isEmpty ? '' : words[safe];
+      final tail = words.isEmpty ? '' : words.skip(safe + 1).join(' ');
+      return Text.rich(
+        TextSpan(
+          children: [
+            if (lead.isNotEmpty)
+              TextSpan(
+                text: '$lead ',
+                style: const TextStyle(color: RefColors.lime),
+              ),
+            if (current.isNotEmpty)
+              TextSpan(
+                text: current,
+                style: const TextStyle(
+                  color: RefColors.ink,
+                  backgroundColor: Color(0x44273CFE),
+                ),
+              ),
+            if (tail.isNotEmpty)
+              TextSpan(
+                text: ' $tail',
+                style: const TextStyle(color: RefColors.muted),
+              ),
+          ],
+        ),
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 18,
+          height: 1.38,
+          fontWeight: FontWeight.w900,
+          fontFamily: 'Outfit',
+        ),
+      );
+    }
+
+    int? activeVerse;
+    int? activeLocal;
+    var offset = 0;
+    for (var i = 0; i < verses.length; i++) {
+      final n = _studyWords(verses[i].text).length;
+      if (globalIndex >= offset && globalIndex < offset + n) {
+        activeVerse = i;
+        activeLocal = globalIndex - offset;
+        break;
+      }
+      offset += n;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < verses.length; i++) ...[
+          _VerseLine(
+            number: verses[i].number,
+            words: _studyWords(verses[i].text),
+            defaultStyle: const TextStyle(
+              color: RefColors.muted,
+              fontWeight: FontWeight.w900,
+              height: 1.38,
+              fontFamily: 'Outfit',
+            ),
+            wordStyle: (idx) {
+              if (activeVerse != null && i < activeVerse) {
+                return const TextStyle(
+                  color: RefColors.lime,
+                  fontWeight: FontWeight.w900,
+                );
+              }
+              if (i == activeVerse) {
+                if (idx < (activeLocal ?? 0)) {
+                  return const TextStyle(
+                    color: RefColors.lime,
+                    fontWeight: FontWeight.w900,
+                  );
+                }
+                if (idx == activeLocal) {
+                  return const TextStyle(
+                    color: RefColors.ink,
+                    fontWeight: FontWeight.w900,
+                    backgroundColor: Color(0x44273CFE),
+                  );
+                }
+                return const TextStyle(
+                  color: RefColors.muted,
+                  fontWeight: FontWeight.w900,
+                );
+              }
+              return null;
+            },
+            fontSize: 18,
+          ),
+          if (i < verses.length - 1) const SizedBox(height: 10),
+        ],
+      ],
+    );
   }
 
   @override
@@ -574,27 +1375,7 @@ class _ListenOwnVoicePracticeCardState
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: HtmlRefColors.glassBorder),
             ),
-            child: RichText(
-              text: TextSpan(
-                style: TextStyle(
-                  color: _tab == 1 && !hasVoice
-                      ? RefColors.dim
-                      : RefColors.ink.withValues(alpha: 0.4),
-                  fontSize: 18,
-                  height: 1.38,
-                  fontWeight: FontWeight.w900,
-                  fontFamily: 'Outfit',
-                ),
-                children: [
-                  if (_highlightedCount > 0)
-                    TextSpan(
-                      text: _currentText.substring(0, _highlightedCount),
-                      style: const TextStyle(color: RefColors.ink),
-                    ),
-                  TextSpan(text: _currentText.substring(_highlightedCount)),
-                ],
-              ),
-            ),
+            child: _buildVersedText(context, _wordIndex),
           ),
           const SizedBox(height: 18),
           Row(
@@ -673,15 +1454,23 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
   bool _completed = false;
   int _wordIndex = 0;
   int _ttsStartWordOffset = 0;
+  int _lastSkipTime = 0;
+  bool _isSkipping = false;
 
   @override
   void initState() {
     super.initState();
     _tts = FlutterTts();
+    ActiveMediaRegistry.register(stopPlayback);
     _tts.setStartHandler(() {
       if (mounted) setState(() => _playing = true);
     });
     _tts.setCompletionHandler(() {
+      if (_isSkipping) return;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - _lastSkipTime < 600) {
+        return;
+      }
       if (mounted) {
         setState(() {
           _playing = false;
@@ -712,8 +1501,21 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
     });
   }
 
+  void stopPlayback() {
+    _isSkipping = true;
+    _tts.stop();
+    if (mounted) {
+      setState(() {
+        _playing = false;
+        _wordIndex = 0;
+      });
+    }
+    _isSkipping = false;
+  }
+
   @override
   void dispose() {
+    ActiveMediaRegistry.unregister(stopPlayback);
     _tts.stop();
     _textScrollController.dispose();
     super.dispose();
@@ -760,7 +1562,9 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
   }
 
   Future<void> _restart(String text) async {
+    _isSkipping = true;
     await _tts.stop();
+    await Future.delayed(const Duration(milliseconds: 150));
     if (mounted) {
       setState(() {
         _wordIndex = 0;
@@ -769,6 +1573,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
       });
     }
     await _toggle(text);
+    _isSkipping = false;
   }
 
   Future<void> _speakFromCurrent(String text) async {
@@ -781,8 +1586,26 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
 
   Future<void> _skipForward(String text) async {
     final words = _studyWords(text);
-    final nextIndex = (_wordIndex + 12).clamp(0, words.length - 1);
+    final nextIndex = _wordIndex + 12;
+    
+    _isSkipping = true;
+    _lastSkipTime = DateTime.now().millisecondsSinceEpoch;
     await _tts.stop();
+    await Future.delayed(const Duration(milliseconds: 150));
+    
+    if (nextIndex >= words.length) {
+      if (mounted) {
+        setState(() {
+          _wordIndex = 0;
+          _playing = false;
+          _completed = true;
+          _isSkipping = false;
+        });
+        widget.onCompleted?.call();
+      }
+      return;
+    }
+    
     if (mounted) {
       setState(() {
         _wordIndex = nextIndex;
@@ -791,6 +1614,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
     }
     _scrollToProgress(nextIndex, words.length);
     await _toggle(text);
+    _isSkipping = false;
   }
 
   /// Renderiza el texto del paso Escuchar verso-por-verso (cuando el grupo
@@ -801,8 +1625,23 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
   Widget _buildVersedListenText(BuildContext context, int globalIndex) {
     final verses = _currentBatchVerses(context);
     if (verses.length == 1) {
-      // Single-item: render plano como antes (lead + highlight + tail).
       final words = _studyWords(verses.first.text);
+      if (_completed) {
+        return Text.rich(
+          TextSpan(
+            text: words.join(' '),
+            style: const TextStyle(color: RefColors.lime),
+          ),
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 26,
+            height: 1.34,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -.35,
+          ),
+        );
+      }
+      // Single-item: render plano como antes (lead + highlight + tail).
       final safe = globalIndex.clamp(0, words.length - 1);
       final lead = words.take(safe).join(' ');
       final current = words.isEmpty ? '' : words[safe];
@@ -872,6 +1711,12 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
               height: 1.32,
             ),
             wordStyle: (idx) {
+              if (_completed) {
+                return const TextStyle(
+                  color: RefColors.lime,
+                  fontWeight: FontWeight.w900,
+                );
+              }
               // Verso entero "ya leído": lime suave.
               if (activeVerse != null && i < activeVerse!) {
                 return const TextStyle(
@@ -915,7 +1760,9 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
     final source = _cardSourceText(context).toUpperCase();
     final text = _cardStudyText(context);
     final safeIndex = _wordIndex.clamp(0, words.isEmpty ? 0 : words.length - 1);
-    final progress = words.isEmpty ? 0.0 : ((safeIndex + 1) / words.length);
+    final progress = _completed
+        ? 1.0
+        : (words.isEmpty ? 0.0 : ((safeIndex + 1) / words.length));
     return Glass(
       padding: const EdgeInsets.fromLTRB(22, 30, 22, 20),
       gradient: LinearGradient(
@@ -966,7 +1813,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
               ),
               const Spacer(),
               Text(
-                '${safeIndex + 1}/${words.length} palabras',
+                '${_completed ? words.length : (safeIndex + 1)}/${words.length} palabras',
                 style: const TextStyle(
                   color: RefColors.muted,
                   fontSize: 11,
@@ -1580,6 +2427,27 @@ class _PlayerRoundButton extends StatelessWidget {
       ),
       child: Icon(paused ? Icons.pause_rounded : Icons.play_arrow_rounded),
     );
+  }
+}
+
+class ActiveMediaRegistry {
+  static final List<VoidCallback> _activeStoppers = [];
+
+  static void register(VoidCallback stopCallback) {
+    _activeStoppers.add(stopCallback);
+  }
+
+  static void unregister(VoidCallback stopCallback) {
+    _activeStoppers.remove(stopCallback);
+  }
+
+  static void stopAll() {
+    for (final stop in List.from(_activeStoppers)) {
+      try {
+        stop();
+      } catch (_) {}
+    }
+    _activeStoppers.clear();
   }
 }
 

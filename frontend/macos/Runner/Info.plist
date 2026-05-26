@@ -28,5 +28,7 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Esta aplicación requiere acceso al micrófono para permitir la recitación y memorización de versículos bíblicos de forma offline.</string>
 </dict>
 </plist>

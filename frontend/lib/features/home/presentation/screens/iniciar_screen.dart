@@ -457,60 +457,67 @@ class _IniciarScreenState extends State<IniciarScreen> {
                       width: 138,
                       child: Column(
                         children: [
-                          GestureDetector(
-                            onTap: () => _setDailyTarget(
-                              1,
-                              totalCards,
-                              _DailyQuickPick.breve,
+                          if (totalCards >= 1)
+                            GestureDetector(
+                              onTap: () => _setDailyTarget(
+                                1,
+                                totalCards,
+                                _DailyQuickPick.breve,
+                              ),
+                              child: RefChip(
+                                '1 · breve',
+                                dense: true,
+                                color: _quickPick == _DailyQuickPick.breve
+                                    ? RefColors.lime
+                                    : null,
+                                textColor: _quickPick == _DailyQuickPick.breve
+                                    ? RefColors.successInk
+                                    : RefColors.ink,
+                              ),
                             ),
-                            child: RefChip(
-                              '1 · breve',
-                              dense: true,
-                              color: _quickPick == _DailyQuickPick.breve
-                                  ? RefColors.lime
-                                  : null,
-                              textColor: _quickPick == _DailyQuickPick.breve
-                                  ? RefColors.successInk
-                                  : RefColors.ink,
+                          if (_recommendedTarget(totalCards) > 1 &&
+                              _recommendedTarget(totalCards) <= totalCards &&
+                              _recommendedTarget(totalCards) != 1) ...[
+                            const SizedBox(height: 7),
+                            GestureDetector(
+                              onTap: () => _setDailyTarget(
+                                _recommendedTarget(totalCards),
+                                totalCards,
+                                _DailyQuickPick.recomendado,
+                              ),
+                              child: RefChip(
+                                '${_recommendedTarget(totalCards)} · recomendado',
+                                dense: true,
+                                color: _quickPick == _DailyQuickPick.recomendado
+                                    ? RefColors.lime
+                                    : null,
+                                textColor:
+                                    _quickPick == _DailyQuickPick.recomendado
+                                    ? RefColors.successInk
+                                    : RefColors.ink,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 7),
-                          GestureDetector(
-                            onTap: () => _setDailyTarget(
-                              _recommendedTarget(totalCards),
-                              totalCards,
-                              _DailyQuickPick.recomendado,
+                          ],
+                          if (totalCards >= 4) ...[
+                            const SizedBox(height: 7),
+                            GestureDetector(
+                              onTap: () => _setDailyTarget(
+                                4,
+                                totalCards,
+                                _DailyQuickPick.intenso,
+                              ),
+                              child: RefChip(
+                                '4 · intenso',
+                                dense: true,
+                                color: _quickPick == _DailyQuickPick.intenso
+                                    ? RefColors.lime
+                                    : null,
+                                textColor: _quickPick == _DailyQuickPick.intenso
+                                    ? RefColors.successInk
+                                    : RefColors.ink,
+                              ),
                             ),
-                            child: RefChip(
-                              '${_recommendedTarget(totalCards)} · recomendado',
-                              dense: true,
-                              color: _quickPick == _DailyQuickPick.recomendado
-                                  ? RefColors.lime
-                                  : null,
-                              textColor:
-                                  _quickPick == _DailyQuickPick.recomendado
-                                  ? RefColors.successInk
-                                  : RefColors.ink,
-                            ),
-                          ),
-                          const SizedBox(height: 7),
-                          GestureDetector(
-                            onTap: () => _setDailyTarget(
-                              4,
-                              totalCards,
-                              _DailyQuickPick.intenso,
-                            ),
-                            child: RefChip(
-                              '4 · intenso',
-                              dense: true,
-                              color: _quickPick == _DailyQuickPick.intenso
-                                  ? RefColors.lime
-                                  : null,
-                              textColor: _quickPick == _DailyQuickPick.intenso
-                                  ? RefColors.successInk
-                                  : RefColors.ink,
-                            ),
-                          ),
+                          ],
                         ],
                       ),
                     ),

@@ -13,27 +13,21 @@ class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
   final GlobalKey _currentStepKey = GlobalKey();
   int _lastScrolledIndex = -1;
 
-  void _scheduleScrollToCurrent(int currentIndex, {int attempt = 0}) {
+  void _scheduleScrollToCurrent(int currentIndex) {
     if (_lastScrolledIndex == currentIndex) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Wait for the screen slide transition animation to complete (typically 300ms)
+    // before executing ensureVisible, preventing transition system overrides.
+    Future.delayed(const Duration(milliseconds: 380), () {
       if (!mounted) return;
-      if (_lastScrolledIndex == currentIndex) return;
       final ctx = _currentStepKey.currentContext;
       if (ctx != null) {
         Scrollable.ensureVisible(
           ctx,
-          duration: const Duration(milliseconds: 420),
+          duration: const Duration(milliseconds: 450),
           curve: Curves.easeOutCubic,
           alignment: 0.35,
         );
         _lastScrolledIndex = currentIndex;
-        return;
-      }
-      // Layout not ready — retry up to ~1s.
-      if (attempt < 8) {
-        Future<void>.delayed(const Duration(milliseconds: 120), () {
-          if (mounted) _scheduleScrollToCurrent(currentIndex, attempt: attempt + 1);
-        });
       }
     });
   }
