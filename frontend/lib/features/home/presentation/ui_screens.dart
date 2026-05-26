@@ -415,10 +415,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 
   /// Seconds-per-target for timed levels. N3 is faster (less time per hueco).
-  static const double _completionSecondsPerTargetN2 = 5.0;
-  static const double _completionSecondsPerTargetN3 = 2.8;
-  static const double _letterSecondsPerTargetN2 = 5.0;
-  static const double _letterSecondsPerTargetN3 = 2.8;
+  // Drastically increased for excellent accessibility (especially for elderly users).
+  static const double _completionSecondsPerTargetN2 = 12.0;
+  static const double _completionSecondsPerTargetN3 = 8.0;
+  static const double _letterSecondsPerTargetN2 = 12.0;
+  static const double _letterSecondsPerTargetN3 = 8.0;
 
   int _completionTimeFor(int level, int targetCount) {
     if (level <= 1 || targetCount <= 0) return 0;
@@ -426,8 +427,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ? _completionSecondsPerTargetN3
         : _completionSecondsPerTargetN2;
     final raw = (targetCount * perTarget).round();
-    // Hard floor / ceiling so very short or very long verses stay reasonable.
-    return raw.clamp(level >= 3 ? 25 : 35, 180);
+    // Generous floor / ceiling boundaries for accessible and stress-free pacing.
+    return raw.clamp(level >= 3 ? 60 : 90, 480);
   }
 
   int _letterTimeFor(int level, int targetCount) {
@@ -436,7 +437,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ? _letterSecondsPerTargetN3
         : _letterSecondsPerTargetN2;
     final raw = (targetCount * perTarget).round();
-    return raw.clamp(level >= 3 ? 25 : 35, 180);
+    return raw.clamp(level >= 3 ? 60 : 90, 480);
   }
 
   String _formatMmSs(int totalSeconds) {
@@ -1662,7 +1663,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
     if (_isWordBankSlug(slug)) {
       _ensureBankState(card.id, card.back);
-      final filled = _bankAnswers.where((a) => a != null).length;
       final isSplit = _bankIsSplit();
       final partCount = _bankPartCount();
       final (partStart, partEnd) = _bankPartRange();
@@ -1694,18 +1694,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         children: [
           _CompleteStatsCard(
             level2: false,
-            firstValue: '$filled/${_bankTargets.length}',
-            firstLabel: 'HUECOS',
+            firstValue: '${_bankPartIndex + 1}/$partCount',
+            firstLabel: 'PARTE',
             secondValue: '$_bankMistakes',
             secondLabel: 'FALLOS',
           ),
-          if (isSplit) ...[
-            const SizedBox(height: 10),
-            _BankPartHeader(
-              partIndex: _bankPartIndex,
-              partCount: partCount,
-            ),
-          ],
           const SizedBox(height: 14),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 360),
@@ -2499,63 +2492,7 @@ class _RedFlash extends StatelessWidget {
   }
 }
 
-class _BankPartHeader extends StatelessWidget {
-  final int partIndex;
-  final int partCount;
 
-  const _BankPartHeader({required this.partIndex, required this.partCount});
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 320),
-      child: Container(
-        key: ValueKey('bank-part-$partIndex'),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: RefColors.cyan.withValues(alpha: .12),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: RefColors.cyan.withValues(alpha: .55)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.view_agenda_rounded,
-                color: RefColors.cyan, size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Parte ${partIndex + 1} de $partCount',
-                style: const TextStyle(
-                  color: RefColors.cyan,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.1,
-                ),
-              ),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (var i = 0; i < partCount; i++)
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 2),
-                    width: i == partIndex ? 18 : 8,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      color: i <= partIndex
-                          ? RefColors.cyan
-                          : RefColors.cyan.withValues(alpha: .25),
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class _CompletionBlank extends StatelessWidget {
   final String? answer;
