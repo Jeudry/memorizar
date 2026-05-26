@@ -651,273 +651,328 @@ class _FogStepState extends State<_FogStep>
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Stack(
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                widget.finished
-                    ? 'Recitación completada'
-                    : 'Práctica de Niebla Nivel ${widget.level}',
-                style: const TextStyle(
-                  color: RefColors.pink,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: .8,
-                ),
-              ),
-              Text(
-                'Intentos disponibles: $_attemptsLeft',
-                style: TextStyle(
-                  color: _attemptsLeft == 1 ? RefColors.urgent : RefColors.muted,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Glass(
-          padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-          gradient: LinearGradient(
-            colors: [
-              RefColors.violet.withValues(alpha: .22),
-              RefColors.cyan.withValues(alpha: .10),
-            ],
-          ),
-          child: _buildVersesContainer(context),
-        ),
-        if (!widget.finished) ...[
-          const SizedBox(height: 8),
-          const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.touch_app_rounded,
-                size: 14,
-                color: RefColors.dim,
-              ),
-              SizedBox(width: 6),
-              Text(
-                'Toca una palabra oculta para revelarla por 3 segundos.',
-                style: TextStyle(
-                  color: RefColors.dim,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ],
-        const SizedBox(height: 16),
-        if (widget.finished)
-          Glass(
-            padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
-            color: RefColors.lime.withValues(alpha: .14),
-            border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
-            child: Column(
-              children: [
-                const Icon(Icons.check_circle_rounded,
-                    color: RefColors.lime, size: 36),
-                const SizedBox(height: 10),
-                const Text(
-                  '¡Niebla disipada!',
-                  style: TextStyle(
-                    color: RefColors.lime,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Recitaste el texto de memoria de forma offline con ${(_score > 0 ? (_score * 100).round() : 100)}% de coincidencia.',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: RefColors.ink,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          )
-        else if (_finalizing)
-          Glass(
-            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-            color: RefColors.cyan.withValues(alpha: .10),
-            border: Border.all(color: RefColors.cyan.withValues(alpha: .30)),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: RefColors.cyan,
-                  ),
-                ),
-                SizedBox(width: 12),
-                Text(
-                  'Evaluando audio...',
-                  style: TextStyle(
-                    color: RefColors.cyan,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
-          )
-        else ...[
-          // Mic + score/ondas DEBAJO del texto.
-          Row(
-            children: [
-              GestureDetector(
-                onTap: _toggleListening,
-                child: SizedBox(
-                  width: 64,
-                  height: 64,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      if (_listening)
-                        AnimatedBuilder(
-                          animation: _pulse,
-                          builder: (context, _) {
-                            final t = _pulse.value;
-                            return Container(
-                              width: 56 + 14 * t,
-                              height: 56 + 14 * t,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: RefColors.cyan.withValues(alpha: 1 - t),
-                                  width: 2,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 220),
-                        width: 54,
-                        height: 54,
-                        decoration: BoxDecoration(
-                          color: RefColors.cyan.withValues(
-                            alpha: _listening ? .55 : .18,
-                          ),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: RefColors.cyan.withValues(alpha: .85),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: RefColors.cyan.withValues(alpha: .35),
-                              blurRadius: _listening ? 28 : 14,
-                              offset: const Offset(0, 6),
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          _listening ? Icons.stop_rounded : Icons.mic_rounded,
-                          color: RefColors.ink,
-                          size: 26,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (_listening) ...[
-                      const Text(
-                        'Grabando voz...',
-                        style: TextStyle(
-                          color: RefColors.cyan,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ] else ...[
-                      if (_score > 0) ...[
-                        Text(
-                          '${(_score * 100).round()}% parecido',
-                          style: TextStyle(
-                            color: _score >= 0.60 ? RefColors.lime : RefColors.pink,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        RefProgress(_score.clamp(.02, 1.0)),
-                        const SizedBox(height: 7),
-                      ],
-                      Text(
-                        _status,
-                        style: TextStyle(
-                          color: _score > 0 ? RefColors.muted : RefColors.dim,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-          
-          if (_listening) ...[
-            const SizedBox(height: 24),
-            // Panel flotante animado de ondas de voz en tiempo real
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              decoration: BoxDecoration(
-                color: RefColors.cyan.withValues(alpha: .04),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: RefColors.cyan.withValues(alpha: .15),
-                  width: 1,
-                ),
-              ),
-              child: const Column(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _ListeningWaveIndicator(color: RefColors.cyan),
+                  Text(
+                    widget.finished
+                        ? 'Recitación completada'
+                        : 'Práctica de Niebla Nivel ${widget.level}',
+                    style: const TextStyle(
+                      color: RefColors.pink,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: .8,
+                    ),
+                  ),
+                  Text(
+                    'Intentos disponibles: $_attemptsLeft',
+                    style: TextStyle(
+                      color: _attemptsLeft == 1 ? RefColors.urgent : RefColors.muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                 ],
               ),
             ),
-          ],
-
-          if (!_listening && _recognized.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: HtmlRefColors.glassSoft,
-                borderRadius: BorderRadius.circular(12),
+            Glass(
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+              gradient: LinearGradient(
+                colors: [
+                  RefColors.violet.withValues(alpha: .22),
+                  RefColors.cyan.withValues(alpha: .10),
+                ],
               ),
-              child: Text(
-                'Entendido: "$_recognized"',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: RefColors.ink,
-                  fontSize: 12,
-                  fontStyle: FontStyle.italic,
-                  fontWeight: FontWeight.w700,
+              child: _buildVersesContainer(context),
+            ),
+            if (!widget.finished) ...[
+              const SizedBox(height: 8),
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.touch_app_rounded,
+                    size: 14,
+                    color: RefColors.dim,
+                  ),
+                  SizedBox(width: 6),
+                  Text(
+                    'Toca una palabra oculta para revelarla por 3 segundos.',
+                    style: TextStyle(
+                      color: RefColors.dim,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 16),
+            if (widget.finished)
+              Glass(
+                padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
+                color: RefColors.lime.withValues(alpha: .14),
+                border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
+                child: Column(
+                  children: [
+                    const Icon(Icons.check_circle_rounded,
+                        color: RefColors.lime, size: 36),
+                    const SizedBox(height: 10),
+                    const Text(
+                      '¡Niebla disipada!',
+                      style: TextStyle(
+                        color: RefColors.lime,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Recitaste el texto de memoria de forma offline con ${(_score > 0 ? (_score * 100).round() : 100)}% de coincidencia.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: RefColors.ink,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (_finalizing)
+              Glass(
+                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                color: RefColors.cyan.withValues(alpha: .10),
+                border: Border.all(color: RefColors.cyan.withValues(alpha: .30)),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: RefColors.cyan,
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Text(
+                      'Evaluando audio...',
+                      style: TextStyle(
+                        color: RefColors.cyan,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else ...[
+              // Mic + score/ondas DEBAJO del texto.
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: _toggleListening,
+                    child: SizedBox(
+                      width: 64,
+                      height: 64,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          if (_listening)
+                            AnimatedBuilder(
+                              animation: _pulse,
+                              builder: (context, _) {
+                                final t = _pulse.value;
+                                return Container(
+                                  width: 56 + 14 * t,
+                                  height: 56 + 14 * t,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: RefColors.cyan.withValues(alpha: 1 - t),
+                                      width: 2,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 220),
+                            width: 54,
+                            height: 54,
+                            decoration: BoxDecoration(
+                              color: RefColors.cyan.withValues(
+                                alpha: _listening ? .55 : .18,
+                              ),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: RefColors.cyan.withValues(alpha: .85),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: RefColors.cyan.withValues(alpha: .35),
+                                  blurRadius: _listening ? 28 : 14,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ],
+                            ),
+                            child: Icon(
+                              _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                              color: RefColors.ink,
+                              size: 26,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_listening) ...[
+                          const Text(
+                            'Grabando voz...',
+                            style: TextStyle(
+                              color: RefColors.cyan,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ] else ...[
+                          if (_score > 0) ...[
+                            Text(
+                              '${(_score * 100).round()}% parecido',
+                              style: TextStyle(
+                                color: _score >= 0.60 ? RefColors.lime : RefColors.pink,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            RefProgress(_score.clamp(.02, 1.0)),
+                            const SizedBox(height: 7),
+                          ],
+                          Text(
+                            _status,
+                            style: TextStyle(
+                              color: _score > 0 ? RefColors.muted : RefColors.dim,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              
+              if (_listening) ...[
+                const SizedBox(height: 24),
+                // Panel flotante animado de ondas de voz en tiempo real
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  decoration: BoxDecoration(
+                    color: RefColors.cyan.withValues(alpha: .04),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: RefColors.cyan.withValues(alpha: .15),
+                      width: 1,
+                    ),
+                  ),
+                  child: const Column(
+                    children: [
+                      _ListeningWaveIndicator(color: RefColors.cyan),
+                    ],
+                  ),
+                ),
+              ],
+
+              if (!_listening && _recognized.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: HtmlRefColors.glassSoft,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'Entendido: "$_recognized"',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: RefColors.ink,
+                      fontSize: 12,
+                      fontStyle: FontStyle.italic,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ),
+        if (_isModelInitializing)
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 4,
+                            valueColor: AlwaysStoppedAnimation<Color>(RefColors.cyan),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.65),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: RefColors.cyan.withValues(alpha: 0.3)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.bolt_rounded, color: RefColors.cyan, size: 16),
+                              SizedBox(width: 6),
+                              Text(
+                                'Preparando motor de voz...',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
-          ],
-        ],
+          ),
       ],
     );
   }

@@ -693,206 +693,261 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
               RefColors.cyan.withValues(alpha: .10),
             ],
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: Stack(
             children: [
-              Text(
-                widget.source,
-                style: const TextStyle(
-                  color: RefColors.pink,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.4,
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Target text ARRIBA en un contenedor scrollable con max
-              // height fijo.
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 280),
-                child: SingleChildScrollView(
-                  controller: _targetScrollCtrl,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: _buildVersedDisplay(context),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              
-              // Mic + score/ondas DEBAJO del texto a leer.
-              Row(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  GestureDetector(
-                    onTap: _toggleListening,
-                    child: SizedBox(
-                      width: 64,
-                      height: 64,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          if (_listening)
-                            AnimatedBuilder(
-                              animation: _pulse,
-                              builder: (context, _) {
-                                final t = _pulse.value;
-                                return Container(
-                                  width: 56 + 14 * t,
-                                  height: 56 + 14 * t,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: RefColors.cyan.withValues(alpha: 1 - t),
-                                      width: 2,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 220),
-                            width: 54,
-                            height: 54,
-                            decoration: BoxDecoration(
-                              color: RefColors.cyan.withValues(
-                                alpha: _listening ? .55 : .18,
-                              ),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: RefColors.cyan.withValues(alpha: .85)),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: RefColors.cyan.withValues(alpha: .35),
-                                  blurRadius: _listening ? 28 : 14,
-                                  offset: const Offset(0, 6),
-                                ),
-                              ],
-                            ),
-                            child: Icon(
-                              _listening
-                                  ? Icons.stop_rounded
-                                  : Icons.mic_rounded,
-                              color: RefColors.ink,
-                              size: 26,
-                            ),
-                          ),
-                        ],
+                  Text(
+                    widget.source,
+                    style: const TextStyle(
+                      color: RefColors.pink,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Target text ARRIBA en un contenedor scrollable con max
+                  // height fijo.
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 280),
+                    child: SingleChildScrollView(
+                      controller: _targetScrollCtrl,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: _buildVersedDisplay(context),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_listening) ...[
-                          const Text(
-                            'Grabando voz...',
-                            style: TextStyle(
-                              color: RefColors.cyan,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ] else ...[
-                          if (_score > 0) ...[
-                            Text(
-                              '$percent% parecido',
-                              style: TextStyle(
-                                color: accent,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            RefProgress(_score.clamp(.02, 1.0)),
-                            const SizedBox(height: 7),
-                          ],
-                          Text(
-                            _status,
-                            style: TextStyle(
-                              color: _score > 0 ? RefColors.muted : RefColors.dim,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              
-              if (_listening) ...[
-                const SizedBox(height: 24),
-                // Panel flotante animado de ondas de voz en tiempo real
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 20),
-                  decoration: BoxDecoration(
-                    color: RefColors.cyan.withValues(alpha: .04),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: RefColors.cyan.withValues(alpha: .15),
-                      width: 1,
-                    ),
-                  ),
-                  child: const Column(
+                  const SizedBox(height: 20),
+                  
+                  // Mic + score/ondas DEBAJO del texto a leer.
+                  Row(
                     children: [
-                      _ListeningWaveIndicator(color: RefColors.cyan),
-                    ],
-                  ),
-                ),
-              ],
-
-              // Caja de texto reconocido — solo al final cuando no esté grabando y tenga texto
-              if (!_listening && _recognized.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(13),
-                  decoration: BoxDecoration(
-                    color: HtmlRefColors.glassSoft,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: HtmlRefColors.glassBorder),
-                  ),
-                  child: Builder(
-                    builder: (context) {
-                      final fullTextToShow = _accumulated.isEmpty
-                          ? _recognized
-                          : '${_accumulated.trim()} ${_recognized.trim()}';
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Row(
+                      GestureDetector(
+                        onTap: _toggleListening,
+                        child: SizedBox(
+                          width: 64,
+                          height: 64,
+                          child: Stack(
+                            alignment: Alignment.center,
                             children: [
-                              Icon(Icons.translate_rounded, size: 12, color: RefColors.cyan),
-                              SizedBox(width: 6),
-                              Text(
-                                'TEXTO DETECTADO',
-                                style: TextStyle(
-                                  color: RefColors.cyan,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 1.0,
+                              if (_listening)
+                                AnimatedBuilder(
+                                  animation: _pulse,
+                                  builder: (context, _) {
+                                    final t = _pulse.value;
+                                    return Container(
+                                      width: 56 + 14 * t,
+                                      height: 56 + 14 * t,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: RefColors.cyan.withValues(alpha: 1 - t),
+                                          width: 2,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 220),
+                                width: 54,
+                                height: 54,
+                                decoration: BoxDecoration(
+                                  color: RefColors.cyan.withValues(
+                                    alpha: _listening ? .55 : .18,
+                                  ),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                      color: RefColors.cyan.withValues(alpha: .85)),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: RefColors.cyan.withValues(alpha: .35),
+                                      blurRadius: _listening ? 28 : 14,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                  ],
+                                ),
+                                child: Icon(
+                                  _listening
+                                      ? Icons.stop_rounded
+                                      : Icons.mic_rounded,
+                                  color: RefColors.ink,
+                                  size: 26,
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            fullTextToShow,
-                            style: const TextStyle(
-                              color: RefColors.ink,
-                              fontSize: 13,
-                              height: 1.35,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (_listening) ...[
+                              const Text(
+                                'Grabando voz...',
+                                style: TextStyle(
+                                  color: RefColors.cyan,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ] else ...[
+                              if (_score > 0) ...[
+                                Text(
+                                  '$percent% parecido',
+                                  style: TextStyle(
+                                    color: accent,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                RefProgress(_score.clamp(.02, 1.0)),
+                                const SizedBox(height: 7),
+                              ],
+                              Text(
+                                _status,
+                                style: TextStyle(
+                                  color: _score > 0 ? RefColors.muted : RefColors.dim,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  if (_listening) ...[
+                    const SizedBox(height: 24),
+                    // Panel flotante animado de ondas de voz en tiempo real
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      decoration: BoxDecoration(
+                        color: RefColors.cyan.withValues(alpha: .04),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: RefColors.cyan.withValues(alpha: .15),
+                          width: 1,
+                        ),
+                      ),
+                      child: const Column(
+                        children: [
+                          _ListeningWaveIndicator(color: RefColors.cyan),
                         ],
-                      );
-                    }
+                      ),
+                    ),
+                  ],
+
+                  // Caja de texto reconocido — solo al final cuando no esté grabando y tenga texto
+                  if (!_listening && _recognized.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(13),
+                      decoration: BoxDecoration(
+                        color: HtmlRefColors.glassSoft,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: HtmlRefColors.glassBorder),
+                      ),
+                      child: Builder(
+                        builder: (context) {
+                          final fullTextToShow = _accumulated.isEmpty
+                              ? _recognized
+                              : '${_accumulated.trim()} ${_recognized.trim()}';
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.translate_rounded, size: 12, color: RefColors.cyan),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'TEXTO DETECTADO',
+                                    style: TextStyle(
+                                      color: RefColors.cyan,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 1.0,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                fullTextToShow,
+                                style: const TextStyle(
+                                  color: RefColors.ink,
+                                  fontSize: 13,
+                                  height: 1.35,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              if (_isModelInitializing)
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                      child: Container(
+                        color: Colors.black.withValues(alpha: 0.25),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(
+                                width: 44,
+                                height: 44,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 4,
+                                  valueColor: AlwaysStoppedAnimation<Color>(RefColors.cyan),
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.65),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: RefColors.cyan.withValues(alpha: 0.3)),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.bolt_rounded, color: RefColors.cyan, size: 16),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'Preparando motor de voz...',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ],
             ],
           ),
         ),

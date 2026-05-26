@@ -1380,193 +1380,248 @@ class _VoiceRecitationPracticeCardState
     return Glass(
       radius: 18,
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Stack(
         children: [
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (var i = 0; i < _targetBlocks.length; i++)
-                _RecitationBlock(
-                  text: _targetBlocks[i],
-                  solved: _blockSolved[i],
-                  active: i == _currentBlock && !_completed,
-                  accent: accent,
-                ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              GestureDetector(
-                onTap: _toggleListening,
-                child: SizedBox(
-                  width: 58,
-                  height: 58,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      if (_listening)
-                        AnimatedBuilder(
-                          animation: _pulse,
-                          builder: (context, _) {
-                            final t = _pulse.value;
-                            return Container(
-                              width: 50 + 12 * t,
-                              height: 50 + 12 * t,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: accent.withValues(alpha: 1 - t),
-                                  width: 2,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 220),
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: accent.withValues(
-                            alpha: _listening ? .55 : .18,
-                          ),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: accent.withValues(alpha: .85),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: accent.withValues(alpha: .35),
-                              blurRadius: _listening ? 28 : 14,
-                              offset: const Offset(0, 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (var i = 0; i < _targetBlocks.length; i++)
+                    _RecitationBlock(
+                      text: _targetBlocks[i],
+                      solved: _blockSolved[i],
+                      active: i == _currentBlock && !_completed,
+                      accent: accent,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  GestureDetector(
+                    onTap: _toggleListening,
+                    child: SizedBox(
+                      width: 58,
+                      height: 58,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          if (_listening)
+                            AnimatedBuilder(
+                              animation: _pulse,
+                              builder: (context, _) {
+                                final t = _pulse.value;
+                                return Container(
+                                  width: 50 + 12 * t,
+                                  height: 50 + 12 * t,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: accent.withValues(alpha: 1 - t),
+                                      width: 2,
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
-                          ],
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 220),
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: accent.withValues(
+                                alpha: _listening ? .55 : .18,
+                              ),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: accent.withValues(alpha: .85),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: accent.withValues(alpha: .35),
+                                  blurRadius: _listening ? 28 : 14,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ],
+                            ),
+                            child: Icon(
+                              _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                              color: RefColors.ink,
+                              size: 24,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: wrongRecent
+                            ? RefColors.urgent.withValues(alpha: .18)
+                            : HtmlRefColors.glassSoft,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: wrongRecent
+                              ? RefColors.urgent
+                              : HtmlRefColors.glassBorder,
                         ),
-                        child: Icon(
-                          _listening ? Icons.stop_rounded : Icons.mic_rounded,
-                          color: RefColors.ink,
-                          size: 24,
+                      ),
+                      child: Text(
+                        _listening
+                            ? 'Escuchando tu voz...'
+                            : (_recognized.isEmpty ? 'Toca el mic y recita' : _recognized),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: (_recognized.isEmpty && !_listening)
+                              ? RefColors.dim
+                              : RefColors.ink,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: .18),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: accent.withValues(alpha: .6)),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '$_attemptsRemaining',
+                          style: TextStyle(
+                            color: _attemptsRemaining <= 1
+                                ? RefColors.urgent
+                                : accent,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          'intentos',
+                          style: TextStyle(
+                            color: accent.withValues(alpha: .85),
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                        Text(
+                          'restantes',
+                          style: TextStyle(
+                            color: accent.withValues(alpha: .85),
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              
+              if (_listening) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: .04),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: accent.withValues(alpha: .12),
+                      width: 1,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      _ListeningWaveIndicator(color: accent),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Grabando voz...',
+                        style: TextStyle(
+                          color: RefColors.dim,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
                         ),
                       ),
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: wrongRecent
-                        ? RefColors.urgent.withValues(alpha: .18)
-                        : HtmlRefColors.glassSoft,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: wrongRecent
-                          ? RefColors.urgent
-                          : HtmlRefColors.glassBorder,
-                    ),
-                  ),
-                  child: Text(
-                    _listening
-                        ? 'Escuchando tu voz...'
-                        : (_recognized.isEmpty ? 'Toca el mic y recita' : _recognized),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: (_recognized.isEmpty && !_listening)
-                          ? RefColors.dim
-                          : RefColors.ink,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: .18),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: accent.withValues(alpha: .6)),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '$_attemptsRemaining',
-                      style: TextStyle(
-                        color: _attemptsRemaining <= 1
-                            ? RefColors.urgent
-                            : accent,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    Text(
-                      'intentos',
-                      style: TextStyle(
-                        color: accent.withValues(alpha: .85),
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.1,
-                      ),
-                    ),
-                    Text(
-                      'restantes',
-                      style: TextStyle(
-                        color: accent.withValues(alpha: .85),
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.1,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              ],
             ],
           ),
-          
-          if (_listening) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: .04),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: accent.withValues(alpha: .12),
-                  width: 1,
-                ),
-              ),
-              child: Column(
-                children: [
-                  _ListeningWaveIndicator(color: accent),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Grabando voz...',
-                    style: TextStyle(
-                      color: RefColors.dim,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.6,
+          if (_isModelInitializing)
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.25),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 36,
+                            height: 36,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 4,
+                              valueColor: AlwaysStoppedAnimation<Color>(accent),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.65),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: accent.withValues(alpha: 0.3)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.bolt_rounded, color: accent, size: 16),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  'Preparando motor de voz...',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
+                ),
               ),
             ),
-          ],
         ],
       ),
     );

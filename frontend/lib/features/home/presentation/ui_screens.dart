@@ -2965,7 +2965,7 @@ class _CustomReorderableDelayedDragStartListener extends ReorderableDragStartLis
   @override
   MultiDragGestureRecognizer createRecognizer() {
     return DelayedMultiDragGestureRecognizer(
-      delay: const Duration(milliseconds: 225), // Perfect 225ms balance based on user preference (default 500ms)
+      delay: const Duration(milliseconds: 175), // Highly responsive 175ms delay based on user preference
     );
   }
 }
