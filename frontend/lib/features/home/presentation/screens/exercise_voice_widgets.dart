@@ -826,10 +826,10 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
                   ),
                   
                   if (_listening) ...[
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 10),
                     // Panel flotante animado de ondas de voz en tiempo real
                     Container(
-                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       decoration: BoxDecoration(
                         color: RefColors.cyan.withValues(alpha: .04),
                         borderRadius: BorderRadius.circular(16),

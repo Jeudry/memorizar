@@ -684,7 +684,7 @@ class _FogStepState extends State<_FogStep>
               ),
             ),
             Glass(
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
               gradient: LinearGradient(
                 colors: [
                   RefColors.violet.withValues(alpha: .22),
@@ -694,7 +694,7 @@ class _FogStepState extends State<_FogStep>
               child: _buildVersesContainer(context),
             ),
             if (!widget.finished) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -715,7 +715,7 @@ class _FogStepState extends State<_FogStep>
                 ],
               ),
             ],
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
             if (widget.finished)
               Glass(
                 padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
@@ -879,10 +879,10 @@ class _FogStepState extends State<_FogStep>
               ),
               
               if (_listening) ...[
-                const SizedBox(height: 24),
+                const SizedBox(height: 10),
                 // Panel flotante animado de ondas de voz en tiempo real
                 Container(
-                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                   decoration: BoxDecoration(
                     color: RefColors.cyan.withValues(alpha: .04),
                     borderRadius: BorderRadius.circular(16),
