@@ -2297,7 +2297,12 @@ List<String> _completionTargetsFor(String text, {required int level}) {
     if (picked.length >= targetCount) break;
   }
   // Return targets in text order, not shuffle order.
-  final ordered = picked.toList()..sort();
+  // To ensure visual alignment when there are duplicate words in the text,
+  // we map each picked index to the first occurrence index of that word.
+  final ordered = picked.map((idx) {
+    final word = words[idx];
+    return words.indexWhere((w) => _sameAnswer(w, word));
+  }).toList()..sort();
   return ordered.map((i) => words[i]).toList();
 }
 
