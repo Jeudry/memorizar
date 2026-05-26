@@ -41,6 +41,13 @@ cd backend && air                          # live reload
 docker-compose up
 ```
 
+### Hot Restart (Antigravity ONLY)
+**CRITICAL:** NEVER use `manage_task` tool with `send_input` 'R' to perform a Flutter hot restart.
+Instead, ALWAYS run the automatic hot restart trigger script:
+```bash
+dart /Users/sargon/.gemini/antigravity/brain/ad9a501d-71ee-4863-a468-bff6eb05a209/scratch/hot_restart.dart
+```
+
 ---
 
 ## Frontend (Flutter)
