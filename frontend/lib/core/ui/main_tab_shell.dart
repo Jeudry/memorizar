@@ -11,15 +11,15 @@ class MainTabShell extends StatefulWidget {
 
   const MainTabShell({super.key, this.initialRoute = AppRoutes.home});
 
-  static _MainTabShellState? of(BuildContext context) {
-    return context.findAncestorStateOfType<_MainTabShellState>();
+  static MainTabShellState? of(BuildContext context) {
+    return context.findAncestorStateOfType<MainTabShellState>();
   }
 
   @override
-  State<MainTabShell> createState() => _MainTabShellState();
+  State<MainTabShell> createState() => MainTabShellState();
 }
 
-class _MainTabShellState extends State<MainTabShell> {
+class MainTabShellState extends State<MainTabShell> {
   late int _currentIndex;
   late final PageController _pageController;
 
