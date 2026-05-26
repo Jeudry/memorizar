@@ -20,12 +20,12 @@ class RefBottomNav extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
       color: RefColors.bg.withValues(alpha: .6),
       child: Row(
-        children: const [
-          RefBottomItem(Icons.home_outlined, 'Inicio', AppRoutes.home),
-          RefBottomItem(Icons.rectangle_outlined, 'Mazos', AppRoutes.repasar),
-          RefBottomItem(Icons.people_outline, 'Amigos', AppRoutes.amigos),
-          RefBottomItem(Icons.public, 'Comunidad', AppRoutes.comunidad),
-          RefBottomItem(Icons.pie_chart_outline, 'Stats', AppRoutes.stats),
+        children: [
+          RefBottomItem(Icons.home_outlined, 'Inicio', AppRoutes.home, active: active),
+          RefBottomItem(Icons.rectangle_outlined, 'Mazos', AppRoutes.repasar, active: active),
+          RefBottomItem(Icons.people_outline, 'Amigos', AppRoutes.amigos, active: active),
+          RefBottomItem(Icons.public, 'Comunidad', AppRoutes.comunidad, active: active),
+          RefBottomItem(Icons.pie_chart_outline, 'Stats', AppRoutes.stats, active: active),
         ],
       ),
     );
@@ -36,13 +36,13 @@ class RefBottomItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final String route;
+  final String active;
 
-  const RefBottomItem(this.icon, this.label, this.route, {super.key});
+  const RefBottomItem(this.icon, this.label, this.route, {super.key, required this.active});
 
   @override
   Widget build(BuildContext context) {
-    final parent = context.findAncestorWidgetOfExactType<RefBottomNav>();
-    final isActive = parent?.active == route;
+    final isActive = active == route;
     return Expanded(
       child: GestureDetector(
         onTap: () {
@@ -58,7 +58,7 @@ class RefBottomItem extends StatelessWidget {
                 AppRoutes.comunidad,
                 AppRoutes.stats,
               ];
-              final currentIndex = routesOrder.indexOf(parent?.active ?? '');
+              final currentIndex = routesOrder.indexOf(active);
               final targetIndex = routesOrder.indexOf(route);
               final beginOffset = targetIndex > currentIndex
                   ? const Offset(1.0, 0.0)
