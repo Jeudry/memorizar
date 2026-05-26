@@ -736,7 +736,9 @@ class _FogStepState extends State<_FogStep>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Recitaste el texto de memoria de forma offline con ${(_score > 0 ? (_score * 100).round() : 100)}% de coincidencia.',
+                      _recognized.isNotEmpty
+                          ? 'Entendí: "$_recognized" (${(_score > 0 ? (_score * 100).round() : 100)}% de coincidencia)'
+                          : 'Recitaste el texto de memoria con ${(_score > 0 ? (_score * 100).round() : 100)}% de coincidencia',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: RefColors.ink,
