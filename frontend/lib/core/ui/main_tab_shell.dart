@@ -81,6 +81,8 @@ class MainTabShellState extends State<MainTabShell> {
     }
   }
 
+  String get activeRoute => routesOrder[_currentIndex];
+
   HomeBackgroundVariant _getBackgroundVariant() {
     switch (widget.initialRoute) {
       case AppRoutes.bgNocturnoMate:
