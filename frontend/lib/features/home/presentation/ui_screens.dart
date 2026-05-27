@@ -1050,6 +1050,27 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     List<String> distractors = [];
     final qNum = index % 4;
 
+    // Genre / style detection based on book reference in card.front
+    final ref = card.front.toLowerCase();
+    var style = 'instructional';
+    if (ref.contains('gén') || ref.contains('génesis') || ref.contains('éxo') || ref.contains('éxodo') || 
+        ref.contains('lev') || ref.contains('num') || ref.contains('deut') || ref.contains('jos') || 
+        ref.contains('jue') || ref.contains('rut') || ref.contains('sam') || ref.contains('rey') || 
+        ref.contains('cró') || ref.contains('esd') || ref.contains('neh') || ref.contains('est') || 
+        ref.contains('mat') || ref.contains('mar') || ref.contains('luc') || ref.contains('jua') || 
+        ref.contains('hec')) {
+      style = 'narrative';
+    } else if (ref.contains('job') || ref.contains('sal') || ref.contains('salmo') || ref.contains('pro') || 
+               ref.contains('ecl') || ref.contains('cant') || ref.contains('lam')) {
+      style = 'poetic';
+    } else if (ref.contains('isa') || ref.contains('jer') || ref.contains('eze') || ref.contains('dan') || 
+               ref.contains('ose') || ref.contains('joe') || ref.contains('amó') || ref.contains('abd') || 
+               ref.contains('jon') || ref.contains('miq') || ref.contains('nah') || ref.contains('hab') || 
+               ref.contains('sof') || ref.contains('hag') || ref.contains('zac') || ref.contains('mal') || 
+               ref.contains('apo')) {
+      style = 'prophetic';
+    }
+
     if (text.contains('puedo') || text.contains('fortalece')) {
       if (qNum == 0) {
         question = '¿Cuál es la idea principal de este pasaje sobre la fortaleza?';
@@ -1186,6 +1207,40 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           'El bienestar biológico y de salud frente a cualquier afección física.',
         ];
       }
+    } else if (text.contains('luz') || text.contains('tinieblas') || text.contains('noche') || text.contains('día') || text.contains('lumbrera') || text.contains('firmamento') || text.contains('separó')) {
+      if (qNum == 0) {
+        question = '¿Cuál es la importancia teológica de la distinción primordial entre la luz y las tinieblas?';
+        correct = 'El establecimiento del orden inteligente y la soberanía del Creador frente al caos de la oscuridad.';
+        distractors = [
+          'La demostración práctica de que la materia oscura carece de valor atómico o de utilidad física.',
+          'La creencia gnóstica de que el bien y el mal poseen el mismo origen y poder coeterno.',
+          'Un orden natural donde la luz se genera de forma fortuita sin requerir una voluntad primordial.',
+        ];
+      } else if (qNum == 1) {
+        question = '¿Qué principio de la creación se infiere cuando Dios declara que la luz "era buena"?';
+        correct = 'La bondad intrínseca y la perfección moral con la que Dios diseña cada aspecto de la existencia.';
+        distractors = [
+          'Que las tinieblas son intrínsecamente malas y no forman parte del plan divino original.',
+          'La superioridad estética del día como el único momento apto para la contemplación sagrada.',
+          'Una valoración transitoria sujeta a la posterior degradación material del universo.',
+        ];
+      } else if (qNum == 2) {
+        question = '¿Cuál es el significado espiritual detrás del acto divino de separar los elementos creados?';
+        correct = 'El propósito inteligente de establecer límites y funciones precisas para que la vida prospere.';
+        distractors = [
+          'La fragmentación del ser original en partes conflictivas destinadas al caos eterno.',
+          'Una imposición restrictiva que impide la libre mezcla de todas las sustancias del cosmos.',
+          'El inicio de una competencia eterna donde la luz busca aniquilar físicamente la noche.',
+        ];
+      } else {
+        question = '¿Qué verdad sobre el obrar de la Palabra divina se destaca en este relato de la creación?';
+        correct = 'Que el Creador actúa con orden deliberado y evalúa con sabiduría la armonía de su obra.';
+        distractors = [
+          'La experimentación casual de fórmulas azarosas hasta obtener resultados agradables.',
+          'El sometimiento de la divinidad ante leyes preexistentes e ingobernables del espacio.',
+          'La delegación de la creación a intermediarios inferiores que actuaron de forma autónoma.',
+        ];
+      }
     } else if (text.contains('serpiente') || text.contains('árbol') || text.contains('huerto') || text.contains('fruto') || text.contains('comer') || text.contains('tentación')) {
       if (qNum == 0) {
         question = '¿Qué aspecto de la tentación o la obediencia ilustra esta respuesta de la mujer?';
@@ -1221,38 +1276,143 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ];
       }
     } else {
-      if (qNum == 0) {
-        question = '¿Cuál de las siguientes afirmaciones describe mejor la enseñanza espiritual de este pasaje?';
-        correct = 'Vivir alineado a los principios eternos y la gracia revelada por Dios.';
-        distractors = [
-          'Alcanzar la iluminación ética mediante el estudio filosófico y la autodisciplina estoica.',
-          'Garantizar la prosperidad física y el éxito material mediante la observancia litúrgica ritual.',
-          'Desarrollar una resiliencia psicológica individual independiente de la comunión espiritual.',
-        ];
-      } else if (qNum == 1) {
-        question = '¿Qué implicación práctica tiene este versículo para la toma de decisiones diarias?';
-        correct = 'Evaluar nuestras intenciones y actitudes a la luz del mensaje de fe y amor divino.';
-        distractors = [
-          'Seguir con rigor literal las normas tradicionales de conducta cultural y social.',
-          'Analizar el texto de manera puramente académica para debatir posturas ideológicas.',
-          'Utilizar los preceptos éticos para juzgar y censurar las faltas del resto de la comunidad.',
-        ];
-      } else if (qNum == 2) {
-        question = '¿Cómo enriquece este pasaje la fe personal ante las dificultades?';
-        correct = 'Al recordarnos la presencia constante, la gracia y la guía de Dios en el caminar.';
-        distractors = [
-          'Al asegurar que la fe elimina automáticamente cualquier conflicto emocional o duda intelectual.',
-          'Al fomentar una resignación estoica ante el sufrimiento terrenal sin buscar consuelo.',
-          'Al basar la confianza en nuestras propias capacidades morales para superar la crisis.',
-        ];
+      if (style == 'narrative') {
+        if (qNum == 0) {
+          question = '¿Qué aspecto del relato o diálogo destaca primordialmente este pasaje?';
+          correct = 'La manifestación del propósito soberano de Dios actuando en acontecimientos concretos.';
+          distractors = [
+            'La primacía del azar físico en la evolución de los hechos descritos.',
+            'Un conjunto de mitos morales sin correlato en el obrar histórico divino.',
+            'La autosuficiencia absoluta del ser humano frente a su entorno físico.',
+          ];
+        } else if (qNum == 1) {
+          question = '¿Cómo se revela el carácter divino en este acontecimiento o declaración?';
+          correct = 'Mediante decretos, llamados u obras directas que revelan su justicia y bondad ordenadora.';
+          distractors = [
+            'A través de una indiferencia cósmica impasible ante el sufrimiento de los personajes.',
+            'Por medio de caprichos mudables que carecen de una sabiduría inteligente.',
+            'Mediante la exigencia de sacrificios ciegos como único canal de interacción.',
+          ];
+        } else if (qNum == 2) {
+          question = '¿Cuál es la respuesta de fe esperada ante las acciones narradas en este texto?';
+          correct = 'Reconocer el obrar y la soberanía del Creador en el devenir de la historia.';
+          distractors = [
+            'Desarrollar una resignación intelectual pasiva ante la inevitabilidad de las leyes naturales.',
+            'Cuestionar la veracidad y el valor de los testimonios históricos transmitidos.',
+            'Ignorar las lecciones del pasado en favor de un existencialismo individualista.',
+          ];
+        } else {
+          question = '¿Qué principio interpretativo se debe aplicar a este suceso o enseñanza?';
+          correct = 'Comprender que los hechos singulares forman parte del plan unificado de la revelación.';
+          distractors = [
+            'Evaluar la narrativa de forma fragmentada y desprovista de cohesión teológica.',
+            'Extraer directrices morales universales a partir de descripciones puramente circunstanciales.',
+            'Reducir los milagros y portentos a meras fantasías explicativas de la antigüedad.',
+          ];
+        }
+      } else if (style == 'poetic') {
+        if (qNum == 0) {
+          question = '¿Qué dimensión del alma o de la adoración expresa este lenguaje poético?';
+          correct = 'La comunicación sincera de alabanza, anhelo o dependencia absoluta de Dios.';
+          distractors = [
+            'Una técnica métrica formal destinada al entretenimiento estético cortesano.',
+            'El desahogo emocional de temores sin base en la fe o en las promesas divinas.',
+            'Un monólogo especulativo sobre el absurdo existencial y la brevedad de la vida.',
+          ];
+        } else if (qNum == 1) {
+          question = '¿Qué metáfora o imagen evoca este verso poético sobre la relación con Dios?';
+          correct = 'La seguridad y paz del creyente al cobijo de la fidelidad y amor eternos del Creador.';
+          distractors = [
+            'Una lucha trágica y constante contra fuerzas hostiles e ingobernables del destino.',
+            'La distancia infinita e insalvable entre el alma y un Dios indiferente.',
+            'Un intercambio contractual donde la devoción es una moneda de cambio material.',
+          ];
+        } else if (qNum == 2) {
+          question = '¿Cómo contribuye esta lírica sagrada a la meditación diaria?';
+          correct = 'Al elevar el pensamiento hacia la majestad, el consuelo y la verdad eterna de Dios.';
+          distractors = [
+            'Al promover un escape místico que evade las responsabilidades del mundo real.',
+            'Al fomentar la memorización mecánica de versos desprovistos de afecto genuino.',
+            'Al centrar la atención en el lucimiento poético y literario individual.',
+          ];
+        } else {
+          question = '¿Cuál es la base de la confianza lírica manifestada en el texto?';
+          correct = 'El carácter inmutable de Dios, quien cumple sus promesas de generación en generación.';
+          distractors = [
+            'La estabilidad emocional autónoma lograda mediante la meditación trascendental.',
+            'El optimismo basado en circunstancias externas favorables y seguras.',
+            'La superioridad moral que se autoafirma frente a los adversarios cotidianos.',
+          ];
+        }
+      } else if (style == 'prophetic') {
+        if (qNum == 0) {
+          question = '¿Cuál es el núcleo del mensaje o anuncio profético en este pasaje?';
+          correct = 'La revelación del juicio justo de Dios o su promesa de redención y restauración futura.';
+          distractors = [
+            'Un pronóstico astrológico o adivinación casual basada en el análisis social.',
+            'Una amenaza punitiva destinada a coaccionar el comportamiento sin ofrecer gracia.',
+            'La descripción de un ciclo cósmico repetitivo donde nada cambia sustancialmente.',
+          ];
+        } else if (qNum == 1) {
+          question = '¿Qué actitud demanda el anuncio del profeta de parte del oyente?';
+          correct = 'Arrepentimiento sincero, retorno a la justicia y fe en la soberanía divina.';
+          distractors = [
+            'Apatía o resignación ante la inminencia de eventos predeterminados por el hado.',
+            'La búsqueda de alianzas humanas para eludir las consecuencias morales.',
+            'La realización de ritos formales externos para complacer formalmente al soberano.',
+          ];
+        } else if (qNum == 2) {
+          question = '¿Cómo se manifiesta la fidelidad de Dios en el contexto profético presentado?';
+          correct = 'Al advertir con amor antes de actuar y al asegurar que su palabra no volverá vacía.';
+          distractors = [
+            'Al irrumpir con decisiones caprichosas e impredecibles sin previo aviso.',
+            'Al desentenderse de las alianzas históricas para iniciar un plan totalmente nuevo.',
+            'Al condicionar su fidelidad a la perfección absoluta del comportamiento del pueblo.',
+          ];
+        } else {
+          question = '¿Qué horizonte o esperanza final dibuja la profecía en este texto?';
+          correct = 'El triunfo definitivo de la justicia, la paz y el reino eterno del Señor.';
+          distractors = [
+            'Una utopía puramente política y terrenal libre de implicaciones espirituales.',
+            'La destrucción nihilista y sin sentido de todo lo creado sin restauración posterior.',
+            'El predominio perpetuo de las naciones más poderosas de la tierra.',
+          ];
+        }
       } else {
-        question = '¿Qué cualidad del carácter cristiano promueve el pasaje en su trasfondo?';
-        correct = 'La confianza humilde y el compromiso sincero con la verdad de Dios.';
-        distractors = [
-          'La autosuficiencia práctica que prescinde de la interdependencia con el prójimo.',
-          'El desapego absoluto de las responsabilidades materiales en busca de la contemplación mística.',
-          'La superioridad intelectual para argumentar doctrinas complejas frente a otros.',
-        ];
+        // Epistolary / Instructional (default)
+        if (qNum == 0) {
+          question = '¿Cuál de las siguientes afirmaciones describe mejor la enseñanza doctrinal o práctica de este pasaje?';
+          correct = 'Vivir alineado a los principios eternos y la gracia revelada por Dios.';
+          distractors = [
+            'Alcanzar la iluminación ética mediante el estudio filosófico y la autodisciplina estoica.',
+            'Garantizar la prosperidad física y el éxito material mediante la observancia litúrgica ritual.',
+            'Desarrollar una resiliencia psicológica individual independiente de la comunión espiritual.',
+          ];
+        } else if (qNum == 1) {
+          question = '¿Qué implicación práctica tiene este versículo para la toma de decisiones diarias?';
+          correct = 'Evaluar nuestras intenciones y actitudes a la luz del mensaje de fe y amor divino.';
+          distractors = [
+            'Seguir con rigor tradicional las normas de conducta cultural y social imperantes.',
+            'Analizar el texto de manera puramente intelectual para debatir posturas doctrinales.',
+            'Utilizar los preceptos éticos para juzgar y censurar las faltas de la comunidad.',
+          ];
+        } else if (qNum == 2) {
+          question = '¿Cómo enriquece este pasaje la fe personal del creyente?';
+          correct = 'Al recordarnos la presencia constante, la gracia santificadora y la guía de Dios.';
+          distractors = [
+            'Al asegurar que la fe elimina automáticamente cualquier conflicto emocional.',
+            'Al fomentar una resignación pasiva ante el sufrimiento terrenal sin buscar consuelo activo.',
+            'Al basar la confianza en nuestras propias capacidades morales para superar la crisis.',
+          ];
+        } else {
+          question = '¿Qué cualidad del carácter cristiano promueve el pasaje en su trasfondo?';
+          correct = 'La confianza humilde y el compromiso sincero con la verdad de Dios.';
+          distractors = [
+            'La autosuficiencia práctica que prescinde de la interdependencia con el prójimo.',
+            'El desapego absoluto de las responsabilidades materiales en busca de la contemplación pura.',
+            'La superioridad intelectual para argumentar doctrinas complejas frente a otros.',
+          ];
+        }
       }
     }
 
@@ -1286,6 +1446,28 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   String _generateTrueFalseStatement(MemoryCardData target, bool isTrue, math.Random rng, {int variant = 0}) {
     final text = target.back.toLowerCase();
     final idx = variant % 2;
+    
+    // Genre / style detection based on book reference in target.front
+    final ref = target.front.toLowerCase();
+    var style = 'instructional';
+    if (ref.contains('gén') || ref.contains('génesis') || ref.contains('éxo') || ref.contains('éxodo') || 
+        ref.contains('lev') || ref.contains('num') || ref.contains('deut') || ref.contains('jos') || 
+        ref.contains('jue') || ref.contains('rut') || ref.contains('sam') || ref.contains('rey') || 
+        ref.contains('cró') || ref.contains('esd') || ref.contains('neh') || ref.contains('est') || 
+        ref.contains('mat') || ref.contains('mar') || ref.contains('luc') || ref.contains('jua') || 
+        ref.contains('hec')) {
+      style = 'narrative';
+    } else if (ref.contains('job') || ref.contains('sal') || ref.contains('salmo') || ref.contains('pro') || 
+               ref.contains('ecl') || ref.contains('cant') || ref.contains('lam')) {
+      style = 'poetic';
+    } else if (ref.contains('isa') || ref.contains('jer') || ref.contains('eze') || ref.contains('dan') || 
+               ref.contains('ose') || ref.contains('joe') || ref.contains('amó') || ref.contains('abd') || 
+               ref.contains('jon') || ref.contains('miq') || ref.contains('nah') || ref.contains('hab') || 
+               ref.contains('sof') || ref.contains('hag') || ref.contains('zac') || ref.contains('mal') || 
+               ref.contains('apo')) {
+      style = 'prophetic';
+    }
+
     if (isTrue) {
       if (text.contains('ángel') || text.contains('ángeles')) {
         return idx == 0
@@ -1319,10 +1501,32 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         return idx == 0
             ? 'El pasaje registra la conversación en el huerto de Edén donde se discuten los límites alimenticios establecidos.'
             : 'El versículo muestra a la mujer respondiendo al tentador citando el permiso general de comer de los árboles.';
-      } else {
+      } else if (text.contains('luz') || text.contains('tinieblas') || text.contains('noche') || text.contains('día') || text.contains('lumbrera')) {
         return idx == 0
-            ? 'El texto enseña un principio de confianza, superación moral y guía divina para nuestras vidas.'
-            : 'El pasaje fomenta una actitud de fe activa y dependencia espiritual ante las dificultades.';
+            ? 'El pasaje hace referencia a la distinción y separación primordial entre la luz y las tinieblas.'
+            : 'El versículo destaca la bondad de la luz y el orden divino establecido al separarla de la oscuridad.';
+      } else if (text.contains('dijo') || text.contains('llamó') || text.contains('hizo') || text.contains('separó') || text.contains('vio')) {
+        return idx == 0
+            ? 'El versículo registra un acontecimiento narrativo sobre el obrar soberano e inteligente de Dios en la creación.'
+            : 'El texto describe la manifestación del poder divino al ordenar y declarar buena su obra.';
+      } else {
+        if (style == 'narrative') {
+          return idx == 0
+              ? 'El versículo describe un evento o diálogo clave dentro del relato histórico sagrado.'
+              : 'El texto narra una acción concreta de la divinidad o de los personajes bíblicos en la historia.';
+        } else if (style == 'poetic') {
+          return idx == 0
+              ? 'El pasaje utiliza un lenguaje poético o de sabiduría para expresar alabanza, ruego o devoción profunda.'
+              : 'El texto presenta una reflexión contemplativa sobre el carácter divino o la senda de la sabiduría.';
+        } else if (style == 'prophetic') {
+          return idx == 0
+              ? 'El texto proclama un mensaje profético, una advertencia o una promesa de redención futura para el pueblo.'
+              : 'El versículo comunica una revelación divina sobre los propósitos soberanos de Dios a lo largo del tiempo.';
+        } else {
+          return idx == 0
+              ? 'El pasaje proporciona una directriz ética o de sabiduría espiritual para guiar la conducta diaria.'
+              : 'El versículo enfatiza la alineación de nuestras intenciones y carácter con la justicia moral divina.';
+        }
       }
     } else {
       if (text.contains('ángel') || text.contains('ángeles')) {
@@ -1357,10 +1561,32 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         return idx == 0
             ? 'El texto afirma que la mujer huyó inmediatamente de la serpiente sin dirigirle la palabra.'
             : 'El pasaje enseña que Dios había prohibido terminantemente comer de todos y cada uno de los árboles del huerto.';
-      } else {
+      } else if (text.contains('luz') || text.contains('tinieblas') || text.contains('noche') || text.contains('día') || text.contains('lumbrera')) {
         return idx == 0
-            ? 'El texto sugiere que el destino humano está predeterminado por el azar sin ningún propósito o esperanza.'
-            : 'El pasaje enseña que la autosuficiencia absoluta es el único camino para alcanzar la plenitud espiritual.';
+            ? 'El pasaje afirma que la luz y las tinieblas se fusionaron en una sola sustancia homogénea sin distinción.'
+            : 'El texto sostiene que las tinieblas fueron declaradas como el elemento más perfecto y puro de la creación.';
+      } else if (text.contains('dijo') || text.contains('llamó') || text.contains('hizo') || text.contains('separó') || text.contains('vio')) {
+        return idx == 0
+            ? 'El pasaje sostiene que las acciones de Dios en la creación carecen de propósito u orden inteligente.'
+            : 'El versículo afirma que el acontecimiento narrado fue una ilusión que no tuvo consecuencias reales.';
+      } else {
+        if (style == 'narrative') {
+          return idx == 0
+              ? 'El pasaje describe un concepto abstracto moderno totalmente ajeno al contexto histórico del relato.'
+              : 'El versículo sostiene que el evento narrado ocurrió de forma puramente fortuita sin relevancia histórica.';
+        } else if (style == 'poetic') {
+          return idx == 0
+              ? 'El texto enseña que la alabanza y la poesía son secundarias y carecen de valor espiritual.'
+              : 'El versículo propone una resignación cínica donde la meditación personal no tiene sentido.';
+        } else if (style == 'prophetic') {
+          return idx == 0
+              ? 'El pasaje afirma que el futuro es incierto y que las promesas divinas son meramente metafóricas.'
+              : 'El texto desestima las advertencias proféticas como simples opiniones humanas sin autoridad.';
+        } else {
+          return idx == 0
+              ? 'El texto sugiere que la conducta ética y la verdad espiritual carecen de relevancia práctica en la vida.'
+              : 'El pasaje sostiene que la autosuficiencia moral autónoma es superior al consejo eterno del Creador.';
+        }
       }
     }
   }
@@ -2969,7 +3195,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             correct: round.correct,
             text: round.correct
                 ? '¡Correcto!'
-                : 'Respuesta correcta: ${isFrontToBack ? round.target.back : round.target.front}',
+                : (round.type == _QuizQuestionType.trueFalse
+                    ? 'Respuesta correcta: ${round.isStatementTrue ? "VERDADERO" : "FALSO"}'
+                    : 'Respuesta correcta: ${isFrontToBack ? round.target.back : round.target.front}'),
           ),
         if (_quizFinished) ...[
           const SizedBox(height: 14),

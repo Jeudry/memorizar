@@ -187,12 +187,100 @@ class LocalLlmService {
     final distractors = <String>{};
     final rand = math.Random(verseText.hashCode);
 
-    // Intentar hasta 50 combinaciones diferentes para obtener exactamente 3 distractores limpios, lógicos y únicos
-    for (var attempt = 0; attempt < 50 && distractors.length < 3; attempt++) {
+    // Helper para negar verbos clave
+    String negateVerbs(String sentence) {
+      var s = sentence;
+      final verbMap = {
+        ' vio ': ' no vio ',
+        ' separó ': ' no separó ',
+        ' llamó ': ' no llamó ',
+        ' hizo ': ' no hizo ',
+        ' creó ': ' no creó ',
+        ' respondió ': ' no respondió ',
+        ' comer ': ' no comer ',
+        ' guardará ': ' no guardará ',
+        ' suplirá ': ' no suplirá ',
+      };
+      verbMap.forEach((k, v) {
+        s = s.replaceAll(k, v);
+      });
+      return s;
+    }
+
+    // Helper para invertir cláusulas coordinadas o subordinadas
+    String reverseClauses(String sentence) {
+      if (sentence.contains(';')) {
+        final parts = sentence.split(';');
+        if (parts.length == 2) {
+          final p1 = parts[0].trim();
+          final p2 = parts[1].trim();
+          if (p1.isNotEmpty && p2.isNotEmpty) {
+            final p2Cap = p2.substring(0, 1).toUpperCase() + p2.substring(1);
+            final p1Low = p1.substring(0, 1).toLowerCase() + p1.substring(1);
+            // Preservar punto final si existe
+            var cleanP1 = p1Low;
+            var suffix = '';
+            if (cleanP1.endsWith('.')) {
+              cleanP1 = cleanP1.substring(0, cleanP1.length - 1);
+              suffix = '.';
+            }
+            return '$p2Cap; $cleanP1$suffix';
+          }
+        }
+      } else if (sentence.contains(',')) {
+        final parts = sentence.split(',');
+        if (parts.length == 2) {
+          final p1 = parts[0].trim();
+          final p2 = parts[1].trim();
+          if (p1.isNotEmpty && p2.isNotEmpty) {
+            final p2Cap = p2.substring(0, 1).toUpperCase() + p2.substring(1);
+            final p1Low = p1.substring(0, 1).toLowerCase() + p1.substring(1);
+            var cleanP1 = p1Low;
+            var suffix = '';
+            if (cleanP1.endsWith('.')) {
+              cleanP1 = cleanP1.substring(0, cleanP1.length - 1);
+              suffix = '.';
+            }
+            return '$p2Cap, $cleanP1$suffix';
+          }
+        }
+      }
+      return sentence;
+    }
+
+    // Helper para intercambiar antónimos semánticos
+    String swapAntonyms(String sentence) {
+      var s = sentence;
+      final antonymMap = {
+        'buena': 'mala',
+        'bueno': 'malo',
+        'luz': 'tinieblas',
+        'tinieblas': 'luz',
+        'noche': 'día',
+        'día': 'noche',
+        'comer': 'ayunar',
+        'vida': 'muerte',
+        'verdad': 'mentira',
+        'paz': 'turbación',
+      };
+      antonymMap.forEach((k, v) {
+        final regex = RegExp('\\b$k\\b', caseSensitive: false);
+        s = s.replaceAllMapped(regex, (m) {
+          final matched = m.group(0)!;
+          if (matched.isNotEmpty && matched[0] == matched[0].toUpperCase()) {
+            return v.substring(0, 1).toUpperCase() + v.substring(1);
+          }
+          return v;
+        });
+      });
+      return s;
+    }
+
+    // 1. Intentar hasta 40 combinaciones diferentes basadas en reemplazo de sinónimos
+    for (var attempt = 0; attempt < 40 && distractors.length < 3; attempt++) {
       var altered = List<String>.from(words);
       var replaced = false;
 
-      // 1. Intentar buscar palabras del diccionario de sinónimos/antónimos y sustituirlas de forma segura
       for (var w = 0; w < altered.length; w++) {
         final cleanWord = altered[w].replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
         if (cleanWord.isEmpty) continue;
@@ -221,7 +309,7 @@ class LocalLlmService {
         }
       }
 
-      // 2. Si no se reemplazó nada o para dar variedad adicional, aplicar modificaciones gramaticales de alta calidad
+      // 2. Aplicar variaciones gramaticales de artículos y pronombres para dar variedad natural
       if (!replaced || rand.nextDouble() < 0.4) {
         for (var w = 0; w < altered.length; w++) {
           final clean = altered[w].replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
@@ -276,23 +364,46 @@ class LocalLlmService {
     }
 
     final result = distractors.toList();
-    
-    // Si aún faltan distractores y no podemos generar más, hacemos variaciones semánticas creativas e inteligentes
-    final alternatePhrases = [
-      ' guardando los mandamientos',
-      ' según la promesa del pacto',
-      ' en el día de la prueba',
-      ' con fe inquebrantable',
-      ' para testimonio de los hombres',
-    ];
-    var altIdx = 0;
-    while (result.length < 3) {
-      final suffix = alternatePhrases[altIdx % alternatePhrases.length];
-      altIdx++;
-      result.add('$verseText$suffix');
+
+    // 3. Si aún no tenemos 3 distractores (porque el versículo es inusual o no tiene sinónimos precargados),
+    // aplicamos nuestras transformaciones estructurales avanzadas sobre el texto original
+    if (result.length < 3) {
+      final negated = negateVerbs(verseText);
+      if (negated != verseText && !result.contains(negated)) {
+        result.add(negated);
+      }
+    }
+    if (result.length < 3) {
+      final swapped = swapAntonyms(verseText);
+      if (swapped != verseText && !result.contains(swapped)) {
+        result.add(swapped);
+      }
+    }
+    if (result.length < 3) {
+      final reversed = reverseClauses(verseText);
+      if (reversed != verseText && !result.contains(reversed)) {
+        result.add(reversed);
+      }
     }
 
-    return result;
+    // 4. Como último recurso absoluto si el versículo es extremadamente corto y no aplica nada más,
+    // generamos alteraciones conceptuales exactas sobre el mismo en lugar de concatenar sufijos
+    if (result.length < 3) {
+      final finalNegated = verseText.toLowerCase().contains('no ')
+          ? verseText.replaceAll(RegExp(r'\bno\b', caseSensitive: false), '')
+          : 'Ciertamente, ' + verseText.substring(0, 1).toLowerCase() + verseText.substring(1);
+      if (!result.contains(finalNegated) && finalNegated != verseText) {
+        result.add(finalNegated);
+      }
+    }
+
+    // Asegurarse de retornar exactamente 3
+    while (result.length < 3) {
+      result.add(verseText + (result.length == 0 ? ' [versión modificada]' : ' [lectura alternativa]'));
+    }
+
+    return result.take(3).toList();
+  }
   }
 
   /// Ejecuta inferencia local y genera una respuesta para el prompt provisto.
