@@ -1501,6 +1501,71 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     });
   }
 
+  void _showQuizFailedDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: RefColors.bg,
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: RefColors.urgent, size: 28),
+              SizedBox(width: 10),
+              Text(
+                'Quiz No Superado',
+                style: TextStyle(
+                  color: RefColors.ink,
+                  fontWeight: FontWeight.w900,
+                  fontFamily: 'Outfit',
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Obtuviste $_quizScore de ${_quizRounds.length} aciertos.\n\nNecesitas al menos 2 aciertos para completar el quiz de estudio. ¿Quieres reintentarlo ahora?',
+            style: const TextStyle(
+              color: RefColors.ink,
+              fontSize: 15,
+              height: 1.4,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                'Ver Resultados',
+                style: TextStyle(
+                  color: RefColors.muted,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: RefColors.urgent,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+              onPressed: () {
+                Navigator.of(context).pop();
+                _resetQuiz();
+              },
+              child: const Text(
+                'Reintentar',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _submitOpenQuestionResponse(_QuizRound round) async {
     final response = (round.openQuestionResponse ?? '').trim();
     if (response.isEmpty) return;
@@ -3171,13 +3236,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   return;
                 }
                 if (!_quizPassed) {
-                  _resetQuiz();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Reintentando quiz. ¡Tú puedes!'),
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
+                  _showQuizFailedDialog();
                   return;
                 }
                 store.answerCurrentCard(true);
