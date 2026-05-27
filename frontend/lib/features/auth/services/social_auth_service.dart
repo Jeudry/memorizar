@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
@@ -35,10 +36,30 @@ class SocialAuthCancelled implements Exception {
 /// y se cae a un identificador sintético para que el flujo siga funcionando
 /// en desarrollo.
 class SocialAuthService {
+  static const _webClientId =
+      '106168748090-3krdd1sakko189j93aimecj5s61i9cr2.apps.googleusercontent.com';
+
   final GoogleSignIn _google;
 
   SocialAuthService({GoogleSignIn? google})
-      : _google = google ?? GoogleSignIn(scopes: const ['email', 'profile']);
+      : _google = google ?? _createGoogleSignIn();
+
+  static GoogleSignIn _createGoogleSignIn() {
+    String? clientId;
+    if (kIsWeb) {
+      clientId = _webClientId;
+    } else if (Platform.isMacOS) {
+      clientId = '106168748090-7a0q71bdnaq64g7q79o9eipr34dv8phs.apps.googleusercontent.com';
+    } else if (Platform.isAndroid) {
+      clientId = '106168748090-nth3427k9lc496nrnk94i6bhn28l65qv.apps.googleusercontent.com';
+    }
+    
+    return GoogleSignIn(
+      scopes: const ['email', 'profile'],
+      serverClientId: _webClientId,
+      clientId: clientId,
+    );
+  }
 
   /// Si el config nativo no está listo, los SDK lanzan errores específicos
   /// (`MissingPluginException`, `PlatformException` con códigos como
@@ -50,7 +71,7 @@ class SocialAuthService {
       if (account == null) {
         throw const SocialAuthCancelled('google');
       }
-      final auth = await account.authentication;
+      await account.authentication;
       return SocialAuthResult(
         provider: 'google',
         providerUserId: account.id,
