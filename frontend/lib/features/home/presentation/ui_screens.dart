@@ -1043,781 +1043,124 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     _quizRounds = _buildQuizRounds(deck, card);
   }
 
-  _QuizRound _buildConceptualRound(MemoryCardData card, math.Random rng, int index) {
-    final text = card.back.toLowerCase();
-    String question = '¿Cuál es la enseñanza espiritual o el significado central de este texto?';
-    String correct = '';
-    List<String> distractors = [];
-    final qNum = index % 4;
-
-    // Genre / style detection based on book reference in card.front
-    final ref = card.front.toLowerCase();
-    var style = 'instructional';
-    if (ref.contains('gén') || ref.contains('génesis') || ref.contains('éxo') || ref.contains('éxodo') || 
-        ref.contains('lev') || ref.contains('num') || ref.contains('deut') || ref.contains('jos') || 
-        ref.contains('jue') || ref.contains('rut') || ref.contains('sam') || ref.contains('rey') || 
-        ref.contains('cró') || ref.contains('esd') || ref.contains('neh') || ref.contains('est') || 
-        ref.contains('mat') || ref.contains('mar') || ref.contains('luc') || ref.contains('jua') || 
-        ref.contains('hec')) {
-      style = 'narrative';
-    } else if (ref.contains('job') || ref.contains('sal') || ref.contains('salmo') || ref.contains('pro') || 
-               ref.contains('ecl') || ref.contains('cant') || ref.contains('lam')) {
-      style = 'poetic';
-    } else if (ref.contains('isa') || ref.contains('jer') || ref.contains('eze') || ref.contains('dan') || 
-               ref.contains('ose') || ref.contains('joe') || ref.contains('amó') || ref.contains('abd') || 
-               ref.contains('jon') || ref.contains('miq') || ref.contains('nah') || ref.contains('hab') || 
-               ref.contains('sof') || ref.contains('hag') || ref.contains('zac') || ref.contains('mal') || 
-               ref.contains('apo')) {
-      style = 'prophetic';
-    }
-
-    if (text.contains('puedo') || text.contains('fortalece')) {
-      if (qNum == 0) {
-        question = '¿Cuál es la idea principal de este pasaje sobre la fortaleza?';
-        correct = 'La capacidad de superar toda adversidad y circunstancia a través del poder de Cristo.';
-        distractors = [
-          'La creencia de que el éxito se logra únicamente con autodisciplina y hábitos virtuosos.',
-          'La resignación pasiva ante el destino terrenal sin una participación de fe.',
-          'La idea de que la madurez espiritual erradica cualquier problema práctico diario.',
-        ];
-      } else if (qNum == 1) {
-        question = '¿Qué significa la expresión "todo lo puedo" según este contexto?';
-        correct = 'Tener contentamiento y constancia espiritual tanto en la abundancia como en la necesidad.';
-        distractors = [
-          'La superación exitosa de cualquier meta material mediante el pensamiento positivo.',
-          'La creencia gnóstica de que el cuerpo y la mente pueden anular las leyes físicas.',
-          'La capacidad de evitar cualquier confrontación con el sufrimiento moral.',
-        ];
-      } else if (qNum == 2) {
-        question = '¿Quién es la fuente de la capacitación espiritual descrita en el versículo?';
-        correct = 'Cristo, quien infunde poder y sostiene la fe de forma íntima.';
-        distractors = [
-          'El desarrollo psicológico enfocado en el autocontrol estoico.',
-          'El soporte emocional provisto por la estructura institucional y comunitaria.',
-          'La observancia de directrices doctrinales y normas de conducta social.',
-        ];
-      } else {
-        question = '¿Cuál es el propósito último de la fortaleza que Dios otorga al creyente?';
-        correct = 'Permanecer firme y en paz en medio de las pruebas y responsabilidades.';
-        distractors = [
-          'Lograr un liderazgo moral incuestionable frente al resto de la sociedad.',
-          'Obtener un bienestar emocional absoluto y una vida carente de tensiones.',
-          'Demostrar superioridad intelectual sobre otras corrientes éticas.',
-        ];
-      }
-    } else if (text.contains('gracias') || text.contains('misericordia') || text.contains('bueno')) {
-      if (qNum == 0) {
-        question = '¿Qué actitud fundamental promueve este pasaje en el creyente?';
-        correct = 'La gratitud y alabanza sincera al Señor por su amor fiel y bondad eternos.';
-        distractors = [
-          'El optimismo pragmático para sortear las dificultades cotidianas.',
-          'El cumplimiento reverente del deber litúrgico como retribución divina.',
-          'El enfoque contemplativo que ignora las dinámicas del sufrimiento terrenal.',
-        ];
-      } else if (qNum == 1) {
-        question = '¿Cuál es la base de la alabanza según el texto?';
-        correct = 'El carácter inherentemente bueno de Dios y la fidelidad eterna de su misericordia.';
-        distractors = [
-          'La recompensa moral obtenida por la rectitud de nuestras acciones.',
-          'El regocijo transitorio producido por el éxito en nuestros proyectos.',
-          'La sumisión temerosa ante la omnipotencia y majestad de la divinidad.',
-        ];
-      } else if (qNum == 2) {
-        question = '¿Qué significa que la misericordia de Dios "es para siempre"?';
-        correct = 'Que su amor redentor y perdón no tienen fecha de vencimiento para su pueblo.';
-        distractors = [
-          'Que el orden moral del universo anula la necesidad de justicia correctiva.',
-          'Que todas las corrientes espirituales conducen al mismo destino benevolente.',
-          'Que la compasión divina ignora por completo la libertad de elección humana.',
-        ];
-      } else {
-        question = '¿Quiénes son llamados a proclamar activamente las grandezas del Señor?';
-        correct = 'Los redimidos que han experimentado su rescate y liberación en la práctica.';
-        distractors = [
-          'Aquellos que han mantenido una conducta impecable libre de cualquier tropiezo.',
-          'Líderes seleccionados con una preparación intelectual y académica superior.',
-          'El conjunto de la sociedad humana en virtud de un deber natural universal.',
-        ];
-      }
-    } else if (text.contains('angustia') || text.contains('clamar') || text.contains('liberó') || text.contains('salvó') || text.contains('angustiados')) {
-      if (qNum == 0) {
-        question = '¿Qué nos enseña este versículo sobre la respuesta ante el sufrimiento?';
-        correct = 'Que acudir al Señor con fe en la prueba trae consuelo y liberación real.';
-        distractors = [
-          'Que la adversidad es un proceso inevitable diseñado para forzar la autosuficiencia.',
-          'Que la introspección reflexiva neutraliza el dolor antes de requerir ayuda.',
-          'Que la súplica espiritual funciona únicamente como un analgésico psicológico.',
-        ];
-      } else if (qNum == 1) {
-        question = '¿Qué acción de fe desencadena la intervención divina en la tribulación?';
-        correct = 'El clamor sincero y humilde nacido de la total dependencia en Dios.';
-        distractors = [
-          'La resignación filosófica ante el dolor y la aceptación del destino.',
-          'La realización de actos meritorios de caridad o disciplina espiritual.',
-          'La búsqueda racional de soluciones antes de considerar la súplica.',
-        ];
-      } else if (qNum == 2) {
-        question = '¿Cuál es el resultado de clamar a Dios en el día de la angustia?';
-        correct = 'Él escucha con compasión y rescata al afligido de sus temores.';
-        distractors = [
-          'La resolución automática de toda tensión sin requerir esfuerzo de fe.',
-          'El desarrollo inmediato de una insensibilidad absoluta frente a la crisis.',
-          'Una tranquilidad pasajera condicionada al cambio inmediato de entorno.',
-        ];
-      } else {
-        question = '¿Cómo se describe la naturaleza del rescate del Señor en este pasaje?';
-        correct = 'Como un acto soberano de gracia que saca al creyente de su callejón sin salida.';
-        distractors = [
-          'Un premio derivado de la acumulación progresiva de méritos éticos.',
-          'Una reestructuración mental que no posee implicaciones en el mundo real.',
-          'Una providencia general que beneficia a todos de forma impersonal.',
-        ];
-      }
-    } else if (text.contains('paz') || text.contains('cuidado') || text.contains('ansiedad') || text.contains('guardará')) {
-      if (qNum == 0) {
-        question = '¿Cuál es el camino que propone este texto para vencer la ansiedad?';
-        correct = 'Depositar toda preocupación en Dios a través del ruego y la gratitud profunda.';
-        distractors = [
-          'La supresión sistemática de pensamientos negativos a través de la concentración.',
-          'La planificación exhaustiva de cada variable futura para reducir riesgos.',
-          'La confianza pasiva en que los conflictos se disolverán solos.',
-        ];
-      } else if (qNum == 1) {
-        question = '¿Qué tipo de paz promete Dios en respuesta a la oración de fe?';
-        correct = 'Una paz sobrenatural que supera el entendimiento humano y guarda el corazón.';
-        distractors = [
-          'Una quietud intelectual y estoica libre de cualquier emoción activa.',
-          'La certeza garantizada del éxito de todas nuestras decisiones prácticas.',
-          'Un estado permanente de éxtasis místico desprovisto de responsabilidades.',
-        ];
-      } else if (qNum == 2) {
-        question = '¿Qué papel juega la gratitud en medio de nuestras peticiones?';
-        correct = 'Alinear el alma con la soberanía y bondad previas de Dios al presentar la necesidad.';
-        distractors = [
-          'Un acto protocolario de cortesía para asegurar la benevolencia del Creador.',
-          'Un ejercicio de positivismo para enmascarar el dolor de la aflicción.',
-          'Una herramienta litúrgica orientada a influir en la voluntad divina.',
-        ];
-      } else {
-        question = '¿Qué protege o guarda la paz de Dios según la promesa?';
-        correct = 'Nuestros pensamientos y emociones en la íntima comunión con Cristo Jesús.';
-        distractors = [
-          'Nuestras relaciones interpersonales y reputación ante la comunidad.',
-          'Nuestras metas personales frente al fracaso material o intelectual.',
-          'El bienestar biológico y de salud frente a cualquier afección física.',
-        ];
-      }
-    } else if (text.contains('luz') || text.contains('tinieblas') || text.contains('noche') || text.contains('día') || text.contains('lumbrera') || text.contains('firmamento') || text.contains('separó')) {
-      if (qNum == 0) {
-        question = '¿Cuál es la importancia teológica de la distinción primordial entre la luz y las tinieblas?';
-        correct = 'El establecimiento del orden inteligente y la soberanía del Creador frente al caos de la oscuridad.';
-        distractors = [
-          'La demostración práctica de que la materia oscura carece de valor atómico o de utilidad física.',
-          'La creencia gnóstica de que el bien y el mal poseen el mismo origen y poder coeterno.',
-          'Un orden natural donde la luz se genera de forma fortuita sin requerir una voluntad primordial.',
-        ];
-      } else if (qNum == 1) {
-        question = '¿Qué principio de la creación se infiere cuando Dios declara que la luz "era buena"?';
-        correct = 'La bondad intrínseca y la perfección moral con la que Dios diseña cada aspecto de la existencia.';
-        distractors = [
-          'Que las tinieblas son intrínsecamente malas y no forman parte del plan divino original.',
-          'La superioridad estética del día como el único momento apto para la contemplación sagrada.',
-          'Una valoración transitoria sujeta a la posterior degradación material del universo.',
-        ];
-      } else if (qNum == 2) {
-        question = '¿Cuál es el significado espiritual detrás del acto divino de separar los elementos creados?';
-        correct = 'El propósito inteligente de establecer límites y funciones precisas para que la vida prospere.';
-        distractors = [
-          'La fragmentación del ser original en partes conflictivas destinadas al caos eterno.',
-          'Una imposición restrictiva que impide la libre mezcla de todas las sustancias del cosmos.',
-          'El inicio de una competencia eterna donde la luz busca aniquilar físicamente la noche.',
-        ];
-      } else {
-        question = '¿Qué verdad sobre el obrar de la Palabra divina se destaca en este relato de la creación?';
-        correct = 'Que el Creador actúa con orden deliberado y evalúa con sabiduría la armonía de su obra.';
-        distractors = [
-          'La experimentación casual de fórmulas azarosas hasta obtener resultados agradables.',
-          'El sometimiento de la divinidad ante leyes preexistentes e ingobernables del espacio.',
-          'La delegación de la creación a intermediarios inferiores que actuaron de forma autónoma.',
-        ];
-      }
-    } else if (text.contains('serpiente') || text.contains('árbol') || text.contains('huerto') || text.contains('fruto') || text.contains('comer') || text.contains('tentación')) {
-      if (qNum == 0) {
-        question = '¿Qué aspecto de la tentación o la obediencia ilustra esta respuesta de la mujer?';
-        correct = 'La confrontación inicial con el mandato divino y los límites establecidos por el Creador.';
-        distractors = [
-          'La sumisión inmediata y sin cuestionamientos a las sugerencias de la serpiente.',
-          'El desdén absoluto hacia los frutos materiales del huerto por ser considerados impuros.',
-          'La decisión consciente de ignorar cualquier directriz moral sobre la alimentación.',
-        ];
-      } else if (qNum == 1) {
-        question = '¿Qué revela el diálogo de la mujer con la serpiente en este pasaje?';
-        correct = 'El inicio de una negociación cognitiva sobre los límites de la obediencia humana.';
-        distractors = [
-          'Una declaración firme e irrevocable de hostilidad absoluta hacia la tentación.',
-          'Un tratado teológico formal sobre la soberanía divina en la creación.',
-          'La indiferencia total de la mujer frente a la presencia de la serpiente.',
-        ];
-      } else if (qNum == 2) {
-        question = '¿Cuál es el significado espiritual detrás de la restricción de comer del fruto en el huerto?';
-        correct = 'El reconocimiento de la soberanía de Dios sobre el conocimiento moral del bien y del mal.';
-        distractors = [
-          'Una privación física arbitraria impuesta para forzar el sufrimiento humano.',
-          'La demostración de que la creación física es intrínsecamente pecaminosa.',
-          'Un ejercicio místico orientado a alcanzar la autosuficiencia espiritual.',
-        ];
-      } else {
-        question = '¿Qué lección sobre la vulnerabilidad humana se infiere de este versículo?';
-        correct = 'La fragilidad de dialogar con la mentira que sutilmente tuerce la verdad divina.';
-        distractors = [
-          'La necesidad de una fuerza física superior para repeler la presencia del adversario.',
-          'El valor del intelecto humano autónomo para resolver dilemas morales.',
-          'La ineficacia absoluta de cualquier límite moral para de la conducta humana.',
-        ];
-      }
-    } else {
-      if (style == 'narrative') {
-        if (qNum == 0) {
-          question = '¿Qué aspecto del relato o diálogo destaca primordialmente este pasaje?';
-          correct = 'La manifestación del propósito soberano de Dios actuando en acontecimientos concretos.';
-          distractors = [
-            'La primacía del azar físico en la evolución de los hechos descritos.',
-            'Un conjunto de mitos morales sin correlato en el obrar histórico divino.',
-            'La autosuficiencia absoluta del ser humano frente a su entorno físico.',
-          ];
-        } else if (qNum == 1) {
-          question = '¿Cómo se revela el carácter divino en este acontecimiento o declaración?';
-          correct = 'Mediante decretos, llamados u obras directas que revelan su justicia y bondad ordenadora.';
-          distractors = [
-            'A través de una indiferencia cósmica impasible ante el sufrimiento de los personajes.',
-            'Por medio de caprichos mudables que carecen de una sabiduría inteligente.',
-            'Mediante la exigencia de sacrificios ciegos como único canal de interacción.',
-          ];
-        } else if (qNum == 2) {
-          question = '¿Cuál es la respuesta de fe esperada ante las acciones narradas en este texto?';
-          correct = 'Reconocer el obrar y la soberanía del Creador en el devenir de la historia.';
-          distractors = [
-            'Desarrollar una resignación intelectual pasiva ante la inevitabilidad de las leyes naturales.',
-            'Cuestionar la veracidad y el valor de los testimonios históricos transmitidos.',
-            'Ignorar las lecciones del pasado en favor de un existencialismo individualista.',
-          ];
-        } else {
-          question = '¿Qué principio interpretativo se debe aplicar a este suceso o enseñanza?';
-          correct = 'Comprender que los hechos singulares forman parte del plan unificado de la revelación.';
-          distractors = [
-            'Evaluar la narrativa de forma fragmentada y desprovista de cohesión teológica.',
-            'Extraer directrices morales universales a partir de descripciones puramente circunstanciales.',
-            'Reducir los milagros y portentos a meras fantasías explicativas de la antigüedad.',
-          ];
-        }
-      } else if (style == 'poetic') {
-        if (qNum == 0) {
-          question = '¿Qué dimensión del alma o de la adoración expresa este lenguaje poético?';
-          correct = 'La comunicación sincera de alabanza, anhelo o dependencia absoluta de Dios.';
-          distractors = [
-            'Una técnica métrica formal destinada al entretenimiento estético cortesano.',
-            'El desahogo emocional de temores sin base en la fe o en las promesas divinas.',
-            'Un monólogo especulativo sobre el absurdo existencial y la brevedad de la vida.',
-          ];
-        } else if (qNum == 1) {
-          question = '¿Qué metáfora o imagen evoca este verso poético sobre la relación con Dios?';
-          correct = 'La seguridad y paz del creyente al cobijo de la fidelidad y amor eternos del Creador.';
-          distractors = [
-            'Una lucha trágica y constante contra fuerzas hostiles e ingobernables del destino.',
-            'La distancia infinita e insalvable entre el alma y un Dios indiferente.',
-            'Un intercambio contractual donde la devoción es una moneda de cambio material.',
-          ];
-        } else if (qNum == 2) {
-          question = '¿Cómo contribuye esta lírica sagrada a la meditación diaria?';
-          correct = 'Al elevar el pensamiento hacia la majestad, el consuelo y la verdad eterna de Dios.';
-          distractors = [
-            'Al promover un escape místico que evade las responsabilidades del mundo real.',
-            'Al fomentar la memorización mecánica de versos desprovistos de afecto genuino.',
-            'Al centrar la atención en el lucimiento poético y literario individual.',
-          ];
-        } else {
-          question = '¿Cuál es la base de la confianza lírica manifestada en el texto?';
-          correct = 'El carácter inmutable de Dios, quien cumple sus promesas de generación en generación.';
-          distractors = [
-            'La estabilidad emocional autónoma lograda mediante la meditación trascendental.',
-            'El optimismo basado en circunstancias externas favorables y seguras.',
-            'La superioridad moral que se autoafirma frente a los adversarios cotidianos.',
-          ];
-        }
-      } else if (style == 'prophetic') {
-        if (qNum == 0) {
-          question = '¿Cuál es el núcleo del mensaje o anuncio profético en este pasaje?';
-          correct = 'La revelación del juicio justo de Dios o su promesa de redención y restauración futura.';
-          distractors = [
-            'Un pronóstico astrológico o adivinación casual basada en el análisis social.',
-            'Una amenaza punitiva destinada a coaccionar el comportamiento sin ofrecer gracia.',
-            'La descripción de un ciclo cósmico repetitivo donde nada cambia sustancialmente.',
-          ];
-        } else if (qNum == 1) {
-          question = '¿Qué actitud demanda el anuncio del profeta de parte del oyente?';
-          correct = 'Arrepentimiento sincero, retorno a la justicia y fe en la soberanía divina.';
-          distractors = [
-            'Apatía o resignación ante la inminencia de eventos predeterminados por el hado.',
-            'La búsqueda de alianzas humanas para eludir las consecuencias morales.',
-            'La realización de ritos formales externos para complacer formalmente al soberano.',
-          ];
-        } else if (qNum == 2) {
-          question = '¿Cómo se manifiesta la fidelidad de Dios en el contexto profético presentado?';
-          correct = 'Al advertir con amor antes de actuar y al asegurar que su palabra no volverá vacía.';
-          distractors = [
-            'Al irrumpir con decisiones caprichosas e impredecibles sin previo aviso.',
-            'Al desentenderse de las alianzas históricas para iniciar un plan totalmente nuevo.',
-            'Al condicionar su fidelidad a la perfección absoluta del comportamiento del pueblo.',
-          ];
-        } else {
-          question = '¿Qué horizonte o esperanza final dibuja la profecía en este texto?';
-          correct = 'El triunfo definitivo de la justicia, la paz y el reino eterno del Señor.';
-          distractors = [
-            'Una utopía puramente política y terrenal libre de implicaciones espirituales.',
-            'La destrucción nihilista y sin sentido de todo lo creado sin restauración posterior.',
-            'El predominio perpetuo de las naciones más poderosas de la tierra.',
-          ];
-        }
-      } else {
-        // Epistolary / Instructional (default)
-        if (qNum == 0) {
-          question = '¿Cuál de las siguientes afirmaciones describe mejor la enseñanza doctrinal o práctica de este pasaje?';
-          correct = 'Vivir alineado a los principios eternos y la gracia revelada por Dios.';
-          distractors = [
-            'Alcanzar la iluminación ética mediante el estudio filosófico y la autodisciplina estoica.',
-            'Garantizar la prosperidad física y el éxito material mediante la observancia litúrgica ritual.',
-            'Desarrollar una resiliencia psicológica individual independiente de la comunión espiritual.',
-          ];
-        } else if (qNum == 1) {
-          question = '¿Qué implicación práctica tiene este versículo para la toma de decisiones diarias?';
-          correct = 'Evaluar nuestras intenciones y actitudes a la luz del mensaje de fe y amor divino.';
-          distractors = [
-            'Seguir con rigor tradicional las normas de conducta cultural y social imperantes.',
-            'Analizar el texto de manera puramente intelectual para debatir posturas doctrinales.',
-            'Utilizar los preceptos éticos para juzgar y censurar las faltas de la comunidad.',
-          ];
-        } else if (qNum == 2) {
-          question = '¿Cómo enriquece este pasaje la fe personal del creyente?';
-          correct = 'Al recordarnos la presencia constante, la gracia santificadora y la guía de Dios.';
-          distractors = [
-            'Al asegurar que la fe elimina automáticamente cualquier conflicto emocional.',
-            'Al fomentar una resignación pasiva ante el sufrimiento terrenal sin buscar consuelo activo.',
-            'Al basar la confianza en nuestras propias capacidades morales para superar la crisis.',
-          ];
-        } else {
-          question = '¿Qué cualidad del carácter cristiano promueve el pasaje en su trasfondo?';
-          correct = 'La confianza humilde y el compromiso sincero con la verdad de Dios.';
-          distractors = [
-            'La autosuficiencia práctica que prescinde de la interdependencia con el prójimo.',
-            'El desapego absoluto de las responsabilidades materiales en busca de la contemplación pura.',
-            'La superioridad intelectual para argumentar doctrinas complejas frente a otros.',
-          ];
-        }
-      }
-    }
-
-    final targetCard = MemoryCardData(
-      id: 'quiz-conceptual-${card.id}-$index',
-      front: question,
-      back: correct,
-      source: card.source,
-      icon: card.icon,
-    );
-
-    final optionCards = <MemoryCardData>[
-      targetCard,
-      for (var i = 0; i < distractors.length; i++)
-        MemoryCardData(
-          id: 'quiz-conceptual-distractor-$i-${card.id}-$index',
-          front: question,
-          back: distractors[i],
-          source: 'IA Local Offline',
-          icon: card.icon,
-        )
-    ]..shuffle(rng);
-
-    return _QuizRound(
-      target: targetCard,
-      type: _QuizQuestionType.frontToBack,
-      options: optionCards,
-    );
-  }
-
-  _QuizRound _buildOddOneOutRound(MemoryCardData card, math.Random rng, int index) {
-    final cleanText = card.back.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '').toLowerCase();
-    final words = cleanText.split(' ').where((w) => w.length > 3).toList();
-    
-    // Pick 3 words that are in the verse
-    final presentWords = <String>{};
-    if (words.length >= 3) {
-      words.shuffle(rng);
-      for (final w in words) {
-        if (presentWords.length < 3) {
-          presentWords.add(w.substring(0, 1).toUpperCase() + w.substring(1));
-        }
-      }
-    }
-    
-    while (presentWords.length < 3) {
-      presentWords.add('Palabra${presentWords.length}');
-    }
-    
-    // Pick a word that is NOT in the verse
-    final potentialOddWords = [
-      'estrellas', 'leones', 'oro', 'plata', 'fuego', 'espada', 'monte', 'barco',
-      'camello', 'árbol', 'fruto', 'serpiente', 'cielo', 'mar', 'viento', 'tormenta',
-      'tristeza', 'derrota', 'temor', 'orgullo', 'riqueza', 'pobreza', 'ley', 'pacto'
-    ];
-    potentialOddWords.shuffle(rng);
-    
-    String oddWord = '';
-    for (final ow in potentialOddWords) {
-      if (!cleanText.contains(ow.toLowerCase())) {
-        oddWord = ow.substring(0, 1).toUpperCase() + ow.substring(1);
-        break;
-      }
-    }
-    if (oddWord.isEmpty) {
-      oddWord = 'Dinosaurio';
-    }
-    
-    final question = '¿Cuál de estas palabras NO aparece en el versículo de ${card.front}?';
-    final correctOpt = oddWord;
-    final distractors = presentWords.toList();
-    
-    final targetCard = MemoryCardData(
-      id: 'quiz-odd-${card.id}-$index',
-      front: question,
-      back: correctOpt,
-      source: card.source,
-      icon: card.icon,
-    );
-    
-    final optionCards = <MemoryCardData>[
-      targetCard,
-      for (var idx = 0; idx < distractors.length; idx++)
-        MemoryCardData(
-          id: 'quiz-odd-distractor-$idx-${card.id}-$index',
-          front: question,
-          back: distractors[idx],
-          source: 'Sistema',
-          icon: card.icon,
-        )
-    ]..shuffle(rng);
-    
-    return _QuizRound(
-      target: targetCard,
-      type: _QuizQuestionType.frontToBack,
-      options: optionCards,
-    );
-  }
-
-  _QuizRound _buildPhysicalObservationRound(MemoryCardData card, math.Random rng, int index) {
-    final text = card.back.toLowerCase();
-    String question = '¿Qué acción o elemento físico destaca este versículo?';
-    String correctOpt = '';
-    List<String> distractors = [];
-    
-    if (text.contains('luz') || text.contains('tinieblas') || text.contains('separó')) {
-      question = 'En ${card.front}, ¿qué acción física realiza Dios después de ver la luz?';
-      correctOpt = 'Separar la luz de las tinieblas.';
-      distractors = [
-        'Crear los astros celestes.',
-        'Mezclar los elementos del caos.',
-        'Hacer llover sobre la tierra.',
-      ];
-    } else if (text.contains('serpiente') || text.contains('huerto') || text.contains('árboles')) {
-      question = 'En ${card.front}, ¿quiénes son los dos personajes que interactúan directamente en el diálogo?';
-      correctOpt = 'La mujer y la serpiente.';
-      distractors = [
-        'Adán y la serpiente.',
-        'Dios el Señor y Adán.',
-        'La mujer y Adán.',
-      ];
-    } else if (text.contains('fortalece') || text.contains('puedo')) {
-      question = 'Según Filipenses 4:13, ¿qué efecto tiene Cristo en el autor frente a las circunstancias?';
-      correctOpt = 'Le infunde fuerzas para afrontar todo.';
-      distractors = [
-        'Le quita todos sus problemas materiales.',
-        'Le enseña a gobernar a los demás.',
-        'Le da riquezas y abundancia terrenal.',
-      ];
-    } else {
-      question = 'Observando el texto de ${card.front}, ¿qué tipo de interacción directa se describe?';
-      correctOpt = 'Una declaración, mandato o suceso concreto.';
-      distractors = [
-        'Un debate filosófico abstracto moderno.',
-        'Una lista de normas rituales de templo.',
-        'Una genealogía familiar detallada.',
-      ];
-    }
-    
-    final targetCard = MemoryCardData(
-      id: 'quiz-obs-${card.id}-$index',
-      front: question,
-      back: correctOpt,
-      source: card.source,
-      icon: card.icon,
-    );
-    
-    final optionCards = <MemoryCardData>[
-      targetCard,
-      for (var idx = 0; idx < distractors.length; idx++)
-        MemoryCardData(
-          id: 'quiz-obs-distractor-$idx-${card.id}-$index',
-          front: question,
-          back: distractors[idx],
-          source: 'Sistema',
-          icon: card.icon,
-        )
-    ]..shuffle(rng);
-    
-    return _QuizRound(
-      target: targetCard,
-      type: _QuizQuestionType.frontToBack,
-      options: optionCards,
-    );
-  }
-
   _QuizRound _buildCorruptedWordRound(MemoryCardData card, math.Random rng, int index) {
     final text = card.back;
-    final cleanText = text.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
-    final cleanTextLower = cleanText.toLowerCase();
     
-    String originalWord = '';
-    String incorrectWord = '';
-    
-    // 1. Detect if animal swap is applicable
-    if (cleanTextLower.contains('serpiente')) {
-      originalWord = 'serpiente';
-      incorrectWord = 'jirafa';
-    } else if (cleanTextLower.contains('pastores')) {
-      originalWord = 'pastores';
-      incorrectWord = 'astronautas';
-    } else if (cleanTextLower.contains('pastor')) {
-      originalWord = 'pastor';
-      incorrectWord = 'astronauta';
-    } else if (cleanTextLower.contains('ovejas')) {
-      originalWord = 'ovejas';
-      incorrectWord = 'pestañas';
-    } else if (cleanTextLower.contains('oveja')) {
-      originalWord = 'oveja';
-      incorrectWord = 'pestaña';
-    } else if (cleanTextLower.contains('lobo')) {
-      originalWord = 'lobo';
-      incorrectWord = 'tiburón';
-    } else if (cleanTextLower.contains('león')) {
-      originalWord = 'león';
-      incorrectWord = 'gatito';
-    }
-    
-    // 2. Detect if number swap is applicable
-    if (originalWord.isEmpty) {
-      if (cleanTextLower.contains('primero')) {
-        originalWord = 'primero';
-        incorrectWord = 'quinto';
-      } else if (cleanTextLower.contains('segundo')) {
-        originalWord = 'segundo';
-        incorrectWord = 'octavo';
-      } else if (cleanTextLower.contains('tercero')) {
-        originalWord = 'tercero';
-        incorrectWord = 'noveno';
-      } else if (cleanTextLower.contains('séptimo')) {
-        originalWord = 'séptimo';
-        incorrectWord = 'cuarto';
-      } else if (cleanTextLower.contains('siete')) {
-        originalWord = 'siete';
-        incorrectWord = 'veinte';
-      } else if (cleanTextLower.contains('tres')) {
-        originalWord = 'tres';
-        incorrectWord = 'cincuenta';
-      }
-    }
-    
-    // 3. Detect if modern anachronism swap is applicable
-    if (originalWord.isEmpty) {
-      if (cleanTextLower.contains('árboles')) {
-        originalWord = 'árboles';
-        incorrectWord = 'celulares';
-      } else if (cleanTextLower.contains('árbol')) {
-        originalWord = 'árbol';
-        incorrectWord = 'televisor';
-      } else if (cleanTextLower.contains('huerto')) {
-        originalWord = 'huerto';
-        incorrectWord = 'estacionamiento';
-      } else if (cleanTextLower.contains('fruto')) {
-        originalWord = 'fruto';
-        incorrectWord = 'refresco';
-      } else if (cleanTextLower.contains('cielo')) {
-        originalWord = 'cielo';
-        incorrectWord = 'satélite';
-      }
-    }
-    
-    // 4. Fallback: Semantic opposite swap
-    if (originalWord.isEmpty) {
-      if (cleanTextLower.contains('buena')) {
-        originalWord = 'buena';
-        incorrectWord = 'mala';
-      } else if (cleanTextLower.contains('bueno')) {
-        originalWord = 'bueno';
-        incorrectWord = 'malo';
-      } else if (cleanTextLower.contains('luz')) {
-        originalWord = 'luz';
-        incorrectWord = 'tinieblas';
-      } else if (cleanTextLower.contains('tinieblas')) {
-        originalWord = 'tinieblas';
-        incorrectWord = 'luz';
-      } else if (cleanTextLower.contains('separó')) {
-        originalWord = 'separó';
-        incorrectWord = 'mezcló';
-      } else if (cleanTextLower.contains('creó')) {
-        originalWord = 'creó';
-        incorrectWord = 'destruyó';
-      } else if (cleanTextLower.contains('vida')) {
-        originalWord = 'vida';
-        incorrectWord = 'muerte';
-      } else if (cleanTextLower.contains('paz')) {
-        originalWord = 'paz';
-        incorrectWord = 'guerra';
-      }
-    }
-    
-    // Safety check: if still empty, pick any long word and swap it with 'dinosaurio'
-    if (originalWord.isEmpty) {
-      final words = cleanText.split(' ').where((w) => w.length > 4).toList();
-      if (words.isNotEmpty) {
-        words.shuffle(rng);
-        originalWord = words.first.toLowerCase();
-        incorrectWord = 'dinosaurio';
-      } else {
-        originalWord = 'dios';
-        incorrectWord = 'alcalde';
-      }
-    }
-    
-    // Mutate the original text to inject the conceptual error
-    final regex = RegExp('\\b$originalWord\\b', caseSensitive: false);
-    final mutatedSentence = text.replaceAllMapped(regex, (m) {
-      final matched = m.group(0)!;
-      if (matched.isNotEmpty && matched[0] == matched[0].toUpperCase()) {
-        return incorrectWord.substring(0, 1).toUpperCase() + incorrectWord.substring(1);
-      }
-      return incorrectWord;
-    });
-    
-    final question = '¿Cuál de las siguientes opciones del versículo contiene un error?';
-    
-    // Diccionario de sinónimos aceptables en el contexto del Quiz
-    final synonyms = {
-      'creó': ['hizo', 'formó', 'produjo'],
-      'creo': ['hizo', 'formó', 'produjo'],
-      'dijo': ['expresó', 'pronunció', 'declaró'],
-      'dios': ['el Señor', 'el Creador'],
-      'tierra': ['suelo', 'mundo'],
-      'buena': ['excelente', 'maravillosa', 'agradable'],
-      'bueno': ['excelente', 'magnífico', 'agradable'],
-      'separó': ['dividió', 'apartó', 'distinguió'],
-      'luz': ['claridad', 'resplandor'],
-      'tinieblas': ['oscuridad', 'penumbras'],
-      'aguas': ['corrientes', 'mares'],
-      'día': ['jornada', 'período'],
-      'noche': ['oscuridad', 'velada'],
-      'hombre': ['ser humano', 'género humano'],
-      'vida': ['existencia', 'aliento de vida'],
-    };
+    final question = '¿Cuál es el versículo correcto?';
 
-    String generateInnocuousVariant(String sentence, math.Random r, Set<String> excludeSentences) {
+    final swaps = [
+      ('israel', 'Judá'),
+      ('david', 'Saúl'),
+      ('salomón', 'David'),
+      ('hijo', 'siervo'),
+      ('hijos', 'siervos'),
+      ('rey', 'príncipe'),
+      ('reyes', 'príncipes'),
+      ('proverbios', 'salmos'),
+      ('cielos', 'abismos'),
+      ('tierra', 'nación'),
+      ('dios', 'Señor'),
+      ('señor', 'Dios'),
+      ('creó', 'formó'),
+      ('principio', 'comienzo'),
+      ('luz', 'gloria'),
+      ('tinieblas', 'sombras'),
+      ('pastor', 'guía'),
+      ('fortalece', 'sostiene'),
+      ('puedo', 'hago'),
+      ('serpiente', 'bestia'),
+      ('árbol', 'fruto'),
+      ('fruto', 'trigo'),
+      ('huerto', 'jardín'),
+      ('comer', 'beber'),
+      ('buena', 'santa'),
+      ('bueno', 'justo'),
+      ('paz', 'guerra'),
+      ('vida', 'muerte'),
+    ];
+
+    final wrongPool = [
+      'Jerusalén', 'templo', 'pacto', 'altar', 'profeta', 'sacerdote',
+      'sabiduría', 'entendimiento', 'justicia', 'heredad', 'ofrenda',
+      'consejo', 'camino', 'verdad', 'vida', 'gracia', 'promesa'
+    ];
+
+    String replaceWordSafely(String sentence, String targetWord, String replacementWord) {
       final words = sentence.split(' ');
-      final cleanWords = words.map((w) => w.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '').toLowerCase()).toList();
-
-      final indices = List.generate(cleanWords.length, (i) => i)..shuffle(r);
-      
-      for (final idx in indices) {
-        final cleanW = cleanWords[idx];
-        if (synonyms.containsKey(cleanW)) {
-          final possibleSyns = synonyms[cleanW]!;
-          final syn = possibleSyns[r.nextInt(possibleSyns.length)];
+      final targetLower = targetWord.toLowerCase();
+      for (var i = 0; i < words.length; i++) {
+        final cleanWord = words[i].replaceAll(RegExp(r'[.,;:!?¡¿()]'), '').toLowerCase();
+        if (cleanWord == targetLower) {
+          final origWord = words[i];
+          final cleanOrig = origWord.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
           
-          final origWord = words[idx];
-          final origClean = origWord.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
-          
-          String replacement = syn;
-          if (origClean.isNotEmpty && origClean[0] == origClean[0].toUpperCase()) {
-            replacement = syn.substring(0, 1).toUpperCase() + syn.substring(1);
+          String replacement = replacementWord;
+          if (cleanOrig.isNotEmpty && cleanOrig[0] == cleanOrig[0].toUpperCase()) {
+            replacement = replacementWord.substring(0, 1).toUpperCase() + replacementWord.substring(1);
           }
           
-          final prefixIndex = origWord.indexOf(origClean);
-          if (prefixIndex == -1) continue;
-          
-          final prefix = origWord.substring(0, prefixIndex);
-          final suffix = origWord.substring(prefixIndex + origClean.length);
-          
-          final newWord = prefix + replacement + suffix;
-          final newWords = List<String>.from(words);
-          newWords[idx] = newWord;
-          
-          final newSentence = newWords.join(' ');
-          if (newSentence != sentence && !excludeSentences.contains(newSentence)) {
-            return newSentence;
+          final prefixIndex = origWord.indexOf(cleanOrig);
+          if (prefixIndex != -1) {
+            final prefix = origWord.substring(0, prefixIndex);
+            final suffix = origWord.substring(prefixIndex + cleanOrig.length);
+            words[i] = prefix + replacement + suffix;
           }
         }
       }
-      
-      // Intentar permutación gramatical
-      final sentenceLower = sentence.toLowerCase();
-      final grammarSwaps = [
-        ['creó dios', 'dios creó'],
-        ['dijo dios', 'dios dijo'],
-        ['vio dios', 'dios vio'],
-        ['separó dios', 'dios separó'],
-        ['llamó dios', 'dios llamó'],
-        ['y vio', 'y contempló'],
-        ['en el principio', 'al principio'],
-      ];
-      
-      for (final swap in grammarSwaps) {
-        if (sentenceLower.contains(swap[0])) {
-          final reg = RegExp(swap[0], caseSensitive: false);
-          final newSentence = sentence.replaceAllMapped(reg, (m) {
-            final matched = m.group(0)!;
-            if (matched.isNotEmpty && matched[0] == matched[0].toUpperCase()) {
-              return swap[1].substring(0, 1).toUpperCase() + swap[1].substring(1);
-            }
-            return swap[1];
-          });
-          if (newSentence != sentence && !excludeSentences.contains(newSentence)) {
-            return newSentence;
-          }
-        }
-      }
-      
-      if (sentence.contains(' y ')) {
-        final newSentence = sentence.replaceFirst(' y ', ', además de ');
-        if (newSentence != sentence && !excludeSentences.contains(newSentence)) {
-          return newSentence;
-        }
-      }
-      
-      return '$sentence ';
+      return words.join(' ');
     }
 
-    final excludeSet = {text, mutatedSentence};
-    final variant1 = generateInnocuousVariant(text, rng, excludeSet);
-    excludeSet.add(variant1);
-    final variant2 = generateInnocuousVariant(text, rng, excludeSet);
+    final corruptedSentences = <String>{};
 
-    // La opción correcta (la que responde al front/pregunta "¿Cuál contiene un error?") es mutatedSentence.
+    final cleanTextLower = text.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '').toLowerCase();
+    
+    final shuffledSwaps = List<(String, String)>.from(swaps.map((e) => (e.$1, e.$2)))..shuffle(rng);
+    
+    for (final swap in shuffledSwaps) {
+      if (cleanTextLower.split(' ').contains(swap.$1)) {
+        final corrupted = replaceWordSafely(text, swap.$1, swap.$2);
+        if (corrupted != text) {
+          corruptedSentences.add(corrupted);
+          if (corruptedSentences.length >= 2) break;
+        }
+      }
+    }
+
+    if (corruptedSentences.length < 2) {
+      final cleanText = text.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
+      final candidateWords = cleanText
+          .split(' ')
+          .where((w) => w.length > 4 && !w.contains(RegExp(r'\d')))
+          .toList()
+          ..shuffle(rng);
+
+      final shuffledWrongPool = List<String>.from(wrongPool)..shuffle(rng);
+      var wrongIdx = 0;
+
+      for (final candidate in candidateWords) {
+        if (corruptedSentences.length >= 2) break;
+        final wrongWord = shuffledWrongPool[wrongIdx % shuffledWrongPool.length];
+        wrongIdx++;
+        final corrupted = replaceWordSafely(text, candidate, wrongWord);
+        if (corrupted != text) {
+          corruptedSentences.add(corrupted);
+        }
+      }
+    }
+
+    while (corruptedSentences.length < 2) {
+      corruptedSentences.add('$text (incorrecto ${corruptedSentences.length + 1})');
+    }
+
+    final distractors = corruptedSentences.toList();
+
     final targetCard = MemoryCardData(
       id: 'quiz-corrupt-${card.id}-$index',
       front: question,
-      back: mutatedSentence,
+      back: text,
       source: card.source,
       icon: card.icon,
     );
-    
-    // Los distractores son las opciones correctas del versículo
-    final distractors = [text, variant1, variant2];
     
     final optionCards = <MemoryCardData>[
       targetCard,
@@ -1838,362 +1181,36 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
   }
 
-  _QuizRound _buildChronologyRound(MemoryCardData target, MemoryDeckData deck, List<MemoryCardData> studiedPool, math.Random rng, int index) {
-    if (deck.cards.length < 2) {
-      return _buildOddOneOutRound(target, rng, index);
-    }
-
-    final allCards = List<MemoryCardData>.from(deck.cards);
-    final selectedCards = <MemoryCardData>[target];
-    allCards.removeWhere((c) => c.id == target.id);
-    allCards.shuffle(rng);
-    
-    final extraCount = math.min(2, allCards.length);
-    for (var i = 0; i < extraCount; i++) {
-      selectedCards.add(allCards[i]);
-    }
-
-    selectedCards.sort((a, b) {
-      final idxA = deck.cards.indexWhere((c) => c.id == a.id);
-      final idxB = deck.cards.indexWhere((c) => c.id == b.id);
-      return idxA.compareTo(idxB);
-    });
-
-    final firstCard = selectedCards.first;
-    final question = 'Cronología: ¿Qué suceso u ordenación ocurrió primero?';
-
-    String cleanPreview(String fullText) {
-      final clean = fullText.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
-      final words = clean.split(' ');
-      if (words.length > 8) {
-        return '${words.take(8).join(' ')}...';
-      }
-      return fullText;
-    }
-
-    final targetCard = MemoryCardData(
-      id: 'quiz-chrono-${firstCard.id}-$index',
-      front: question,
-      back: '${firstCard.front}: "${cleanPreview(firstCard.back)}"',
-      source: firstCard.source,
-      icon: firstCard.icon,
-    );
-
-    final distractors = selectedCards.skip(1).toList();
-    
-    final optionCards = <MemoryCardData>[
-      targetCard,
-      for (var idx = 0; idx < distractors.length; idx++)
-        MemoryCardData(
-          id: 'quiz-chrono-distractor-$idx-${distractors[idx].id}-$index',
-          front: question,
-          back: '${distractors[idx].front}: "${cleanPreview(distractors[idx].back)}"',
-          source: 'Sistema',
-          icon: distractors[idx].icon,
-        )
-    ]..shuffle(rng);
-
-    return _QuizRound(
-      target: targetCard,
-      type: _QuizQuestionType.frontToBack,
-      options: optionCards,
-    );
-  }
-
-  _QuizRound _buildWhoSaidItRound(MemoryCardData target, MemoryDeckData deck, math.Random rng, int index) {
-    final text = target.back.toLowerCase();
-    final ref = target.front.toLowerCase();
-    
-    String protagonist = '';
-    
-    if (text.contains('dijo dios') || text.contains('creó dios') || text.contains('separó dios') || text.contains('llamó dios') || text.contains('vio dios')) {
-      protagonist = 'Dios (El Creador)';
-    } else if (text.contains('serpiente')) {
-      protagonist = 'La serpiente';
-    } else if (text.contains('mujer') || text.contains('eva')) {
-      protagonist = 'La mujer (Eva)';
-    } else if (text.contains('adán') || text.contains('hombre')) {
-      protagonist = 'El hombre (Adán)';
-    } else if (text.contains('pastor') || text.contains('pastores')) {
-      protagonist = 'Los pastores';
-    } else if (text.contains('ángel') || text.contains('ángeles') || text.contains('querubín')) {
-      protagonist = 'Un ángel del Señor';
-    } else if (ref.contains('fil') || ref.contains('flp') || ref.contains('rom') || ref.contains('cor') || ref.contains('ef') || ref.contains('gal')) {
-      protagonist = 'El apóstol Pablo';
-    } else if (ref.contains('sal') || ref.contains('salmo')) {
-      protagonist = 'El salmista (David)';
-    } else if (ref.contains('jua') || ref.contains('jn')) {
-      protagonist = text.contains('dijo jesús') || text.contains('díjole') || text.contains('señor')
-          ? 'Jesús'
-          : 'El apóstol Juan';
-    } else {
-      protagonist = 'El narrador bíblico';
-    }
-
-    final cleanText = target.back.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
-    final words = cleanText.split(' ');
-    final previewText = words.length > 10 ? '${words.take(10).join(' ')}...' : target.back;
-    
-    final question = '"$previewText"\n\n¿Quién es el autor, protagonista o sujeto principal de la acción en este pasaje?';
-
-    final targetCard = MemoryCardData(
-      id: 'quiz-whosaid-${target.id}-$index',
-      front: question,
-      back: protagonist,
-      source: target.source,
-      icon: target.icon,
-    );
-
-    final charactersPool = [
-      'Dios (El Creador)', 'La serpiente', 'La mujer (Eva)', 'El hombre (Adán)',
-      'El apóstol Pablo', 'El salmista (David)', 'Un ángel del Señor',
-      'Los pastores', 'El narrador bíblico', 'Jesús', 'Moisés', 'Abraham'
-    ];
-
-    final distractors = charactersPool
-        .where((c) => c != protagonist)
-        .toList()
-        ..shuffle(rng);
-
-    final optionCards = <MemoryCardData>[
-      targetCard,
-      for (var idx = 0; idx < 3; idx++)
-        MemoryCardData(
-          id: 'quiz-whosaid-distractor-$idx-${target.id}-$index',
-          front: question,
-          back: distractors[idx],
-          source: 'Sistema',
-          icon: target.icon,
-        )
-    ]..shuffle(rng);
-
-    return _QuizRound(
-      target: targetCard,
-      type: _QuizQuestionType.frontToBack,
-      options: optionCards,
-    );
-  }
-
-  _QuizRound _buildAntithesisRound(MemoryCardData target, math.Random rng, int index) {
-    final text = target.back.toLowerCase();
-    
-    final question = '¿Qué actitud o idea contradice directamente el mensaje práctico de este pasaje?';
-    
-    String correctOpt = '';
-    final distractors = <String>[];
-    
-    if (text.contains('puedo') || text.contains('fortalece') || text.contains('fuerza') || text.contains('poder')) {
-      correctOpt = 'Rendirse y creer que las dificultades son superiores a ti y que estás completamente solo.';
-      distractors.addAll([
-        'Tener la certeza absoluta de que saldrás adelante con fe en Cristo.',
-        'Agradecer a Dios incluso cuando las cosas se ponen difíciles en el día a día.',
-        'Mantener una actitud alegre esperando que pase la tormenta con paciencia.'
-      ]);
-    } else if (text.contains('creó') || text.contains('principio') || text.contains('cielos') || text.contains('tierra') || text.contains('luz')) {
-      correctOpt = 'Pensar que el universo y todo lo que existe surgió solo por pura casualidad caótica sin ningún Creador.';
-      distractors.addAll([
-        'Crear que la creación tiene un orden inteligente structured por Dios.',
-        'Sostener que la luz fue separada de las tinieblas con un propósito sabio.',
-        'Valorar que el Creador dio origen al mundo físico con amor.'
-      ]);
-    } else if (text.contains('serpiente') || text.contains('árbol') || text.contains('fruto') || text.contains('huerto') || text.contains('comer')) {
-      correctOpt = 'Sostener que los seres humanos obedecieron fielmente las órdenes a la primera sin dudar jamás.';
-      distractors.addAll([
-        'Relatar que la serpiente intentó engañar astutamente a la mujer.',
-        'Recordar que Dios había advertido que comer del fruto traería consecuencias.',
-        'Describir el diálogo entre la mujer y la serpiente sobre las plantas del jardín.'
-      ]);
-    } else if (text.contains('pastor') || text.contains('misericordia') || text.contains('gracias') || text.contains('amor') || text.contains('paz') || text.contains('ansiedad')) {
-      correctOpt = 'Vivir con desespero constante, desconfianza total y sentir que a nadie le importas.';
-      distractors.addAll([
-        'Descansar y sentirte seguro sabiendo que estás bajo el cuidado de tu Pastor.',
-        'Agradecer con alegría y paz sabiendo que la misericordia divina es eterna.',
-        'Llevar tus preocupaciones en oración con un corazón agradecido.'
-      ]);
-    } else {
-      correctOpt = 'Vivir con desinterés absoluto, egoísmo y desconfianza en el camino del bien.';
-      distractors.addAll([
-        'Aprender a reflexionar en las enseñanzas y actuar con bondad hacia los demás.',
-        'Buscar la verdad y mantener la esperanza en el día a día.',
-        'Esforzarse por crecer espiritualmente compartiendo con tu comunidad.'
-      ]);
-    }
-    
-    distractors.shuffle(rng);
-    final chosenDistractors = distractors.take(3).toList();
-    
-    final targetCard = MemoryCardData(
-      id: 'quiz-antithesis-${target.id}-$index',
-      front: question,
-      back: correctOpt,
-      source: target.source,
-      icon: target.icon,
-    );
-    
-    final optionCards = <MemoryCardData>[
-      targetCard,
-      for (var idx = 0; idx < chosenDistractors.length; idx++)
-        MemoryCardData(
-          id: 'quiz-antithesis-distractor-$idx-${target.id}-$index',
-          front: question,
-          back: chosenDistractors[idx],
-          source: 'Sistema',
-          icon: target.icon,
-        )
-    ]..shuffle(rng);
-    
-    return _QuizRound(
-      target: targetCard,
-      type: _QuizQuestionType.frontToBack,
-      options: optionCards,
-    );
-  }
-
   String _generateTrueFalseStatement(MemoryCardData target, bool isTrue, math.Random rng, {int variant = 0}) {
     final text = target.back.toLowerCase();
-    final idx = variant % 2;
     
-    // Genre / style detection based on book reference in target.front
-    final ref = target.front.toLowerCase();
-    var style = 'instructional';
-    if (ref.contains('gén') || ref.contains('génesis') || ref.contains('éxo') || ref.contains('éxodo') || 
-        ref.contains('lev') || ref.contains('num') || ref.contains('deut') || ref.contains('jos') || 
-        ref.contains('jue') || ref.contains('rut') || ref.contains('sam') || ref.contains('rey') || 
-        ref.contains('cró') || ref.contains('esd') || ref.contains('neh') || ref.contains('est') || 
-        ref.contains('mat') || ref.contains('mar') || ref.contains('luc') || ref.contains('jua') || 
-        ref.contains('hec')) {
-      style = 'narrative';
-    } else if (ref.contains('job') || ref.contains('sal') || ref.contains('salmo') || ref.contains('pro') || 
-               ref.contains('ecl') || ref.contains('cant') || ref.contains('lam')) {
-      style = 'poetic';
-    } else if (ref.contains('isa') || ref.contains('jer') || ref.contains('eze') || ref.contains('dan') || 
-               ref.contains('ose') || ref.contains('joe') || ref.contains('amó') || ref.contains('abd') || 
-               ref.contains('jon') || ref.contains('miq') || ref.contains('nah') || ref.contains('hab') || 
-               ref.contains('sof') || ref.contains('hag') || ref.contains('zac') || ref.contains('mal') || 
-               ref.contains('apo')) {
-      style = 'prophetic';
-    }
-
-    if (isTrue) {
-      if (text.contains('ángel') || text.contains('ángeles')) {
-        return idx == 0
-            ? 'El texto menciona la intervención de ángeles o mensajeros celestiales.'
-            : 'El pasaje se refiere a mensajeros divinos enviados por el Señor.';
-      } else if (text.contains('pastor') || text.contains('pastoreará') || text.contains('pastores')) {
-        return idx == 0
-            ? 'El pasaje utiliza la metáfora de un pastor para ilustrar el cuidado personal de Dios.'
-            : 'El texto presenta a la divinidad guiando y protegiendo a su pueblo como un pastor.';
-      } else if (text.contains('redimidos') || text.contains('redimió') || text.contains('adversario')) {
-        return idx == 0
-            ? 'El versículo afirma que Dios ha rescatado y redimido a su pueblo del poder del adversario.'
-            : 'El texto destaca la redención y el rescate de la aflicción de los creyentes.';
-      } else if (text.contains('gracias') || text.contains('misericordia') || text.contains('bueno')) {
-        return idx == 0
-            ? 'El pasaje nos exhorta a alabar y dar gracias a Dios reconociendo su bondad eterna.'
-            : 'El versículo destaca que la misericordia del Señor es eterna y digna de constante gratitud.';
-      } else if (text.contains('angustia') || text.contains('clamaron') || text.contains('salvó')) {
-        return idx == 0
-            ? 'El pasaje enseña que en medio de la aflicción y la angustia, el clamor a Dios es respondido.'
-            : 'El texto afirma que el Señor escucha y libra a los suyos en momentos de profunda tribulación.';
-      } else if (text.contains('creó') || text.contains('principio') || text.contains('tierra')) {
-        return idx == 0
-            ? 'El versículo declara que en el inicio absoluto de todo, Dios creó los cielos y la tierra.'
-            : 'El texto atribuye la creación originaria de todo el universo material a Dios.';
-      } else if (text.contains('paz') || text.contains('cuidado') || text.contains('ansiedad')) {
-        return idx == 0
-            ? 'El pasaje promete que la paz divina guardará los corazones contra toda ansiedad.'
-            : 'El versículo enseña que la paz de Dios sobrepasa todo entendimiento al guardar nuestra mente.';
-      } else if (text.contains('serpiente') || text.contains('huerto') || text.contains('fruto') || text.contains('árbol') || text.contains('comer')) {
-        return idx == 0
-            ? 'El pasaje registra la conversación en el huerto de Edén donde se discuten los límites alimenticios establecidos.'
-            : 'El versículo muestra a la mujer respondiendo al tentador citando el permiso general de comer de los árboles.';
-      } else if (text.contains('luz') || text.contains('tinieblas') || text.contains('noche') || text.contains('día') || text.contains('lumbrera')) {
-        return idx == 0
-            ? 'El pasaje hace referencia a la distinción y separación primordial entre la luz y las tinieblas.'
-            : 'El versículo destaca la bondad de la luz y el orden divino establecido al separarla de la oscuridad.';
-      } else if (text.contains('dijo') || text.contains('llamó') || text.contains('hizo') || text.contains('separó') || text.contains('vio')) {
-        return idx == 0
-            ? 'El versículo registra un acontecimiento narrativo sobre el obrar soberano e inteligente de Dios en la creación.'
-            : 'El texto describe la manifestación del poder divino al ordenar y declarar buena su obra.';
-      } else {
-        if (style == 'narrative') {
-          return idx == 0
-              ? 'El versículo describe un evento o diálogo clave dentro del relato histórico sagrado.'
-              : 'El texto narra una acción concreta de la divinidad o de los personajes bíblicos en la historia.';
-        } else if (style == 'poetic') {
-          return idx == 0
-              ? 'El pasaje utiliza un lenguaje poético o de sabiduría para expresar alabanza, ruego o devoción profunda.'
-              : 'El texto presenta una reflexión contemplativa sobre el carácter divino o la senda de la sabiduría.';
-        } else if (style == 'prophetic') {
-          return idx == 0
-              ? 'El texto proclama un mensaje profético, una advertencia o una promesa de redención futura para el pueblo.'
-              : 'El versículo comunica una revelación divina sobre los propósitos soberanos de Dios a lo largo del tiempo.';
-        } else {
-          return idx == 0
-              ? 'El pasaje proporciona una directriz ética o de sabiduría espiritual para guiar la conducta diaria.'
-              : 'El versículo enfatiza la alineación de nuestras intenciones y carácter con la justicia moral divina.';
-        }
-      }
+    // Extracción de palabras reales del versículo (limpiando puntuación)
+    final cleanWords = target.back
+        .replaceAll(RegExp(r'[.,;:!?¡¿"()]'), '')
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length > 3 && !w.contains(RegExp(r'\d')))
+        .toList();
+        
+    if (isTrue && cleanWords.isNotEmpty) {
+      final realWord = cleanWords[rng.nextInt(cleanWords.length)];
+      return 'El versículo contiene la palabra "$realWord".';
     } else {
-      if (text.contains('ángel') || text.contains('ángeles')) {
-        return idx == 0
-            ? 'El pasaje afirma que los ángeles fueron creados para gobernar a los hombres con severidad.'
-            : 'El texto sugiere que los ángeles compiten con Dios por el afecto de la humanidad.';
-      } else if (text.contains('pastor') || text.contains('pastoreará') || text.contains('pastores')) {
-        return idx == 0
-            ? 'El texto dice que el pastor guiará a las ovejas únicamente a caminos de desierto y sequía.'
-            : 'La metáfora del pastor indica que las ovejas deben defenderse solas contra los lobos.';
-      } else if (text.contains('redimidos') || text.contains('redimió') || text.contains('adversario')) {
-        return idx == 0
-            ? 'El pasaje instruye que los redimidos deben callar su testimonio y ocultar su liberación.'
-            : 'El versículo afirma que el rescate del creyente depende de su estatus económico.';
-      } else if (text.contains('gracias') || text.contains('misericordia') || text.contains('bueno')) {
-        return idx == 0
-            ? 'El versículo aconseja que sólo debemos alabar a Dios cuando las circunstancias sean fáciles y cómodas.'
-            : 'El texto sostiene que la bondad y misericordia de Dios están condicionadas a nuestro estado de ánimo diario.';
-      } else if (text.contains('angustia') || text.contains('clamaron') || text.contains('salvó')) {
-        return idx == 0
-            ? 'El texto sugiere que los seres humanos deben resolver sus problemas con sus propias fuerzas sin buscar a Dios.'
-            : 'El pasaje advierte que clamar a Dios en el dolor es inútil porque la angustia es incurable.';
-      } else if (text.contains('creó') || text.contains('principio') || text.contains('tierra')) {
-        return idx == 0
-            ? 'El versículo sostiene que los cielos y la tierra existían eternamente antes del Creador.'
-            : 'El texto propone que el universo físico se creó a sí mismo mediante leyes azarosas sin intervención divina.';
-      } else if (text.contains('paz') || text.contains('cuidado') || text.contains('ansiedad')) {
-        return idx == 0
-            ? 'El pasaje advierte que es imposible librar la mente de la ansiedad cotidiana y el temor constante.'
-            : 'El texto afirma que la paz de Dios provoca apatía e indiferencia absoluta ante el sufrimiento ajeno.';
-      } else if (text.contains('serpiente') || text.contains('huerto') || text.contains('fruto') || text.contains('árbol') || text.contains('comer')) {
-        return idx == 0
-            ? 'El texto afirma que la mujer huyó inmediatamente de la serpiente sin dirigirle la palabra.'
-            : 'El pasaje enseña que Dios había prohibido terminantemente comer de todos y cada uno de los árboles del huerto.';
-      } else if (text.contains('luz') || text.contains('tinieblas') || text.contains('noche') || text.contains('día') || text.contains('lumbrera')) {
-        return idx == 0
-            ? 'El pasaje afirma que la luz y las tinieblas se fusionaron en una sola sustancia homogénea sin distinción.'
-            : 'El texto sostiene que las tinieblas fueron declaradas como el elemento más perfecto y puro de la creación.';
-      } else if (text.contains('dijo') || text.contains('llamó') || text.contains('hizo') || text.contains('separó') || text.contains('vio')) {
-        return idx == 0
-            ? 'El pasaje sostiene que las acciones de Dios en la creación carecen de propósito u orden inteligente.'
-            : 'El versículo afirma que el acontecimiento narrado fue una ilusión que no tuvo consecuencias reales.';
-      } else {
-        if (style == 'narrative') {
-          return idx == 0
-              ? 'El pasaje describe un concepto abstracto moderno totalmente ajeno al contexto histórico del relato.'
-              : 'El versículo sostiene que el evento narrado ocurrió de forma puramente fortuita sin relevancia histórica.';
-        } else if (style == 'poetic') {
-          return idx == 0
-              ? 'El texto enseña que la alabanza y la poesía son secundarias y carecen de valor espiritual.'
-              : 'El versículo propone una resignación cínica donde la meditación personal no tiene sentido.';
-        } else if (style == 'prophetic') {
-          return idx == 0
-              ? 'El pasaje afirma que el futuro es incierto y que las promesas divinas son meramente metafóricas.'
-              : 'El texto desestima las advertencias proféticas como simples opiniones humanas sin autoridad.';
-        } else {
-          return idx == 0
-              ? 'El texto sugiere que la conducta ética y la verdad espiritual carecen de relevancia práctica en la vida.'
-              : 'El pasaje sostiene que la autosuficiencia moral autónoma es superior al consejo eterno del Creador.';
+      final plausibleFalseWords = [
+        'sabiduría', 'justicia', 'entendimiento', 'consejo', 'pacto', 'ley', 
+        'profeta', 'sacerdote', 'altar', 'ofrenda', 'heredad', 'templo', 'reino', 
+        'mandato', 'enseñanza', 'prójimo', 'salvación', 'fidelidad', 'gracia',
+        'promesa', 'camino', 'verdad', 'vida', 'cielo', 'tierra', 'amor', 'fe'
+      ];
+      
+      String falseWord = 'pacto';
+      final shuffledFalse = List<String>.from(plausibleFalseWords)..shuffle(rng);
+      for (final fw in shuffledFalse) {
+        if (!text.contains(fw.toLowerCase())) {
+          falseWord = fw;
+          break;
         }
       }
+      return 'El versículo contiene la palabra "$falseWord".';
     }
   }
 
@@ -2213,309 +1230,26 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
     final studiedPool = sessionStudiedCards.isNotEmpty ? sessionStudiedCards : [activeCard];
 
-    // Registro de tipos de ejercicios seleccionados en rondas anteriores de la sesión
-    final selectedTypesHistory = <String>[];
-
-    for (var i = 0; i < 5; i++) {
-      final target = studiedPool[i % studiedPool.length];
-      final text = target.back.toLowerCase();
-      final ref = target.front.toLowerCase();
-
-      // Diccionario de puntuación para cada tipo de ejercicio
-      final scores = <String, double>{};
-
-      // 1. corruptedWord (Palabra Equivocada de Versículo Completo)
-      double scoreCorrupted = 5.0; // Fallback base
-      if (text.contains('serpiente') || text.contains('pastor') || text.contains('pastores') || text.contains('oveja') || text.contains('ovejas') || text.contains('lobo') || text.contains('león') ||
-          text.contains('primero') || text.contains('segundo') || text.contains('tercero') || text.contains('séptimo') || text.contains('siete') || text.contains('tres') ||
-          text.contains('árboles') || text.contains('árbol') || text.contains('huerto') || text.contains('fruto') || text.contains('cielo') ||
-          text.contains('buena') || text.contains('bueno') || text.contains('luz') || text.contains('tinieblas') || text.contains('separó') || text.contains('creó') || text.contains('vida') || text.contains('paz')) {
-        scoreCorrupted = 10.0;
-      }
-      scores['corruptedWord'] = scoreCorrupted;
-
-      // 2. whoSaidIt (Atribución de Voz)
-      double scoreWhoSaid = 1.0; // Muy bajo por defecto
-      if (text.contains('dijo') || text.contains('llamó') || text.contains('creó') || text.contains('separó') || text.contains('serpiente') || text.contains('mujer') || text.contains('eva') || text.contains('adán') || text.contains('pastor') || text.contains('ángel') ||
-          ref.contains('fil') || ref.contains('flp') || ref.contains('rom') || ref.contains('cor') || ref.contains('ef') || ref.contains('gal') || ref.contains('sal') || ref.contains('salmo') || ref.contains('jua') || ref.contains('jn')) {
-        scoreWhoSaid = 12.0;
-      }
-      scores['whoSaidIt'] = scoreWhoSaid;
-
-      // 3. chronology (Cronología)
-      double scoreChrono = 0.0;
-      if (deck.cards.length >= 2) {
-        scoreChrono = 9.0;
-      }
-      scores['chronology'] = scoreChrono;
-
-      // 4. antithesis (Antítesis / Contra-Argumento)
-      double scoreAntithesis = 5.0; // Fallback base
-      if (text.contains('puedo') || text.contains('fortalece') || text.contains('fuerza') || text.contains('poder') ||
-          text.contains('creó') || text.contains('principio') || text.contains('cielos') || text.contains('tierra') || text.contains('luz') ||
-          text.contains('serpiente') || text.contains('árbol') || text.contains('fruto') || text.contains('huerto') || text.contains('comer') ||
-          text.contains('pastor') || text.contains('misericordia') || text.contains('gracias') || text.contains('amor') || text.contains('paz') || text.contains('ansiedad')) {
-        scoreAntithesis = 11.0;
-      }
-      scores['antithesis'] = scoreAntithesis;
-
-      // 5. oddOneOut (¿Cuál no pertenece?)
-      double scoreOdd = 3.0;
-      final cleanText = text.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
-      final wordsCount = cleanText.split(' ').where((w) => w.length > 4).length;
-      if (wordsCount >= 3) {
-        scoreOdd = 8.0;
-      }
-      scores['oddOneOut'] = scoreOdd;
-
-      // 6. physicalObservation (Trivia Detalles Físicos)
-      double scoreObs = 4.0;
-      if (ref.contains('gén') || ref.contains('génesis') || ref.contains('éxo') || ref.contains('éxodo') || ref.contains('mat') || ref.contains('mar') || ref.contains('luc') || ref.contains('jua') || ref.contains('hec')) {
-        scoreObs = 10.0;
-      }
-      scores['physicalObservation'] = scoreObs;
-
-      // 7. conceptual (Asociación Conceptual)
-      double scoreConceptual = 4.0;
-      if (ref.contains('fil') || ref.contains('flp') || ref.contains('rom') || ref.contains('cor') || ref.contains('ef') || ref.contains('gal') || ref.contains('col') || ref.contains('tito') || ref.contains('tim') || ref.contains('apo')) {
-        scoreConceptual = 8.0;
-      }
-      scores['conceptual'] = scoreConceptual;
-
-      // 8. matching (Emparejar)
-      double scoreMatching = 0.0;
-      if (studiedPool.length >= 3) {
-        scoreMatching = 8.0;
-      }
-      scores['matching'] = scoreMatching;
-
-      // 9. openQuestion (Pregunta Abierta)
-      scores['openQuestion'] = 5.0;
-
-      // 10. trueFalse_0 / trueFalse_1
-      scores['trueFalse_0'] = 6.0;
-      scores['trueFalse_1'] = 6.0;
-
-      // 11. frontToBack / backToFront
-      scores['frontToBack'] = 5.0;
-      scores['backToFront'] = 5.0;
-
-      // Penalización por repetición para asegurar variedad
-      for (final type in scores.keys) {
-        if (selectedTypesHistory.contains(type)) {
-          final occurrences = selectedTypesHistory.where((t) => t == type).length;
-          scores[type] = scores[type]! - (7.0 * occurrences);
-        }
-      }
-
-      // Elegir el tipo de ejercicio con mayor puntuación
-      var bestType = 'frontToBack';
-      var bestScore = -999.0;
-      for (final entry in scores.entries) {
-        if (entry.value > bestScore) {
-          bestScore = entry.value;
-          bestType = entry.key;
-        }
-      }
-
-      selectedTypesHistory.add(bestType);
-
-      // Instanciar el tipo de ejercicio seleccionado
-      if (bestType == 'trueFalse_0') {
-        final isTrue = rng.nextBool();
-        final statement = _generateTrueFalseStatement(target, isTrue, rng, variant: 0);
-        rounds.add(_QuizRound(
-          target: target,
-          type: _QuizQuestionType.trueFalse,
-          options: const [],
-          trueFalseStatement: statement,
-          isStatementTrue: isTrue,
-        ));
-      } else if (bestType == 'trueFalse_1') {
-        final isTrue = rng.nextBool();
-        final statement = _generateTrueFalseStatement(target, isTrue, rng, variant: 1);
-        rounds.add(_QuizRound(
-          target: target,
-          type: _QuizQuestionType.trueFalse,
-          options: const [],
-          trueFalseStatement: statement,
-          isStatementTrue: isTrue,
-        ));
-      } else if (bestType == 'conceptual') {
-        rounds.add(_buildConceptualRound(target, rng, i));
-      } else if (bestType == 'oddOneOut') {
-        rounds.add(_buildOddOneOutRound(target, rng, i));
-      } else if (bestType == 'physicalObservation') {
-        rounds.add(_buildPhysicalObservationRound(target, rng, i));
-      } else if (bestType == 'corruptedWord') {
-        rounds.add(_buildCorruptedWordRound(target, rng, i));
-      } else if (bestType == 'chronology') {
-        rounds.add(_buildChronologyRound(target, deck, studiedPool, rng, i));
-      } else if (bestType == 'whoSaidIt') {
-        rounds.add(_buildWhoSaidItRound(target, deck, rng, i));
-      } else if (bestType == 'antithesis') {
-        rounds.add(_buildAntithesisRound(target, rng, i));
-      } else if (bestType == 'openQuestion') {
-        String prompt = 'Explícalo con tus palabras: ¿cuál es la enseñanza central o el valor práctico de este texto?';
-        final tText = target.back.toLowerCase();
-        if (tText.contains('puedo') || tText.contains('fortalece')) {
-          prompt = 'Explícalo con tus palabras: ¿qué relación hay entre el poder de Cristo y tus dificultades o debilidades cotidianas?';
-        } else if (tText.contains('gracias') || tText.contains('misericordia') || tText.contains('bueno')) {
-          prompt = 'Explícalo con tus palabras: ¿por qué debemos dar gracias a Dios en todo momento y cómo se relaciona con su misericordia?';
-        } else if (tText.contains('angustia') || tText.contains('clamar') || tText.contains('liberó') || tText.contains('salvó') || tText.contains('angustiados')) {
-          prompt = 'Explícalo con tus palabras: ¿qué actitud debemos tomar en medio de la angustia y qué respuesta promete este pasaje?';
-        } else if (tText.contains('paz') || tText.contains('cuidado') || tText.contains('ansiedad') || tText.contains('guardará')) {
-          prompt = 'Explícalo con tus palabras: ¿cómo nos ayuda la oración con gratitud a experimentar la paz que supera todo entendimiento?';
-        } else if (target.front.contains('Bíceps') || target.back.contains('flexor') || target.back.contains('codo') || target.front.contains('codo') || target.back.contains('Bíceps')) {
-          prompt = 'Explícalo con tus palabras: ¿qué relación hay entre el bíceps y el movimiento del codo?';
-        }
-        rounds.add(_QuizRound(
-          target: target,
-          type: _QuizQuestionType.openQuestion,
-          options: const [],
-          openQuestionPrompt: prompt,
-        ));
-      } else if (bestType == 'backToFront') {
-        final distractorPool = deck.cards.where((c) => c.id != target.id).toList()..shuffle(rng);
-        final distractors = <MemoryCardData>[];
-        final otherStudied = studiedPool.where((c) => c.id != target.id).toList()..shuffle(rng);
-        distractors.addAll(otherStudied.take(3));
-
-        if (distractors.length < 3) {
-          final extraDeck = distractorPool.where((c) => !distractors.any((d) => d.id == c.id)).toList();
-          distractors.addAll(extraDeck.take(3 - distractors.length));
-        }
-
-        final bibleFallbacks = [
-          'Juan 3:16', 'Salmo 23:1', 'Filipenses 4:13', 'Mateo 6:33', 
-          'Romanos 12:2', '1 Corintios 13:4', 'Génesis 1:1', 'Proverbios 3:5'
-        ];
-        var fbIdx = 0;
-        while (distractors.length < 3) {
-          final refFallback = bibleFallbacks[fbIdx % bibleFallbacks.length];
-          fbIdx++;
-          distractors.add(
-            MemoryCardData(
-              id: 'ref-distractor-${distractors.length}-${target.id}',
-              front: refFallback,
-              back: 'Texto alternativo',
-              source: 'Sistema',
-              icon: target.icon,
-            ),
-          );
-        }
-
-        final targetCard = MemoryCardData(
-          id: 'quiz-target-${target.id}-$i',
-          front: target.front,
-          back: target.back,
-          source: target.source,
-          icon: target.icon,
-        );
-
-        final optionCards = <MemoryCardData>[
-          targetCard,
-          for (var idx = 0; idx < distractors.length; idx++)
-            MemoryCardData(
-              id: 'quiz-conceptual-distractor-$idx-${target.id}-$i',
-              front: distractors[idx].front,
-              back: target.back,
-              source: 'Sistema',
-              icon: target.icon,
-            )
-        ]..shuffle(rng);
-
-        rounds.add(_QuizRound(
-          target: targetCard,
-          type: _QuizQuestionType.backToFront,
-          options: optionCards,
-        ));
-      } else if (bestType == 'matching') {
-        final pairs = <(String, String)>[];
-        pairs.add((target.front, target.back));
-
-        final others = studiedPool.where((c) => c.id != target.id).toList()..shuffle(rng);
-        for (final o in others) {
-          if (pairs.length < 4) {
-            pairs.add((o.front, o.back));
-          }
-        }
-
-        final fallbacks = [
-          ('Juan 3:16', 'Porque de tal manera amó Dios al mundo, que ha dado a su Hijo unigénito.'),
-          ('Salmo 23:1', 'Jehová es mi pastor; nada me faltará.'),
-          ('Filipenses 4:13', 'Todo lo puedo en Cristo que me fortalece.'),
-          ('Mateo 6:33', 'Mas buscad primeramente el reino de Dios y su justicia.'),
-          ('Romanos 8:28', 'Y sabemos que a los que aman a Dios, todas las cosas les ayudan a bien.'),
-          ('Génesis 1:1', 'En el principio creó Dios los cielos y la tierra.'),
-        ];
-
-        for (final fb in fallbacks) {
-          if (pairs.length < 4 && !pairs.any((p) => p.$1 == fb.$1)) {
-            pairs.add((fb.$1, fb.$2));
-          }
-        }
-
-        rounds.add(_QuizRound(
-          target: target,
-          type: _QuizQuestionType.matching,
-          options: const [],
-          matchingPairs: pairs,
-        ));
-      } else {
-        // Baseline frontToBack reference-to-text matching round
-        final distractorPool = deck.cards.where((c) => c.id != target.id).toList()..shuffle(rng);
-        final distractors = <MemoryCardData>[];
-        final otherStudied = studiedPool.where((c) => c.id != target.id).toList()..shuffle(rng);
-        distractors.addAll(otherStudied.take(3));
-
-        if (distractors.length < 3) {
-          final extraDeck = distractorPool.where((c) => !distractors.any((d) => d.id == c.id)).toList();
-          distractors.addAll(extraDeck.take(3 - distractors.length));
-        }
-
-        while (distractors.length < 3) {
-          final llm = LocalLlmService.instance;
-          final dists = llm.generateDistractorsSync(target.back);
-          final distText = dists[distractors.length % dists.length];
-          distractors.add(
-            MemoryCardData(
-              id: 'ai-distractor-${distractors.length}-${target.id}',
-              front: target.front,
-              back: distText,
-              source: 'IA Local Offline',
-              icon: target.icon,
-            ),
-          );
-        }
-
-        final targetCard = MemoryCardData(
-          id: 'quiz-target-${target.id}-$i',
-          front: target.front,
-          back: target.back,
-          source: target.source,
-          icon: target.icon,
-        );
-
-        final optionCards = <MemoryCardData>[
-          targetCard,
-          for (var idx = 0; idx < distractors.length; idx++)
-            MemoryCardData(
-              id: 'quiz-conceptual-distractor-$idx-${target.id}-$i',
-              front: target.front,
-              back: distractors[idx].back,
-              source: 'IA Local Offline',
-              icon: target.icon,
-            )
-        ]..shuffle(rng);
-
-        rounds.add(_QuizRound(
-          target: targetCard,
-          type: _QuizQuestionType.frontToBack,
-          options: optionCards,
-        ));
-      }
+    // Ronda 1: ¿Contiene el versículo la palabra X? (True/False)
+    {
+      final target = studiedPool[0 % studiedPool.length];
+      final isTrue = rng.nextBool();
+      final statement = _generateTrueFalseStatement(target, isTrue, rng);
+      rounds.add(_QuizRound(
+        target: target,
+        type: _QuizQuestionType.trueFalse,
+        options: const [],
+        trueFalseStatement: statement,
+        isStatementTrue: isTrue,
+      ));
     }
+
+    // Ronda 2: Comparar versiones (¿Cuál es el versículo correcto? - 3 opciones en total)
+    {
+      final target = studiedPool[rng.nextInt(studiedPool.length)];
+      rounds.add(_buildCorruptedWordRound(target, rng, 1));
+    }
+
     return rounds;
   }
 
@@ -2809,7 +1543,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       _quizRoundIndex == _quizRounds.length - 1 &&
       _quizRounds.last.answered;
 
-  bool get _quizPassed => _quizFinished && _quizScore >= 3;
+  bool get _quizPassed => _quizFinished && _quizScore >= 2;
 
   void _activateLetterBlank(int index) {
     if (index < 0 || index >= _letterTargets.length) return;
@@ -3593,13 +2327,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         : '¿A qué referencia pertenece este texto?\n\n"${round.target.back}"';
 
     final contextLabel = isTrueFalse
-        ? 'PREGUNTA ${_quizRoundIndex + 1} DE 5 · VERDADERO / FALSO'
+        ? 'PREGUNTA ${_quizRoundIndex + 1} DE ${_quizRounds.length} · VERDADERO / FALSO'
         : isMatching
-        ? 'PREGUNTA ${_quizRoundIndex + 1} DE 5 · EMPAREJAR'
+        ? 'PREGUNTA ${_quizRoundIndex + 1} DE ${_quizRounds.length} · EMPAREJAR'
         : isOpenQuestion
-        ? 'PREGUNTA ${_quizRoundIndex + 1} DE 5 · RESPUESTA ABIERTA'
+        ? 'PREGUNTA ${_quizRoundIndex + 1} DE ${_quizRounds.length} · RESPUESTA ABIERTA'
         : isFrontToBack
-        ? (deck.isBible ? 'BIBLIA · ${round.target.front.toUpperCase()}' : deck.title.toUpperCase())
+        ? (deck.isBible
+            ? (round.target.front.contains('¿') || round.target.front.length > 40
+                ? 'BIBLIA · TRIVIA'
+                : 'BIBLIA · ${round.target.front.toUpperCase()}')
+            : deck.title.toUpperCase())
         : round.type == _QuizQuestionType.backToFront
         ? (deck.isBible ? 'BIBLIA · RECONOCER REFERENCIA' : 'IDENTIFICAR ORIGEN')
         : (deck.isBible ? 'BIBLIA · ASOCIACIÓN CONCEPTUAL' : '"${_firstWords(round.target.back, 8)}…"');
@@ -4354,9 +3092,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   return;
                 }
                 if (!_quizPassed) {
+                  _resetQuiz();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Necesitas 3 aciertos. Reintenta.'),
+                      content: Text('Reintentando quiz. ¡Tú puedes!'),
+                      duration: Duration(seconds: 2),
                     ),
                   );
                   return;
