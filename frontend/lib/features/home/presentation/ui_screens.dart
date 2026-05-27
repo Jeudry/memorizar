@@ -1974,6 +1974,81 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
   }
 
+  _QuizRound _buildAntithesisRound(MemoryCardData target, math.Random rng, int index) {
+    final text = target.back.toLowerCase();
+    
+    final question = '¿Qué actitud o idea contradice directamente el mensaje práctico de este pasaje?';
+    
+    String correctOpt = '';
+    final distractors = <String>[];
+    
+    if (text.contains('puedo') || text.contains('fortalece') || text.contains('fuerza') || text.contains('poder')) {
+      correctOpt = 'Rendirse y creer que las dificultades son superiores a ti y que estás completamente solo.';
+      distractors.addAll([
+        'Tener la certeza absoluta de que saldrás adelante con fe en Cristo.',
+        'Agradecer a Dios incluso cuando las cosas se ponen difíciles en el día a día.',
+        'Mantener una actitud alegre esperando que pase la tormenta con paciencia.'
+      ]);
+    } else if (text.contains('creó') || text.contains('principio') || text.contains('cielos') || text.contains('tierra') || text.contains('luz')) {
+      correctOpt = 'Pensar que el universo y todo lo que existe surgió solo por pura casualidad caótica sin ningún Creador.';
+      distractors.addAll([
+        'Crear que la creación tiene un orden inteligente structured por Dios.',
+        'Sostener que la luz fue separada de las tinieblas con un propósito sabio.',
+        'Valorar que el Creador dio origen al mundo físico con amor.'
+      ]);
+    } else if (text.contains('serpiente') || text.contains('árbol') || text.contains('fruto') || text.contains('huerto') || text.contains('comer')) {
+      correctOpt = 'Sostener que los seres humanos obedecieron fielmente las órdenes a la primera sin dudar jamás.';
+      distractors.addAll([
+        'Relatar que la serpiente intentó engañar astutamente a la mujer.',
+        'Recordar que Dios había advertido que comer del fruto traería consecuencias.',
+        'Describir el diálogo entre la mujer y la serpiente sobre las plantas del jardín.'
+      ]);
+    } else if (text.contains('pastor') || text.contains('misericordia') || text.contains('gracias') || text.contains('amor') || text.contains('paz') || text.contains('ansiedad')) {
+      correctOpt = 'Vivir con desespero constante, desconfianza total y sentir que a nadie le importas.';
+      distractors.addAll([
+        'Descansar y sentirte seguro sabiendo que estás bajo el cuidado de tu Pastor.',
+        'Agradecer con alegría y paz sabiendo que la misericordia divina es eterna.',
+        'Llevar tus preocupaciones en oración con un corazón agradecido.'
+      ]);
+    } else {
+      correctOpt = 'Vivir con desinterés absoluto, egoísmo y desconfianza en el camino del bien.';
+      distractors.addAll([
+        'Aprender a reflexionar en las enseñanzas y actuar con bondad hacia los demás.',
+        'Buscar la verdad y mantener la esperanza en el día a día.',
+        'Esforzarse por crecer espiritualmente compartiendo con tu comunidad.'
+      ]);
+    }
+    
+    distractors.shuffle(rng);
+    final chosenDistractors = distractors.take(3).toList();
+    
+    final targetCard = MemoryCardData(
+      id: 'quiz-antithesis-${target.id}-$index',
+      front: question,
+      back: correctOpt,
+      source: target.source,
+      icon: target.icon,
+    );
+    
+    final optionCards = <MemoryCardData>[
+      targetCard,
+      for (var idx = 0; idx < chosenDistractors.length; idx++)
+        MemoryCardData(
+          id: 'quiz-antithesis-distractor-$idx-${target.id}-$index',
+          front: question,
+          back: chosenDistractors[idx],
+          source: 'Sistema',
+          icon: target.icon,
+        )
+    ]..shuffle(rng);
+    
+    return _QuizRound(
+      target: targetCard,
+      type: _QuizQuestionType.frontToBack,
+      options: optionCards,
+    );
+  }
+
   String _generateTrueFalseStatement(MemoryCardData target, bool isTrue, math.Random rng, {int variant = 0}) {
     final text = target.back.toLowerCase();
     final idx = variant % 2;
@@ -2138,30 +2213,115 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
     final studiedPool = sessionStudiedCards.isNotEmpty ? sessionStudiedCards : [activeCard];
 
-    // Pool of all 12 available dynamic round types, shuffled at each session start
-    final availableTypes = <String>[
-      'frontToBack',
-      'backToFront',
-      'trueFalse_0',
-      'trueFalse_1',
-      'conceptual',
-      'matching',
-      'openQuestion',
-      'oddOneOut',
-      'physicalObservation',
-      'corruptedWord',
-      'chronology',
-      'whoSaidIt',
-    ]..shuffle(rng);
-
-    // Pick 5 exercise types randomly for this session
-    final selectedTypes = availableTypes.take(5).toList();
+    // Registro de tipos de ejercicios seleccionados en rondas anteriores de la sesión
+    final selectedTypesHistory = <String>[];
 
     for (var i = 0; i < 5; i++) {
       final target = studiedPool[i % studiedPool.length];
-      final typeStr = selectedTypes[i];
+      final text = target.back.toLowerCase();
+      final ref = target.front.toLowerCase();
 
-      if (typeStr == 'trueFalse_0') {
+      // Diccionario de puntuación para cada tipo de ejercicio
+      final scores = <String, double>{};
+
+      // 1. corruptedWord (Palabra Equivocada de Versículo Completo)
+      double scoreCorrupted = 5.0; // Fallback base
+      if (text.contains('serpiente') || text.contains('pastor') || text.contains('pastores') || text.contains('oveja') || text.contains('ovejas') || text.contains('lobo') || text.contains('león') ||
+          text.contains('primero') || text.contains('segundo') || text.contains('tercero') || text.contains('séptimo') || text.contains('siete') || text.contains('tres') ||
+          text.contains('árboles') || text.contains('árbol') || text.contains('huerto') || text.contains('fruto') || text.contains('cielo') ||
+          text.contains('buena') || text.contains('bueno') || text.contains('luz') || text.contains('tinieblas') || text.contains('separó') || text.contains('creó') || text.contains('vida') || text.contains('paz')) {
+        scoreCorrupted = 10.0;
+      }
+      scores['corruptedWord'] = scoreCorrupted;
+
+      // 2. whoSaidIt (Atribución de Voz)
+      double scoreWhoSaid = 1.0; // Muy bajo por defecto
+      if (text.contains('dijo') || text.contains('llamó') || text.contains('creó') || text.contains('separó') || text.contains('serpiente') || text.contains('mujer') || text.contains('eva') || text.contains('adán') || text.contains('pastor') || text.contains('ángel') ||
+          ref.contains('fil') || ref.contains('flp') || ref.contains('rom') || ref.contains('cor') || ref.contains('ef') || ref.contains('gal') || ref.contains('sal') || ref.contains('salmo') || ref.contains('jua') || ref.contains('jn')) {
+        scoreWhoSaid = 12.0;
+      }
+      scores['whoSaidIt'] = scoreWhoSaid;
+
+      // 3. chronology (Cronología)
+      double scoreChrono = 0.0;
+      if (deck.cards.length >= 2) {
+        scoreChrono = 9.0;
+      }
+      scores['chronology'] = scoreChrono;
+
+      // 4. antithesis (Antítesis / Contra-Argumento)
+      double scoreAntithesis = 5.0; // Fallback base
+      if (text.contains('puedo') || text.contains('fortalece') || text.contains('fuerza') || text.contains('poder') ||
+          text.contains('creó') || text.contains('principio') || text.contains('cielos') || text.contains('tierra') || text.contains('luz') ||
+          text.contains('serpiente') || text.contains('árbol') || text.contains('fruto') || text.contains('huerto') || text.contains('comer') ||
+          text.contains('pastor') || text.contains('misericordia') || text.contains('gracias') || text.contains('amor') || text.contains('paz') || text.contains('ansiedad')) {
+        scoreAntithesis = 11.0;
+      }
+      scores['antithesis'] = scoreAntithesis;
+
+      // 5. oddOneOut (¿Cuál no pertenece?)
+      double scoreOdd = 3.0;
+      final cleanText = text.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
+      final wordsCount = cleanText.split(' ').where((w) => w.length > 4).length;
+      if (wordsCount >= 3) {
+        scoreOdd = 8.0;
+      }
+      scores['oddOneOut'] = scoreOdd;
+
+      // 6. physicalObservation (Trivia Detalles Físicos)
+      double scoreObs = 4.0;
+      if (ref.contains('gén') || ref.contains('génesis') || ref.contains('éxo') || ref.contains('éxodo') || ref.contains('mat') || ref.contains('mar') || ref.contains('luc') || ref.contains('jua') || ref.contains('hec')) {
+        scoreObs = 10.0;
+      }
+      scores['physicalObservation'] = scoreObs;
+
+      // 7. conceptual (Asociación Conceptual)
+      double scoreConceptual = 4.0;
+      if (ref.contains('fil') || ref.contains('flp') || ref.contains('rom') || ref.contains('cor') || ref.contains('ef') || ref.contains('gal') || ref.contains('col') || ref.contains('tito') || ref.contains('tim') || ref.contains('apo')) {
+        scoreConceptual = 8.0;
+      }
+      scores['conceptual'] = scoreConceptual;
+
+      // 8. matching (Emparejar)
+      double scoreMatching = 0.0;
+      if (studiedPool.length >= 3) {
+        scoreMatching = 8.0;
+      }
+      scores['matching'] = scoreMatching;
+
+      // 9. openQuestion (Pregunta Abierta)
+      scores['openQuestion'] = 5.0;
+
+      // 10. trueFalse_0 / trueFalse_1
+      scores['trueFalse_0'] = 6.0;
+      scores['trueFalse_1'] = 6.0;
+
+      // 11. frontToBack / backToFront
+      scores['frontToBack'] = 5.0;
+      scores['backToFront'] = 5.0;
+
+      // Penalización por repetición para asegurar variedad
+      for (final type in scores.keys) {
+        if (selectedTypesHistory.contains(type)) {
+          final occurrences = selectedTypesHistory.where((t) => t == type).length;
+          scores[type] = scores[type]! - (7.0 * occurrences);
+        }
+      }
+
+      // Elegir el tipo de ejercicio con mayor puntuación
+      var bestType = 'frontToBack';
+      var bestScore = -999.0;
+      for (final entry in scores.entries) {
+        if (entry.value > bestScore) {
+          bestScore = entry.value;
+          bestType = entry.key;
+        }
+      }
+
+      selectedTypesHistory.add(bestType);
+
+      // Instanciar el tipo de ejercicio seleccionado
+      if (bestType == 'trueFalse_0') {
         final isTrue = rng.nextBool();
         final statement = _generateTrueFalseStatement(target, isTrue, rng, variant: 0);
         rounds.add(_QuizRound(
@@ -2171,7 +2331,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           trueFalseStatement: statement,
           isStatementTrue: isTrue,
         ));
-      } else if (typeStr == 'trueFalse_1') {
+      } else if (bestType == 'trueFalse_1') {
         final isTrue = rng.nextBool();
         final statement = _generateTrueFalseStatement(target, isTrue, rng, variant: 1);
         rounds.add(_QuizRound(
@@ -2181,28 +2341,30 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           trueFalseStatement: statement,
           isStatementTrue: isTrue,
         ));
-      } else if (typeStr == 'conceptual') {
+      } else if (bestType == 'conceptual') {
         rounds.add(_buildConceptualRound(target, rng, i));
-      } else if (typeStr == 'oddOneOut') {
+      } else if (bestType == 'oddOneOut') {
         rounds.add(_buildOddOneOutRound(target, rng, i));
-      } else if (typeStr == 'physicalObservation') {
+      } else if (bestType == 'physicalObservation') {
         rounds.add(_buildPhysicalObservationRound(target, rng, i));
-      } else if (typeStr == 'corruptedWord') {
+      } else if (bestType == 'corruptedWord') {
         rounds.add(_buildCorruptedWordRound(target, rng, i));
-      } else if (typeStr == 'chronology') {
+      } else if (bestType == 'chronology') {
         rounds.add(_buildChronologyRound(target, deck, studiedPool, rng, i));
-      } else if (typeStr == 'whoSaidIt') {
+      } else if (bestType == 'whoSaidIt') {
         rounds.add(_buildWhoSaidItRound(target, deck, rng, i));
-      } else if (typeStr == 'openQuestion') {
+      } else if (bestType == 'antithesis') {
+        rounds.add(_buildAntithesisRound(target, rng, i));
+      } else if (bestType == 'openQuestion') {
         String prompt = 'Explícalo con tus palabras: ¿cuál es la enseñanza central o el valor práctico de este texto?';
-        final text = target.back.toLowerCase();
-        if (text.contains('puedo') || text.contains('fortalece')) {
+        final tText = target.back.toLowerCase();
+        if (tText.contains('puedo') || tText.contains('fortalece')) {
           prompt = 'Explícalo con tus palabras: ¿qué relación hay entre el poder de Cristo y tus dificultades o debilidades cotidianas?';
-        } else if (text.contains('gracias') || text.contains('misericordia') || text.contains('bueno')) {
+        } else if (tText.contains('gracias') || tText.contains('misericordia') || tText.contains('bueno')) {
           prompt = 'Explícalo con tus palabras: ¿por qué debemos dar gracias a Dios en todo momento y cómo se relaciona con su misericordia?';
-        } else if (text.contains('angustia') || text.contains('clamar') || text.contains('liberó') || text.contains('salvó') || text.contains('angustiados')) {
+        } else if (tText.contains('angustia') || tText.contains('clamar') || tText.contains('liberó') || tText.contains('salvó') || tText.contains('angustiados')) {
           prompt = 'Explícalo con tus palabras: ¿qué actitud debemos tomar en medio de la angustia y qué respuesta promete este pasaje?';
-        } else if (text.contains('paz') || text.contains('cuidado') || text.contains('ansiedad') || text.contains('guardará')) {
+        } else if (tText.contains('paz') || tText.contains('cuidado') || tText.contains('ansiedad') || tText.contains('guardará')) {
           prompt = 'Explícalo con tus palabras: ¿cómo nos ayuda la oración con gratitud a experimentar la paz que supera todo entendimiento?';
         } else if (target.front.contains('Bíceps') || target.back.contains('flexor') || target.back.contains('codo') || target.front.contains('codo') || target.back.contains('Bíceps')) {
           prompt = 'Explícalo con tus palabras: ¿qué relación hay entre el bíceps y el movimiento del codo?';
@@ -2213,8 +2375,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           options: const [],
           openQuestionPrompt: prompt,
         ));
-      } else if (typeStr == 'backToFront') {
-        // Text-to-reference matching round
+      } else if (bestType == 'backToFront') {
         final distractorPool = deck.cards.where((c) => c.id != target.id).toList()..shuffle(rng);
         final distractors = <MemoryCardData>[];
         final otherStudied = studiedPool.where((c) => c.id != target.id).toList()..shuffle(rng);
@@ -2269,8 +2430,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           type: _QuizQuestionType.backToFront,
           options: optionCards,
         ));
-      } else if (typeStr == 'matching') {
-        // Matching round
+      } else if (bestType == 'matching') {
         final pairs = <(String, String)>[];
         pairs.add((target.front, target.back));
 
