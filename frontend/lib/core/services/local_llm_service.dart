@@ -404,7 +404,6 @@ class LocalLlmService {
 
     return result.take(3).toList();
   }
-  }
 
   /// Ejecuta inferencia local y genera una respuesta para el prompt provisto.
   /// No requiere conexión a internet y se procesa 100% en la GPU/NPU del dispositivo.

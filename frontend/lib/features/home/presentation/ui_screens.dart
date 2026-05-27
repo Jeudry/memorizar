@@ -3196,7 +3196,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             text: round.correct
                 ? '¡Correcto!'
                 : (round.type == _QuizQuestionType.trueFalse
-                    ? 'Respuesta correcta: ${round.isStatementTrue ? "VERDADERO" : "FALSO"}'
+                    ? 'Respuesta correcta: ${round.isStatementTrue == true ? "VERDADERO" : "FALSO"}'
                     : 'Respuesta correcta: ${isFrontToBack ? round.target.back : round.target.front}'),
           ),
         if (_quizFinished) ...[
