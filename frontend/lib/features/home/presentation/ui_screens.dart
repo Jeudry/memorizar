@@ -1181,6 +1181,77 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
   }
 
+  _QuizRound _buildOddOneOutRound(MemoryCardData card, math.Random rng, int index) {
+    final cleanText = card.back.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '').toLowerCase();
+    final words = cleanText.split(' ').where((w) => w.length > 4 && !w.contains(RegExp(r'\d'))).toList();
+    
+    // Pick 3 words that are in the verse
+    final presentWords = <String>{};
+    if (words.length >= 3) {
+      words.shuffle(rng);
+      for (final w in words) {
+        if (presentWords.length < 3) {
+          presentWords.add(w.substring(0, 1).toUpperCase() + w.substring(1));
+        }
+      }
+    }
+    
+    while (presentWords.length < 3) {
+      presentWords.add('Palabra${presentWords.length}');
+    }
+    
+    // Pick a word that is NOT in the verse from a pool of plausible biblical context words
+    final potentialOddWords = [
+      'sabiduría', 'justicia', 'entendimiento', 'consejo', 'pacto', 'ley', 
+      'profeta', 'sacerdote', 'altar', 'ofrenda', 'heredad', 'templo', 'reino', 
+      'mandato', 'enseñanza', 'prójimo', 'salvación', 'fidelidad', 'gracia',
+      'promesa', 'camino', 'verdad', 'vida', 'cielo', 'tierra', 'amor', 'fe',
+      'oración', 'esperanza', 'pecado', 'perdón', 'bendición'
+    ];
+    potentialOddWords.shuffle(rng);
+    
+    String oddWord = '';
+    for (final ow in potentialOddWords) {
+      if (!cleanText.contains(ow.toLowerCase())) {
+        oddWord = ow.substring(0, 1).toUpperCase() + ow.substring(1);
+        break;
+      }
+    }
+    if (oddWord.isEmpty) {
+      oddWord = 'Pacto';
+    }
+    
+    final question = '¿Cuál de estas palabras NO aparece en el versículo de ${card.front}?';
+    final correctOpt = oddWord;
+    final distractors = presentWords.toList();
+    
+    final targetCard = MemoryCardData(
+      id: 'quiz-odd-${card.id}-$index',
+      front: question,
+      back: correctOpt,
+      source: card.source,
+      icon: card.icon,
+    );
+    
+    final optionCards = <MemoryCardData>[
+      targetCard,
+      for (var idx = 0; idx < distractors.length; idx++)
+        MemoryCardData(
+          id: 'quiz-odd-distractor-$idx-${card.id}-$index',
+          front: question,
+          back: distractors[idx],
+          source: 'Sistema',
+          icon: card.icon,
+        )
+    ]..shuffle(rng);
+    
+    return _QuizRound(
+      target: targetCard,
+      type: _QuizQuestionType.frontToBack,
+      options: optionCards,
+    );
+  }
+
   String _generateTrueFalseStatement(MemoryCardData target, bool isTrue, math.Random rng, {int variant = 0}) {
     final text = target.back.toLowerCase();
     
@@ -1248,6 +1319,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     {
       final target = studiedPool[rng.nextInt(studiedPool.length)];
       rounds.add(_buildCorruptedWordRound(target, rng, 1));
+    }
+
+    // Ronda 3: Seleccionar la palabra que NO está contenida (Selección múltiple)
+    {
+      final target = studiedPool.length > 1 
+          ? studiedPool[1 % studiedPool.length] 
+          : studiedPool[0 % studiedPool.length];
+      rounds.add(_buildOddOneOutRound(target, rng, 2));
     }
 
     return rounds;
