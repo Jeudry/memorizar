@@ -1838,6 +1838,142 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
   }
 
+  _QuizRound _buildChronologyRound(MemoryCardData target, MemoryDeckData deck, List<MemoryCardData> studiedPool, math.Random rng, int index) {
+    if (deck.cards.length < 2) {
+      return _buildOddOneOutRound(target, rng, index);
+    }
+
+    final allCards = List<MemoryCardData>.from(deck.cards);
+    final selectedCards = <MemoryCardData>[target];
+    allCards.removeWhere((c) => c.id == target.id);
+    allCards.shuffle(rng);
+    
+    final extraCount = math.min(2, allCards.length);
+    for (var i = 0; i < extraCount; i++) {
+      selectedCards.add(allCards[i]);
+    }
+
+    selectedCards.sort((a, b) {
+      final idxA = deck.cards.indexWhere((c) => c.id == a.id);
+      final idxB = deck.cards.indexWhere((c) => c.id == b.id);
+      return idxA.compareTo(idxB);
+    });
+
+    final firstCard = selectedCards.first;
+    final question = 'Cronología: ¿Qué suceso u ordenación ocurrió primero?';
+
+    String cleanPreview(String fullText) {
+      final clean = fullText.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
+      final words = clean.split(' ');
+      if (words.length > 8) {
+        return '${words.take(8).join(' ')}...';
+      }
+      return fullText;
+    }
+
+    final targetCard = MemoryCardData(
+      id: 'quiz-chrono-${firstCard.id}-$index',
+      front: question,
+      back: '${firstCard.front}: "${cleanPreview(firstCard.back)}"',
+      source: firstCard.source,
+      icon: firstCard.icon,
+    );
+
+    final distractors = selectedCards.skip(1).toList();
+    
+    final optionCards = <MemoryCardData>[
+      targetCard,
+      for (var idx = 0; idx < distractors.length; idx++)
+        MemoryCardData(
+          id: 'quiz-chrono-distractor-$idx-${distractors[idx].id}-$index',
+          front: question,
+          back: '${distractors[idx].front}: "${cleanPreview(distractors[idx].back)}"',
+          source: 'Sistema',
+          icon: distractors[idx].icon,
+        )
+    ]..shuffle(rng);
+
+    return _QuizRound(
+      target: targetCard,
+      type: _QuizQuestionType.frontToBack,
+      options: optionCards,
+    );
+  }
+
+  _QuizRound _buildWhoSaidItRound(MemoryCardData target, MemoryDeckData deck, math.Random rng, int index) {
+    final text = target.back.toLowerCase();
+    final ref = target.front.toLowerCase();
+    
+    String protagonist = '';
+    
+    if (text.contains('dijo dios') || text.contains('creó dios') || text.contains('separó dios') || text.contains('llamó dios') || text.contains('vio dios')) {
+      protagonist = 'Dios (El Creador)';
+    } else if (text.contains('serpiente')) {
+      protagonist = 'La serpiente';
+    } else if (text.contains('mujer') || text.contains('eva')) {
+      protagonist = 'La mujer (Eva)';
+    } else if (text.contains('adán') || text.contains('hombre')) {
+      protagonist = 'El hombre (Adán)';
+    } else if (text.contains('pastor') || text.contains('pastores')) {
+      protagonist = 'Los pastores';
+    } else if (text.contains('ángel') || text.contains('ángeles') || text.contains('querubín')) {
+      protagonist = 'Un ángel del Señor';
+    } else if (ref.contains('fil') || ref.contains('flp') || ref.contains('rom') || ref.contains('cor') || ref.contains('ef') || ref.contains('gal')) {
+      protagonist = 'El apóstol Pablo';
+    } else if (ref.contains('sal') || ref.contains('salmo')) {
+      protagonist = 'El salmista (David)';
+    } else if (ref.contains('jua') || ref.contains('jn')) {
+      protagonist = text.contains('dijo jesús') || text.contains('díjole') || text.contains('señor')
+          ? 'Jesús'
+          : 'El apóstol Juan';
+    } else {
+      protagonist = 'El narrador bíblico';
+    }
+
+    final cleanText = target.back.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
+    final words = cleanText.split(' ');
+    final previewText = words.length > 10 ? '${words.take(10).join(' ')}...' : target.back;
+    
+    final question = '"$previewText"\n\n¿Quién es el autor, protagonista o sujeto principal de la acción en este pasaje?';
+
+    final targetCard = MemoryCardData(
+      id: 'quiz-whosaid-${target.id}-$index',
+      front: question,
+      back: protagonist,
+      source: target.source,
+      icon: target.icon,
+    );
+
+    final charactersPool = [
+      'Dios (El Creador)', 'La serpiente', 'La mujer (Eva)', 'El hombre (Adán)',
+      'El apóstol Pablo', 'El salmista (David)', 'Un ángel del Señor',
+      'Los pastores', 'El narrador bíblico', 'Jesús', 'Moisés', 'Abraham'
+    ];
+
+    final distractors = charactersPool
+        .where((c) => c != protagonist)
+        .toList()
+        ..shuffle(rng);
+
+    final optionCards = <MemoryCardData>[
+      targetCard,
+      for (var idx = 0; idx < 3; idx++)
+        MemoryCardData(
+          id: 'quiz-whosaid-distractor-$idx-${target.id}-$index',
+          front: question,
+          back: distractors[idx],
+          source: 'Sistema',
+          icon: target.icon,
+        )
+    ]..shuffle(rng);
+
+    return _QuizRound(
+      target: targetCard,
+      type: _QuizQuestionType.frontToBack,
+      options: optionCards,
+    );
+  }
+
   String _generateTrueFalseStatement(MemoryCardData target, bool isTrue, math.Random rng, {int variant = 0}) {
     final text = target.back.toLowerCase();
     final idx = variant % 2;
@@ -2002,7 +2138,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
     final studiedPool = sessionStudiedCards.isNotEmpty ? sessionStudiedCards : [activeCard];
 
-    // Pool of all 10 available dynamic round types, shuffled at each session start
+    // Pool of all 12 available dynamic round types, shuffled at each session start
     final availableTypes = <String>[
       'frontToBack',
       'backToFront',
@@ -2014,6 +2150,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       'oddOneOut',
       'physicalObservation',
       'corruptedWord',
+      'chronology',
+      'whoSaidIt',
     ]..shuffle(rng);
 
     // Pick 5 exercise types randomly for this session
@@ -2051,6 +2189,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         rounds.add(_buildPhysicalObservationRound(target, rng, i));
       } else if (typeStr == 'corruptedWord') {
         rounds.add(_buildCorruptedWordRound(target, rng, i));
+      } else if (typeStr == 'chronology') {
+        rounds.add(_buildChronologyRound(target, deck, studiedPool, rng, i));
+      } else if (typeStr == 'whoSaidIt') {
+        rounds.add(_buildWhoSaidItRound(target, deck, rng, i));
       } else if (typeStr == 'openQuestion') {
         String prompt = 'Explícalo con tus palabras: ¿cuál es la enseñanza central o el valor práctico de este texto?';
         final text = target.back.toLowerCase();
