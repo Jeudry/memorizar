@@ -1443,6 +1443,209 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
   }
 
+  _QuizRound _buildOddOneOutRound(MemoryCardData card, math.Random rng, int index) {
+    final cleanText = card.back.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '').toLowerCase();
+    final words = cleanText.split(' ').where((w) => w.length > 3).toList();
+    
+    // Pick 3 words that are in the verse
+    final presentWords = <String>{};
+    if (words.length >= 3) {
+      words.shuffle(rng);
+      for (final w in words) {
+        if (presentWords.length < 3) {
+          presentWords.add(w.substring(0, 1).toUpperCase() + w.substring(1));
+        }
+      }
+    }
+    
+    while (presentWords.length < 3) {
+      presentWords.add('Palabra${presentWords.length}');
+    }
+    
+    // Pick a word that is NOT in the verse
+    final potentialOddWords = [
+      'estrellas', 'leones', 'oro', 'plata', 'fuego', 'espada', 'monte', 'barco',
+      'camello', 'árbol', 'fruto', 'serpiente', 'cielo', 'mar', 'viento', 'tormenta',
+      'tristeza', 'derrota', 'temor', 'orgullo', 'riqueza', 'pobreza', 'ley', 'pacto'
+    ];
+    potentialOddWords.shuffle(rng);
+    
+    String oddWord = '';
+    for (final ow in potentialOddWords) {
+      if (!cleanText.contains(ow.toLowerCase())) {
+        oddWord = ow.substring(0, 1).toUpperCase() + ow.substring(1);
+        break;
+      }
+    }
+    if (oddWord.isEmpty) {
+      oddWord = 'Dinosaurio';
+    }
+    
+    final question = '¿Cuál de estas palabras NO aparece en el versículo de ${card.front}?';
+    final correctOpt = oddWord;
+    final distractors = presentWords.toList();
+    
+    final targetCard = MemoryCardData(
+      id: 'quiz-odd-${card.id}-$index',
+      front: question,
+      back: correctOpt,
+      source: card.source,
+      icon: card.icon,
+    );
+    
+    final optionCards = <MemoryCardData>[
+      targetCard,
+      for (var idx = 0; idx < distractors.length; idx++)
+        MemoryCardData(
+          id: 'quiz-odd-distractor-$idx-${card.id}-$index',
+          front: question,
+          back: distractors[idx],
+          source: 'Sistema',
+          icon: card.icon,
+        )
+    ]..shuffle(rng);
+    
+    return _QuizRound(
+      target: targetCard,
+      type: _QuizQuestionType.frontToBack,
+      options: optionCards,
+    );
+  }
+
+  _QuizRound _buildPhysicalObservationRound(MemoryCardData card, math.Random rng, int index) {
+    final text = card.back.toLowerCase();
+    String question = '¿Qué acción o elemento físico destaca este versículo?';
+    String correctOpt = '';
+    List<String> distractors = [];
+    
+    if (text.contains('luz') || text.contains('tinieblas') || text.contains('separó')) {
+      question = 'En ${card.front}, ¿qué acción física realiza Dios después de ver la luz?';
+      correctOpt = 'Separar la luz de las tinieblas.';
+      distractors = [
+        'Crear los astros celestes.',
+        'Mezclar los elementos del caos.',
+        'Hacer llover sobre la tierra.',
+      ];
+    } else if (text.contains('serpiente') || text.contains('huerto') || text.contains('árboles')) {
+      question = 'En ${card.front}, ¿quiénes son los dos personajes que interactúan directamente en el diálogo?';
+      correctOpt = 'La mujer y la serpiente.';
+      distractors = [
+        'Adán y la serpiente.',
+        'Dios el Señor y Adán.',
+        'La mujer y Adán.',
+      ];
+    } else if (text.contains('fortalece') || text.contains('puedo')) {
+      question = 'Según Filipenses 4:13, ¿qué efecto tiene Cristo en el autor frente a las circunstancias?';
+      correctOpt = 'Le infunde fuerzas para afrontar todo.';
+      distractors = [
+        'Le quita todos sus problemas materiales.',
+        'Le enseña a gobernar a los demás.',
+        'Le da riquezas y abundancia terrenal.',
+      ];
+    } else {
+      question = 'Observando el texto de ${card.front}, ¿qué tipo de interacción directa se describe?';
+      correctOpt = 'Una declaración, mandato o suceso concreto.';
+      distractors = [
+        'Un debate filosófico abstracto moderno.',
+        'Una lista de normas rituales de templo.',
+        'Una genealogía familiar detallada.',
+      ];
+    }
+    
+    final targetCard = MemoryCardData(
+      id: 'quiz-obs-${card.id}-$index',
+      front: question,
+      back: correctOpt,
+      source: card.source,
+      icon: card.icon,
+    );
+    
+    final optionCards = <MemoryCardData>[
+      targetCard,
+      for (var idx = 0; idx < distractors.length; idx++)
+        MemoryCardData(
+          id: 'quiz-obs-distractor-$idx-${card.id}-$index',
+          front: question,
+          back: distractors[idx],
+          source: 'Sistema',
+          icon: card.icon,
+        )
+    ]..shuffle(rng);
+    
+    return _QuizRound(
+      target: targetCard,
+      type: _QuizQuestionType.frontToBack,
+      options: optionCards,
+    );
+  }
+
+  _QuizRound _buildAnimalSwapRound(MemoryCardData card, math.Random rng, int index) {
+    final text = card.back;
+    String realAnimal = '';
+    String funnyAnimal = '';
+    
+    if (text.toLowerCase().contains('serpiente')) {
+      realAnimal = 'serpiente';
+      funnyAnimal = 'jirafa';
+    } else if (text.toLowerCase().contains('pastor') || text.toLowerCase().contains('pastores')) {
+      realAnimal = 'pastor';
+      funnyAnimal = 'astronauta';
+    } else if (text.toLowerCase().contains('oveja') || text.toLowerCase().contains('ovejas')) {
+      realAnimal = 'ovejas';
+      funnyAnimal = 'pestañas';
+    } else if (text.toLowerCase().contains('lobo') || text.toLowerCase().contains('lobos')) {
+      realAnimal = 'lobo';
+      funnyAnimal = 'tiburón';
+    } else if (text.toLowerCase().contains('león') || text.toLowerCase().contains('leones')) {
+      realAnimal = 'león';
+      funnyAnimal = 'gatito';
+    }
+    
+    if (realAnimal.isEmpty) {
+      realAnimal = 'Dios';
+      funnyAnimal = 'alcalde';
+    }
+    
+    final regex = RegExp(realAnimal, caseSensitive: false);
+    final modifiedSentence = text.replaceAllMapped(regex, (m) {
+      final matched = m.group(0)!;
+      if (matched.isNotEmpty && matched[0] == matched[0].toUpperCase()) {
+        return funnyAnimal.substring(0, 1).toUpperCase() + funnyAnimal.substring(1);
+      }
+      return funnyAnimal;
+    });
+    
+    final question = '"$modifiedSentence"\n\n¿Qué palabra absurda o fuera de lugar se coló en esta versión del versículo?';
+    final correctOpt = funnyAnimal;
+    final distractors = [realAnimal, 'león', 'paloma'];
+    
+    final targetCard = MemoryCardData(
+      id: 'quiz-swap-${card.id}-$index',
+      front: question,
+      back: correctOpt,
+      source: card.source,
+      icon: card.icon,
+    );
+    
+    final optionCards = <MemoryCardData>[
+      targetCard,
+      for (var idx = 0; idx < distractors.length; idx++)
+        MemoryCardData(
+          id: 'quiz-swap-distractor-$idx-${card.id}-$index',
+          front: question,
+          back: distractors[idx],
+          source: 'Sistema',
+          icon: card.icon,
+        )
+    ]..shuffle(rng);
+    
+    return _QuizRound(
+      target: targetCard,
+      type: _QuizQuestionType.frontToBack,
+      options: optionCards,
+    );
+  }
+
   String _generateTrueFalseStatement(MemoryCardData target, bool isTrue, math.Random rng, {int variant = 0}) {
     final text = target.back.toLowerCase();
     final idx = variant % 2;
@@ -1616,7 +1819,22 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       'conceptual',
       'matching',
       'openQuestion',
-    ]..shuffle(rng);
+      'oddOneOut',
+      'physicalObservation',
+    ];
+
+    // Conditionally add animalSwap if any studied card contains an animal keyword!
+    final hasAnimal = studiedPool.any((c) {
+      final t = c.back.toLowerCase();
+      return t.contains('serpiente') || t.contains('pastor') || t.contains('oveja') || 
+             t.contains('lobo') || t.contains('león');
+    });
+    if (hasAnimal) {
+      availableTypes.add('animalSwap');
+    }
+
+    // Shuffle the list of options to guarantee randomized layouts
+    availableTypes.shuffle(rng);
 
     // Pick 5 exercise types randomly for this session
     final selectedTypes = availableTypes.take(5).toList();
@@ -1647,6 +1865,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ));
       } else if (typeStr == 'conceptual') {
         rounds.add(_buildConceptualRound(target, rng, i));
+      } else if (typeStr == 'oddOneOut') {
+        rounds.add(_buildOddOneOutRound(target, rng, i));
+      } else if (typeStr == 'physicalObservation') {
+        rounds.add(_buildPhysicalObservationRound(target, rng, i));
+      } else if (typeStr == 'animalSwap') {
+        rounds.add(_buildAnimalSwapRound(target, rng, i));
       } else if (typeStr == 'openQuestion') {
         String prompt = 'Explícalo con tus palabras: ¿cuál es la enseñanza central o el valor práctico de este texto?';
         final text = target.back.toLowerCase();
