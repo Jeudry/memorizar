@@ -1579,59 +1579,251 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
   }
 
-  _QuizRound _buildAnimalSwapRound(MemoryCardData card, math.Random rng, int index) {
+  _QuizRound _buildCorruptedWordRound(MemoryCardData card, math.Random rng, int index) {
     final text = card.back;
-    String realAnimal = '';
-    String funnyAnimal = '';
+    final cleanText = text.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
+    final cleanTextLower = cleanText.toLowerCase();
     
-    if (text.toLowerCase().contains('serpiente')) {
-      realAnimal = 'serpiente';
-      funnyAnimal = 'jirafa';
-    } else if (text.toLowerCase().contains('pastor') || text.toLowerCase().contains('pastores')) {
-      realAnimal = 'pastor';
-      funnyAnimal = 'astronauta';
-    } else if (text.toLowerCase().contains('oveja') || text.toLowerCase().contains('ovejas')) {
-      realAnimal = 'ovejas';
-      funnyAnimal = 'pestañas';
-    } else if (text.toLowerCase().contains('lobo') || text.toLowerCase().contains('lobos')) {
-      realAnimal = 'lobo';
-      funnyAnimal = 'tiburón';
-    } else if (text.toLowerCase().contains('león') || text.toLowerCase().contains('leones')) {
-      realAnimal = 'león';
-      funnyAnimal = 'gatito';
+    String originalWord = '';
+    String incorrectWord = '';
+    
+    // 1. Detect if animal swap is applicable
+    if (cleanTextLower.contains('serpiente')) {
+      originalWord = 'serpiente';
+      incorrectWord = 'jirafa';
+    } else if (cleanTextLower.contains('pastores')) {
+      originalWord = 'pastores';
+      incorrectWord = 'astronautas';
+    } else if (cleanTextLower.contains('pastor')) {
+      originalWord = 'pastor';
+      incorrectWord = 'astronauta';
+    } else if (cleanTextLower.contains('ovejas')) {
+      originalWord = 'ovejas';
+      incorrectWord = 'pestañas';
+    } else if (cleanTextLower.contains('oveja')) {
+      originalWord = 'oveja';
+      incorrectWord = 'pestaña';
+    } else if (cleanTextLower.contains('lobo')) {
+      originalWord = 'lobo';
+      incorrectWord = 'tiburón';
+    } else if (cleanTextLower.contains('león')) {
+      originalWord = 'león';
+      incorrectWord = 'gatito';
     }
     
-    if (realAnimal.isEmpty) {
-      realAnimal = 'Dios';
-      funnyAnimal = 'alcalde';
+    // 2. Detect if number swap is applicable
+    if (originalWord.isEmpty) {
+      if (cleanTextLower.contains('primero')) {
+        originalWord = 'primero';
+        incorrectWord = 'quinto';
+      } else if (cleanTextLower.contains('segundo')) {
+        originalWord = 'segundo';
+        incorrectWord = 'octavo';
+      } else if (cleanTextLower.contains('tercero')) {
+        originalWord = 'tercero';
+        incorrectWord = 'noveno';
+      } else if (cleanTextLower.contains('séptimo')) {
+        originalWord = 'séptimo';
+        incorrectWord = 'cuarto';
+      } else if (cleanTextLower.contains('siete')) {
+        originalWord = 'siete';
+        incorrectWord = 'veinte';
+      } else if (cleanTextLower.contains('tres')) {
+        originalWord = 'tres';
+        incorrectWord = 'cincuenta';
+      }
     }
     
-    final regex = RegExp(realAnimal, caseSensitive: false);
-    final modifiedSentence = text.replaceAllMapped(regex, (m) {
+    // 3. Detect if modern anachronism swap is applicable
+    if (originalWord.isEmpty) {
+      if (cleanTextLower.contains('árboles')) {
+        originalWord = 'árboles';
+        incorrectWord = 'celulares';
+      } else if (cleanTextLower.contains('árbol')) {
+        originalWord = 'árbol';
+        incorrectWord = 'televisor';
+      } else if (cleanTextLower.contains('huerto')) {
+        originalWord = 'huerto';
+        incorrectWord = 'estacionamiento';
+      } else if (cleanTextLower.contains('fruto')) {
+        originalWord = 'fruto';
+        incorrectWord = 'refresco';
+      } else if (cleanTextLower.contains('cielo')) {
+        originalWord = 'cielo';
+        incorrectWord = 'satélite';
+      }
+    }
+    
+    // 4. Fallback: Semantic opposite swap
+    if (originalWord.isEmpty) {
+      if (cleanTextLower.contains('buena')) {
+        originalWord = 'buena';
+        incorrectWord = 'mala';
+      } else if (cleanTextLower.contains('bueno')) {
+        originalWord = 'bueno';
+        incorrectWord = 'malo';
+      } else if (cleanTextLower.contains('luz')) {
+        originalWord = 'luz';
+        incorrectWord = 'tinieblas';
+      } else if (cleanTextLower.contains('tinieblas')) {
+        originalWord = 'tinieblas';
+        incorrectWord = 'luz';
+      } else if (cleanTextLower.contains('separó')) {
+        originalWord = 'separó';
+        incorrectWord = 'mezcló';
+      } else if (cleanTextLower.contains('creó')) {
+        originalWord = 'creó';
+        incorrectWord = 'destruyó';
+      } else if (cleanTextLower.contains('vida')) {
+        originalWord = 'vida';
+        incorrectWord = 'muerte';
+      } else if (cleanTextLower.contains('paz')) {
+        originalWord = 'paz';
+        incorrectWord = 'guerra';
+      }
+    }
+    
+    // Safety check: if still empty, pick any long word and swap it with 'dinosaurio'
+    if (originalWord.isEmpty) {
+      final words = cleanText.split(' ').where((w) => w.length > 4).toList();
+      if (words.isNotEmpty) {
+        words.shuffle(rng);
+        originalWord = words.first.toLowerCase();
+        incorrectWord = 'dinosaurio';
+      } else {
+        originalWord = 'dios';
+        incorrectWord = 'alcalde';
+      }
+    }
+    
+    // Mutate the original text to inject the conceptual error
+    final regex = RegExp('\\b$originalWord\\b', caseSensitive: false);
+    final mutatedSentence = text.replaceAllMapped(regex, (m) {
       final matched = m.group(0)!;
       if (matched.isNotEmpty && matched[0] == matched[0].toUpperCase()) {
-        return funnyAnimal.substring(0, 1).toUpperCase() + funnyAnimal.substring(1);
+        return incorrectWord.substring(0, 1).toUpperCase() + incorrectWord.substring(1);
       }
-      return funnyAnimal;
+      return incorrectWord;
     });
     
-    final question = '"$modifiedSentence"\n\n¿Qué palabra absurda o fuera de lugar se coló en esta versión del versículo?';
-    final correctOpt = funnyAnimal;
-    final distractors = [realAnimal, 'león', 'paloma'];
+    final question = '¿Cuál de las siguientes opciones del versículo contiene un error?';
     
+    // Diccionario de sinónimos aceptables en el contexto del Quiz
+    final synonyms = {
+      'creó': ['hizo', 'formó', 'produjo'],
+      'creo': ['hizo', 'formó', 'produjo'],
+      'dijo': ['expresó', 'pronunció', 'declaró'],
+      'dios': ['el Señor', 'el Creador'],
+      'tierra': ['suelo', 'mundo'],
+      'buena': ['excelente', 'maravillosa', 'agradable'],
+      'bueno': ['excelente', 'magnífico', 'agradable'],
+      'separó': ['dividió', 'apartó', 'distinguió'],
+      'luz': ['claridad', 'resplandor'],
+      'tinieblas': ['oscuridad', 'penumbras'],
+      'aguas': ['corrientes', 'mares'],
+      'día': ['jornada', 'período'],
+      'noche': ['oscuridad', 'velada'],
+      'hombre': ['ser humano', 'género humano'],
+      'vida': ['existencia', 'aliento de vida'],
+    };
+
+    String generateInnocuousVariant(String sentence, math.Random r, Set<String> excludeSentences) {
+      final words = sentence.split(' ');
+      final cleanWords = words.map((w) => w.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '').toLowerCase()).toList();
+
+      final indices = List.generate(cleanWords.length, (i) => i)..shuffle(r);
+      
+      for (final idx in indices) {
+        final cleanW = cleanWords[idx];
+        if (synonyms.containsKey(cleanW)) {
+          final possibleSyns = synonyms[cleanW]!;
+          final syn = possibleSyns[r.nextInt(possibleSyns.length)];
+          
+          final origWord = words[idx];
+          final origClean = origWord.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
+          
+          String replacement = syn;
+          if (origClean.isNotEmpty && origClean[0] == origClean[0].toUpperCase()) {
+            replacement = syn.substring(0, 1).toUpperCase() + syn.substring(1);
+          }
+          
+          final prefixIndex = origWord.indexOf(origClean);
+          if (prefixIndex == -1) continue;
+          
+          final prefix = origWord.substring(0, prefixIndex);
+          final suffix = origWord.substring(prefixIndex + origClean.length);
+          
+          final newWord = prefix + replacement + suffix;
+          final newWords = List<String>.from(words);
+          newWords[idx] = newWord;
+          
+          final newSentence = newWords.join(' ');
+          if (newSentence != sentence && !excludeSentences.contains(newSentence)) {
+            return newSentence;
+          }
+        }
+      }
+      
+      // Intentar permutación gramatical
+      final sentenceLower = sentence.toLowerCase();
+      final grammarSwaps = [
+        ['creó dios', 'dios creó'],
+        ['dijo dios', 'dios dijo'],
+        ['vio dios', 'dios vio'],
+        ['separó dios', 'dios separó'],
+        ['llamó dios', 'dios llamó'],
+        ['y vio', 'y contempló'],
+        ['en el principio', 'al principio'],
+      ];
+      
+      for (final swap in grammarSwaps) {
+        if (sentenceLower.contains(swap[0])) {
+          final reg = RegExp(swap[0], caseSensitive: false);
+          final newSentence = sentence.replaceAllMapped(reg, (m) {
+            final matched = m.group(0)!;
+            if (matched.isNotEmpty && matched[0] == matched[0].toUpperCase()) {
+              return swap[1].substring(0, 1).toUpperCase() + swap[1].substring(1);
+            }
+            return swap[1];
+          });
+          if (newSentence != sentence && !excludeSentences.contains(newSentence)) {
+            return newSentence;
+          }
+        }
+      }
+      
+      if (sentence.contains(' y ')) {
+        final newSentence = sentence.replaceFirst(' y ', ', además de ');
+        if (newSentence != sentence && !excludeSentences.contains(newSentence)) {
+          return newSentence;
+        }
+      }
+      
+      return '$sentence ';
+    }
+
+    final excludeSet = {text, mutatedSentence};
+    final variant1 = generateInnocuousVariant(text, rng, excludeSet);
+    excludeSet.add(variant1);
+    final variant2 = generateInnocuousVariant(text, rng, excludeSet);
+
+    // La opción correcta (la que responde al front/pregunta "¿Cuál contiene un error?") es mutatedSentence.
     final targetCard = MemoryCardData(
-      id: 'quiz-swap-${card.id}-$index',
+      id: 'quiz-corrupt-${card.id}-$index',
       front: question,
-      back: correctOpt,
+      back: mutatedSentence,
       source: card.source,
       icon: card.icon,
     );
+    
+    // Los distractores son las opciones correctas del versículo
+    final distractors = [text, variant1, variant2];
     
     final optionCards = <MemoryCardData>[
       targetCard,
       for (var idx = 0; idx < distractors.length; idx++)
         MemoryCardData(
-          id: 'quiz-swap-distractor-$idx-${card.id}-$index',
+          id: 'quiz-corrupt-distractor-$idx-${card.id}-$index',
           front: question,
           back: distractors[idx],
           source: 'Sistema',
@@ -1810,7 +2002,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
     final studiedPool = sessionStudiedCards.isNotEmpty ? sessionStudiedCards : [activeCard];
 
-    // Pool of all available dynamic round types, shuffled at each session start
+    // Pool of all 10 available dynamic round types, shuffled at each session start
     final availableTypes = <String>[
       'frontToBack',
       'backToFront',
@@ -1821,20 +2013,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       'openQuestion',
       'oddOneOut',
       'physicalObservation',
-    ];
-
-    // Conditionally add animalSwap if any studied card contains an animal keyword!
-    final hasAnimal = studiedPool.any((c) {
-      final t = c.back.toLowerCase();
-      return t.contains('serpiente') || t.contains('pastor') || t.contains('oveja') || 
-             t.contains('lobo') || t.contains('león');
-    });
-    if (hasAnimal) {
-      availableTypes.add('animalSwap');
-    }
-
-    // Shuffle the list of options to guarantee randomized layouts
-    availableTypes.shuffle(rng);
+      'corruptedWord',
+    ]..shuffle(rng);
 
     // Pick 5 exercise types randomly for this session
     final selectedTypes = availableTypes.take(5).toList();
@@ -1869,8 +2049,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         rounds.add(_buildOddOneOutRound(target, rng, i));
       } else if (typeStr == 'physicalObservation') {
         rounds.add(_buildPhysicalObservationRound(target, rng, i));
-      } else if (typeStr == 'animalSwap') {
-        rounds.add(_buildAnimalSwapRound(target, rng, i));
+      } else if (typeStr == 'corruptedWord') {
+        rounds.add(_buildCorruptedWordRound(target, rng, i));
       } else if (typeStr == 'openQuestion') {
         String prompt = 'Explícalo con tus palabras: ¿cuál es la enseñanza central o el valor práctico de este texto?';
         final text = target.back.toLowerCase();
