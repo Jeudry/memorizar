@@ -1186,38 +1186,72 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           'El bienestar biológico y de salud frente a cualquier afección física.',
         ];
       }
+    } else if (text.contains('serpiente') || text.contains('árbol') || text.contains('huerto') || text.contains('fruto') || text.contains('comer') || text.contains('tentación')) {
+      if (qNum == 0) {
+        question = '¿Qué aspecto de la tentación o la obediencia ilustra esta respuesta de la mujer?';
+        correct = 'La confrontación inicial con el mandato divino y los límites establecidos por el Creador.';
+        distractors = [
+          'La sumisión inmediata y sin cuestionamientos a las sugerencias de la serpiente.',
+          'El desdén absoluto hacia los frutos materiales del huerto por ser considerados impuros.',
+          'La decisión consciente de ignorar cualquier directriz moral sobre la alimentación.',
+        ];
+      } else if (qNum == 1) {
+        question = '¿Qué revela el diálogo de la mujer con la serpiente en este pasaje?';
+        correct = 'El inicio de una negociación cognitiva sobre los límites de la obediencia humana.';
+        distractors = [
+          'Una declaración firme e irrevocable de hostilidad absoluta hacia la tentación.',
+          'Un tratado teológico formal sobre la soberanía divina en la creación.',
+          'La indiferencia total de la mujer frente a la presencia de la serpiente.',
+        ];
+      } else if (qNum == 2) {
+        question = '¿Cuál es el significado espiritual detrás de la restricción de comer del fruto en el huerto?';
+        correct = 'El reconocimiento de la soberanía de Dios sobre el conocimiento moral del bien y del mal.';
+        distractors = [
+          'Una privación física arbitraria impuesta para forzar el sufrimiento humano.',
+          'La demostración de que la creación física es intrínsecamente pecaminosa.',
+          'Un ejercicio místico orientado a alcanzar la autosuficiencia espiritual.',
+        ];
+      } else {
+        question = '¿Qué lección sobre la vulnerabilidad humana se infiere de este versículo?';
+        correct = 'La fragilidad de dialogar con la mentira que sutilmente tuerce la verdad divina.';
+        distractors = [
+          'La necesidad de una fuerza física superior para repeler la presencia del adversario.',
+          'El valor del intelecto humano autónomo para resolver dilemas morales.',
+          'La ineficacia absoluta de cualquier límite moral para de la conducta humana.',
+        ];
+      }
     } else {
       if (qNum == 0) {
         question = '¿Cuál de las siguientes afirmaciones describe mejor la enseñanza espiritual de este pasaje?';
-        correct = 'Vivir alineado a los principios eternos revelados en la Palabra de Dios.';
+        correct = 'Vivir alineado a los principios eternos y la gracia revelada por Dios.';
         distractors = [
-          'Desarrollar la resiliencia humana individual mediante el estudio moral.',
-          'Observar con rigor normas institucionales y pautas litúrgicas tradicionales.',
-          'Reconocer la providencia únicamente ante eventos extraordinarios.',
+          'Alcanzar la iluminación ética mediante el estudio filosófico y la autodisciplina estoica.',
+          'Garantizar la prosperidad física y el éxito material mediante la observancia litúrgica ritual.',
+          'Desarrollar una resiliencia psicológica individual independiente de la comunión espiritual.',
         ];
       } else if (qNum == 1) {
-        question = '¿Qué implicación práctica tiene este versículo para la vida diaria?';
-        correct = 'Meditar constantemente en el mensaje para guiar nuestras decisiones y actitudes.';
+        question = '¿Qué implicación práctica tiene este versículo para la toma de decisiones diarias?';
+        correct = 'Evaluar nuestras intenciones y actitudes a la luz del mensaje de fe y amor divino.';
         distractors = [
-          'Aplicar con severidad literal el contenido sin atender al espíritu de amor.',
-          'Considerar el texto un documento histórico de relevancia únicamente académica.',
-          'Emplear el precepto moral para corregir o censurar las conductas ajenas.',
+          'Seguir con rigor literal las normas tradicionales de conducta cultural y social.',
+          'Analizar el texto de manera puramente académica para debatir posturas ideológicas.',
+          'Utilizar los preceptos éticos para juzgar y censurar las faltas del resto de la comunidad.',
         ];
       } else if (qNum == 2) {
-        question = '¿Cómo fortalece este pasaje la fe personal del creyente?';
-        correct = 'Al recordarnos la presencia constante y soberana de Dios en nuestro caminar.';
+        question = '¿Cómo enriquece este pasaje la fe personal ante las dificultades?';
+        correct = 'Al recordarnos la presencia constante, la gracia y la guía de Dios en el caminar.';
         distractors = [
-          'Al asegurar la total exención de dificultades intelectuales o dudas de fe.',
-          'Al proveer una superioridad espiritual frente a aquellos que no la poseen.',
-          'Al justificar la pasividad ante la expectativa de milagros inmediatos.',
+          'Al asegurar que la fe elimina automáticamente cualquier conflicto emocional o duda intelectual.',
+          'Al fomentar una resignación estoica ante el sufrimiento terrenal sin buscar consuelo.',
+          'Al basar la confianza en nuestras propias capacidades morales para superar la crisis.',
         ];
       } else {
-        question = '¿Qué cualidad del carácter cristiano se resalta o infiere de este texto?';
+        question = '¿Qué cualidad del carácter cristiano promueve el pasaje en su trasfondo?';
         correct = 'La confianza humilde y el compromiso sincero con la verdad de Dios.';
         distractors = [
-          'La tenacidad intelectual para sostener posturas éticas complejas.',
-          'La autosuficiencia práctica que no requiere el concurso de la comunidad.',
-          'El desapego absoluto de los asuntos materiales a favor del ascetismo.',
+          'La autosuficiencia práctica que prescinde de la interdependencia con el prójimo.',
+          'El desapego absoluto de las responsabilidades materiales en busca de la contemplación mística.',
+          'La superioridad intelectual para argumentar doctrinas complejas frente a otros.',
         ];
       }
     }
@@ -1281,6 +1315,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         return idx == 0
             ? 'El pasaje promete que la paz divina guardará los corazones contra toda ansiedad.'
             : 'El versículo enseña que la paz de Dios sobrepasa todo entendimiento al guardar nuestra mente.';
+      } else if (text.contains('serpiente') || text.contains('huerto') || text.contains('fruto') || text.contains('árbol') || text.contains('comer')) {
+        return idx == 0
+            ? 'El pasaje registra la conversación en el huerto de Edén donde se discuten los límites alimenticios establecidos.'
+            : 'El versículo muestra a la mujer respondiendo al tentador citando el permiso general de comer de los árboles.';
       } else {
         return idx == 0
             ? 'El texto enseña un principio de confianza, superación moral y guía divina para nuestras vidas.'
@@ -1315,6 +1353,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         return idx == 0
             ? 'El pasaje advierte que es imposible librar la mente de la ansiedad cotidiana y el temor constante.'
             : 'El texto afirma que la paz de Dios provoca apatía e indiferencia absoluta ante el sufrimiento ajeno.';
+      } else if (text.contains('serpiente') || text.contains('huerto') || text.contains('fruto') || text.contains('árbol') || text.contains('comer')) {
+        return idx == 0
+            ? 'El texto afirma que la mujer huyó inmediatamente de la serpiente sin dirigirle la palabra.'
+            : 'El pasaje enseña que Dios había prohibido terminantemente comer de todos y cada uno de los árboles del huerto.';
       } else {
         return idx == 0
             ? 'El texto sugiere que el destino humano está predeterminado por el azar sin ningún propósito o esperanza.'
@@ -1354,51 +1396,15 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           isStatementTrue: isTrue,
         ));
       } else if (i == 3) {
-        // Round 4: Matching Text -> Reference (backToFront)!
-        final distractorPool = deck.cards.where((c) => c.id != target.id).toList()..shuffle(rng);
-        
-        final distractors = <MemoryCardData>[];
-        final otherStudied = studiedPool.where((c) => c.id != target.id).toList()..shuffle(rng);
-        distractors.addAll(otherStudied.take(3));
-
-        if (distractors.length < 3) {
-          final extraDeck = distractorPool.where((c) => !distractors.any((d) => d.id == c.id)).toList();
-          distractors.addAll(extraDeck.take(3 - distractors.length));
-        }
-
-        // Si aún no tenemos 3 distractores (mazo muy pequeño), generamos referencias bíblicas realistas
-        final fallbackReferences = [
-          'Génesis 1:1',
-          'Salmo 23:1',
-          'Juan 3:16',
-          'Filipenses 4:13',
-          'Romanos 8:28',
-          'Mateo 6:33',
-          'Proverbios 3:5',
-          '1 Corintios 13:1',
-        ]..shuffle(rng);
-
-        var fallbackIdx = 0;
-        while (distractors.length < 3) {
-          final ref = fallbackReferences[fallbackIdx % fallbackReferences.length];
-          fallbackIdx++;
-          if (ref == target.front || distractors.any((d) => d.front == ref)) continue;
-          distractors.add(
-            MemoryCardData(
-              id: 'back-to-front-distractor-${distractors.length}-${target.id}',
-              front: ref,
-              back: '',
-              source: 'Referencia sugerida',
-              icon: target.icon,
-            ),
-          );
-        }
-
-        final options = [target, ...distractors.take(3)]..shuffle(rng);
+        // Round 4: True / False! (restored and guaranteed unique with variant: 1)
+        final isTrue = rng.nextBool();
+        final statement = _generateTrueFalseStatement(target, isTrue, rng, variant: 1);
         rounds.add(_QuizRound(
           target: target,
-          type: _QuizQuestionType.backToFront,
-          options: options,
+          type: _QuizQuestionType.trueFalse,
+          options: const [],
+          trueFalseStatement: statement,
+          isStatementTrue: isTrue,
         ));
       } else if (i == 2) {
         // Round 3: smart offline conceptual AI round!

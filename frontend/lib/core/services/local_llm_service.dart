@@ -174,6 +174,14 @@ class LocalLlmService {
       'descansó': ['reposó', 'cesó', 'se detuvo'],
       'obra': ['creación', 'labor', 'acción'],
       'hecho': ['creado', 'formado', 'diseñado'],
+      'mujer': ['esposa', 'dama', 'sierva'],
+      'respondió': ['dijo', 'habló', 'contestó'],
+      'serpiente': ['tentador', 'adversario', 'enemigo'],
+      'fruto': ['resultado', 'alimento', 'árbol'],
+      'árboles': ['plantas', 'arbustos', 'ramas'],
+      'huerto': ['jardín', 'campo', 'paraíso'],
+      'podemos': ['debemos', 'queremos', 'logramos'],
+      'comer': ['tomar', 'alimentarnos', 'probar'],
     };
 
     final distractors = <String>{};
@@ -189,45 +197,74 @@ class LocalLlmService {
         final cleanWord = altered[w].replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
         if (cleanWord.isEmpty) continue;
         
-        // Buscar coincidencia exacta (sensible a mayúsculas/minúsculas de la palabra limpia)
         var dictKey = cleanWord;
         if (!synonyms.containsKey(dictKey) && cleanWord.length > 1) {
-          // Intentar capitalizada
           dictKey = cleanWord.substring(0, 1).toUpperCase() + cleanWord.substring(1).toLowerCase();
         }
         if (!synonyms.containsKey(dictKey)) {
-          // Intentar todo minúscula
           dictKey = cleanWord.toLowerCase();
         }
 
-        if (synonyms.containsKey(dictKey) && rand.nextDouble() < 0.7) {
+        if (synonyms.containsKey(dictKey) && rand.nextDouble() < 0.6) {
           final options = synonyms[dictKey]!;
-          var chosen = options[rand.nextInt(options.length)];
-          // Respetar mayúscula inicial si la palabra original la tenía
-          if (cleanWord[0] == cleanWord[0].toUpperCase() && cleanWord[0] != cleanWord[0].toLowerCase() && chosen.isNotEmpty) {
-            chosen = chosen.substring(0, 1).toUpperCase() + chosen.substring(1);
+          final chosen = options[rand.nextInt(options.length)];
+          
+          final pos = altered[w].toLowerCase().indexOf(cleanWord.toLowerCase());
+          if (pos != -1) {
+            var capitalizedChosen = chosen;
+            if (cleanWord[0] == cleanWord[0].toUpperCase() && cleanWord[0] != cleanWord[0].toLowerCase() && chosen.isNotEmpty) {
+              capitalizedChosen = chosen.substring(0, 1).toUpperCase() + chosen.substring(1);
+            }
+            altered[w] = altered[w].substring(0, pos) + capitalizedChosen + altered[w].substring(pos + cleanWord.length);
+            replaced = true;
           }
-          altered[w] = altered[w].replaceFirst(cleanWord, chosen);
-          replaced = true;
         }
       }
 
-      // 2. Si no se reemplazó nada con sinónimos temáticos, aplicar modificaciones gramaticales de alta calidad
-      if (!replaced) {
+      // 2. Si no se reemplazó nada o para dar variedad adicional, aplicar modificaciones gramaticales de alta calidad
+      if (!replaced || rand.nextDouble() < 0.4) {
         for (var w = 0; w < altered.length; w++) {
-          final clean = altered[w].replaceAll(RegExp(r'[.,;:!?¡¿()]'), '').toLowerCase();
-          if (clean == 'el' || clean == 'la' || clean == 'los' || clean == 'las') {
-            altered[w] = altered[w].replaceFirst(clean, clean == 'el' || clean == 'la' ? 'un' : 'unos');
-            replaced = true;
-            break;
-          } else if (clean == 'mi' || clean == 'su') {
-            altered[w] = altered[w].replaceFirst(clean, clean == 'mi' ? 'nuestro' : 'la');
-            replaced = true;
-            break;
-          } else if (clean == 'y') {
-            altered[w] = altered[w].replaceFirst(clean, 'o');
-            replaced = true;
-            break;
+          final clean = altered[w].replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
+          final cleanLower = clean.toLowerCase();
+          
+          if (cleanLower == 'el' || cleanLower == 'la' || cleanLower == 'los' || cleanLower == 'las') {
+            if (rand.nextDouble() < 0.5) {
+              final replacement = (cleanLower == 'el' || cleanLower == 'la') ? 'un' : 'unos';
+              final pos = altered[w].toLowerCase().indexOf(cleanLower);
+              if (pos != -1) {
+                var chosen = replacement;
+                if (clean[0] == clean[0].toUpperCase() && clean[0] != clean[0].toLowerCase()) {
+                  chosen = replacement.substring(0, 1).toUpperCase() + replacement.substring(1);
+                }
+                altered[w] = altered[w].substring(0, pos) + chosen + altered[w].substring(pos + clean.length);
+                replaced = true;
+              }
+            }
+          } else if (cleanLower == 'mi' || cleanLower == 'su') {
+            if (rand.nextDouble() < 0.5) {
+              final replacement = (cleanLower == 'mi') ? 'nuestro' : 'la';
+              final pos = altered[w].toLowerCase().indexOf(cleanLower);
+              if (pos != -1) {
+                var chosen = replacement;
+                if (clean[0] == clean[0].toUpperCase() && clean[0] != clean[0].toLowerCase()) {
+                  chosen = replacement.substring(0, 1).toUpperCase() + replacement.substring(1);
+                }
+                altered[w] = altered[w].substring(0, pos) + chosen + altered[w].substring(pos + clean.length);
+                replaced = true;
+              }
+            }
+          } else if (cleanLower == 'y') {
+            if (rand.nextDouble() < 0.5) {
+              final pos = altered[w].toLowerCase().indexOf(cleanLower);
+              if (pos != -1) {
+                var chosen = 'o';
+                if (clean[0] == clean[0].toUpperCase() && clean[0] != clean[0].toLowerCase()) {
+                  chosen = 'O';
+                }
+                altered[w] = altered[w].substring(0, pos) + chosen + altered[w].substring(pos + clean.length);
+                replaced = true;
+              }
+            }
           }
         }
       }
@@ -239,9 +276,19 @@ class LocalLlmService {
     }
 
     final result = distractors.toList();
-    final finalWords = [' con gracia', ' en la verdad', ' por la fe', ' con paciencia'];
+    
+    // Si aún faltan distractores y no podemos generar más, hacemos variaciones semánticas creativas e inteligentes
+    final alternatePhrases = [
+      ' guardando los mandamientos',
+      ' según la promesa del pacto',
+      ' en el día de la prueba',
+      ' con fe inquebrantable',
+      ' para testimonio de los hombres',
+    ];
+    var altIdx = 0;
     while (result.length < 3) {
-      final suffix = finalWords[result.length % finalWords.length];
+      final suffix = alternatePhrases[altIdx % alternatePhrases.length];
+      altIdx++;
       result.add('$verseText$suffix');
     }
 
