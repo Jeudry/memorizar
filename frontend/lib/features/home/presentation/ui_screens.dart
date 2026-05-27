@@ -1607,11 +1607,25 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
     final studiedPool = sessionStudiedCards.isNotEmpty ? sessionStudiedCards : [activeCard];
 
+    // Pool of all available dynamic round types, shuffled at each session start
+    final availableTypes = <String>[
+      'frontToBack',
+      'backToFront',
+      'trueFalse_0',
+      'trueFalse_1',
+      'conceptual',
+      'matching',
+      'openQuestion',
+    ]..shuffle(rng);
+
+    // Pick 5 exercise types randomly for this session
+    final selectedTypes = availableTypes.take(5).toList();
+
     for (var i = 0; i < 5; i++) {
       final target = studiedPool[i % studiedPool.length];
+      final typeStr = selectedTypes[i];
 
-      if (i == 1) {
-        // Round 2: True / False!
+      if (typeStr == 'trueFalse_0') {
         final isTrue = rng.nextBool();
         final statement = _generateTrueFalseStatement(target, isTrue, rng, variant: 0);
         rounds.add(_QuizRound(
@@ -1621,8 +1635,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           trueFalseStatement: statement,
           isStatementTrue: isTrue,
         ));
-      } else if (i == 3) {
-        // Round 4: True / False! (restored and guaranteed unique with variant: 1)
+      } else if (typeStr == 'trueFalse_1') {
         final isTrue = rng.nextBool();
         final statement = _generateTrueFalseStatement(target, isTrue, rng, variant: 1);
         rounds.add(_QuizRound(
@@ -1632,11 +1645,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           trueFalseStatement: statement,
           isStatementTrue: isTrue,
         ));
-      } else if (i == 2) {
-        // Round 3: smart offline conceptual AI round!
+      } else if (typeStr == 'conceptual') {
         rounds.add(_buildConceptualRound(target, rng, i));
-      } else if (i == 4) {
-        // Round 5: open question free-text response with offline local keyword AI semantic evaluator!
+      } else if (typeStr == 'openQuestion') {
         String prompt = 'Explícalo con tus palabras: ¿cuál es la enseñanza central o el valor práctico de este texto?';
         final text = target.back.toLowerCase();
         if (text.contains('puedo') || text.contains('fortalece')) {
@@ -1656,10 +1667,98 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           options: const [],
           openQuestionPrompt: prompt,
         ));
-      } else {
-        // Round 1: baseline reference-to-text matching round
+      } else if (typeStr == 'backToFront') {
+        // Text-to-reference matching round
         final distractorPool = deck.cards.where((c) => c.id != target.id).toList()..shuffle(rng);
-        
+        final distractors = <MemoryCardData>[];
+        final otherStudied = studiedPool.where((c) => c.id != target.id).toList()..shuffle(rng);
+        distractors.addAll(otherStudied.take(3));
+
+        if (distractors.length < 3) {
+          final extraDeck = distractorPool.where((c) => !distractors.any((d) => d.id == c.id)).toList();
+          distractors.addAll(extraDeck.take(3 - distractors.length));
+        }
+
+        final bibleFallbacks = [
+          'Juan 3:16', 'Salmo 23:1', 'Filipenses 4:13', 'Mateo 6:33', 
+          'Romanos 12:2', '1 Corintios 13:4', 'Génesis 1:1', 'Proverbios 3:5'
+        ];
+        var fbIdx = 0;
+        while (distractors.length < 3) {
+          final refFallback = bibleFallbacks[fbIdx % bibleFallbacks.length];
+          fbIdx++;
+          distractors.add(
+            MemoryCardData(
+              id: 'ref-distractor-${distractors.length}-${target.id}',
+              front: refFallback,
+              back: 'Texto alternativo',
+              source: 'Sistema',
+              icon: target.icon,
+            ),
+          );
+        }
+
+        final targetCard = MemoryCardData(
+          id: 'quiz-target-${target.id}-$i',
+          front: target.front,
+          back: target.back,
+          source: target.source,
+          icon: target.icon,
+        );
+
+        final optionCards = <MemoryCardData>[
+          targetCard,
+          for (var idx = 0; idx < distractors.length; idx++)
+            MemoryCardData(
+              id: 'quiz-conceptual-distractor-$idx-${target.id}-$i',
+              front: distractors[idx].front,
+              back: target.back,
+              source: 'Sistema',
+              icon: target.icon,
+            )
+        ]..shuffle(rng);
+
+        rounds.add(_QuizRound(
+          target: targetCard,
+          type: _QuizQuestionType.backToFront,
+          options: optionCards,
+        ));
+      } else if (typeStr == 'matching') {
+        // Matching round
+        final pairs = <(String, String)>[];
+        pairs.add((target.front, target.back));
+
+        final others = studiedPool.where((c) => c.id != target.id).toList()..shuffle(rng);
+        for (final o in others) {
+          if (pairs.length < 4) {
+            pairs.add((o.front, o.back));
+          }
+        }
+
+        final fallbacks = [
+          ('Juan 3:16', 'Porque de tal manera amó Dios al mundo, que ha dado a su Hijo unigénito.'),
+          ('Salmo 23:1', 'Jehová es mi pastor; nada me faltará.'),
+          ('Filipenses 4:13', 'Todo lo puedo en Cristo que me fortalece.'),
+          ('Mateo 6:33', 'Mas buscad primeramente el reino de Dios y su justicia.'),
+          ('Romanos 8:28', 'Y sabemos que a los que aman a Dios, todas las cosas les ayudan a bien.'),
+          ('Génesis 1:1', 'En el principio creó Dios los cielos y la tierra.'),
+        ];
+
+        for (final fb in fallbacks) {
+          if (pairs.length < 4 && !pairs.any((p) => p.$1 == fb.$1)) {
+            pairs.add((fb.$1, fb.$2));
+          }
+        }
+
+        rounds.add(_QuizRound(
+          target: target,
+          type: _QuizQuestionType.matching,
+          options: const [],
+          matchingPairs: pairs,
+        ));
+      } else {
+        // Baseline frontToBack reference-to-text matching round
+        final distractorPool = deck.cards.where((c) => c.id != target.id).toList()..shuffle(rng);
         final distractors = <MemoryCardData>[];
         final otherStudied = studiedPool.where((c) => c.id != target.id).toList()..shuffle(rng);
         distractors.addAll(otherStudied.take(3));
@@ -1684,11 +1783,30 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           );
         }
 
-        final options = [target, ...distractors.take(3)]..shuffle(rng);
+        final targetCard = MemoryCardData(
+          id: 'quiz-target-${target.id}-$i',
+          front: target.front,
+          back: target.back,
+          source: target.source,
+          icon: target.icon,
+        );
+
+        final optionCards = <MemoryCardData>[
+          targetCard,
+          for (var idx = 0; idx < distractors.length; idx++)
+            MemoryCardData(
+              id: 'quiz-conceptual-distractor-$idx-${target.id}-$i',
+              front: target.front,
+              back: distractors[idx].back,
+              source: 'IA Local Offline',
+              icon: target.icon,
+            )
+        ]..shuffle(rng);
+
         rounds.add(_QuizRound(
-          target: target,
+          target: targetCard,
           type: _QuizQuestionType.frontToBack,
-          options: options,
+          options: optionCards,
         ));
       }
     }
