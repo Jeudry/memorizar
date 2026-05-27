@@ -54,6 +54,25 @@ class _PremiumScreenState extends State<PremiumScreen> {
   bool _downloading = false;
 
   @override
+  void initState() {
+    super.initState();
+    _checkExistingModel();
+  }
+
+  Future<void> _checkExistingModel() async {
+    final llm = LocalLlmService.instance;
+    final exists = await llm.checkModelExists();
+    if (exists && mounted) {
+      try {
+        await llm.initLlm();
+        setState(() {});
+      } catch (e) {
+        debugPrint('Failed to auto-init LLM: $e');
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
     final llmService = LocalLlmService.instance;
@@ -241,6 +260,17 @@ class _PremiumScreenState extends State<PremiumScreen> {
                               const Text(
                                 '¡Felicidades! La IA local está lista y funcionando en la GPU de tu dispositivo. Todos tus cuestionarios se procesarán de forma ultra-rápida y privada.',
                                 style: TextStyle(color: RefColors.lime, fontSize: 12, height: 1.3, fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 14),
+                              Cta(
+                                'Continuar al Quiz →',
+                                onTap: () {
+                                  if (Navigator.canPop(context)) {
+                                    Navigator.pop(context);
+                                  } else {
+                                    Navigator.pushReplacementNamed(context, AppRoutes.home);
+                                  }
+                                },
                               ),
                             ],
                           ],

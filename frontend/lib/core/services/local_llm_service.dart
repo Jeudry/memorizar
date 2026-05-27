@@ -11,9 +11,9 @@ class LocalLlmService {
   LocalLlmService._privateConstructor();
   static final LocalLlmService instance = LocalLlmService._privateConstructor();
 
-  // URL del modelo Gemma 2 2B IT cuantizado en formato móvil (.task para MediaPipe o .gguf para llama.cpp)
-  static const String _modelUrl = 'https://huggingface.co/google/gemma-2-2b-it-gpu-int4/resolve/main/gemma-2-2b-it-gpu-int4.task';
-  static const String _modelFileName = 'gemma-2-2b-it-gpu-int4.task';
+  // URL del modelo Gemma 2 2B IT cuantizado en formato móvil (jardpound public ungated mirror)
+  static const String _modelUrl = 'https://huggingface.co/jardpound/gemma-2b-it-gpu-int4/resolve/main/gemma-2b-it-gpu-int4.bin';
+  static const String _modelFileName = 'gemma-2b-it-gpu-int4.bin';
 
   bool _initialized = false;
   final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0.0);
@@ -152,62 +152,97 @@ class LocalLlmService {
   /// sutilmente el versículo bíblico para crear distractores extremadamente reales y desafiantes.
   List<String> _generateOfflineFallbackDistractors(String verseText) {
     final words = verseText.split(' ');
-    if (words.length < 5) {
-      return [
-        '$verseText (alterado)',
-        '$verseText (opción alternativa)',
-        'Versículo similar pero con variaciones',
-      ];
-    }
-
     final synonyms = {
-      'Cristo': ['la fe', 'el Señor', 'Dios', 'el Espíritu'],
-      'Dios': ['Cristo', 'el Padre', 'el Señor', 'el Altísimo'],
-      'fortalece': ['da paciencia', 'ilumina', 'guía', 'sostiene'],
+      'Cristo': ['el Señor', 'Dios', 'el Salvador', 'el Hijo'],
+      'Dios': ['el Señor', 'el Padre', 'el Altísimo', 'el Creador'],
+      'Señor': ['Dios', 'el Padre', 'el Altísimo', 'el Creador'],
+      'Padre': ['Dios', 'el Señor', 'el Creador'],
+      'fortalece': ['sostiene', 'guía', 'consuela', 'ilumina'],
       'puedo': ['logro', 'alcanzo', 'soporto', 'resisto'],
-      'suplirá': ['proveerá', 'llenará', 'dará', 'enviará'],
+      'suplirá': ['proveerá', 'llenará', 'enviará', 'otorgará'],
       'riquezas': ['bendiciones', 'promesas', 'virtudes', 'gracias'],
       'gloria': ['amor', 'paz', 'bondad', 'sabiduría'],
       'camino': ['sendero', 'rumbo', 'destino', 'propósito'],
       'vida': ['alma', 'existencia', 'jornada', 'fe'],
       'verdad': ['justicia', 'luz', 'esperanza', 'palabra'],
       'amor': ['gracia', 'paz', 'gozo', 'perdón'],
+      'creó': ['formó', 'hizo', 'estableció', 'diseñó'],
+      'cielo': ['universo', 'firmamento', 'reino'],
+      'tierra': ['mundo', 'creación', 'suelo'],
+      'séptimo': ['sexto', 'quinto', 'cuarto'],
+      'acabó': ['completó', 'terminó', 'concluyó'],
+      'descansó': ['reposó', 'cesó', 'se detuvo'],
+      'obra': ['creación', 'labor', 'acción'],
+      'hecho': ['creado', 'formado', 'diseñado'],
     };
 
     final distractors = <String>{};
-    final rand = math.Random();
+    final rand = math.Random(verseText.hashCode);
 
-    // Intentar sustituciones de palabras clave conocidas
-    for (var i = 0; i < 3; i++) {
+    // Intentar hasta 50 combinaciones diferentes para obtener exactamente 3 distractores limpios, lógicos y únicos
+    for (var attempt = 0; attempt < 50 && distractors.length < 3; attempt++) {
       var altered = List<String>.from(words);
       var replaced = false;
 
+      // 1. Intentar buscar palabras del diccionario de sinónimos/antónimos y sustituirlas de forma segura
       for (var w = 0; w < altered.length; w++) {
         final cleanWord = altered[w].replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
-        if (synonyms.containsKey(cleanWord)) {
-          final options = synonyms[cleanWord]!;
-          final chosen = options[rand.nextInt(options.length)];
+        if (cleanWord.isEmpty) continue;
+        
+        // Buscar coincidencia exacta (sensible a mayúsculas/minúsculas de la palabra limpia)
+        var dictKey = cleanWord;
+        if (!synonyms.containsKey(dictKey) && cleanWord.length > 1) {
+          // Intentar capitalizada
+          dictKey = cleanWord.substring(0, 1).toUpperCase() + cleanWord.substring(1).toLowerCase();
+        }
+        if (!synonyms.containsKey(dictKey)) {
+          // Intentar todo minúscula
+          dictKey = cleanWord.toLowerCase();
+        }
+
+        if (synonyms.containsKey(dictKey) && rand.nextDouble() < 0.7) {
+          final options = synonyms[dictKey]!;
+          var chosen = options[rand.nextInt(options.length)];
+          // Respetar mayúscula inicial si la palabra original la tenía
+          if (cleanWord[0] == cleanWord[0].toUpperCase() && cleanWord[0] != cleanWord[0].toLowerCase() && chosen.isNotEmpty) {
+            chosen = chosen.substring(0, 1).toUpperCase() + chosen.substring(1);
+          }
           altered[w] = altered[w].replaceFirst(cleanWord, chosen);
           replaced = true;
-          break;
         }
       }
 
-      // Si no se pudo reemplazar ninguna palabra del diccionario, hacer cambios sintácticos directos
+      // 2. Si no se reemplazó nada con sinónimos temáticos, aplicar modificaciones gramaticales de alta calidad
       if (!replaced) {
-        final idx = rand.nextInt(altered.length);
-        if (altered[idx].length > 4) {
-          altered[idx] = altered[idx].endsWith('s') ? 'fe' : 'luz';
+        for (var w = 0; w < altered.length; w++) {
+          final clean = altered[w].replaceAll(RegExp(r'[.,;:!?¡¿()]'), '').toLowerCase();
+          if (clean == 'el' || clean == 'la' || clean == 'los' || clean == 'las') {
+            altered[w] = altered[w].replaceFirst(clean, clean == 'el' || clean == 'la' ? 'un' : 'unos');
+            replaced = true;
+            break;
+          } else if (clean == 'mi' || clean == 'su') {
+            altered[w] = altered[w].replaceFirst(clean, clean == 'mi' ? 'nuestro' : 'la');
+            replaced = true;
+            break;
+          } else if (clean == 'y') {
+            altered[w] = altered[w].replaceFirst(clean, 'o');
+            replaced = true;
+            break;
+          }
         }
       }
 
-      distractors.add(altered.join(' '));
+      final distractorText = altered.join(' ');
+      if (distractorText.trim() != verseText.trim() && distractorText.trim().isNotEmpty) {
+        distractors.add(distractorText);
+      }
     }
 
-    // Asegurar que tengamos exactamente 3 distractores únicos
     final result = distractors.toList();
+    final finalWords = [' con gracia', ' en la verdad', ' por la fe', ' con paciencia'];
     while (result.length < 3) {
-      result.add('$verseText (modificado ${result.length + 1})');
+      final suffix = finalWords[result.length % finalWords.length];
+      result.add('$verseText$suffix');
     }
 
     return result;

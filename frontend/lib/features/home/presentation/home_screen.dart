@@ -1255,6 +1255,8 @@ class _MemCard extends StatelessWidget {
                     ),
                     Text(
                       subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 11,
                         color: AppColors.inkMuted,

@@ -266,8 +266,32 @@ class ExerciseFlowScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (data.slug == '09-quiz' && !AppScope.of(context).isPremium) {
-      return const PremiumScreen();
+    if (data.slug == '09-quiz') {
+      final store = AppScope.of(context);
+      final llmService = LocalLlmService.instance;
+      if (!store.isPremium) {
+        return const PremiumScreen();
+      }
+      return FutureBuilder<bool>(
+        future: llmService.checkModelExists(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(
+              body: Center(
+                child: CircularProgressIndicator(color: RefColors.cyan),
+              ),
+            );
+          }
+          final exists = snapshot.data ?? false;
+          if (!exists) {
+            return const PremiumScreen();
+          }
+          if (!llmService.isReady) {
+            llmService.initLlm().catchError((e) => debugPrint('Error auto-init LLM: $e'));
+          }
+          return _RealExerciseFlowScreen(data: data);
+        },
+      );
     }
     return _RealExerciseFlowScreen(data: data);
     // ignore: dead_code
@@ -404,6 +428,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   List<_QuizRound> _quizRounds = [];
   int _quizRoundIndex = 0;
   int _quizScore = 0;
+  bool _isEvaluatingOpenQuestion = false;
   final _openQuestionController = TextEditingController();
 
   String? _matchingSelectedLeft;
@@ -828,7 +853,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '09-quiz') {
       if (_quizRounds.isEmpty) return false;
       if (!_quizFinished) {
-        return _quizRounds[_quizRoundIndex].answered;
+        // Se avanza automáticamente de manera fluida, por lo que deshabilitamos el botón físico
+        return false;
       }
       return true;
     }
@@ -1008,7 +1034,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 
   void _ensureQuizRounds(MemoryDeckData deck, MemoryCardData card) {
-    if (_quizCardId == card.id && _quizRounds.isNotEmpty) return;
+    final isFinishedSession = _quizRounds.isNotEmpty && _quizRoundIndex >= _quizRounds.length - 1 && _quizRounds.last.answered;
+    if (_quizCardId == card.id && _quizRounds.isNotEmpty && !isFinishedSession) return;
     _quizCardId = card.id;
     _quizRoundIndex = 0;
     _quizScore = 0;
@@ -1028,33 +1055,33 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         question = '¿Cuál es la idea principal de este pasaje sobre la fortaleza?';
         correct = 'La capacidad de superar toda adversidad y circunstancia a través del poder de Cristo.';
         distractors = [
-          'La creencia de que el éxito se logra únicamente con autodisciplina humana.',
-          'La resignación pasiva ante las dificultades sin fe activa.',
-          'La promesa de prosperidad material y ausencia de problemas terrenales.',
+          'La creencia de que el éxito se logra únicamente con autodisciplina y hábitos virtuosos.',
+          'La resignación pasiva ante el destino terrenal sin una participación de fe.',
+          'La idea de que la madurez espiritual erradica cualquier problema práctico diario.',
         ];
       } else if (qNum == 1) {
         question = '¿Qué significa la expresión "todo lo puedo" según este contexto?';
         correct = 'Tener contentamiento y constancia espiritual tanto en la abundancia como en la necesidad.';
         distractors = [
-          'Poseer poderes sobrenaturales para realizar cualquier deseo terrenal.',
-          'Lograr el éxito económico inmediato sin ningún esfuerzo.',
-          'Evitar cualquier tipo de sufrimiento físico o enfermedad.',
+          'La superación exitosa de cualquier meta material mediante el pensamiento positivo.',
+          'La creencia gnóstica de que el cuerpo y la mente pueden anular las leyes físicas.',
+          'La capacidad de evitar cualquier confrontación con el sufrimiento moral.',
         ];
       } else if (qNum == 2) {
         question = '¿Quién es la fuente de la capacitación espiritual descrita en el versículo?';
         correct = 'Cristo, quien infunde poder y sostiene la fe de forma íntima.';
         distractors = [
-          'La fuerza de voluntad y la determinación psicológica propia.',
-          'La influencia externa de líderes religiosos o de la sociedad.',
-          'El cumplimiento estricto de normas legales y rituales.',
+          'El desarrollo psicológico enfocado en el autocontrol estoico.',
+          'El soporte emocional provisto por la estructura institucional y comunitaria.',
+          'La observancia de directrices doctrinales y normas de conducta social.',
         ];
       } else {
         question = '¿Cuál es el propósito último de la fortaleza que Dios otorga al creyente?';
         correct = 'Permanecer firme y en paz en medio de las pruebas y responsabilidades.';
         distractors = [
-          'Dominar y gobernar políticamente sobre otras personas.',
-          'Vivir una vida aislada libre de todo deber moral.',
-          'Obtener reconocimiento y aplauso público constante.',
+          'Lograr un liderazgo moral incuestionable frente al resto de la sociedad.',
+          'Obtener un bienestar emocional absoluto y una vida carente de tensiones.',
+          'Demostrar superioridad intelectual sobre otras corrientes éticas.',
         ];
       }
     } else if (text.contains('gracias') || text.contains('misericordia') || text.contains('bueno')) {
@@ -1062,33 +1089,33 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         question = '¿Qué actitud fundamental promueve este pasaje en el creyente?';
         correct = 'La gratitud y alabanza sincera al Señor por su amor fiel y bondad eternos.';
         distractors = [
-          'La preocupación constante por las riquezas materiales de este mundo.',
-          'El cumplimiento ritualista de normas sin una verdadera devoción interna.',
-          'El aislamiento del creyente frente a las necesidades de su prójimo.',
+          'El optimismo pragmático para sortear las dificultades cotidianas.',
+          'El cumplimiento reverente del deber litúrgico como retribución divina.',
+          'El enfoque contemplativo que ignora las dinámicas del sufrimiento terrenal.',
         ];
       } else if (qNum == 1) {
         question = '¿Cuál es la base de la alabanza según el texto?';
         correct = 'El carácter inherentemente bueno de Dios y la fidelidad eterna de su misericordia.';
         distractors = [
-          'El merecimiento humano por nuestras buenas obras acumuladas.',
-          'La prosperidad transitoria y los bienes temporales obtenidos.',
-          'El temor constante al juicio destructivo y la ira divina.',
+          'La recompensa moral obtenida por la rectitud de nuestras acciones.',
+          'El regocijo transitorio producido por el éxito en nuestros proyectos.',
+          'La sumisión temerosa ante la omnipotencia y majestad de la divinidad.',
         ];
       } else if (qNum == 2) {
         question = '¿Qué significa que la misericordia de Dios "es para siempre"?';
         correct = 'Que su amor redentor y perdón no tienen fecha de vencimiento para su pueblo.';
         distractors = [
-          'Que Dios aprueba cualquier conducta sin importar el arrepentimiento.',
-          'Que no habrá consecuencias terrenales para las malas acciones.',
-          'Que el amor divino cambia según las circunstancias humanas.',
+          'Que el orden moral del universo anula la necesidad de justicia correctiva.',
+          'Que todas las corrientes espirituales conducen al mismo destino benevolente.',
+          'Que la compasión divina ignora por completo la libertad de elección humana.',
         ];
       } else {
         question = '¿Quiénes son llamados a proclamar activamente las grandezas del Señor?';
         correct = 'Los redimidos que han experimentado su rescate y liberación en la práctica.';
         distractors = [
-          'Únicamente aquellos que no han pasado por ninguna prueba.',
-          'Quienes buscan impresionar a los demás con su superioridad moral.',
-          'Los que viven en aislamiento total sin relacionarse con la comunidad.',
+          'Aquellos que han mantenido una conducta impecable libre de cualquier tropiezo.',
+          'Líderes seleccionados con una preparación intelectual y académica superior.',
+          'El conjunto de la sociedad humana en virtud de un deber natural universal.',
         ];
       }
     } else if (text.contains('angustia') || text.contains('clamar') || text.contains('liberó') || text.contains('salvó') || text.contains('angustiados')) {
@@ -1096,33 +1123,33 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         question = '¿Qué nos enseña este versículo sobre la respuesta ante el sufrimiento?';
         correct = 'Que acudir al Señor con fe en la prueba trae consuelo y liberación real.';
         distractors = [
-          'Que el sufrimiento es un castigo definitivo del cual es imposible ser librado.',
-          'Que debemos confiar únicamente en nuestras fuerzas y no molestar a Dios.',
-          'Que la oración es solo un ejercicio mental sin respuesta real en la realidad.',
+          'Que la adversidad es un proceso inevitable diseñado para forzar la autosuficiencia.',
+          'Que la introspección reflexiva neutraliza el dolor antes de requerir ayuda.',
+          'Que la súplica espiritual funciona únicamente como un analgésico psicológico.',
         ];
       } else if (qNum == 1) {
         question = '¿Qué acción de fe desencadena la intervención divina en la tribulación?';
         correct = 'El clamor sincero y humilde nacido de la total dependencia en Dios.';
         distractors = [
-          'La queja amarga y la rebelión constante contra la providencia.',
-          'La demostración de riquezas o sacrificios rituales ostentosos.',
-          'El intento de resolver todo con astucia humana antes de orar.',
+          'La resignación filosófica ante el dolor y la aceptación del destino.',
+          'La realización de actos meritorios de caridad o disciplina espiritual.',
+          'La búsqueda racional de soluciones antes de considerar la súplica.',
         ];
       } else if (qNum == 2) {
         question = '¿Cuál es el resultado de clamar a Dios en el día de la angustia?';
         correct = 'Él escucha con compasión y rescata al afligido de sus temores.';
         distractors = [
-          'La solución mágica instantánea sin ningún aprendizaje espiritual.',
-          'Que Dios permanece indiferente al dolor humano según el pasaje.',
-          'El aumento de la confusión sin recibir dirección ni consuelo.',
+          'La resolución automática de toda tensión sin requerir esfuerzo de fe.',
+          'El desarrollo inmediato de una insensibilidad absoluta frente a la crisis.',
+          'Una tranquilidad pasajera condicionada al cambio inmediato de entorno.',
         ];
       } else {
         question = '¿Cómo se describe la naturaleza del rescate del Señor en este pasaje?';
         correct = 'Como un acto soberano de gracia que saca al creyente de su callejón sin salida.';
         distractors = [
-          'Un premio que el ser humano compra mediante sus méritos morales.',
-          'Una ilusión psicológica que no cambia la situación interna de paz.',
-          'Una intervención violenta que anula la responsabilidad del creyente.',
+          'Un premio derivado de la acumulación progresiva de méritos éticos.',
+          'Una reestructuración mental que no posee implicaciones en el mundo real.',
+          'Una providencia general que beneficia a todos de forma impersonal.',
         ];
       }
     } else if (text.contains('paz') || text.contains('cuidado') || text.contains('ansiedad') || text.contains('guardará')) {
@@ -1130,33 +1157,33 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         question = '¿Cuál es el camino que propone este texto para vencer la ansiedad?';
         correct = 'Depositar toda preocupación en Dios a través del ruego y la gratitud profunda.';
         distractors = [
-          'Evitar pensar en los problemas o distraerse con placeres temporales.',
-          'Confiar en que las circunstancias cambiarán por sí solas con el tiempo.',
-          'Obsesionarse con el control de cada detalle del futuro.',
+          'La supresión sistemática de pensamientos negativos a través de la concentración.',
+          'La planificación exhaustiva de cada variable futura para reducir riesgos.',
+          'La confianza pasiva en que los conflictos se disolverán solos.',
         ];
       } else if (qNum == 1) {
         question = '¿Qué tipo de paz promete Dios en respuesta a la oración de fe?';
         correct = 'Una paz sobrenatural que supera el entendimiento humano y guarda el corazón.';
         distractors = [
-          'Una tranquilidad puramente externa basada en la ausencia total de conflictos.',
-          'El éxito financiero asegurado en todas nuestras iniciativas.',
-          'Un estado de indiferencia fría donde nada nos importa.',
+          'Una quietud intelectual y estoica libre de cualquier emoción activa.',
+          'La certeza garantizada del éxito de todas nuestras decisiones prácticas.',
+          'Un estado permanente de éxtasis místico desprovisto de responsabilidades.',
         ];
       } else if (qNum == 2) {
         question = '¿Qué papel juega la gratitud en medio de nuestras peticiones?';
         correct = 'Alinear el alma con la soberanía y bondad previas de Dios al presentar la necesidad.';
         distractors = [
-          'Un requisito de cortesía formal para que Dios decida escucharnos.',
-          'Una forma de ocultar el verdadero dolor o la tristeza interna.',
-          'Una herramienta para manipular la voluntad divina a nuestro favor.',
+          'Un acto protocolario de cortesía para asegurar la benevolencia del Creador.',
+          'Un ejercicio de positivismo para enmascarar el dolor de la aflicción.',
+          'Una herramienta litúrgica orientada a influir en la voluntad divina.',
         ];
       } else {
         question = '¿Qué protege o guarda la paz de Dios según la promesa?';
         correct = 'Nuestros pensamientos y emociones en la íntima comunión con Cristo Jesús.';
         distractors = [
-          'Nuestros bienes materiales y estatus social ante la sociedad.',
-          'Nuestra reputación externa frente a posibles críticas ajenas.',
-          'Únicamente nuestro bienestar físico sin importar el estado del alma.',
+          'Nuestras relaciones interpersonales y reputación ante la comunidad.',
+          'Nuestras metas personales frente al fracaso material o intelectual.',
+          'El bienestar biológico y de salud frente a cualquier afección física.',
         ];
       }
     } else {
@@ -1164,33 +1191,33 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         question = '¿Cuál de las siguientes afirmaciones describe mejor la enseñanza espiritual de este pasaje?';
         correct = 'Vivir alineado a los principios eternos revelados en la Palabra de Dios.';
         distractors = [
-          'Centrarse en el esfuerzo humano y la autosuficiencia sin guía espiritual.',
-          'Seguir tradiciones externas sin experimentar una verdadera transformación interna del corazón.',
-          'Ignorar las promesas divinas en momentos de dicultad cotidiana.',
+          'Desarrollar la resiliencia humana individual mediante el estudio moral.',
+          'Observar con rigor normas institucionales y pautas litúrgicas tradicionales.',
+          'Reconocer la providencia únicamente ante eventos extraordinarios.',
         ];
       } else if (qNum == 1) {
         question = '¿Qué implicación práctica tiene este versículo para la vida diaria?';
         correct = 'Meditar constantemente en el mensaje para guiar nuestras decisiones y actitudes.';
         distractors = [
-          'Aplicar la letra de forma literal sin entender su espíritu y amor.',
-          'Tratar el texto únicamente como un objeto histórico sin relevancia hoy.',
-          'Usarlo para juzgar o condenar los errores y faltas de los demás.',
+          'Aplicar con severidad literal el contenido sin atender al espíritu de amor.',
+          'Considerar el texto un documento histórico de relevancia únicamente académica.',
+          'Emplear el precepto moral para corregir o censurar las conductas ajenas.',
         ];
       } else if (qNum == 2) {
         question = '¿Cómo fortalece este pasaje la fe personal del creyente?';
         correct = 'Al recordarnos la presencia constante y soberana de Dios en nuestro caminar.';
         distractors = [
-          'Al prometer una vida libre de cualquier esfuerzo o dificultad personal.',
-          'Al alimentar un orgullo religioso que nos aleje de la comunidad.',
-          'Al fomentar la pereza o la inacción a la espera de milagros.',
+          'Al asegurar la total exención de dificultades intelectuales o dudas de fe.',
+          'Al proveer una superioridad espiritual frente a aquellos que no la poseen.',
+          'Al justificar la pasividad ante la expectativa de milagros inmediatos.',
         ];
       } else {
         question = '¿Qué cualidad del carácter cristiano se resalta o infiere de este texto?';
         correct = 'La confianza humilde y el compromiso sincero con la verdad de Dios.';
         distractors = [
-          'La búsqueda del poder o prestigio terrenal frente a la debilidad.',
-          'La autosuficiencia que no requiere de la ayuda divina ni del prójimo.',
-          'El desprecio de las realidades humanas cotidianas por el misticismo.',
+          'La tenacidad intelectual para sostener posturas éticas complejas.',
+          'La autosuficiencia práctica que no requiere el concurso de la comunidad.',
+          'El desapego absoluto de los asuntos materiales a favor del ascetismo.',
         ];
       }
     }
@@ -1222,43 +1249,76 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
   }
 
-  String _generateTrueFalseStatement(MemoryCardData target, bool isTrue, math.Random rng) {
+  String _generateTrueFalseStatement(MemoryCardData target, bool isTrue, math.Random rng, {int variant = 0}) {
     final text = target.back.toLowerCase();
+    final idx = variant % 2;
     if (isTrue) {
       if (text.contains('ángel') || text.contains('ángeles')) {
-        return 'El texto menciona la intervención de ángeles o mensajeros celestiales.';
+        return idx == 0
+            ? 'El texto menciona la intervención de ángeles o mensajeros celestiales.'
+            : 'El pasaje se refiere a mensajeros divinos enviados por el Señor.';
       } else if (text.contains('pastor') || text.contains('pastoreará') || text.contains('pastores')) {
-        return 'El pasaje utiliza la metáfora de un pastor para ilustrar el cuidado personal de Dios.';
+        return idx == 0
+            ? 'El pasaje utiliza la metáfora de un pastor para ilustrar el cuidado personal de Dios.'
+            : 'El texto presenta a la divinidad guiando y protegiendo a su pueblo como un pastor.';
       } else if (text.contains('redimidos') || text.contains('redimió') || text.contains('adversario')) {
-        return 'El versículo afirma que Dios ha rescatado y redimido a su pueblo del poder del adversario.';
+        return idx == 0
+            ? 'El versículo afirma que Dios ha rescatado y redimido a su pueblo del poder del adversario.'
+            : 'El texto destaca la redención y el rescate de la aflicción de los creyentes.';
       } else if (text.contains('gracias') || text.contains('misericordia') || text.contains('bueno')) {
-        return 'El pasaje nos exhorta a alabar y dar gracias a Dios reconociendo su bondad eterna.';
+        return idx == 0
+            ? 'El pasaje nos exhorta a alabar y dar gracias a Dios reconociendo su bondad eterna.'
+            : 'El versículo destaca que la misericordia del Señor es eterna y digna de constante gratitud.';
       } else if (text.contains('angustia') || text.contains('clamaron') || text.contains('salvó')) {
-        return 'El pasaje enseña que en medio de la aflicción y la angustia, el clamor a Dios es respondido.';
+        return idx == 0
+            ? 'El pasaje enseña que en medio de la aflicción y la angustia, el clamor a Dios es respondido.'
+            : 'El texto afirma que el Señor escucha y libra a los suyos en momentos de profunda tribulación.';
       } else if (text.contains('creó') || text.contains('principio') || text.contains('tierra')) {
-        return 'El versículo declara que en el inicio absoluto de todo, Dios creó los cielos y la tierra.';
+        return idx == 0
+            ? 'El versículo declara que en el inicio absoluto de todo, Dios creó los cielos y la tierra.'
+            : 'El texto atribuye la creación originaria de todo el universo material a Dios.';
       } else if (text.contains('paz') || text.contains('cuidado') || text.contains('ansiedad')) {
-        return 'El pasaje promete que la paz divina guardará los corazones contra toda ansiedad.';
+        return idx == 0
+            ? 'El pasaje promete que la paz divina guardará los corazones contra toda ansiedad.'
+            : 'El versículo enseña que la paz de Dios sobrepasa todo entendimiento al guardar nuestra mente.';
       } else {
-        return 'El texto enseña un principio de confianza, superación moral y guía divina para nuestras vidas.';
+        return idx == 0
+            ? 'El texto enseña un principio de confianza, superación moral y guía divina para nuestras vidas.'
+            : 'El pasaje fomenta una actitud de fe activa y dependencia espiritual ante las dificultades.';
       }
     } else {
       if (text.contains('ángel') || text.contains('ángeles')) {
-        return 'El pasaje afirma que los ángeles fueron creados para gobernar a los hombres con severidad.';
+        return idx == 0
+            ? 'El pasaje afirma que los ángeles fueron creados para gobernar a los hombres con severidad.'
+            : 'El texto sugiere que los ángeles compiten con Dios por el afecto de la humanidad.';
       } else if (text.contains('pastor') || text.contains('pastoreará') || text.contains('pastores')) {
-        return 'El texto dice que el pastor guiará a las ovejas únicamente a caminos de desierto y sequía.';
+        return idx == 0
+            ? 'El texto dice que el pastor guiará a las ovejas únicamente a caminos de desierto y sequía.'
+            : 'La metáfora del pastor indica que las ovejas deben defenderse solas contra los lobos.';
       } else if (text.contains('redimidos') || text.contains('redimió') || text.contains('adversario')) {
-        return 'El pasaje instruye que los redimidos deben callar su testimonio y ocultar su liberación.';
+        return idx == 0
+            ? 'El pasaje instruye que los redimidos deben callar su testimonio y ocultar su liberación.'
+            : 'El versículo afirma que el rescate del creyente depende de su estatus económico.';
       } else if (text.contains('gracias') || text.contains('misericordia') || text.contains('bueno')) {
-        return 'El versículo aconseja que sólo debemos alabar a Dios cuando las circunstancias sean fáciles y cómodas.';
+        return idx == 0
+            ? 'El versículo aconseja que sólo debemos alabar a Dios cuando las circunstancias sean fáciles y cómodas.'
+            : 'El texto sostiene que la bondad y misericordia de Dios están condicionadas a nuestro estado de ánimo diario.';
       } else if (text.contains('angustia') || text.contains('clamaron') || text.contains('salvó')) {
-        return 'El texto sugiere que los seres humanos deben resolver sus problemas con sus propias fuerzas sin buscar a Dios.';
+        return idx == 0
+            ? 'El texto sugiere que los seres humanos deben resolver sus problemas con sus propias fuerzas sin buscar a Dios.'
+            : 'El pasaje advierte que clamar a Dios en el dolor es inútil porque la angustia es incurable.';
       } else if (text.contains('creó') || text.contains('principio') || text.contains('tierra')) {
-        return 'El versículo sostiene que los cielos y la tierra existían eternamente antes del Creador.';
+        return idx == 0
+            ? 'El versículo sostiene que los cielos y la tierra existían eternamente antes del Creador.'
+            : 'El texto propone que el universo físico se creó a sí mismo mediante leyes azarosas sin intervención divina.';
       } else if (text.contains('paz') || text.contains('cuidado') || text.contains('ansiedad')) {
-        return 'El pasaje advierte que es imposible librar la mente de la ansiedad cotidiana y el temor constante.';
+        return idx == 0
+            ? 'El pasaje advierte que es imposible librar la mente de la ansiedad cotidiana y el temor constante.'
+            : 'El texto afirma que la paz de Dios provoca apatía e indiferencia absoluta ante el sufrimiento ajeno.';
       } else {
-        return 'El texto sugiere que el destino humano está predeterminado por el azar sin ningún propósito o esperanza.';
+        return idx == 0
+            ? 'El texto sugiere que el destino humano está predeterminado por el azar sin ningún propósito o esperanza.'
+            : 'El pasaje enseña que la autosuficiencia absoluta es el único camino para alcanzar la plenitud espiritual.';
       }
     }
   }
@@ -1285,7 +1345,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       if (i == 1) {
         // Round 2: True / False!
         final isTrue = rng.nextBool();
-        final statement = _generateTrueFalseStatement(target, isTrue, rng);
+        final statement = _generateTrueFalseStatement(target, isTrue, rng, variant: 0);
         rounds.add(_QuizRound(
           target: target,
           type: _QuizQuestionType.trueFalse,
@@ -1294,22 +1354,41 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           isStatementTrue: isTrue,
         ));
       } else if (i == 3) {
-        // Round 4: Reference selection (back to front), seen cards only!
+        // Round 4: Matching Text -> Reference (backToFront)!
+        final distractorPool = deck.cards.where((c) => c.id != target.id).toList()..shuffle(rng);
+        
         final distractors = <MemoryCardData>[];
         final otherStudied = studiedPool.where((c) => c.id != target.id).toList()..shuffle(rng);
         distractors.addAll(otherStudied.take(3));
 
-        // Generate synthetic reference distractors if not enough studied pool to avoid non-studied exposure
-        var fakeIndex = 1;
+        if (distractors.length < 3) {
+          final extraDeck = distractorPool.where((c) => !distractors.any((d) => d.id == c.id)).toList();
+          distractors.addAll(extraDeck.take(3 - distractors.length));
+        }
+
+        // Si aún no tenemos 3 distractores (mazo muy pequeño), generamos referencias bíblicas realistas
+        final fallbackReferences = [
+          'Génesis 1:1',
+          'Salmo 23:1',
+          'Juan 3:16',
+          'Filipenses 4:13',
+          'Romanos 8:28',
+          'Mateo 6:33',
+          'Proverbios 3:5',
+          '1 Corintios 13:1',
+        ]..shuffle(rng);
+
+        var fallbackIdx = 0;
         while (distractors.length < 3) {
-          final isBible = deck.isBible;
-          final fakeRef = isBible ? '${target.front.split(':').first}:${rng.nextInt(50) + 1}' : 'Referencia ficticia ${fakeIndex++}';
+          final ref = fallbackReferences[fallbackIdx % fallbackReferences.length];
+          fallbackIdx++;
+          if (ref == target.front || distractors.any((d) => d.front == ref)) continue;
           distractors.add(
             MemoryCardData(
-              id: 'ai-dist-ref-${distractors.length}-${target.id}',
-              front: fakeRef,
-              back: 'Texto alternativo',
-              source: 'IA',
+              id: 'back-to-front-distractor-${distractors.length}-${target.id}',
+              front: ref,
+              back: '',
+              source: 'Referencia sugerida',
               icon: target.icon,
             ),
           );
@@ -1553,12 +1632,21 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     });
   }
 
-  void _submitOpenQuestionResponse(_QuizRound round) {
+  void _submitOpenQuestionResponse(_QuizRound round) async {
     final response = (round.openQuestionResponse ?? '').trim();
     if (response.isEmpty) return;
     
     HapticFeedback.selectionClick();
     FocusScope.of(context).unfocus();
+    
+    setState(() {
+      _isEvaluatingOpenQuestion = true;
+    });
+    
+    // Simulación premium de análisis de la IA Local Offline
+    await Future.delayed(const Duration(milliseconds: 600));
+    
+    if (!mounted) return;
     
     final text = response.toLowerCase();
     final keywords = <String>[];
@@ -1585,22 +1673,31 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       }
     }
     
-    final bool passes = response.length >= 5;
+    final responseWords = text.split(RegExp(r'\s+')).map((w) => w.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '')).where((w) => w.length > 3).toSet();
+    final targetWords = targetText.split(RegExp(r'\s+')).map((w) => w.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '')).where((w) => w.length > 3).toSet();
+    final wordOverlap = responseWords.intersection(targetWords).length;
+    
+    // La respuesta debe tener al menos 8 caracteres y contener al menos una idea clave del versículo
+    final bool passes = response.length >= 8 && (matches >= 1 || wordOverlap >= 1);
     
     setState(() {
+      _isEvaluatingOpenQuestion = false;
       round.selectedIdx = 1; // Mark as answered
       if (passes) {
         _quizScore += 1;
       }
     });
     
-    String feedback = '¡Excelente asimilación! ';
-    if (matches >= 3) {
-      feedback += 'La IA Local Offline reconoció tus ideas clave y tu conceptualización de este pasaje. ¡Sigue así!';
-    } else if (matches >= 1) {
-      feedback += 'La IA Local Offline identificó conceptos importantes en tu respuesta y validó tu razonamiento básico.';
+    String feedback = '';
+    if (passes) {
+      feedback = '¡Excelente asimilación! ';
+      if (matches >= 3 || wordOverlap >= 2) {
+        feedback += 'La IA Local Offline reconoció tus ideas clave y tu conceptualización de este pasaje. ¡Sigue así!';
+      } else {
+        feedback += 'La IA Local Offline identificó conceptos importantes en tu respuesta y validó tu razonamiento básico.';
+      }
     } else {
-      feedback += 'Aunque tu redacción difiere, la IA Local Offline valora tu esfuerzo de asimilación activa del texto.';
+      feedback = 'Asimilación insuficiente. La IA Local Offline no detectó conceptos clave ni coincidencia temática en tu respuesta. Intenta detallar más el valor práctico del texto.';
     }
     
     ScaffoldMessenger.of(context).showSnackBar(
@@ -2437,7 +2534,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ? (round.target.front.startsWith('¿')
             ? round.target.front
             : '¿Qué texto corresponde a ${round.target.front}?')
-        : '¿A qué referencia pertenece este texto?';
+        : '¿A qué referencia pertenece este texto?\n\n"${round.target.back}"';
 
     final contextLabel = isTrueFalse
         ? 'PREGUNTA ${_quizRoundIndex + 1} DE 5 · VERDADERO / FALSO'
@@ -2447,6 +2544,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ? 'PREGUNTA ${_quizRoundIndex + 1} DE 5 · RESPUESTA ABIERTA'
         : isFrontToBack
         ? (deck.isBible ? 'BIBLIA · ${round.target.front.toUpperCase()}' : deck.title.toUpperCase())
+        : round.type == _QuizQuestionType.backToFront
+        ? (deck.isBible ? 'BIBLIA · RECONOCER REFERENCIA' : 'IDENTIFICAR ORIGEN')
         : (deck.isBible ? 'BIBLIA · ASOCIACIÓN CONCEPTUAL' : '"${_firstWords(round.target.back, 8)}…"');
 
     if (isMatching) {
@@ -2793,7 +2892,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: GestureDetector(
-                  onTap: answered || (round.openQuestionResponse ?? '').trim().isEmpty
+                  onTap: answered || (round.openQuestionResponse ?? '').trim().isEmpty || _isEvaluatingOpenQuestion
                       ? null
                       : () => _submitOpenQuestionResponse(round),
                   child: Container(
@@ -2818,16 +2917,25 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                       ),
                     ),
                     child: Center(
-                      child: Text(
-                        'Confirmar →',
-                        style: TextStyle(
-                          color: (round.openQuestionResponse ?? '').trim().isEmpty
-                              ? RefColors.muted
-                              : Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
+                      child: _isEvaluatingOpenQuestion
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : Text(
+                              'Confirmar →',
+                              style: TextStyle(
+                                color: (round.openQuestionResponse ?? '').trim().isEmpty
+                                    ? RefColors.muted
+                                    : Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
                     ),
                   ),
                 ),
@@ -3291,7 +3399,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             ? 'Escribe tu respuesta'
             : 'Elige una opción';
       }
-      if (!_quizFinished) return 'Siguiente ronda →';
+      if (!_quizFinished) return 'Cargando siguiente...';
       return _quizPassed ? 'Completado →' : 'Reintenta';
     }
     if (_isPassiveStep(slug)) {
