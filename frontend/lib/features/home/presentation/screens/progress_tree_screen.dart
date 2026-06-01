@@ -216,8 +216,9 @@ class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   List<(String, int, int)> _phaseGroups(List<ExerciseFlowData> steps) {
     final groups = <(String, int, int)>[];

@@ -11,6 +11,7 @@ import 'api/memorizar_client.dart';
 import 'api/models.dart';
 import 'db/app_database.dart';
 import 'services/push_service.dart';
+import '../features/cooperativo/data/coop_service.dart';
 import 'package:drift/drift.dart' as drift;
 
 /// Visibility level for a memory deck. Defaults to [private] — going to
