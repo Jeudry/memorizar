@@ -12,6 +12,16 @@ import 'models.dart';
 ///
 /// La URL base se puede sobreescribir vía `--dart-define=API_BASE=...`
 /// — útil para testing en device físico, donde `localhost` no apunta al Mac.
+/// Excepción personalizada del sistema para mostrar mensajes amigables y premium
+/// al usuario, evitando exponer detalles técnicos o URLs del servidor.
+class MemorizarException implements Exception {
+  final String message;
+  const MemorizarException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 class MemorizarClient {
   /// Base URL del backend. Por defecto:
   /// - iOS Simulator: `http://localhost:8080` (comparte loopback con Mac)
@@ -28,7 +38,7 @@ class MemorizarClient {
 
   MemorizarClient({String? baseUrl, http.Client? client})
       : baseUrl = baseUrl ?? defaultBaseUrl,
-        _http = client ?? http.Client();
+      _http = client ?? http.Client();
 
   void setSessionToken(String? token) => _bearerToken = token;
 
@@ -44,10 +54,31 @@ class MemorizarClient {
     if (r.body.isEmpty) return const {};
     final body = jsonDecode(r.body);
     if (r.statusCode >= 400) {
-      final msg = body is Map && body['error'] is String
+      final rawError = body is Map && body['error'] is String
           ? body['error'] as String
           : 'HTTP ${r.statusCode}';
-      throw HttpException(msg, uri: r.request?.url);
+      
+      // Traducir todos los errores comunes del backend en Go
+      String friendlyMsg = rawError;
+      if (rawError.contains('email already in use') || rawError.contains('already in use')) {
+        friendlyMsg = 'Este correo electrónico ya está registrado. Por favor, inicia sesión.';
+      } else if (rawError.contains('invalid credentials')) {
+        friendlyMsg = 'El correo o la contraseña son incorrectos.';
+      } else if (rawError.contains('password must be at least 8 characters') || rawError.contains('weak password')) {
+        friendlyMsg = 'La contraseña debe tener al menos 8 caracteres.';
+      } else if (rawError.contains('friendship already exists') || rawError.contains('friendship exists')) {
+        friendlyMsg = 'Ya tienes una solicitud de amistad activa con este usuario.';
+      } else if (rawError.contains('user not found')) {
+        friendlyMsg = 'No se encontró el usuario especificado.';
+      } else if (rawError.contains('missing bearer token') || rawError.contains('invalid session')) {
+        friendlyMsg = 'Tu sesión ha expirado. Por favor, inicia sesión de nuevo.';
+      } else if (rawError.contains('file too large')) {
+        friendlyMsg = 'La foto es demasiado grande (máximo 8 MB).';
+      } else if (rawError.contains('unsupported format')) {
+        friendlyMsg = 'Formato de imagen no soportado. Usa PNG, JPG o WebP.';
+      }
+      
+      throw MemorizarException(friendlyMsg);
     }
     if (body is Map<String, dynamic>) return body;
     return {'data': body};

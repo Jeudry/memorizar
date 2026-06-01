@@ -4,11 +4,11 @@ Motor de memorización genérico con SRS (Spaced Repetition System). El deck pri
 
 ---
 
-## IMPORTANTE: Frontend primero
+## Integración de Arquitectura
 
-**El desarrollo arranca por el frontend.** La UI avanza con datos mock y persistencia local (Drift) sin depender del backend. El backend entra en Fase 3, cuando el frontend ya esté funcional y visualmente completo.
+**El frontend y el backend están activamente integrados.** Todo el estado y flujo de autenticación, repetición y sincronización de mazos viaja a través de peticiones HTTP reales (Dio) hacia el backend en Go (puerto 8080) y persistencia local integrada.
 
-No bloquear trabajo de UI esperando endpoints — si algo necesita datos del backend, usar mocks o Drift local.
+No simular datos o usar maquetaciones mock si existen endpoints funcionales en el backend.
 
 ---
 
@@ -16,8 +16,8 @@ No bloquear trabajo de UI esperando endpoints — si algo necesita datos del bac
 
 ```
 Memorizar/
-  frontend/     # Flutter app (arrancamos aquí)
-  backend/      # Go API (Fase 3+)
+  frontend/     # Flutter app
+  backend/      # Go API
   docs/
     adr/        # Architecture Decision Records
 ```
@@ -33,11 +33,11 @@ cd frontend && flutter run
 # Generar código (Riverpod, Drift, Freezed)
 cd frontend && flutter pub run build_runner build --delete-conflicting-outputs
 
-# Backend (Fase 3+)
+# Backend
 cd backend && go run cmd/api/main.go       # puerto 8080
 cd backend && air                          # live reload
 
-# Docker (Fase 3+)
+# Docker
 docker-compose up
 ```
 
@@ -56,8 +56,8 @@ dart /Users/sargon/.gemini/antigravity/brain/ad9a501d-71ee-4863-a468-bff6eb05a20
 - State: `Riverpod 2.x` con code generation (`riverpod_annotation`)
 - Routing: `go_router`
 - Models: `Freezed` + `json_serializable`
-- Local DB: `Drift` (SQLite tipado) — offline-first desde el día uno
-- HTTP: `Dio` (dormido hasta Fase 3)
+- Local DB: `Drift` (SQLite tipado) — offline-first sincronizado
+- HTTP: `Dio` — activo y conectado al backend
 - UI: `google_fonts` (Outfit headings, DM Sans body)
 - Hooks: `flutter_hooks` + `hooks_riverpod`
 
@@ -74,12 +74,11 @@ frontend/lib/
     home/         # dashboard / estadísticas
 ```
 
-**Fase actual: Fase 1 — UI completa con mocks.**
-No conectar Dio todavía. Todo el estado viene de providers con datos hardcodeados o Drift local.
+**Estado actual:** Integración completa de producción. Comunicación Dio activa hacia el backend.
 
 ---
 
-## Backend (Go) — Fase 3+
+## Backend (Go)
 
 **Stack:**
 - Go 1.24+, puerto **8080** (no usar 3000)
@@ -99,8 +98,6 @@ backend/
   migrations/
   docs/adr/
 ```
-
-**No tocar el backend hasta terminar Fase 2 del frontend.**
 
 ---
 

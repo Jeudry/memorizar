@@ -681,7 +681,7 @@ class AppStore extends ChangeNotifier {
     if (deck.isBible && deck.cards.length > 1 && _sessionDailyTarget > 1) {
       final count = _sessionDailyTarget.clamp(1, deck.cards.length);
       final subList = deck.cards.take(count).toList();
-      final combinedFront = subList.map((c) => c.front).join('; ');
+      final combinedFront = _collapseBibleReferences(subList.map((c) => c.front).toList());
       final combinedBack = subList.map((c) => c.back.trim()).join(' ');
       return MemoryCardData(
         id: 'combined-${deck.id}-$count',
@@ -1225,12 +1225,36 @@ class AppStore extends ChangeNotifier {
 
   bool createBibleDeckFromSelection() {
     if (_selectedBibleVerses.isEmpty) return false;
-    final grouped = _selectedBibleVerses.first;
-    final title = '${grouped.book} ${grouped.chapter}';
+    
+    String title;
+    String subtitle;
+    
+    if (_selectedBibleVerses.length == _bibleVerses.length) {
+      title = 'Toda la Biblia';
+      subtitle = '31,102 versículos';
+    } else {
+      final refs = _selectedBibleVerses.map((v) => v.ref).toList();
+      title = _collapseBibleReferences(refs);
+      if (title.length > 32) {
+        final uniqueBooks = _selectedBibleVerses.map((v) => v.book).toSet();
+        if (uniqueBooks.length == 1) {
+          final book = uniqueBooks.first;
+          if (isWholeBookSelected(book)) {
+            title = '$book (Completo)';
+          } else {
+            title = '$book (Selección)';
+          }
+        } else {
+          title = 'Selección Bíblica';
+        }
+      }
+      subtitle = '${_selectedBibleVerses.length} versículos';
+    }
+
     final deck = MemoryDeckData(
       id: 'bible-${DateTime.now().microsecondsSinceEpoch}',
       title: title,
-      subtitle: '${_selectedBibleVerses.length} versículos seleccionados',
+      subtitle: subtitle,
       icon: '✝️',
       isBible: true,
       createdAt: DateTime.now(),
@@ -1681,3 +1705,68 @@ const bibleBooks = [
   BibleBookData('Judas', 'Jud', 1),
   BibleBookData('Apocalipsis', 'Apoc', 22),
 ];
+
+String _collapseBibleReferences(List<String> references) {
+  if (references.isEmpty) return '';
+  if (references.length == 1) return references.first;
+
+  final groups = <String, List<int>>{};
+  final order = <String>[];
+
+  final regex = RegExp(
+    r'^((?:[1-3]\s*)?[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?:\s+[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)*)\s+(\d+):(\d+)$'
+  );
+
+  var hasUnparsed = false;
+
+  for (final ref in references) {
+    final cleanRef = ref.trim();
+    final match = regex.firstMatch(cleanRef);
+    if (match == null) {
+      hasUnparsed = true;
+      break;
+    }
+    final book = match.group(1)!.trim();
+    final chapter = match.group(2)!;
+    final verse = int.tryParse(match.group(3)!) ?? 0;
+
+    final key = '$book $chapter';
+    if (!groups.containsKey(key)) {
+      groups[key] = [];
+      order.add(key);
+    }
+    groups[key]!.add(verse);
+  }
+
+  if (hasUnparsed || groups.isEmpty) {
+    return references.join('; ');
+  }
+
+  final formattedGroups = <String>[];
+  for (final key in order) {
+    final verses = groups[key]!;
+    if (verses.isEmpty) continue;
+
+    final sorted = [...verses]..sort();
+    final ranges = <String>[];
+    var start = sorted.first;
+    var prev = start;
+    for (var i = 1; i < sorted.length; i++) {
+      final n = sorted[i];
+      if (n == prev + 1) {
+        prev = n;
+      } else {
+        ranges.add(start == prev ? '$start' : '$start-$prev');
+        start = n;
+        prev = n;
+      }
+    }
+    ranges.add(start == prev ? '$start' : '$start-$prev');
+    final compactedVerses = ranges.join(', ');
+
+    formattedGroups.add('$key:$compactedVerses');
+  }
+
+  return formattedGroups.join('; ');
+}
+

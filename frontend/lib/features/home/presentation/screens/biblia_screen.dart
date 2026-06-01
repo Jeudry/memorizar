@@ -264,16 +264,35 @@ class _BibliaScreenState extends State<BibliaScreen> {
                         ? entries
                         : entries.take(8).toList();
                     final hidden = entries.length - visible.length;
+
+                    final listWidget = Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final e in visible)
+                          _SelectedVerseRef(
+                            e.title,
+                            e.subtitle,
+                            onRemove: () {
+                              store.removeBibleVerses(e.verses);
+                              setState(() {});
+                            },
+                          ),
+                      ],
+                    );
+
                     return [
-                      for (final e in visible)
-                        _SelectedVerseRef(
-                          e.title,
-                          e.subtitle,
-                          onRemove: () {
-                            store.removeBibleVerses(e.verses);
-                            setState(() {});
-                          },
-                        ),
+                      if (visible.length > 4)
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 180),
+                          child: Scrollbar(
+                            thumbVisibility: true,
+                            child: SingleChildScrollView(
+                              child: listWidget,
+                            ),
+                          ),
+                        )
+                      else
+                        listWidget,
                       if (hidden > 0)
                         Padding(
                           padding: const EdgeInsets.only(top: 6),
@@ -1854,6 +1873,16 @@ List<_SelectionEntry> _summarizeSelection(
   AppStore store,
 ) {
   if (selected.isEmpty) return const [];
+
+  if (selected.length == store.bibleVerses.length) {
+    return [
+      _SelectionEntry(
+        'Toda la Biblia',
+        '31,102 versículos seleccionados',
+        selected,
+      ),
+    ];
+  }
 
   // Group selected verses: book → chapter → verse numbers.
   final byBook = <String, Map<int, List<int>>>{};

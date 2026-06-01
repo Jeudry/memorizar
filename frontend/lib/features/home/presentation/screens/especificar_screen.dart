@@ -13,6 +13,7 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
   late final TextEditingController _titleController;
   late final TextEditingController _contentController;
   List<MemoryCardData> _segmentedCards = const [];
+  bool _submitting = false;
 
   @override
   void initState() {
@@ -90,18 +91,29 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
   }
 
   void _createDeck() {
+    if (_submitting) return;
     final cards = _segmentedCards.isEmpty
         ? AppScope.of(context).segmentContent(
             _contentController.text,
             title: _titleController.text,
           )
         : _segmentedCards;
+    if (cards.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pega o escribe contenido antes de continuar.'),
+        ),
+      );
+      return;
+    }
+    setState(() => _submitting = true);
     final created = AppScope.of(context).createDeckFromCards(
       title: _titleController.text,
       icon: '🧠',
       cards: cards,
     );
     if (created == null) {
+      setState(() => _submitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Pega o escribe contenido antes de continuar.'),
@@ -284,19 +296,25 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    GestureDetector(
-                      onTap: _pasteFromClipboard,
-                      child: const _ToolChip('📋 Pegar'),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: _pasteFromClipboard,
+                        child: const _ToolChip('📋 Pegar'),
+                      ),
                     ),
                     const SizedBox(width: 6),
-                    GestureDetector(
-                      onTap: _clearAll,
-                      child: const _ToolChip('🧹 Limpiar'),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: _clearAll,
+                        child: const _ToolChip('🧹 Limpiar'),
+                      ),
                     ),
                     const SizedBox(width: 6),
-                    GestureDetector(
-                      onTap: () => Navigator.pushNamed(context, AppRoutes.settings),
-                      child: const _ToolChip('⚙️ Ajustes'),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => Navigator.pushNamed(context, AppRoutes.settings),
+                        child: const _ToolChip('⚙️ Ajustes'),
+                      ),
                     ),
                   ],
                 ),

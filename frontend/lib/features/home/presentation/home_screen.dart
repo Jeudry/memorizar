@@ -466,66 +466,68 @@ void _showAccountMenu(BuildContext context) {
           border: Border.all(color: AppColors.glassBorder),
         ),
         padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (store.isLoggedIn) ...[
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (store.isLoggedIn) ...[
+                _AccountMenuRow(
+                  icon: Icons.account_circle_outlined,
+                  label: store.currentUser?.displayName ?? 'Mi cuenta',
+                  subtitle: store.currentUser?.email ?? '',
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    Navigator.pushNamed(context, '/account');
+                  },
+                ),
+                _AccountMenuRow(
+                  icon: Icons.inbox_outlined,
+                  label: 'Compartidos conmigo',
+                  subtitle: 'Mazos que tus amigos te enviaron',
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    Navigator.pushNamed(context, '/inbox');
+                  },
+                ),
+              ] else
+                _AccountMenuRow(
+                  icon: Icons.login_rounded,
+                  label: 'Iniciar sesión',
+                  subtitle: 'Sincroniza tus mazos y conecta con amigos',
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    Navigator.pushNamed(context, '/login');
+                  },
+                ),
               _AccountMenuRow(
-                icon: Icons.account_circle_outlined,
-                label: store.currentUser?.displayName ?? 'Mi cuenta',
-                subtitle: store.currentUser?.email ?? '',
+                icon: Icons.settings_outlined,
+                label: 'Ajustes',
+                subtitle: 'Tema, idioma, accesibilidad, recordatorios',
                 onTap: () {
                   Navigator.of(sheetCtx).pop();
-                  Navigator.pushNamed(context, '/account');
+                  Navigator.pushNamed(context, '/settings');
                 },
               ),
               _AccountMenuRow(
-                icon: Icons.inbox_outlined,
-                label: 'Compartidos conmigo',
-                subtitle: 'Mazos que tus amigos te enviaron',
+                icon: Icons.gavel_rounded,
+                label: 'Legal y privacidad',
+                subtitle: 'Términos, Privacidad, DMCA, Comunidad',
                 onTap: () {
                   Navigator.of(sheetCtx).pop();
-                  Navigator.pushNamed(context, '/inbox');
+                  Navigator.pushNamed(context, '/legal');
                 },
               ),
-            ] else
               _AccountMenuRow(
-                icon: Icons.login_rounded,
-                label: 'Iniciar sesión',
-                subtitle: 'Sincroniza tus mazos y conecta con amigos',
+                icon: Icons.shield_outlined,
+                label: 'Moderación',
+                subtitle: 'Cola de reportes recibidos',
                 onTap: () {
                   Navigator.of(sheetCtx).pop();
-                  Navigator.pushNamed(context, '/login');
+                  Navigator.pushNamed(context, '/moderation');
                 },
               ),
-            _AccountMenuRow(
-              icon: Icons.settings_outlined,
-              label: 'Ajustes',
-              subtitle: 'Tema, idioma, accesibilidad, recordatorios',
-              onTap: () {
-                Navigator.of(sheetCtx).pop();
-                Navigator.pushNamed(context, '/settings');
-              },
-            ),
-            _AccountMenuRow(
-              icon: Icons.gavel_rounded,
-              label: 'Legal y privacidad',
-              subtitle: 'Términos, Privacidad, DMCA, Comunidad',
-              onTap: () {
-                Navigator.of(sheetCtx).pop();
-                Navigator.pushNamed(context, '/legal');
-              },
-            ),
-            _AccountMenuRow(
-              icon: Icons.shield_outlined,
-              label: 'Moderación',
-              subtitle: 'Cola de reportes recibidos',
-              onTap: () {
-                Navigator.of(sheetCtx).pop();
-                Navigator.pushNamed(context, '/moderation');
-              },
-            ),
-          ],
+            ],
+          ),
         ),
       );
     },
@@ -616,7 +618,13 @@ class _AppHeader extends StatelessWidget {
     return Row(
       children: [
         GestureDetector(
-          onTap: () => _showAccountMenu(context),
+          onTap: () {
+            if (store.isLoggedIn) {
+              _showAccountMenu(context);
+            } else {
+              Navigator.pushNamed(context, '/login');
+            }
+          },
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -629,16 +637,20 @@ class _AppHeader extends StatelessWidget {
                   border: Border.all(color: AppColors.glassBorder),
                 ),
                 child: Center(
-                  child: Text(
-                    store.isLoggedIn
-                        ? (store.currentUser?.initial ?? 'U')
-                        : '?',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      fontSize: 18,
-                    ),
-                  ),
+                  child: store.isLoggedIn
+                      ? Text(
+                          store.currentUser?.initial ?? 'U',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            fontSize: 18,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.login_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                 ),
               ),
               if (store.totalNotifications > 0)

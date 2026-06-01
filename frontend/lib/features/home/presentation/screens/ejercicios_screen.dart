@@ -420,8 +420,6 @@ class _ExerciseOption extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w900,

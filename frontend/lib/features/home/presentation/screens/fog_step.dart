@@ -447,6 +447,13 @@ class _FogStepState extends State<_FogStep>
             );
 
             if (isFoggy && !widget.finished) {
+              final foggyWordWidget = Text(
+                words[i],
+                style: style.copyWith(
+                  color: Colors.transparent,
+                ),
+              );
+
               return GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () {
@@ -468,11 +475,22 @@ class _FogStepState extends State<_FogStep>
                     }
                   });
                 },
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: ImageFiltered(
-                    imageFilter: ImageFilter.blur(sigmaX: 3.5, sigmaY: 3.5),
-                    child: wordWidget,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: RefColors.violet.withValues(alpha: .18),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: RefColors.cyan.withValues(alpha: .30),
+                      width: 1,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+                      child: foggyWordWidget,
+                    ),
                   ),
                 ),
               );
@@ -512,6 +530,17 @@ class _FogStepState extends State<_FogStep>
                 );
 
                 if (isFoggy && !widget.finished) {
+                  final foggyWordWidget = Text(
+                    words[i],
+                    style: const TextStyle(
+                      fontSize: 22,
+                      height: 1.36,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.transparent, // Texto invisible
+                      fontFamily: 'Outfit',
+                    ),
+                  );
+
                   return GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () {
@@ -533,11 +562,22 @@ class _FogStepState extends State<_FogStep>
                         }
                       });
                     },
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: ImageFiltered(
-                        imageFilter: ImageFilter.blur(sigmaX: 3.5, sigmaY: 3.5),
-                        child: wordWidget,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        color: RefColors.violet.withValues(alpha: .18),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: RefColors.cyan.withValues(alpha: .30),
+                          width: 1,
+                        ),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: ImageFiltered(
+                          imageFilter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+                          child: foggyWordWidget,
+                        ),
                       ),
                     ),
                   );
@@ -713,24 +753,28 @@ class _FogStepState extends State<_FogStep>
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
+             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    widget.finished
-                        ? 'Recitación completada'
-                        : 'Práctica de Niebla Nivel ${widget.level}',
-                    style: const TextStyle(
-                      color: RefColors.pink,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: .8,
+                  Flexible(
+                    child: Text(
+                      widget.finished
+                          ? 'Recitación completada'
+                          : 'Práctica de Niebla Nivel ${widget.level}',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: RefColors.pink,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .8,
+                      ),
                     ),
                   ),
+                  const SizedBox(width: 8),
                   Text(
-                    'Intentos disponibles: $_attemptsLeft',
+                    'Intentos: $_attemptsLeft',
                     style: TextStyle(
                       color: _attemptsLeft == 1 ? RefColors.urgent : RefColors.muted,
                       fontSize: 12,
@@ -748,7 +792,12 @@ class _FogStepState extends State<_FogStep>
                   RefColors.cyan.withValues(alpha: .10),
                 ],
               ),
-              child: _buildVersesContainer(context),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 240),
+                child: SingleChildScrollView(
+                  child: _buildVersesContainer(context),
+                ),
+              ),
             ),
             if (!widget.finished) ...[
               const SizedBox(height: 6),
@@ -762,7 +811,7 @@ class _FogStepState extends State<_FogStep>
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    'Pistas: $_hintsUsed/$_maxHints · Toca una palabra para revelarla (3s)',
+                    'Pistas: $_hintsUsed/$_maxHints · Toca para revelar (3s)',
                     style: TextStyle(
                       color: _hintsUsed >= _maxHints ? RefColors.pink : RefColors.dim,
                       fontSize: 10,

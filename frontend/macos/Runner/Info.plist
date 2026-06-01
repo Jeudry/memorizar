@@ -30,5 +30,16 @@
 	<string>NSApplication</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Esta aplicación requiere acceso al micrófono para permitir la recitación y memorización de versículos bíblicos de forma offline.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.106168748090-7a0q71bdnaq64g7q79o9eipr34dv8phs</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

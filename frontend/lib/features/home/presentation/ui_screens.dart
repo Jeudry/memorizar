@@ -1175,10 +1175,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  Container(
-                    constraints: const BoxConstraints(minHeight: 120),
-                    alignment: Alignment.center,
-                    child: _buildSoloLecturaText(context, _soloLecturaVisibleChars),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 240, minHeight: 120),
+                    child: SingleChildScrollView(
+                      child: Container(
+                        alignment: Alignment.center,
+                        child: _buildSoloLecturaText(context, _soloLecturaVisibleChars),
+                      ),
+                    ),
                   ),
                   if (!store.isExerciseStepCompleted(slug)) ...[
                     const SizedBox(height: 14),
@@ -2373,7 +2377,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 }
 
-class _CompletionPromptCard extends StatelessWidget {
+class _CompletionPromptCard extends StatefulWidget {
   final String label;
   final String text;
   final List<String> targets;
@@ -2392,28 +2396,67 @@ class _CompletionPromptCard extends StatelessWidget {
   });
 
   @override
+  State<_CompletionPromptCard> createState() => _CompletionPromptCardState();
+}
+
+class _CompletionPromptCardState extends State<_CompletionPromptCard> {
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _activeKey = GlobalKey();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(_CompletionPromptCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.activeIndex != oldWidget.activeIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToActive();
+      });
+    }
+  }
+
+  void _scrollToActive() {
+    final context = _activeKey.currentContext;
+    if (context != null) {
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        alignment: 0.5,
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final usedTargetIndexes = <int>{};
     final spans = <InlineSpan>[];
-    for (final word in _studyWords(text)) {
+    for (final word in _studyWords(widget.text)) {
       final targetIndex = _matchingUnusedTargetIndex(word, usedTargetIndexes);
       if (targetIndex == null) {
         spans.add(TextSpan(text: '$word '));
         continue;
       }
       usedTargetIndexes.add(targetIndex);
+      final active = widget.activeIndex == targetIndex && widget.answers[targetIndex] == null;
       spans.add(
         WidgetSpan(
           alignment: PlaceholderAlignment.middle,
           child: Padding(
             padding: const EdgeInsets.only(right: 6, bottom: 4),
-            child: _CompletionBlank(
-              answer: answers[targetIndex],
-              active:
-                  activeIndex == targetIndex && answers[targetIndex] == null,
-              complete: answers[targetIndex] != null,
-              wordLength: targets[targetIndex].length,
-              onTap: () => onBlankTap(targetIndex),
+            child: KeyedSubtree(
+              key: active ? _activeKey : null,
+              child: _CompletionBlank(
+                answer: widget.answers[targetIndex],
+                active: active,
+                complete: widget.answers[targetIndex] != null,
+                wordLength: widget.targets[targetIndex].length,
+                onTap: () => widget.onBlankTap(targetIndex),
+              ),
             ),
           ),
         ),
@@ -2431,7 +2474,7 @@ class _CompletionPromptCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            label,
+            widget.label,
             style: const TextStyle(
               color: RefColors.sun,
               fontSize: 12,
@@ -2439,16 +2482,22 @@ class _CompletionPromptCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          RichText(
-            text: TextSpan(
-              style: const TextStyle(
-                color: RefColors.ink,
-                fontSize: 20,
-                height: 1.6,
-                fontWeight: FontWeight.w900,
-                fontFamily: 'Outfit',
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 220),
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              child: RichText(
+                text: TextSpan(
+                  style: const TextStyle(
+                    color: RefColors.ink,
+                    fontSize: 20,
+                    height: 1.6,
+                    fontWeight: FontWeight.w900,
+                    fontFamily: 'Outfit',
+                  ),
+                  children: spans,
+                ),
               ),
-              children: spans,
             ),
           ),
         ],
@@ -2457,9 +2506,9 @@ class _CompletionPromptCard extends StatelessWidget {
   }
 
   int? _matchingUnusedTargetIndex(String word, Set<int> usedTargetIndexes) {
-    for (var index = 0; index < targets.length; index++) {
+    for (var index = 0; index < widget.targets.length; index++) {
       if (usedTargetIndexes.contains(index)) continue;
-      if (_sameAnswer(word, targets[index])) return index;
+      if (_sameAnswer(word, widget.targets[index])) return index;
     }
     return null;
   }
@@ -2671,15 +2720,29 @@ class _ProgressiveFragmentCard extends StatelessWidget {
                             color: RefColors.ink,
                           ),
                         )
-                      : ImageFiltered(
-                          imageFilter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-                          child: Text(
-                            words[i],
-                            style: TextStyle(
-                              fontSize: 24,
-                              height: 1.25,
-                              fontWeight: FontWeight.w900,
-                              color: RefColors.muted.withValues(alpha: .45),
+                      : Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          decoration: BoxDecoration(
+                            color: RefColors.violet.withValues(alpha: .18),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: RefColors.cyan.withValues(alpha: .30),
+                              width: 1,
+                            ),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: ImageFiltered(
+                              imageFilter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+                              child: Text(
+                                words[i],
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  height: 1.25,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.transparent, // Totalmente impenetrable
+                                ),
+                              ),
                             ),
                           ),
                         ),

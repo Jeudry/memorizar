@@ -20,13 +20,24 @@ class _AccountScreenState extends State<AccountScreen> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _avatarCtrl;
   bool _saving = false;
+  bool _initialized = false;
 
   @override
   void initState() {
     super.initState();
-    final user = AppScope.of(context).currentUser;
-    _nameCtrl = TextEditingController(text: user?.displayName ?? '');
-    _avatarCtrl = TextEditingController(text: user?.avatarUrl ?? '');
+    _nameCtrl = TextEditingController();
+    _avatarCtrl = TextEditingController();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      final user = AppScope.of(context).currentUser;
+      _nameCtrl.text = user?.displayName ?? '';
+      _avatarCtrl.text = user?.avatarUrl ?? '';
+      _initialized = true;
+    }
   }
 
   @override
