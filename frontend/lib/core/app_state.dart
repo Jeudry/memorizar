@@ -1220,6 +1220,13 @@ class AppStore extends ChangeNotifier {
     return true;
   }
 
+  void setSessionCardsCompleted(int value) {
+    _sessionCardsCompleted = value;
+    final deckId = activeDeck.id;
+    _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));
+    notifyListeners();
+  }
+
   void updateActiveDeck({String? title, String? icon}) {
     if (_decks.isEmpty) return;
     final index = _decks.indexWhere((deck) => deck.id == activeDeck.id);
@@ -1240,7 +1247,12 @@ class AppStore extends ChangeNotifier {
 
   void markExerciseStepCompleted(String slug) {
     final key = _exerciseStepKey(slug);
-    if (_completedExerciseSteps.add(key)) notifyListeners();
+    if (_completedExerciseSteps.add(key)) {
+      if (CoopService.active != null) {
+        CoopService.active!.reportScore(10);
+      }
+      notifyListeners();
+    }
   }
 
   void resetExerciseStepCompleted(String slug) {

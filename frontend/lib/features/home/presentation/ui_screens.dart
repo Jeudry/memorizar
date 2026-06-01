@@ -482,6 +482,45 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   String? _fogCardId;
   bool _fogFinished = false;
   bool _fogShowHintTemp = false;
+  StreamSubscription<CoopRoomState>? _coopStateSub;
+
+  @override
+  void initState() {
+    super.initState();
+    final coop = CoopService.active;
+    if (coop != null) {
+      _coopStateSub = coop.stateStream.listen((s) {
+        if (!mounted) return;
+
+        // Si el host abandonó la partida, cancelar y volver al home
+        final hostLeft = !s.memberIds.contains(s.hostId);
+        if (hostLeft) {
+          CoopService.active?.disconnect();
+          CoopService.active = null;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('La partida cooperativa ha sido cancelada por el Host.'),
+              backgroundColor: RefColors.urgent,
+            ),
+          );
+          Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
+          return;
+        }
+
+        final store = AppScope.of(context);
+        final currentSlug = widget.data.slug;
+        final isHost = s.hostId == CoopService.activeUserId;
+
+        if (s.currentCardIndex != store.sessionCardsCompleted) {
+          store.setSessionCardsCompleted(s.currentCardIndex);
+        }
+
+        if (!isHost && s.currentSlug != null && s.currentSlug!.isNotEmpty && s.currentSlug != currentSlug) {
+          Navigator.pushReplacementNamed(context, '${AppRoutes.flow}/${s.currentSlug}');
+        }
+      });
+    }
+  }
 
   @override
   void reassemble() {
@@ -492,6 +531,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
   @override
   void dispose() {
+    _coopStateSub?.cancel();
     _soloLecturaTimer?.cancel();
     _completionTimer?.cancel();
     _letterTimer?.cancel();
@@ -2075,40 +2115,87 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       final verses = _currentBatchVerses(context);
       _soloLecturaVisibleChars = verses.fold<int>(0, (sum, v) => sum + v.text.length);
     }
-    return ReferencePage(
-      showBottomNav: false,
-      scrollable:
-          slug != '01-escuchar' &&
-          !_isFirstLetterSlug(slug) &&
-          !_isFogSlug(slug) &&
-          !_isFinalVoiceSlug(slug),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _FlowStepHeader(
-            step: '$step',
-            totalSteps: totalSteps,
-            title: _realStepTitle(slug),
-            progress: step.clamp(1, totalSteps),
-          ),
-          if (slug == '01-escuchar' ||
-              _isFirstLetterSlug(slug) ||
-              _isFogSlug(slug) ||
-              _isFinalVoiceSlug(slug))
-            Expanded(
-              child: _RedFlash(
+
+    final isCoop = CoopService.active != null;
+    final coopState = CoopService.active?.state;
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (isCoop) {
+          final shouldPop = await _showExitConfirmationDialog(context);
+          if (shouldPop && context.mounted) {
+            await CoopService.active?.disconnect();
+            CoopService.active = null;
+            Navigator.pop(context);
+          }
+        } else {
+          Navigator.pop(context);
+        }
+      },
+      child: ReferencePage(
+        showBottomNav: false,
+        scrollable:
+            slug != '01-escuchar' &&
+            !_isFirstLetterSlug(slug) &&
+            !_isFogSlug(slug) &&
+            !_isFinalVoiceSlug(slug),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (isCoop && coopState != null) ...[
+              _CoopTopBar(
+                center: 'EN JUEGO · ${store.sessionCardsCompleted + 1}/${store.sessionDailyTarget}',
+                live: true,
+                onBack: () async {
+                  final shouldPop = await _showExitConfirmationDialog(context);
+                  if (shouldPop && context.mounted) {
+                    await CoopService.active?.disconnect();
+                    CoopService.active = null;
+                    Navigator.pop(context);
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              _CoopLiveScoreboard(state: coopState),
+              const SizedBox(height: 14),
+              _CoopTeamRow(state: coopState, answeredUsers: const {}),
+              const SizedBox(height: 14),
+              RefProgress((store.sessionCardsCompleted + 1) / store.sessionDailyTarget),
+              const SizedBox(height: 14),
+            ] else
+              _FlowStepHeader(
+                step: '$step',
+                totalSteps: totalSteps,
+                title: _realStepTitle(slug),
+                progress: step.clamp(1, totalSteps),
+              ),
+            
+            if (slug == '01-escuchar' ||
+                _isFirstLetterSlug(slug) ||
+                _isFogSlug(slug) ||
+                _isFinalVoiceSlug(slug))
+              Expanded(
+                child: _RedFlash(
+                  active: _nonVoiceWrongRecent(),
+                  child: _realExerciseBody(context, store, card, deck, slug),
+                ),
+              )
+            else
+              _RedFlash(
                 active: _nonVoiceWrongRecent(),
                 child: _realExerciseBody(context, store, card, deck, slug),
               ),
-            )
-          else
-            _RedFlash(
-              active: _nonVoiceWrongRecent(),
-              child: _realExerciseBody(context, store, card, deck, slug),
-            ),
-          const SizedBox(height: 14),
-          _realExerciseFooter(context, store, card, deck, slug),
-        ],
+            const SizedBox(height: 14),
+            if (isCoop) ...[
+              _coopExerciseFooter(context, store, card, deck, slug),
+              const SizedBox(height: 14),
+              const _CoopGameChat(),
+            ] else
+              _realExerciseFooter(context, store, card, deck, slug),
+          ],
+        ),
       ),
     );
   }
@@ -3467,6 +3554,66 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         });
       }
     });
+  }
+
+  Widget _coopExerciseFooter(
+    BuildContext context,
+    AppStore store,
+    MemoryCardData card,
+    MemoryDeckData deck,
+    String slug,
+  ) {
+    final completed = store.isExerciseStepCompleted(slug);
+    final isHost = CoopService.activeUserId == CoopService.active?.state?.hostId;
+    
+    if (completed) {
+      if (isHost) {
+        return Cta(
+          'Continuar →',
+          onTap: () {
+            ActiveMediaRegistry.stopAll();
+            final steps = _sessionFlowSteps(store);
+            final stepIndex = steps.indexWhere((step) => step.slug == slug);
+            final nextSlug = (stepIndex >= 0 && stepIndex < steps.length - 1)
+                ? steps[stepIndex + 1].slug
+                : 'progress-tree';
+            
+            CoopService.active!.broadcastCard(
+              deckId: deck.id,
+              cardIndex: store.sessionCardsCompleted,
+              slug: nextSlug,
+            );
+            
+            _navigateToNextStepOrComplete(context, store, slug);
+          },
+        );
+      } else {
+        return const Glass(
+          padding: EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(RefColors.lime)),
+              ),
+              SizedBox(width: 12),
+              Text(
+                '¡Paso completado! Esperando al Host…',
+                style: TextStyle(
+                  color: RefColors.lime,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+    
+    return _realExerciseFooter(context, store, card, deck, slug);
   }
 
   Widget _realExerciseFooter(
@@ -5387,3 +5534,37 @@ class _BankWord {
   final String word;
   _BankWord({required this.id, required this.word});
 }
+
+Future<bool> _showExitConfirmationDialog(BuildContext context) async {
+  final isHost = CoopService.activeUserId == CoopService.active?.state?.hostId;
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: const Color(0xFF0F0C1B),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(
+        isHost ? '¿Cancelar partida?' : '¿Salir de la sala?',
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+      ),
+      content: Text(
+        isHost 
+            ? 'Como eres el HOST, al salir cerrarás la sala y se cancelará la partida para todos los participantes.'
+            : '¿Estás seguro de que quieres abandonar la partida en curso?',
+        style: const TextStyle(color: RefColors.dim, fontSize: 13),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancelar', style: TextStyle(color: RefColors.muted)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: RefColors.urgent),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Salir', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        ),
+      ],
+    ),
+  );
+  return result ?? false;
+}
+

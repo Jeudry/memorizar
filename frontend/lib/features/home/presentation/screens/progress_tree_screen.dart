@@ -12,6 +12,50 @@ class _ProgressTreeScreen extends StatefulWidget {
 class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
   final GlobalKey _currentStepKey = GlobalKey();
   int _lastScrolledIndex = -1;
+  StreamSubscription<CoopRoomState>? _coopSub;
+
+  @override
+  void initState() {
+    super.initState();
+    final coop = CoopService.active;
+    if (coop != null) {
+      _coopSub = coop.stateStream.listen((s) {
+        if (!mounted) return;
+
+        // Si el host abandonó la partida, cancelar y volver al home
+        final hostLeft = !s.memberIds.contains(s.hostId);
+        if (hostLeft) {
+          CoopService.active?.disconnect();
+          CoopService.active = null;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('La partida cooperativa ha sido cancelada por el Host.'),
+              backgroundColor: RefColors.urgent,
+            ),
+          );
+          Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
+          return;
+        }
+
+        final store = AppScope.of(context);
+        final isHost = s.hostId == CoopService.activeUserId;
+        
+        if (s.currentCardIndex != store.sessionCardsCompleted) {
+          store.setSessionCardsCompleted(s.currentCardIndex);
+        }
+
+        if (!isHost && s.currentSlug != null && s.currentSlug!.isNotEmpty && s.currentSlug != 'progress-tree') {
+          Navigator.pushReplacementNamed(context, '${AppRoutes.flow}/${s.currentSlug}');
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _coopSub?.cancel();
+    super.dispose();
+  }
 
   void _scheduleScrollToCurrent(int currentIndex) {
     if (_lastScrolledIndex == currentIndex) return;
@@ -45,56 +89,72 @@ class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
 
     _scheduleScrollToCurrent(currentStepIndex);
 
-    return ReferencePage(
-      showBottomNav: false,
-      scrollable: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: RefColors.glass,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: RefColors.border),
-                    ),
-                    child: const Icon(Icons.arrow_back_rounded, size: 20),
-                  ),
-                ),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Progreso del ejercicio',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final isCoop = CoopService.active != null;
+        if (isCoop) {
+          final shouldPop = await _showExitConfirmationDialog(context);
+          if (shouldPop && context.mounted) {
+            await CoopService.active?.disconnect();
+            CoopService.active = null;
+            Navigator.pop(context);
+          }
+        } else {
+          Navigator.pop(context);
+        }
+      },
+      child: ReferencePage(
+        showBottomNav: false,
+        scrollable: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: RefColors.glass,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: RefColors.border),
                       ),
+                      child: const Icon(Icons.arrow_back_rounded, size: 20),
                     ),
-                    if (store.sessionDailyTarget > 1)
-                      Text(
-                        'Tarjeta ${(store.sessionCardsCompleted + 1).clamp(1, store.sessionDailyTarget)} de ${store.sessionDailyTarget}',
-                        style: const TextStyle(
-                          color: RefColors.muted,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: .4,
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Progreso del ejercicio',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
-                  ],
-                ),
-                const SizedBox(width: 40),
-              ],
+                      if (store.sessionDailyTarget > 1)
+                        Text(
+                          'Tarjeta ${(store.sessionCardsCompleted + 1).clamp(1, store.sessionDailyTarget)} de ${store.sessionDailyTarget}',
+                          style: const TextStyle(
+                            color: RefColors.muted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: .4,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 40),
+                ],
+              ),
             ),
-          ),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(2, 2, 0, 10),
@@ -227,10 +287,28 @@ class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
           currentIndex: currentStepIndex,
           store: store,
           isLastInGroup: local == groupSteps.length - 1,
-          onTapStep: (slug) => Navigator.pushReplacementNamed(
-            context,
-            '${AppRoutes.flow}/$slug',
-          ),
+          onTapStep: (slug) {
+            final isCoop = CoopService.active != null;
+            if (isCoop) {
+              final isHost = CoopService.activeUserId == CoopService.active?.state?.hostId;
+              if (!isHost) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Solo el Host puede seleccionar el siguiente paso.')),
+                );
+                return;
+              } else {
+                CoopService.active!.broadcastCard(
+                  deckId: store.activeDeck.id,
+                  cardIndex: store.sessionCardsCompleted,
+                  slug: slug,
+                );
+              }
+            }
+            Navigator.pushReplacementNamed(
+              context,
+              '${AppRoutes.flow}/$slug',
+            );
+          },
         ),
     ];
   }
