@@ -120,3 +120,27 @@ El deck "Biblia" tiene metadatos extra: `book`, `chapter`, `verse`.
 
 - Rama base: `main` (siempre crear desde main — no preguntar)
 - Naming: `feature/MM-{número}_{descripción}`
+
+---
+
+## 🛡️ PROTOCOLO DE SEGURIDAD DE GIT (MANDATORIO PARA IA)
+
+Para evitar la pérdida accidental de código de producción, conflictos híbridos y errores de compilación, todo agente que trabaje en este repositorio **DEBE** acatar estrictamente las siguientes reglas:
+
+### 1. Control de Archivos sin Registrar (Untracked)
+- **Regla:** Antes de ejecutar cualquier comando destructivo (`git checkout .`, `git reset --hard`, `git clean`), ejecuta siempre `git status`.
+- **Acción:** Si existen directorios o archivos nuevos sin registrar (como `missions/`, `plans/`, etc.), **debes agregarlos inmediatamente al stage (`git add .`)** para que Git los rastree. Nunca los dejes en limbo como untracked para evitar que se pierdan en worktrees ocultos o stashes.
+
+### 2. Recuperación Segura de Stashes
+- **Regla:** Si aplicas un `git stash pop` y se generan conflictos de fusión, **NUNCA** los borres o deshagas con un reset masivo.
+- **Acción:** Inspecciona cada archivo marcado como "both modified" y resuelve pacientemente todos los marcadores (`<<<<<<<`, `=======`, `>>>>>>>`) combinando la lógica de ambas partes. Si no puedes resolverlos, utiliza `git stash apply` en lugar de `pop` para no perder la copia de seguridad física del stash.
+
+### 3. Cero Commits con Errores de Sintaxis o Marcadores
+- **Regla:** Queda prohibido hacer commits, push o crear Pull Requests que contengan marcadores de conflicto sobrantes en el código o fallos de compilación.
+- **Acción:** Tras resolver conflictos, ejecuta obligatoriamente `flutter analyze` en el frontend y `go build` en el backend. Confirma que el reporte arroje **cero errores** antes de proceder a la firma del commit.
+
+### 4. Búsqueda de Cambios "Perdidos"
+- Si el usuario reporta que se perdieron cambios que ya se habían avanzado, **no declares el trabajo perdido** de inmediato. Realiza la búsqueda exhaustiva en:
+  1. La lista de stashes locales: `git stash list`
+  2. El registro interno de referencias de Git: `git reflog`
+  3. Los subdirectorios ocultos de trabajo del worktree: `.claude/worktrees/`
