@@ -49,6 +49,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/auth/password/reset/confirm", s.handlePasswordResetConfirm)
 	s.mux.HandleFunc("/avatars/", s.handleAvatarServe)
 	s.mux.HandleFunc("/v1/social/friends", s.withAuth(s.handleFriends))
+	s.mux.HandleFunc("/v1/social/user", s.withAuth(s.handleGetUser))
 	s.mux.HandleFunc("/v1/social/suggestions", s.withAuth(s.handleSuggestions))
 	s.mux.HandleFunc("/v1/social/search", s.withAuth(s.handleSearch))
 	s.mux.HandleFunc("/v1/community/decks", s.withAuth(s.handleCommunitySearch))
@@ -253,6 +254,25 @@ func (s *Server) handleSuggestions(w http.ResponseWriter, r *http.Request, userI
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request, _ string) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	targetID := r.URL.Query().Get("id")
+	if targetID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing user id"})
+		return
+	}
+	user, err := s.service.GetUser(targetID)
+	if err != nil || user == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+		return
+	}
+	sanitized := user.Sanitize()
+	writeJSON(w, http.StatusOK, sanitized)
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request, userID string) {
