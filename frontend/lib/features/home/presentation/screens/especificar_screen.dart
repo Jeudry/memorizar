@@ -414,8 +414,7 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
             ],
           ),
         ],
-      ),
-    );
+      );
 
     if (widget.embedded) {
       return content;
