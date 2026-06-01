@@ -102,7 +102,13 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
         final nowInGame = s.currentDeckId != null;
         final iAmHost = _currentUserId == s.hostId;
         if (!iAmHost && nowInGame && !wasInGame) {
-          Navigator.pushNamed(context, AppRoutes.cooperativoJuego);
+          final target = s.sessionDailyTarget == 0 ? 3 : s.sessionDailyTarget;
+          store.configureSession(
+            difficulty: s.sessionDifficulty,
+            dailyTarget: target,
+          );
+          final targetSlug = s.currentSlug?.isNotEmpty == true ? s.currentSlug! : '00-solo-lectura';
+          Navigator.pushNamed(context, '${AppRoutes.flow}/$targetSlug');
         }
       });
     }
@@ -860,8 +866,14 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                       ? null
                       : () {
                           final selectedDeckId = state.lobbyDeckId!;
-                          _coop!.broadcastCard(deckId: selectedDeckId, cardIndex: 0);
-                          Navigator.pushNamed(context, AppRoutes.cooperativoJuego);
+                          final target = state.sessionDailyTarget == 0 ? 3 : state.sessionDailyTarget;
+                          final store = AppScope.of(context);
+                          store.configureSession(
+                            difficulty: state.sessionDifficulty,
+                            dailyTarget: target,
+                          );
+                          _coop!.broadcastCard(deckId: selectedDeckId, cardIndex: 0, slug: '00-solo-lectura');
+                          Navigator.pushNamed(context, '${AppRoutes.flow}/00-solo-lectura');
                         },
                 ),
                 if (state.lobbyDeckId == null || state.lobbyDeckId!.isEmpty) ...[
@@ -1596,8 +1608,9 @@ class CooperativoSuccessScreen extends StatelessWidget {
 class _CoopTopBar extends StatelessWidget {
   final String center;
   final bool live;
+  final VoidCallback? onBack;
 
-  const _CoopTopBar({required this.center, this.live = false});
+  const _CoopTopBar({required this.center, this.live = false, this.onBack});
 
   @override
   Widget build(BuildContext context) {
@@ -1605,7 +1618,7 @@ class _CoopTopBar extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 14),
       child: Row(
         children: [
-          const RefBackButton(),
+          RefBackButton(onTap: onBack),
           Expanded(
             child: Center(
               child: RefChip(
