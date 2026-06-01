@@ -13,6 +13,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
   CoopService? _coop;
   CoopRoomState? _state;
   StreamSubscription<CoopRoomState>? _sub;
+  StreamSubscription<CoopMessage>? _msgSub;
   final _joinCtrl = TextEditingController();
   bool _busy = false;
   String? _error;
@@ -120,7 +121,46 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
             dailyTarget: target,
           );
           final targetSlug = s.currentSlug?.isNotEmpty == true ? s.currentSlug! : '00-solo-lectura';
-          Navigator.pushNamed(context, '${AppRoutes.flow}/$targetSlug');
+          _navigateWhenDeckReady(store, s.currentDeckId!, targetSlug);
+        }
+      });
+      _msgSub = _coop!.messages.listen((msg) async {
+        if (msg.type == 'deck' && mounted) {
+          final deckId = msg.payload?['deckId'] as String?;
+          final title = msg.payload?['deckName'] as String?;
+          final rawCards = msg.payload?['cards'] as List?;
+          if (deckId != null && deckId.isNotEmpty && title != null && rawCards != null) {
+            final store = AppScope.of(context);
+            final hasDeck = store.decks.any((d) => d.id == deckId);
+            if (!hasDeck) {
+              await store.db!.upsertDeck(DecksCompanion(
+                id: drift.Value(deckId),
+                title: drift.Value(title),
+                subtitle: drift.Value('Mazo cooperativo compartido'),
+                icon: drift.Value('🎯'),
+                isBible: drift.Value(false),
+                createdAt: drift.Value(DateTime.now()),
+              ));
+            }
+            for (var i = 0; i < rawCards.length; i++) {
+              final c = rawCards[i];
+              if (c is Map<String, dynamic>) {
+                final cId = c['id'] as String? ?? 'cd_${deckId}_$i';
+                await store.db!.upsertCard(CardsCompanion(
+                  id: drift.Value(cId),
+                  deckId: drift.Value(deckId),
+                  front: drift.Value(c['front'] as String? ?? ''),
+                  back: drift.Value(c['back'] as String? ?? ''),
+                  source: drift.Value(c['source'] as String? ?? 'coop_room'),
+                  icon: drift.Value(c['icon'] as String? ?? '🎯'),
+                  retention: drift.Value((c['retention'] as int?) ?? 100),
+                  lapses: drift.Value((c['lapses'] as int?) ?? 0),
+                ));
+              }
+            }
+            await store.loadDecksFromDatabase();
+            store.setActiveDeck(deckId);
+          }
         }
       });
     }
@@ -216,8 +256,22 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
       store.setActiveDeck(deckId);
 
       // Sincronizar por websocket la sala
+      final cardsList = validCards.asMap().entries.map((entry) {
+        final i = entry.key;
+        final front = entry.value.$1.text.trim();
+        final back = entry.value.$2.text.trim();
+        return {
+          'id': 'cd_${deckId}_$i',
+          'front': front,
+          'back': back,
+          'source': 'coop_room',
+          'icon': '🎯',
+          'retention': 100,
+          'lapses': 0,
+        };
+      }).toList();
       if (_coop != null) {
-        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title);
+        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -294,8 +348,21 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
       store.setActiveDeck(deckId);
 
       // Sincronizar por websocket la sala
+      final cardsList = _inlineSelectedVerses.asMap().entries.map((entry) {
+        final i = entry.key;
+        final verse = entry.value;
+        return {
+          'id': 'cd_${deckId}_$i',
+          'front': verse.ref,
+          'back': verse.text,
+          'source': store.bibleVersion.toUpperCase(),
+          'icon': '✝️',
+          'retention': 74,
+          'lapses': 0,
+        };
+      }).toList();
       if (_coop != null) {
-        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title);
+        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -391,8 +458,21 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
       store.setActiveDeck(deckId);
 
       // Sincronizar por websocket la sala
+      final cardsList = cards.asMap().entries.map((entry) {
+        final i = entry.key;
+        final card = entry.value;
+        return {
+          'id': 'cd_${deckId}_$i',
+          'front': card.front,
+          'back': card.back,
+          'source': 'coop_segmented',
+          'icon': '🧠',
+          'retention': 100,
+          'lapses': 0,
+        };
+      }).toList();
       if (_coop != null) {
-        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title);
+        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -426,9 +506,26 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     }
   }
 
+  void _navigateWhenDeckReady(AppStore store, String deckId, String targetSlug) async {
+    int attempts = 0;
+    while (attempts < 15) {
+      final hasDeck = store.decks.any((d) => d.id == deckId && d.cards.isNotEmpty);
+      if (hasDeck) {
+        break;
+      }
+      await Future.delayed(const Duration(milliseconds: 150));
+      attempts++;
+    }
+    if (mounted) {
+      store.setActiveDeck(deckId);
+      Navigator.pushNamed(context, '${AppRoutes.flow}/$targetSlug');
+    }
+  }
+
   @override
   void dispose() {
     _sub?.cancel();
+    _msgSub?.cancel();
     _coop?.dispose();
     _joinCtrl.dispose();
     _deckTitleCtrl.dispose();
@@ -857,8 +954,22 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                 BibliaScreen(
                   embedded: true,
                   onDeckCreated: (deckId, title) {
+                    final store = AppScope.of(context);
+                    final d = store.decks.firstWhere(
+                      (dk) => dk.id == deckId,
+                      orElse: () => store.activeDeck,
+                    );
+                    final cardsList = d.cards.map((c) => {
+                      'id': c.id,
+                      'front': c.front,
+                      'back': c.back,
+                      'source': c.source,
+                      'icon': c.icon,
+                      'retention': c.retention,
+                      'lapses': c.lapses,
+                    }).toList();
                     if (_coop != null) {
-                      _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title);
+                      _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
                     }
                     setState(() {
                       _clearInlineDeckForm();
@@ -874,8 +985,22 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                 EspecificarScreen(
                   embedded: true,
                   onDeckCreated: (deckId, title) {
+                    final store = AppScope.of(context);
+                    final d = store.decks.firstWhere(
+                      (dk) => dk.id == deckId,
+                      orElse: () => store.activeDeck,
+                    );
+                    final cardsList = d.cards.map((c) => {
+                      'id': c.id,
+                      'front': c.front,
+                      'back': c.back,
+                      'source': c.source,
+                      'icon': c.icon,
+                      'retention': c.retention,
+                      'lapses': c.lapses,
+                    }).toList();
                     if (_coop != null) {
-                      _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title);
+                      _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
                     }
                     setState(() {
                       _clearInlineDeckForm();
@@ -908,7 +1033,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                   disabled: (state.lobbyDeckId == null || state.lobbyDeckId!.isEmpty) || (state.memberIds.length <= 1),
                   onTap: (state.lobbyDeckId == null || state.lobbyDeckId!.isEmpty) || (state.memberIds.length <= 1)
                       ? null
-                      : () {
+                      : () async {
                           final selectedDeckId = state.lobbyDeckId!;
                           final target = state.sessionDailyTarget == 0 ? 3 : state.sessionDailyTarget;
                           final store = AppScope.of(context);
@@ -916,8 +1041,25 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                             difficulty: state.sessionDifficulty,
                             dailyTarget: target,
                           );
+                          final d = store.decks.firstWhere((dk) => dk.id == selectedDeckId, orElse: () => store.activeDeck);
+                          final cardsList = d.cards.map((c) => {
+                            'id': c.id,
+                            'front': c.front,
+                            'back': c.back,
+                            'source': c.source,
+                            'icon': c.icon,
+                            'retention': c.retention,
+                            'lapses': c.lapses,
+                          }).toList();
+                          _coop!.broadcastLobbyDeck(deckId: selectedDeckId, deckName: d.title, cards: cardsList);
+                          
+                          // Retardo para asegurar la propagación del mazo a los invitados
+                          await Future.delayed(const Duration(milliseconds: 300));
+                          
                           _coop!.broadcastCard(deckId: selectedDeckId, cardIndex: 0, slug: '00-solo-lectura');
-                          Navigator.pushNamed(context, '${AppRoutes.flow}/00-solo-lectura');
+                          if (context.mounted) {
+                            Navigator.pushNamed(context, '${AppRoutes.flow}/00-solo-lectura');
+                          }
                         },
                 ),
                 if (state.lobbyDeckId == null || state.lobbyDeckId!.isEmpty) ...[
@@ -1877,8 +2019,6 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
               live: true,
             ),
             const SizedBox(height: 14),
-            _CoopLiveScoreboard(state: state),
-            const SizedBox(height: 14),
             _CoopTeamRow(state: state, answeredUsers: _answeredUsers),
             const SizedBox(height: 24),
             
@@ -1950,8 +2090,6 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
             live: true,
           ),
           const SizedBox(height: 8),
-          _CoopLiveScoreboard(state: state),
-          const SizedBox(height: 14),
           _CoopTeamRow(state: state, answeredUsers: _answeredUsers),
           const SizedBox(height: 14),
           RefProgress(progress.clamp(0.0, 1.0)),
@@ -2054,57 +2192,7 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
   }
 }
 
-class _CoopLiveScoreboard extends StatelessWidget {
-  final CoopRoomState state;
-  const _CoopLiveScoreboard({required this.state});
 
-  @override
-  Widget build(BuildContext context) {
-    final entries = state.memberIds.toList()
-      ..sort((a, b) => (state.scores[b] ?? 0).compareTo(state.scores[a] ?? 0));
-    return Glass(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final id in entries)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Row(
-                children: [
-                  Fav(id.substring(0, 1).toUpperCase(), size: 24),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      id == CoopService.activeUserId ? 'Tú' : id,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (id == state.hostId)
-                    const RefChip(
-                      'HOST',
-                      dense: true,
-                      color: Color(0x33FF3EA5),
-                      textColor: RefColors.pink,
-                    ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${state.scores[id] ?? 0}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                      color: RefColors.lime,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
 
 class _ResultBanner extends StatelessWidget {
   final String text;
@@ -3539,7 +3627,16 @@ class _CoopSettingsCard extends StatelessWidget {
                       return ListTile(
                         onTap: () {
                           store.setActiveDeck(d.id);
-                          coop.broadcastLobbyDeck(deckId: d.id, deckName: d.title);
+                          final cardsList = d.cards.map((c) => {
+                            'id': c.id,
+                            'front': c.front,
+                            'back': c.back,
+                            'source': c.source,
+                            'icon': c.icon,
+                            'retention': c.retention,
+                            'lapses': c.lapses,
+                          }).toList();
+                          coop.broadcastLobbyDeck(deckId: d.id, deckName: d.title, cards: cardsList);
                           Navigator.pop(ctx);
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
