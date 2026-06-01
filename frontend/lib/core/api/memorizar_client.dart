@@ -273,6 +273,15 @@ class MemorizarClient {
     return Friendship.fromJson(await _decode(r));
   }
 
+  Future<Friendship> acceptFriendInvite(String referrerId) async {
+    final r = await _http.post(
+      _uri('/v1/social/friends/invite/accept'),
+      headers: _headers,
+      body: jsonEncode({'referrerId': referrerId}),
+    );
+    return Friendship.fromJson(await _decode(r));
+  }
+
   Future<List<FeedEntry>> feed() async {
     final r = await _http.get(_uri('/v1/social/feed'), headers: _headers);
     final body = await _decode(r);
@@ -396,9 +405,29 @@ class MemorizarClient {
 
   // ─── Cooperativo ───────────────────────────────────────────────────────
 
-  Future<Map<String, dynamic>> createCoopRoom() async {
-    final r = await _http.post(_uri('/v1/coop/rooms'), headers: _headers);
+  Future<Map<String, dynamic>> createCoopRoom({
+    bool isPublic = true,
+    String deckId = '',
+    String deckName = '',
+  }) async {
+    final r = await _http.post(
+      _uri('/v1/coop/rooms'),
+      headers: _headers,
+      body: jsonEncode({
+        'isPublic': isPublic,
+        'deckId': deckId,
+        'deckName': deckName,
+      }),
+    );
     return _decode(r);
+  }
+
+  Future<List<dynamic>> listPublicRooms() async {
+    final r = await _http.get(_uri('/v1/coop/rooms/public'), headers: _headers);
+    final decoded = await _decode(r);
+    final list = decoded['data'];
+    if (list is List) return list;
+    return [];
   }
 
   Future<Map<String, dynamic>?> lookupCoopRoom(String code) async {
@@ -425,6 +454,34 @@ class MemorizarClient {
         'name': name,
       },
     );
+  }
+
+  Future<void> sendCoopInvite({
+    required String friendUserId,
+    required String roomCode,
+    required String hostName,
+  }) async {
+    final r = await _http.post(
+      _uri('/v1/coop/invite'),
+      headers: _headers,
+      body: jsonEncode({
+        'friendUserId': friendUserId,
+        'roomCode': roomCode,
+        'hostName': hostName,
+      }),
+    );
+    await _decode(r);
+  }
+
+  Future<List<dynamic>> getPendingCoopInvites() async {
+    final r = await _http.get(
+      _uri('/v1/coop/invites/pending'),
+      headers: _headers,
+    );
+    final decoded = await _decode(r);
+    final list = decoded['data'];
+    if (list is List) return list;
+    return [];
   }
 
   void close() => _http.close();

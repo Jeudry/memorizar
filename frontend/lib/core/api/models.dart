@@ -8,6 +8,7 @@ class RemoteUser {
   final String avatarUrl;
   final String locale;
   final bool emailVerified;
+  final bool isOnline;
 
   const RemoteUser({
     required this.id,
@@ -16,6 +17,7 @@ class RemoteUser {
     this.avatarUrl = '',
     this.locale = '',
     this.emailVerified = false,
+    this.isOnline = false,
   });
 
   factory RemoteUser.fromJson(Map<String, dynamic> json) => RemoteUser(
@@ -25,6 +27,7 @@ class RemoteUser {
         avatarUrl: (json['avatarUrl'] as String?) ?? '',
         locale: (json['locale'] as String?) ?? '',
         emailVerified: (json['emailVerified'] as bool?) ?? false,
+        isOnline: (json['isOnline'] as bool?) ?? false,
       );
 
   Map<String, dynamic> toJson() => {
@@ -34,6 +37,7 @@ class RemoteUser {
         'avatarUrl': avatarUrl,
         'locale': locale,
         'emailVerified': emailVerified,
+        'isOnline': isOnline,
       };
 
   String get initial =>
@@ -112,7 +116,7 @@ class Friendship {
 }
 
 class FriendsResult {
-  final List<Friendship> friends;
+  final List<RemoteUser> friends;
   final List<Friendship> pendingRequests;
 
   const FriendsResult({
@@ -121,13 +125,13 @@ class FriendsResult {
   });
 
   factory FriendsResult.fromJson(Map<String, dynamic> json) {
-    List<Friendship> parse(String key) =>
-        ((json[key] as List?) ?? const [])
-            .map((e) => Friendship.fromJson(e as Map<String, dynamic>))
-            .toList();
     return FriendsResult(
-      friends: parse('friends'),
-      pendingRequests: parse('pendingRequests'),
+      friends: ((json['friends'] as List?) ?? const [])
+          .map((e) => RemoteUser.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      pendingRequests: ((json['pendingRequests'] as List?) ?? const [])
+          .map((e) => Friendship.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 }
@@ -164,12 +168,54 @@ class FeedEntry {
     this.createdAt,
   });
 
-  factory FeedEntry.fromJson(Map<String, dynamic> json) => FeedEntry(
-        id: (json['id'] as String?) ?? '',
-        type: _parseFeedType(json['type'] as String?),
-        userId: (json['userId'] as String?) ?? '',
-        title: (json['title'] as String?) ?? '',
-        description: (json['description'] as String?) ?? '',
-        createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? ''),
-      );
+  factory FeedEntry.fromJson(Map<String, dynamic> json) {
+    final typeStr = json['type'] as String?;
+    final type = _parseFeedType(typeStr);
+    
+    // Extraer datos del usuario autor
+    final userJson = json['user'] as Map<String, dynamic>?;
+    final userDisplayName = userJson != null ? (userJson['displayName'] as String? ?? '') : '';
+    final userEmail = userJson != null ? (userJson['email'] as String? ?? '') : '';
+    final authorName = userDisplayName.isNotEmpty ? userDisplayName : (userEmail.isNotEmpty ? userEmail : 'Alguien');
+
+    String title = authorName;
+    String description = '';
+    
+    if (type == FeedEntryType.achievement) {
+      final ach = json['achievement'] as Map<String, dynamic>?;
+      if (ach != null) {
+        final achTitle = ach['title'] as String? ?? 'un logro';
+        description = 'desbloqueó el logro "$achTitle"';
+      } else {
+        description = 'desbloqueó un logro';
+      }
+    } else if (type == FeedEntryType.activity) {
+      final act = json['activity'] as Map<String, dynamic>?;
+      if (act != null) {
+        final actDesc = act['description'] as String? ?? '';
+        description = actDesc.isNotEmpty ? actDesc : 'completó una actividad';
+      } else {
+        description = 'completó una actividad';
+      }
+    } else if (type == FeedEntryType.share) {
+      final sh = json['share'] as Map<String, dynamic>?;
+      if (sh != null) {
+        final shTitle = sh['title'] as String? ?? 'un mazo';
+        description = 'compartió el mazo "$shTitle"';
+      } else {
+        description = 'compartió un mazo';
+      }
+    } else {
+      description = 'realizó una acción';
+    }
+
+    return FeedEntry(
+      id: (json['id'] as String?) ?? '',
+      type: type,
+      userId: (json['userId'] as String?) ?? '',
+      title: title,
+      description: description,
+      createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? ''),
+    );
+  }
 }

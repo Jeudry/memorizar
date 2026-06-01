@@ -46,7 +46,13 @@ class SocialAuthService {
     String? clientId;
     if (kIsWeb) {
       clientId = _webClientId;
-    } else if (Platform.isMacOS) {
+      return GoogleSignIn(
+        scopes: const ['email', 'profile'],
+        clientId: clientId,
+      );
+    }
+    
+    if (Platform.isMacOS) {
       clientId = '106168748090-7a0q71bdnaq64g7q79o9eipr34dv8phs.apps.googleusercontent.com';
     } else if (Platform.isAndroid) {
       clientId = '106168748090-nth3427k9lc496nrnk94i6bhn28l65qv.apps.googleusercontent.com';

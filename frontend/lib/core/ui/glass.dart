@@ -13,6 +13,8 @@ class Glass extends StatelessWidget {
   final Color color;
   final Border? border;
   final Gradient? gradient;
+  final double? width;
+  final double? height;
 
   const Glass({
     super.key,
@@ -22,6 +24,8 @@ class Glass extends StatelessWidget {
     this.color = RefColors.glass,
     this.border,
     this.gradient,
+    this.width,
+    this.height,
   });
 
   @override
@@ -34,6 +38,8 @@ class Glass extends StatelessWidget {
           inner: AppColors.glassSaturate,
         ),
         child: Container(
+          width: width,
+          height: height,
           padding: padding,
           decoration: BoxDecoration(
             color: gradient == null ? color : null,

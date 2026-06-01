@@ -68,7 +68,16 @@ class _BibleStudyStatus {
 }
 
 class BibliaScreen extends StatefulWidget {
-  const BibliaScreen({super.key});
+  final bool embedded;
+  final void Function(String deckId, String title)? onDeckCreated;
+  final VoidCallback? onCancel;
+
+  const BibliaScreen({
+    super.key,
+    this.embedded = false,
+    this.onDeckCreated,
+    this.onCancel,
+  });
 
   @override
   State<BibliaScreen> createState() => _BibliaScreenState();
@@ -157,14 +166,19 @@ class _BibliaScreenState extends State<BibliaScreen> {
   }
 
   void _finishBibleSelection() {
-    final created = AppScope.of(context).createBibleDeckFromSelection();
-    if (!created) {
+    final createdId = AppScope.of(context).createBibleDeckFromSelection();
+    if (createdId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Selecciona al menos un versículo.')),
       );
       return;
     }
-    Navigator.pushNamed(context, AppRoutes.iniciar);
+    if (widget.embedded && widget.onDeckCreated != null) {
+      final deck = AppScope.of(context).decks.firstWhere((d) => d.id == createdId);
+      widget.onDeckCreated!(createdId, deck.title);
+    } else {
+      Navigator.pushNamed(context, AppRoutes.iniciar);
+    }
   }
 
   @override
@@ -178,39 +192,60 @@ class _BibliaScreenState extends State<BibliaScreen> {
         .map((verse) => verse.verse)
         .toSet();
     final confirmingSelection = _step == 'continue';
-    return ReferencePage(
-      active: AppRoutes.repasar,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!widget.embedded) ...[
           const RefTopBar(title: 'Elegir de la Biblia'),
-          if (!confirmingSelection) ...[
-            Glass(
-              radius: 18,
-              color: HtmlRefColors.glassBg,
-              border: Border.all(color: HtmlRefColors.glassBorder),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              child: Row(
-                children: [
-                  const Icon(Icons.search, size: 18, color: RefColors.muted),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _searchController,
-                      onChanged: (_) => setState(() {}),
-                      style: const TextStyle(
+        ],
+        if (!confirmingSelection) ...[
+          Glass(
+            radius: 18,
+            color: HtmlRefColors.glassBg,
+            border: Border.all(color: HtmlRefColors.glassBorder),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                const Icon(Icons.search, size: 18, color: RefColors.muted),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (_) => setState(() {}),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: RefColors.ink,
+                    ),
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      isDense: true,
+                      hintText: 'Ej: Juan 3:16, Salmos 23, Rom 8:28-30',
+                      hintStyle: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        color: RefColors.ink,
+                        color: RefColors.dim,
                       ),
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        isDense: true,
-                        hintText: 'Ej: Juan 3:16, Salmos 23, Rom 8:28-30',
-                        hintStyle: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: RefColors.dim,
+                    ),
+                  ),
+                ),
+                if (_isSearching)
+                  GestureDetector(
+                    onTap: _clearSearch,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: HtmlRefColors.glassStrong,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          '×',
+                          style: TextStyle(
+                            color: RefColors.ink,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                     ),
@@ -375,16 +410,140 @@ class _BibliaScreenState extends State<BibliaScreen> {
               ],
             ),
           ),
-          if (!confirmingSelection) ...[
-            const SizedBox(height: 14),
-            const _ThemesBrowse(),
-          ],
-          // El CTA global "Siguiente →" se removió: el flujo ya tiene sus
-          // propios botones ("Confirmar versículos →" en la lista del
-          // capítulo, "Finalizar" en la pantalla de revisión) y mostrar otro
-          // CTA aquí abajo confundía.
+          const SizedBox(height: 8),
         ],
-      ),
+        if (_isSearching)
+          _BibleSearchResults(
+            query: _searchController.text,
+            onClear: _clearSearch,
+            onFill: _setSearch,
+            onAddVerse: (verse) {
+              store.addBibleVerse(verse);
+              setState(() {});
+            },
+          )
+        else
+          _BibleBrowseStep(
+            step: _step,
+            selectedBook: _selectedBook,
+            selectedChapter: _selectedChapter,
+            selectedVerses: selectedForChapter,
+            onStep: (step) => setState(() => _step = step),
+            onBook: _pickBook,
+            onChapter: _pickChapter,
+            onVerse: _toggleVerse,
+            // "Confirmar versículos →" desde la lista de versículos NO
+            // debe crear el mazo todavía — debe llevar al paso 'continue'
+            // donde se ve el listado completo y se decide seguir agregando
+            // o terminar. _finishBibleSelection se queda para el botón
+            // "Terminar selección" del paso 'continue'.
+            onConfirmVerses: () => setState(() => _step = 'continue'),
+            onFinish: _finishBibleSelection,
+            onSelectAllChapter: _selectAllInChapter,
+            onSelectAllBook: _selectAllInBook,
+            onSelectAllBible: _selectAllInBible,
+            fullBooks: _fullBooks(store),
+            partialBooks: _partialBooks(store),
+          ),
+        const SizedBox(height: 14),
+        Glass(
+          color: HtmlRefColors.glassBg,
+          border: Border.all(color: HtmlRefColors.glassBorder),
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'SELECCIONADOS · ${store.selectedBibleVerses.length}',
+                      style: TextStyle(
+                        color: RefColors.dim,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 10,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: store.clearBibleSelection,
+                    child: const Text(
+                      'VACIAR',
+                      style: TextStyle(
+                        color: RefColors.muted,
+                        fontSize: 10,
+                        letterSpacing: 1.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (store.selectedBibleVerses.isEmpty)
+                const Text(
+                  'Toca versículos para agregarlos a tu mazo.',
+                  style: TextStyle(color: RefColors.muted, fontSize: 12),
+                )
+              else
+                ...() {
+                  final entries = _summarizeSelection(
+                    store.selectedBibleVerses,
+                    store,
+                  );
+                  // En la pantalla de confirmar selección mostramos TODO
+                  // el listado para que el usuario pueda revisar antes de
+                  // avanzar. En la pantalla de browse normal mantenemos el
+                  // resumen truncado a 8 para no comer espacio del flujo.
+                  final visible = confirmingSelection
+                      ? entries
+                      : entries.take(8).toList();
+                  final hidden = entries.length - visible.length;
+                  return [
+                    for (final e in visible)
+                      _SelectedVerseRef(
+                        e.title,
+                        e.subtitle,
+                        onRemove: () {
+                          store.removeBibleVerses(e.verses);
+                          setState(() {});
+                        },
+                      ),
+                    if (hidden > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          '+ $hidden ${hidden == 1 ? "rango más" : "rangos más"}',
+                          style: const TextStyle(
+                            color: RefColors.muted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                  ];
+                }(),
+            ],
+          ),
+        ),
+        if (!confirmingSelection) ...[
+          const SizedBox(height: 14),
+          const _ThemesBrowse(),
+        ],
+        // El CTA global "Siguiente →" se removió: el flujo ya tiene sus
+        // propios botones ("Confirmar versículos →" en la lista del
+        // capítulo, "Finalizar" en la pantalla de revisión) y mostrar otro
+        // CTA aquí abajo confundía.
+      ],
+    );
+
+    if (widget.embedded) {
+      return content;
+    }
+    return ReferencePage(
+      active: AppRoutes.repasar,
+      child: content,
     );
   }
 }
@@ -1616,18 +1775,12 @@ class _ShareDeckSheetState extends State<_ShareDeckSheet> {
                 child: SingleChildScrollView(
                   child: Column(
                     children: [
-                      for (final f in friends)
-                        () {
-                          final myId = store.currentUser?.id ?? '';
-                          final otherId = f.requesterId == myId
-                              ? f.addresseeId
-                              : f.requesterId;
-                          return _ShareFriendRow(
-                            label: otherId,
-                            busy: _busyFriendId == otherId,
-                            onTap: () => _share(otherId, otherId),
-                          );
-                        }(),
+                      for (final friend in friends)
+                        _ShareFriendRow(
+                          label: friend.displayName.isEmpty ? friend.email : friend.displayName,
+                          busy: _busyFriendId == friend.id,
+                          onTap: () => _share(friend.id, friend.displayName.isEmpty ? friend.email : friend.displayName),
+                        ),
                     ],
                   ),
                 ),
@@ -2280,10 +2433,10 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     '12-completar-n3',
     '13-primera-letra-n3',
     '15-banco-completo',
+    '09-quiz-avanzado',
   ];
 
   final slugs = <String>[
-    '09-quiz', // TEMPORAL PARA PRUEBAS: primer paso
     ...intro,
     // Nivel 1: práctica activa + niebla N1 al final del nivel 1
     ...pick(level1, difficulty == 0 ? 1 : 2),
@@ -2293,6 +2446,7 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     if (difficulty >= 0) ...[
       ...pick(level2, difficulty == 0 ? 1 : (difficulty == 1 ? 2 : 3)),
       '17-niebla-n2',
+      '09-quiz', // Quiz clásico de consolidación al final del nivel 2
     ],
     
     // Nivel 3: práctica premium/avanzada + niebla N3 al final del nivel 3

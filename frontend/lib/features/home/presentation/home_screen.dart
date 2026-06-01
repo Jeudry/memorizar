@@ -1,11 +1,14 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../../../core/api/models.dart';
 import '../../../core/app_state.dart';
 import '../../../core/theme.dart';
 import 'glyph_icon.dart';
 import '../../../core/ui/main_tab_shell.dart';
 import '../../plans/presentation/plans_screen.dart';
 import '../../missions/presentation/missions_panel.dart';
+import 'ui_screens.dart';
+import '../../cooperativo/data/coop_service.dart';
 
 class HomeScreen extends StatelessWidget {
   final HomeBackgroundVariant backgroundVariant;
@@ -37,6 +40,8 @@ class HomeScreen extends StatelessWidget {
           const _SectionHeader(title: 'Memorizar algo nuevo'),
           const _MemorizarGrid(),
           const SizedBox(height: 12),
+          const _CoopBar(),
+          const SizedBox(height: 12),
           const _PremiumHomeCard(),
           const SizedBox(height: 18),
 
@@ -58,9 +63,7 @@ class HomeScreen extends StatelessWidget {
           const _CommunitySlider(),
           const SizedBox(height: 18),
 
-          // Community Bar
-          const _CoopBar(),
-          const SizedBox(height: 18),
+
 
           // Misiones del día
           const MissionsPanel(),
@@ -70,7 +73,13 @@ class HomeScreen extends StatelessWidget {
           _SectionHeader(
             title: 'Amigos',
             trailing: TextButton(
-              onPressed: () => Navigator.pushNamed(context, '/amigos'),
+              onPressed: () {
+                if (store.isLoggedIn) {
+                  AmigosScreen.showAddFriendModal(context);
+                } else {
+                  Navigator.pushNamed(context, '/amigos');
+                }
+              },
               child: const Text(
                 '+ Invitar',
                 style: TextStyle(
@@ -98,7 +107,7 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
           _ActivityFeed(),
-          const SizedBox(height: 100), // Space for bottom nav
+          const SizedBox(height: 180), // Space for bottom nav
         ],
       ),
     );
@@ -1588,88 +1597,137 @@ class _CoopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final store = AppScope.of(context);
-    if (!store.hasDecks) {
-      return const _EmptyHomePanel(
-        icon: '🤝',
-        title: 'Cooperativo listo para tus mazos',
-        body: 'Crea primero contenido real para abrir una sala de estudio.',
+    final activeCoop = CoopService.active;
+
+    if (activeCoop == null) {
+      return _buildCard(
+        context: context,
+        title: 'Sala Cooperativa',
+        subtitle: 'Crea una sala privada o únete a una partida',
+        avatarLabel: '👥',
+        avatarColor: AppColors.accentPink,
+        buttonText: 'Abrir',
       );
     }
-    final deck = store.activeDeck;
-    return GlassCard(
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 56,
-            child: Stack(
-              children: [
-                _SmallAvatar(
-                  label: deck.title.characters.first.toUpperCase(),
-                  color: AppColors.accentPink,
-                ),
-                Positioned(
-                  left: 24,
-                  child: _SmallAvatar(label: '+', color: AppColors.accentCyan),
-                ),
-              ],
+
+    return StreamBuilder<CoopRoomState>(
+      stream: activeCoop.stateStream,
+      initialData: activeCoop.state,
+      builder: (context, snapshot) {
+        final state = snapshot.data;
+        if (state == null) {
+          return _buildCard(
+            context: context,
+            title: 'Sala Cooperativa',
+            subtitle: 'Crea una sala privada o únete a una partida',
+            avatarLabel: '👥',
+            avatarColor: AppColors.accentPink,
+            buttonText: 'Abrir',
+          );
+        }
+
+        final deckName = state.lobbyDeckName;
+        final deckSelected = deckName != null && deckName.isNotEmpty;
+        final title = deckSelected ? 'Estudiar $deckName en equipo' : 'Sala Cooperativa Activa';
+        final subtitle = 'Código: ${state.code} · ${state.memberIds.length}/${state.sessionMaxPlayers} jugadores';
+        final avatarLabel = deckSelected ? deckName.characters.first.toUpperCase() : '👥';
+        final avatarColor = AppColors.accentLime;
+
+        return _buildCard(
+          context: context,
+          title: title,
+          subtitle: subtitle,
+          avatarLabel: avatarLabel,
+          avatarColor: avatarColor,
+          buttonText: 'Volver',
+        );
+      },
+    );
+  }
+
+  Widget _buildCard({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required String avatarLabel,
+    required Color avatarColor,
+    required String buttonText,
+  }) {
+    return GestureDetector(
+      onTap: () => Navigator.pushNamed(context, '/cooperativo'),
+      child: GlassCard(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 56,
+              child: Stack(
+                children: [
+                  _SmallAvatar(
+                    label: avatarLabel,
+                    color: avatarColor,
+                  ),
+                  Positioned(
+                    left: 24,
+                    child: _SmallAvatar(label: '+', color: AppColors.accentCyan),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Estudiar ${deck.title}',
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.accentLime,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            InkWell(
+              onTap: () => Navigator.pushNamed(context, '/cooperativo'),
+              borderRadius: BorderRadius.circular(999),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.accentLime, Color(0xFF3ED97A)],
+                  ),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  buttonText,
                   style: const TextStyle(
-                    fontSize: 13,
+                    color: Colors.black,
+                    fontSize: 11,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                Row(
-                  children: [
-                    Text(
-                      '${deck.cards.length} tarjetas · sala privada',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.accentLime,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          InkWell(
-            onTap: () {
-              Navigator.pushNamed(context, '/cooperativo');
-            },
-            borderRadius: BorderRadius.circular(999),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppColors.accentLime, Color(0xFF3ED97A)],
-                ),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: const Text(
-                'Abrir',
-                style: TextStyle(
-                  color: Colors.black,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
+
 
 class _SmallAvatar extends StatelessWidget {
   final String label;
@@ -1754,7 +1812,7 @@ class _ActivityFeed extends StatefulWidget {
 }
 
 class _ActivityFeedState extends State<_ActivityFeed> {
-  List<dynamic>? _entries;
+  List<FeedEntry>? _entries;
   bool _loading = false;
   bool _attempted = false;
 
@@ -1794,7 +1852,7 @@ class _ActivityFeedState extends State<_ActivityFeed> {
         child: Column(
           children: [
             for (final raw in _entries!.take(5).toList().asMap().entries) ...[
-              _RemoteFeedRow(entry: raw.value as Map<String, dynamic>),
+              _RemoteFeedRow(entry: raw.value as FeedEntry),
               if (raw.key != 4 && raw.key < _entries!.length - 1)
                 const Divider(color: AppColors.glassBorder, height: 20),
             ],
@@ -1846,28 +1904,32 @@ class _ActivityFeedState extends State<_ActivityFeed> {
 /// Una fila del feed remoto. Mapea por `type` (achievement / activity /
 /// share) a iconos y colores distintos.
 class _RemoteFeedRow extends StatelessWidget {
-  final Map<String, dynamic> entry;
+  final FeedEntry entry;
   const _RemoteFeedRow({required this.entry});
 
   @override
   Widget build(BuildContext context) {
-    final type = (entry['type'] as String?) ?? '';
-    final title = (entry['title'] as String?) ?? '';
-    final description = (entry['description'] as String?) ?? '';
-    final emoji = (entry['emoji'] as String?) ?? '';
+    final type = entry.type.name;
+    final title = entry.title;
+    final description = entry.description;
     final initial = title.isNotEmpty ? title.substring(0, 1).toUpperCase() : '?';
-    final color = type == 'achievement'
+    final color = entry.type == FeedEntryType.achievement
         ? AppColors.accentSun
-        : type == 'share'
+        : entry.type == FeedEntryType.share
             ? AppColors.accentLime
             : AppColors.accentCyan;
+    final emoji = entry.type == FeedEntryType.achievement
+        ? '🏆'
+        : entry.type == FeedEntryType.share
+            ? '🤝'
+            : '✨';
     return _FeedItem(
       label: initial,
       color: color,
       name: title,
       action: description,
       time: 'Hoy',
-      emoji: emoji.isEmpty ? '✨' : emoji,
+      emoji: emoji,
     );
   }
 }

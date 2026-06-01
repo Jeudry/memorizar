@@ -238,6 +238,48 @@ func (s *Service) RequestFriend(requesterID, addresseeID string) (*domain.Friend
 	return &friendship, nil
 }
 
+func (s *Service) AcceptInviteFriend(requesterID, addresseeID string) (*domain.Friendship, error) {
+	if requesterID == addresseeID {
+		return nil, ErrFriendshipExists
+	}
+	existing, _ := s.repo.FindFriendship(requesterID, addresseeID)
+	if existing != nil {
+		if existing.Status == domain.FriendshipPending {
+			existing.Status = domain.FriendshipAccepted
+			existing.UpdatedAt = s.now().UTC()
+			if err := s.repo.SaveFriendship(*existing); err != nil {
+				return nil, err
+			}
+			return existing, nil
+		}
+		return existing, nil
+	}
+	now := s.now().UTC()
+	friendship := domain.Friendship{
+		ID:          newID("fr"),
+		RequesterID: requesterID,
+		AddresseeID: addresseeID,
+		Status:      domain.FriendshipAccepted,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := s.repo.SaveFriendship(friendship); err != nil {
+		return nil, err
+	}
+	s.notifySafe(notify.Notification{
+		Type:   notify.EventFriendAccepted,
+		UserID: addresseeID,
+		Title:  "Enlace aceptado",
+		Body:   s.userDisplay(requesterID) + " se ha conectado contigo mediante tu enlace de invitación.",
+		Data: map[string]string{
+			"friendshipId": friendship.ID,
+			"friendId":     requesterID,
+			"deeplink":     "memorizar://amigos",
+		},
+	})
+	return &friendship, nil
+}
+
 func (s *Service) AcceptFriend(currentUserID, friendshipID string) (*domain.Friendship, error) {
 	friendship, err := s.repo.FindFriendshipByID(friendshipID)
 	if err != nil || friendship == nil {

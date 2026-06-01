@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +10,7 @@ import '../features/moderation/data/report_models.dart';
 import 'api/memorizar_client.dart';
 import 'api/models.dart';
 import 'db/app_database.dart';
+import 'services/push_service.dart';
 import 'package:drift/drift.dart' as drift;
 
 /// Visibility level for a memory deck. Defaults to [private] — going to
@@ -164,12 +166,21 @@ final emptyDeck = MemoryDeckData(
 );
 
 class AppStore extends ChangeNotifier {
+  String? pendingReferrerId;
+
   AppStore({
     MemorizarClient? api,
     AppDatabase? db,
     this.enableDatabasePersistence = true,
   })  : api = api ?? MemorizarClient(),
-        db = db ?? (enableDatabasePersistence ? AppDatabase() : null);
+        db = db ?? (enableDatabasePersistence ? AppDatabase() : null) {
+    if (kIsWeb) {
+      final ref = Uri.base.queryParameters['ref'];
+      if (ref != null && ref.isNotEmpty) {
+        pendingReferrerId = ref;
+      }
+    }
+  }
 
   /// Cliente HTTP del backend Go. Lo expongo público para que features que
   /// hablan directo con la API (Amigos, Feed) lo reusen sin duplicarlo.
@@ -268,6 +279,54 @@ class AppStore extends ChangeNotifier {
   /// hoy ambos se comportan igual.
   bool get isGuest => !isLoggedIn;
 
+  Timer? _inviteTimer;
+  final List<Map<String, dynamic>> _pendingCoopInvites = [];
+  List<Map<String, dynamic>> get pendingCoopInvites => List.unmodifiable(_pendingCoopInvites);
+
+  void clearPendingCoopInvite(String roomCode) {
+    _pendingCoopInvites.removeWhere((i) => i['roomCode'] == roomCode);
+    notifyListeners();
+  }
+
+  void _startInviteTimer() {
+    _inviteTimer?.cancel();
+    _inviteTimer = Timer.periodic(const Duration(seconds: 4), (timer) async {
+      if (!isLoggedIn) return;
+      try {
+        final invites = await api.getPendingCoopInvites();
+        if (invites.isNotEmpty) {
+          bool updated = false;
+          for (final invite in invites) {
+            if (invite is Map<String, dynamic>) {
+              final code = invite['roomCode'] as String? ?? '';
+              final alreadyHas = _pendingCoopInvites.any((i) => i['roomCode'] == code);
+              if (!alreadyHas && code.isNotEmpty) {
+                _pendingCoopInvites.add(invite);
+                updated = true;
+                
+                final hostName = invite['hostName'] as String? ?? 'Tu amigo';
+                unawaited(PushService.instance.showLocalNow(
+                  id: code.hashCode,
+                  title: '¡Invitación Cooperativa! 🎮',
+                  body: '$hostName te invita a unirte a su sala $code.',
+                ));
+              }
+            }
+          }
+          if (updated) {
+            notifyListeners();
+          }
+        }
+      } catch (_) {}
+    });
+  }
+
+  void _stopInviteTimer() {
+    _inviteTimer?.cancel();
+    _inviteTimer = null;
+    _pendingCoopInvites.clear();
+  }
+
   /// Conteo de invitaciones de amistad pendientes (donde YO soy el
   /// destinatario). Se refresca con [refreshPendingCount] al loguearse y
   /// tras aceptar/enviar una invitación.
@@ -315,9 +374,24 @@ class AppStore extends ChangeNotifier {
           RemoteUser.fromJson(jsonDecode(userJson) as Map<String, dynamic>);
       api.setSessionToken(token);
       notifyListeners();
+      _startInviteTimer();
+      unawaited(checkAndApplyPendingReferrer());
     } catch (_) {
       await prefs.remove(_kSessionTokenKey);
       await prefs.remove(_kSessionUserKey);
+    }
+  }
+
+  Future<void> checkAndApplyPendingReferrer() async {
+    final ref = pendingReferrerId;
+    if (ref != null && ref.isNotEmpty && isLoggedIn) {
+      try {
+        await api.acceptFriendInvite(ref);
+        pendingReferrerId = null;
+        unawaited(refreshPendingCount());
+      } catch (e) {
+        debugPrint('Error auto-accepting friend invite: $e');
+      }
     }
   }
 
@@ -356,6 +430,8 @@ class AppStore extends ChangeNotifier {
     api.setSessionToken(_sessionToken);
     await _persistSession(result.session.token, result.user);
     notifyListeners();
+    _startInviteTimer();
+    unawaited(checkAndApplyPendingReferrer());
     // Bajar snapshot remoto en background (best-effort, no bloquea login).
     unawaited(pullProgressSnapshot());
     unawaited(refreshPendingCount());
@@ -366,6 +442,7 @@ class AppStore extends ChangeNotifier {
     _sessionToken = null;
     api.setSessionToken(null);
     await _clearPersistedSession();
+    _stopInviteTimer();
     notifyListeners();
   }
 
@@ -384,6 +461,8 @@ class AppStore extends ChangeNotifier {
     api.setSessionToken(_sessionToken);
     await _persistSession(result.session.token, result.user);
     notifyListeners();
+    _startInviteTimer();
+    unawaited(checkAndApplyPendingReferrer());
     unawaited(pullProgressSnapshot());
     unawaited(refreshPendingCount());
   }
@@ -398,6 +477,8 @@ class AppStore extends ChangeNotifier {
     api.setSessionToken(_sessionToken);
     await _persistSession(result.session.token, result.user);
     notifyListeners();
+    _startInviteTimer();
+    unawaited(checkAndApplyPendingReferrer());
     unawaited(pullProgressSnapshot());
     unawaited(refreshPendingCount());
   }
@@ -727,6 +808,7 @@ class AppStore extends ChangeNotifier {
 
   final List<MemoryDeckData> _decks = [];
   final List<BibleVerseData> _bibleVerses = [];
+  final Set<String> _loadedBibleBooks = {};
   final List<BibleVerseData> _selectedBibleVerses = [];
   final Set<String> _completedExerciseSteps = {};
   final Map<String, String> _exerciseVoiceReads = {};
@@ -750,8 +832,7 @@ class AppStore extends ChangeNotifier {
   List<BibleVerseData> get bibleVerses => List.unmodifiable(_bibleVerses);
   List<BibleVerseData> get selectedBibleVerses =>
       List.unmodifiable(_selectedBibleVerses);
-  Set<String> get loadedBibleBooks =>
-      _bibleVerses.map((verse) => verse.book).toSet();
+  Set<String> get loadedBibleBooks => _loadedBibleBooks;
   bool get hasDecks => _decks.isNotEmpty;
   MemoryDeckData get activeDeck {
     if (_decks.isEmpty) return emptyDeck;
@@ -869,6 +950,20 @@ class AppStore extends ChangeNotifier {
 
   String get bibleVersion => _bibleVersion;
 
+  /// Indexación rápida O(1) de versículos por libro y capítulo para la versión activa.
+  final Map<String, Map<int, List<BibleVerseData>>> _versesCache = {};
+
+  void _rebuildVersesCache() {
+    _versesCache.clear();
+    _loadedBibleBooks.clear();
+    for (final verse in _bibleVerses) {
+      _loadedBibleBooks.add(verse.book);
+      final bookCache = _versesCache.putIfAbsent(verse.book, () => {});
+      final chapterList = bookCache.putIfAbsent(verse.chapter, () => []);
+      chapterList.add(verse);
+    }
+  }
+
   void setBibleVersion(String version) {
     if (!_bibleByVersion.containsKey(version)) return;
     if (_bibleVersion == version) return;
@@ -876,6 +971,7 @@ class AppStore extends ChangeNotifier {
     _bibleVerses
       ..clear()
       ..addAll(_bibleByVersion[version]!);
+    _rebuildVersesCache();
     notifyListeners();
   }
 
@@ -903,15 +999,14 @@ class AppStore extends ChangeNotifier {
     _bibleVerses
       ..clear()
       ..addAll(_bibleByVersion[initial] ?? const []);
+    _rebuildVersesCache();
   }
 
   List<BibleVerseData> versesFor(String book, int chapter) {
     final canonicalBook = _canonicalBookName(book);
-    return _bibleVerses
-        .where(
-          (verse) => verse.book == canonicalBook && verse.chapter == chapter,
-        )
-        .toList();
+    final bookCache = _versesCache[canonicalBook];
+    if (bookCache == null) return const [];
+    return bookCache[chapter] ?? const [];
   }
 
   List<BibleVerseData> searchBible(String rawQuery) {
@@ -1335,8 +1430,8 @@ class AppStore extends ChangeNotifier {
     }
   }
 
-  bool createBibleDeckFromSelection() {
-    if (_selectedBibleVerses.isEmpty) return false;
+  String? createBibleDeckFromSelection() {
+    if (_selectedBibleVerses.isEmpty) return null;
     
     String title;
     String subtitle;
@@ -1362,7 +1457,6 @@ class AppStore extends ChangeNotifier {
       }
       subtitle = '${_selectedBibleVerses.length} versículos';
     }
-
     final deck = MemoryDeckData(
       id: 'bible-${DateTime.now().microsecondsSinceEpoch}',
       title: title,
@@ -1385,7 +1479,7 @@ class AppStore extends ChangeNotifier {
     _decks.insert(0, deck);
     setActiveDeck(deck.id);
     unawaited(_persistDeckToDatabase(deck));
-    return true;
+    return deck.id;
   }
 
   MemoryDeckData? createDeckFromRawContent({

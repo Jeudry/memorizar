@@ -11,6 +11,7 @@ import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -22,7 +23,10 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../core/api/models.dart';
 import '../../../core/app_state.dart';
+import '../../../core/db/app_database.dart';
+import 'package:drift/drift.dart' as drift;
 import '../../../core/services/local_llm_service.dart';
+import '../../../core/services/gemini_api_service.dart';
 import '../../account/presentation/account_screen.dart';
 import '../../auth/presentation/login_screen.dart';
 import '../../auth/presentation/password_reset_screen.dart';
@@ -236,6 +240,7 @@ const flowScreens = [
   ExerciseFlowData('10-completar-n2', 'Completar N2', 'Recuerdo más fuerte'),
   ExerciseFlowData('11-primera-letra-n2', 'Primera letra N2', 'Casi sin ayuda'),
   ExerciseFlowData('09-quiz', 'Quiz', 'Elige la respuesta correcta'),
+  ExerciseFlowData('09-quiz-avanzado', 'Quiz Avanzado', 'Desafía tu teología con IA de razonamiento'),
   ExerciseFlowData('12-completar-n3', 'Completado N3', 'Más huecos visibles'),
   ExerciseFlowData(
     '13-primera-letra-n3',
@@ -269,6 +274,13 @@ class ExerciseFlowScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (data.slug == '09-quiz-avanzado') {
+      final store = AppScope.of(context);
+      if (!store.isPremium) {
+        return const PremiumScreen();
+      }
+      return _RealExerciseFlowScreen(data: data);
+    }
     if (data.slug == '09-quiz') {
       final store = AppScope.of(context);
       final llmService = LocalLlmService.instance;
@@ -433,6 +445,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   int _quizScore = 0;
   bool _isEvaluatingOpenQuestion = false;
   final _openQuestionController = TextEditingController();
+  
+  bool _isAdvancedLoading = false;
+  String _advancedLoadingText = '';
 
   String? _matchingSelectedLeft;
   String? _matchingSelectedRight;
@@ -853,7 +868,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_isFirstLetterSlug(slug)) {
       return _letterCorrect(slug, card);
     }
-    if (slug == '09-quiz') {
+    if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
       if (_quizRounds.isEmpty) return false;
       if (!_quizFinished) {
         // Se avanza automáticamente de manera fluida, por lo que deshabilitamos el botón físico
@@ -1043,7 +1058,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     _quizRoundIndex = 0;
     _quizScore = 0;
     _openQuestionController.clear();
-    _quizRounds = _buildQuizRounds(deck, card);
+    if (widget.data.slug == '09-quiz-avanzado') {
+      _quizRounds = [];
+      _loadAdvancedQuizRounds(deck, card);
+    } else {
+      _quizRounds = _buildQuizRounds(deck, card);
+    }
   }
 
   _QuizRound _buildCorruptedWordRound(MemoryCardData card, math.Random rng, int index) {
@@ -1330,6 +1350,343 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           ? studiedPool[1 % studiedPool.length] 
           : studiedPool[0 % studiedPool.length];
       rounds.add(_buildOddOneOutRound(target, rng, 2));
+    }
+
+    return rounds;
+  }
+
+  Future<void> _loadAdvancedQuizRounds(MemoryDeckData deck, MemoryCardData card) async {
+    if (_isAdvancedLoading) return;
+    setState(() {
+      _isAdvancedLoading = true;
+      _advancedLoadingText = 'Conectando con el motor de razonamiento teológico de Gemini...';
+    });
+
+    // Delays progresivos de "Thinking" para simular el razonamiento profundo teológico de la IA
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+    setState(() {
+      _advancedLoadingText = 'Analizando pasaje doctrinal y contexto hermenéutico de ${card.front}...';
+    });
+
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (!mounted) return;
+    setState(() {
+      _advancedLoadingText = 'Estructurando antítesis y distractores teológicos conceptuales...';
+    });
+
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (!mounted) return;
+
+    try {
+      final roundsData = await GeminiApiService.instance.fetchAdvancedQuizData(card.front, card.back);
+      if (!mounted) return;
+
+      final parsedRounds = <_QuizRound>[];
+      for (var idx = 0; idx < roundsData.length; idx++) {
+        final roundData = roundsData[idx];
+        final typeStr = roundData['type'] as String? ?? 'conceptual';
+        
+        if (typeStr == 'trueFalse') {
+          final statement = roundData['statement'] as String? ?? 'Afirmación teológica sobre ${card.front}';
+          final isTrue = roundData['isTrue'] as bool? ?? true;
+          parsedRounds.add(_QuizRound(
+            target: card,
+            type: _QuizQuestionType.trueFalse,
+            options: const [],
+            trueFalseStatement: statement,
+            isStatementTrue: isTrue,
+          ));
+        } else {
+          // 'conceptual' o 'antithesis'
+          final question = roundData['question'] as String? ?? (typeStr == 'antithesis' 
+              ? '¿Qué actitud contradice el mensaje de este pasaje?' 
+              : '¿Cuál es el significado de este versículo?');
+          final correctText = roundData['correct'] as String? ?? card.back;
+          final rawDistractors = roundData['distractors'];
+          final distractors = <String>[];
+          if (rawDistractors is List) {
+            distractors.addAll(rawDistractors.map((d) => d.toString()));
+          }
+          while (distractors.length < 3) {
+            distractors.add('Distractor teológico de respaldo ${distractors.length + 1}');
+          }
+
+          final targetCard = MemoryCardData(
+            id: 'quiz-adv-$typeStr-${card.id}-$idx',
+            front: question,
+            back: correctText,
+            source: card.source,
+            icon: card.icon,
+          );
+
+          final optionCards = <MemoryCardData>[
+            targetCard,
+            for (var dIdx = 0; dIdx < distractors.length; dIdx++)
+              MemoryCardData(
+                id: 'quiz-adv-$typeStr-distractor-$dIdx-${card.id}-$idx',
+                front: question,
+                back: distractors[dIdx],
+                source: 'Sistema',
+                icon: card.icon,
+              )
+          ]..shuffle();
+
+          parsedRounds.add(_QuizRound(
+            target: targetCard,
+            type: _QuizQuestionType.frontToBack,
+            options: optionCards,
+          ));
+        }
+      }
+
+      if (parsedRounds.length == 3) {
+        setState(() {
+          _quizRounds = parsedRounds;
+          _isAdvancedLoading = false;
+        });
+        return;
+      }
+      throw Exception('Estructura de rondas inválida.');
+    } catch (e) {
+      debugPrint('Error cargando quiz avanzado de Gemini: $e. Activando fallback local teológico...');
+      if (!mounted) return;
+      
+      // Fallback local teológico de alta coherencia
+      final fallbackRounds = _buildLocalAdvancedQuizRounds(deck, card);
+      setState(() {
+        _quizRounds = fallbackRounds;
+        _isAdvancedLoading = false;
+      });
+    }
+  }
+
+  List<_QuizRound> _buildLocalAdvancedQuizRounds(MemoryDeckData deck, MemoryCardData card) {
+    final rng = math.Random(card.id.hashCode ^ DateTime.now().millisecondsSinceEpoch);
+    final text = card.back.toLowerCase();
+    
+    // Categorización teológica según el texto del versículo
+    String category = 'default';
+    if (text.contains('justicia') || text.contains('justo') || text.contains('ley')) {
+      category = 'justice';
+    } else if (text.contains('fe') || text.contains('gracia') || text.contains('salva')) {
+      category = 'grace';
+    } else if (text.contains('pacto') || text.contains('promesa')) {
+      category = 'covenant';
+    } else if (text.contains('sabiduría') || text.contains('entender') || text.contains('conoce') || text.contains('ciencia')) {
+      category = 'wisdom';
+    }
+
+    final rounds = <_QuizRound>[];
+
+    // Ronda 1: Conceptual Choice
+    {
+      String question = '';
+      String correct = '';
+      List<String> distractors = [];
+
+      switch (category) {
+        case 'justice':
+          question = '¿Cuál es el significado teológico de la "justicia" en el contexto de este pasaje?';
+          correct = 'Es la declaración legal y soberana de Dios donde nos otorga la perfecta rectitud de Cristo, no por méritos humanos.';
+          distractors = [
+            'Es el premio que Dios otorga a aquellos que logran cumplir a la perfección cada mandato moral.',
+            'Es una condición mística interna que el creyente debe cultivar con esfuerzo constante para ser aceptado.',
+            'Es la fuerza moral con la que Dios castiga a los infractores y bendice exclusivamente a Israel.',
+          ];
+          break;
+        case 'grace':
+          question = '¿Cómo opera la relación entre "gracia" y "fe" según el análisis doctrinal de este pasaje?';
+          correct = 'La gracia es la causa soberana no merecida, y la fe es el instrumento receptor a través del cual nos aferramos a la promesa.';
+          distractors = [
+            'La fe es la obra meritoria inicial del hombre que convence a Dios de darnos su gracia posterior.',
+            'La gracia y la fe son términos idénticos que eliminan la necesidad de cualquier obediencia o fruto moral.',
+            'La fe es un poder mental creador con el cual el creyente obliga a Dios a actuar por gracia.',
+          ];
+          break;
+        case 'covenant':
+          question = '¿Qué implicación teológica profunda tiene el concepto de "pacto" o "promesa" en este texto?';
+          correct = 'Refleja el compromiso incondicional y eterno de Dios de sostener a su pueblo basándose en su propio carácter.';
+          distractors = [
+            'Es un acuerdo de beneficio mutuo donde si el hombre falla una vez, Dios queda libre de toda obligación.',
+            'Representa una formalidad ceremonial del Antiguo Testamento que no tiene relevancia en el Nuevo Pacto.',
+            'Es un contrato legal donde el creyente puede exigir prosperidad material a cambio de su fidelidad.',
+          ];
+          break;
+        case 'wisdom':
+          question = '¿Qué tipo de "sabiduría" o "entendimiento" se promueve teológicamente en este versículo?';
+          correct = 'Es el conocimiento práctico y devocional que nace del temor reverente a Dios y guía el comportamiento moral.';
+          distractors = [
+            'Es una revelación gnóstica intelectual reservada exclusivamente para una élite académica o mística.',
+            'Es la acumulación de datos enciclopédicos sobre historia y filosofía humana.',
+            'Es la capacidad de debatir y persuadir con retórica humana para demostrar superioridad intelectual.',
+          ];
+          break;
+        default:
+          question = '¿Cuál es el núcleo y la aplicación práctica central de este versículo doctrinal?';
+          correct = 'Reconocer que nuestra comunión con Dios se fundamenta en su soberanía y demanda una vida de sincera fidelidad.';
+          distractors = [
+            'Adoptar una postura ascética de aislamiento total para evitar cualquier contacto con el mundo exterior.',
+            'Considerar que el conocimiento puramente conceptual es suficiente para complacer a Dios sin necesidad de obediencia.',
+            'Buscar activamente la aprobación y el reconocimiento de la sociedad secular como medida de éxito espiritual.',
+          ];
+      }
+
+      final targetCard = MemoryCardData(
+        id: 'quiz-adv-local-conceptual-${card.id}-0',
+        front: question,
+        back: correct,
+        source: card.source,
+        icon: card.icon,
+      );
+
+      final optionCards = <MemoryCardData>[
+        targetCard,
+        for (var idx = 0; idx < distractors.length; idx++)
+          MemoryCardData(
+            id: 'quiz-adv-local-conceptual-distractor-$idx-${card.id}-0',
+            front: question,
+            back: distractors[idx],
+            source: 'Sistema',
+            icon: card.icon,
+          )
+      ]..shuffle(rng);
+
+      rounds.add(_QuizRound(
+        target: targetCard,
+        type: _QuizQuestionType.frontToBack,
+        options: optionCards,
+      ));
+    }
+
+    // Ronda 2: Theological True/False
+    {
+      String statement = '';
+      bool isTrue = rng.nextBool();
+
+      if (isTrue) {
+        switch (category) {
+          case 'justice':
+            statement = 'La justicia descrita en el versículo no se alcanza por medio de la ley moral humana, sino por la imputación gratuita del carácter justo de Dios.';
+            break;
+          case 'grace':
+            statement = 'La gracia soberana divina precede a cualquier iniciativa humana de fe y es la fuente exclusiva del rescate espiritual.';
+            break;
+          case 'covenant':
+            statement = 'Las promesas divinas en este pasaje se sostienen sobre la inmutabilidad de la palabra y el carácter absoluto del Creador.';
+            break;
+          case 'wisdom':
+            statement = 'El verdadero entendimiento bíblico trasciende la mera capacidad intelectual e involucra una sumisión total a la voluntad divina.';
+            break;
+          default:
+            statement = 'El pasaje nos enseña que el carácter soberano de Dios y su gracia son el ancla firme para nuestra confianza en medio de la debilidad.';
+        }
+      } else {
+        switch (category) {
+          case 'justice':
+            statement = 'El versículo enseña que el camino establecido por Dios para la justificación perfecta reside en la acumulación de buenas obras individuales.';
+            break;
+          case 'grace':
+            statement = 'El pasaje establece que la gracia de Dios es un recurso inactivo que sólo se activa cuando el hombre realiza una obra de fe perfecta.';
+            break;
+          case 'covenant':
+            statement = 'El texto enseña que los pactos con Dios son transacciones inestables y enteramente dependientes del cumplimiento moral constante del hombre.';
+            break;
+          case 'wisdom':
+            statement = 'El versículo sugiere que la sabiduría espiritual es equivalente a la erudición filosófica humana y el racionalismo frío.';
+            break;
+          default:
+            statement = 'El texto sugiere que los seres humanos poseemos la fuerza interna de voluntad suficiente para agradar a Dios sin ayuda de su Espíritu.';
+        }
+      }
+
+      rounds.add(_QuizRound(
+        target: card,
+        type: _QuizQuestionType.trueFalse,
+        options: const [],
+        trueFalseStatement: statement,
+        isStatementTrue: isTrue,
+      ));
+    }
+
+    // Ronda 3: Antithesis/Contra-argument
+    {
+      String question = '';
+      String correct = '';
+      List<String> distractors = [];
+
+      switch (category) {
+        case 'justice':
+          question = '¿Qué actitud contradice directamente la enseñanza de este pasaje sobre la justicia?';
+          correct = 'El legalismo autosuficiente que busca impresionar a Dios mediante el estricto cumplimiento exterior de reglas.';
+          distractors = [
+            'La humilde confesión de la propia debilidad espiritual ante el Creador.',
+            'El deseo genuino de buscar la santidad y amar al prójimo con sinceridad.',
+            'El agradecimiento reverente por el perdón inmerecido.',
+          ];
+          break;
+        case 'grace':
+          question = '¿Qué perspectiva contradice directamente la doctrina de la gracia en este pasaje?';
+          correct = 'El orgullo espiritual que asume que el rescate del alma depende en parte del mérito o la dignidad humana.';
+          distractors = [
+            'La confianza plena en las promesas divinas en momentos de aflicción.',
+            'La rendición incondicional del propio ego ante el señorío de Cristo.',
+            'La obediencia gozosa motivada únicamente por el amor y la gratitud.',
+          ];
+          break;
+        case 'covenant':
+          question = '¿Qué actitud contradice la seguridad de las promesas de Dios descritas aquí?';
+          correct = 'La incredulidad ansiosa que teme que la fidelidad de Dios pueda caducar ante nuestras fallas morales arrepentidas.';
+          distractors = [
+            'La convicción pacífica de que Dios completará su obra soberana en nosotros.',
+            'La paciencia perseverante que aguarda el cumplimiento del tiempo divino.',
+            'La alabanza sincera al carácter inmutable y eterno del Creador.',
+          ];
+          break;
+        case 'wisdom':
+          question = '¿Qué postura contradice el principio de la verdadera sabiduría bíblica en este texto?';
+          correct = 'La vanidad intelectual que confía en el propio raciocinio humano y desprecia la revelación del Espíritu.';
+          distractors = [
+            'La docilidad de corazón que recibe la Palabra con sencillez y alegría.',
+            'El estudio reflexivo de las Escrituras con una actitud de humilde oración.',
+            'La disposición a ser enseñado por otros creyentes maduros en la fe.',
+          ];
+          break;
+        default:
+          question = '¿Qué postura o actitud contradice el llamado central de este pasaje bíblico?';
+          correct = 'La apatía espiritual o la autosuficiencia arrogante que vive ignorando nuestra total dependencia de Dios.';
+          distractors = [
+            'La entrega consagrada del servicio a los necesitados en amor.',
+            'La búsqueda constante de la paz y la reconciliación comunitaria.',
+            'El reconocimiento humilde de que toda buena dádiva proviene del Padre.',
+          ];
+      }
+
+      final targetCard = MemoryCardData(
+        id: 'quiz-adv-local-antithesis-${card.id}-2',
+        front: question,
+        back: correct,
+        source: card.source,
+        icon: card.icon,
+      );
+
+      final optionCards = <MemoryCardData>[
+        targetCard,
+        for (var idx = 0; idx < distractors.length; idx++)
+          MemoryCardData(
+            id: 'quiz-adv-local-antithesis-distractor-$idx-${card.id}-2',
+            front: question,
+            back: distractors[idx],
+            source: 'Sistema',
+            icon: card.icon,
+          )
+      ]..shuffle(rng);
+
+      rounds.add(_QuizRound(
+        target: targetCard,
+        type: _QuizQuestionType.frontToBack,
+        options: optionCards,
+      ));
     }
 
     return rounds;
@@ -1764,6 +2121,46 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     String slug,
   ) {
     final completed = store.isExerciseStepCompleted(slug);
+
+    if (slug == '09-quiz-avanzado' && _isAdvancedLoading) {
+      return Center(
+        child: Glass(
+          padding: const EdgeInsets.all(28),
+          color: RefColors.glassStrong,
+          border: Border.all(color: RefColors.border),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(
+                width: 48,
+                height: 48,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(RefColors.cyan),
+                ),
+              ),
+              const SizedBox(height: 24),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: Text(
+                  _advancedLoadingText,
+                  key: ValueKey(_advancedLoadingText),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    height: 1.45,
+                    fontWeight: FontWeight.w700,
+                    color: RefColors.ink,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (slug == '00-solo-lectura') {
       final verses = _currentBatchVerses(context);
       final totalChars = verses.fold<int>(0, (sum, v) => sum + v.text.length);
@@ -3175,7 +3572,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     final showOmitirForDefault =
         slug == '05-bloques' ||
         _isFirstLetterSlug(slug) ||
-        slug == '09-quiz';
+        slug == '09-quiz' ||
+        slug == '09-quiz-avanzado';
 
     return Row(
       children: [
@@ -3186,7 +3584,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             onTap: () {
               if (showOmitirForDefault) {
                 ActiveMediaRegistry.stopAll();
-                if (slug == '09-quiz') {
+                if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
                   store.answerCurrentCard(true);
                 }
                 _completeStepAndNavigate(context, store, slug);
@@ -3234,7 +3632,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 );
                 return;
               }
-              if (slug == '09-quiz') {
+              if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
                 if (_quizRounds.isEmpty) return;
                 final round = _quizRounds[_quizRoundIndex];
                 if (!round.answered) return;
@@ -3263,7 +3661,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 return;
               }
               final correct = _currentStepCorrect(slug, card, deck);
-              if (!correct && slug != '09-quiz') {
+              if (!correct && slug != '09-quiz' && slug != '09-quiz-avanzado') {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Corrige el ejercicio para avanzar.'),
@@ -3271,7 +3669,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 );
                 return;
               }
-              if (slug == '09-quiz') {
+              if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
                 store.answerCurrentCard(correct);
               }
               _completeStepAndNavigate(context, store, slug);
@@ -3296,7 +3694,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_isFirstLetterSlug(slug)) {
       return _letterCorrect(slug, card);
     }
-    if (slug == '09-quiz') {
+    if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
       return _quizCorrect(card, deck);
     }
     return true;
@@ -3334,7 +3732,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_isFirstLetterSlug(slug)) {
       return _letterComplete() ? 'Completado →' : 'Elige primeras letras';
     }
-    if (slug == '09-quiz') {
+    if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
       if (_quizRounds.isEmpty) return 'Cargando…';
       final round = _quizRounds[_quizRoundIndex];
       if (!round.answered) {
@@ -3360,6 +3758,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '04-escuchar-voz') return completed;
     if (slug == '05-bloques' ||
         slug == '09-quiz' ||
+        slug == '09-quiz-avanzado' ||
         _isCompletionSlug(slug) ||
         _isFirstLetterSlug(slug)) {
       return _canAdvanceAnsweredStep(

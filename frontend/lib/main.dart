@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -18,10 +19,11 @@ final _deeplinks = DeeplinkService();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final store = AppStore();
+  final store = AppStore(enableDatabasePersistence: !kIsWeb);
   await store.loadBible();
   await store.bootstrapSession();
   await store.bootstrapPreferences();
+
 
   AppRoutes.register(buildAppRoutes());
   ReferencePage.registerBackgroundBuilder(() => const AppAuroraBackground());
