@@ -3,7 +3,16 @@
 part of '../ui_screens.dart';
 
 class EspecificarScreen extends StatefulWidget {
-  const EspecificarScreen({super.key});
+  final bool embedded;
+  final void Function(String deckId, String title)? onDeckCreated;
+  final VoidCallback? onCancel;
+
+  const EspecificarScreen({
+    super.key,
+    this.embedded = false,
+    this.onDeckCreated,
+    this.onCancel,
+  });
 
   @override
   State<EspecificarScreen> createState() => _EspecificarScreenState();
@@ -121,7 +130,11 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
       );
       return;
     }
-    Navigator.pushNamed(context, AppRoutes.iniciar);
+    if (widget.embedded && widget.onDeckCreated != null) {
+      widget.onDeckCreated!(created.id, created.title);
+    } else {
+      Navigator.pushNamed(context, AppRoutes.iniciar);
+    }
   }
 
   void _clearAll() {
@@ -148,17 +161,17 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
   @override
   Widget build(BuildContext context) {
     final cards = _segmentedCards;
-    return ReferencePage(
-      active: AppRoutes.home,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!widget.embedded) ...[
           const RefTopBar(title: 'Nuevo contenido'),
           const _StepIndicator(active: 0, count: 3),
           const _PageHead(
             'Pega lo que quieres memorizar',
             'La app lo segmenta en tarjetas automáticamente · puedes editarlas después',
           ),
+        ],
           Glass(
             color: Colors.transparent,
             gradient: const LinearGradient(
@@ -402,6 +415,14 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
           ),
         ],
       ),
+    );
+
+    if (widget.embedded) {
+      return content;
+    }
+    return ReferencePage(
+      active: AppRoutes.home,
+      child: content,
     );
   }
 }

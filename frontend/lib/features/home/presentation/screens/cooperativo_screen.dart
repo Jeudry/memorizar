@@ -121,7 +121,6 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     setState(() {
       _cardCtrls.add((TextEditingController(), TextEditingController()));
     });
->>>>>>> Stashed changes
   }
 
   void _removeCardRow(int index) {
