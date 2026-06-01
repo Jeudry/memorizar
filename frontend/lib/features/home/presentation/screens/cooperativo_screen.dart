@@ -1644,6 +1644,7 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
   StreamSubscription<CoopMessage>? _msgSub;
   final _textController = TextEditingController();
   List<RemoteUser> _myFriends = [];
+  List<Friendship> _pendingRequests = [];
   bool _loadingFriends = false;
 
   @override
@@ -1674,6 +1675,7 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
       if (mounted) {
         setState(() {
           _myFriends = res.friends;
+          _pendingRequests = res.pendingRequests;
         });
       }
     } catch (_) {}
@@ -1830,15 +1832,18 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
             children: [
               for (int i = 0; i < memberIds.length; i++) ...[
                 if (i > 0) const SizedBox(width: 14),
-                _CoopParticipant(
-                  memberIds[i].isNotEmpty ? memberIds[i][0].toUpperCase() : '?',
-                  memberIds[i] == me ? '${memberIds[i]} (tú)' : memberIds[i],
-                  memberIds[i] == hostId ? 'Host' : 'Listo',
-                  host: memberIds[i] == hostId,
-                  ready: true,
-                  gradient: memberIds[i] == me
-                      ? RefColors.cool
-                      : (i % 2 == 0 ? RefColors.primary : RefColors.purple),
+                GestureDetector(
+                  onTap: () => _showMemberProfile(memberIds[i]),
+                  child: _CoopParticipant(
+                    memberIds[i].isNotEmpty ? memberIds[i][0].toUpperCase() : '?',
+                    memberIds[i] == me ? '${memberIds[i]} (tú)' : memberIds[i],
+                    memberIds[i] == hostId ? 'Host' : 'Listo',
+                    host: memberIds[i] == hostId,
+                    ready: true,
+                    gradient: memberIds[i] == me
+                        ? RefColors.cool
+                        : (i % 2 == 0 ? RefColors.primary : RefColors.purple),
+                  ),
                 ),
               ],
               if (memberIds.length < 4) ...[
@@ -2098,6 +2103,286 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
           ),
         ],
       ),
+    );
+  }
+
+  void _showMemberProfile(String targetUserId) {
+    final store = AppScope.of(context);
+    final me = store.currentUser?.id ?? '';
+    
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: .5),
+      builder: (context) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            child: FutureBuilder<RemoteUser>(
+              future: store.api.getUser(targetUserId),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: CircularProgressIndicator(color: RefColors.lime),
+                  );
+                }
+                
+                if (snapshot.hasError || !snapshot.hasData) {
+                  return Glass(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.error_outline, color: RefColors.urgent, size: 40),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'No se pudo cargar el perfil',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          snapshot.error?.toString() ?? 'Error desconocido',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: RefColors.muted, fontSize: 12),
+                        ),
+                        const SizedBox(height: 16),
+                        Cta(
+                          'Cerrar',
+                          onTap: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                
+                final user = snapshot.data!;
+                final displayName = user.displayName.isNotEmpty ? user.displayName : user.email;
+                final email = user.email.isNotEmpty ? user.email : 'Sin correo';
+                final isMe = user.id == me;
+                
+                return StatefulBuilder(
+                  builder: (context, setModalState) {
+                    final isFriend = _myFriends.any((f) => f.id == user.id);
+                    final isPending = _pendingRequests.any((f) =>
+                        (f.requesterId == me && f.addresseeId == user.id) ||
+                        (f.requesterId == user.id && f.addresseeId == me));
+                    
+                    bool requesting = false;
+                    
+                    return Glass(
+                      padding: const EdgeInsets.all(24),
+                      gradient: LinearGradient(
+                        colors: [
+                          RefColors.violet.withValues(alpha: .24),
+                          RefColors.pink.withValues(alpha: .24),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              GestureDetector(
+                                onTap: () => Navigator.pop(context),
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: .05),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.close,
+                                    size: 18,
+                                    color: RefColors.dim,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Fav(
+                            user.initial,
+                            size: 80,
+                            gradient: isMe
+                                ? RefColors.cool
+                                : (user.id.hashCode % 2 == 0 ? RefColors.primary : RefColors.purple),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            displayName,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -.5,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            email,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: RefColors.muted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'ID: ${user.id}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: RefColors.dim,
+                              fontSize: 9,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          
+                          if (isMe)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: RefColors.cool.colors.first.withValues(alpha: .15),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: RefColors.cool.colors.first.withValues(alpha: .3)),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.person_pin_rounded, color: Colors.white, size: 16),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Este eres tú ♕',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else if (isFriend)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: RefColors.lime.withValues(alpha: .15),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: RefColors.lime.withValues(alpha: .3)),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.people_alt_rounded, color: RefColors.lime, size: 16),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    '¡Ya son amigos! 👥',
+                                    style: TextStyle(
+                                      color: RefColors.lime,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else if (isPending)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: RefColors.sun.withValues(alpha: .15),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: RefColors.sun.withValues(alpha: .3)),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.hourglass_empty_rounded, color: RefColors.sun, size: 16),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Solicitud pendiente ⏳',
+                                    style: TextStyle(
+                                      color: RefColors.sun,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else
+                            Cta(
+                              requesting ? 'Enviando...' : 'Agregar como amigo ＋',
+                              disabled: requesting,
+                              onTap: () async {
+                                setModalState(() {
+                                  requesting = true;
+                                });
+                                try {
+                                  await store.api.requestFriend(user.id);
+                                  await _fetchFriends();
+                                  
+                                  if (!context.mounted) return;
+                                  Navigator.pop(context);
+                                  
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      backgroundColor: const Color(0xFF0F0C1B),
+                                      content: Row(
+                                        children: [
+                                          const Icon(Icons.check_circle_outline, color: RefColors.lime),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            '¡Solicitud de amistad enviada a $displayName! 🎉',
+                                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                          ),
+                                        ],
+                                      ),
+                                      duration: const Duration(seconds: 3),
+                                      behavior: SnackBarBehavior.floating,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  setModalState(() {
+                                    requesting = false;
+                                  });
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      backgroundColor: const Color(0xFF0F0C1B),
+                                      content: Row(
+                                        children: [
+                                          const Icon(Icons.error_outline, color: RefColors.urgent),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              'Error: ${e.toString()}',
+                                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 }
