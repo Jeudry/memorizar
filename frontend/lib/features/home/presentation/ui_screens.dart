@@ -2415,11 +2415,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 activeTurnUserId: _activeTurnUserId,
                 failedUserIds: _failedUserIds,
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
               _buildTurnBannerNotification(),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
               RefProgress((store.sessionCardsCompleted + 1) / store.sessionDailyTarget),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
             ] else
               _FlowStepHeader(
                 step: '$step',
@@ -2563,13 +2563,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                           ),
                       ],
                     ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 10),
                   if (isCoop) ...[
                     AbsorbPointer(
                       absorbing: isBlocked,
                       child: _coopExerciseFooter(context, store, card, deck, slug),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 10),
                     const _CoopGameChat(),
                   ] else
                     AbsorbPointer(

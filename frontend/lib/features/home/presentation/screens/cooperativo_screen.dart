@@ -4114,6 +4114,7 @@ class _CoopGameChatState extends State<_CoopGameChat> {
   final List<(String, String, String)> _chatMessages = [];
   StreamSubscription<CoopMessage>? _msgSub;
   final _textController = TextEditingController();
+  bool _expanded = false;
 
   @override
   void initState() {
@@ -4127,6 +4128,8 @@ class _CoopGameChatState extends State<_CoopGameChat> {
           final initial = senderName.isNotEmpty ? senderName[0].toUpperCase() : '?';
           setState(() {
             _chatMessages.add((initial, '$senderName:', text));
+            // Si el chat está colapsado y llega un mensaje nuevo, podemos decidir
+            // dejarlo colapsado pero la vista previa se actualizará automáticamente.
           });
         }
       });
@@ -4160,11 +4163,116 @@ class _CoopGameChatState extends State<_CoopGameChat> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_expanded) {
+      final lastMsg = _chatMessages.isNotEmpty ? _chatMessages.last : null;
+      return GestureDetector(
+        onTap: () => setState(() => _expanded = true),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: Glass(
+            radius: 14,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.chat_bubble_outline_rounded,
+                  color: RefColors.lime,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    lastMsg != null
+                        ? '${lastMsg.$2} ${lastMsg.$3}'
+                        : 'Chat de la sala · toca para expandir... 💬',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: lastMsg != null ? Colors.white70 : RefColors.dim,
+                      fontSize: 11,
+                      fontWeight: lastMsg != null ? FontWeight.w700 : FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.keyboard_arrow_up_rounded,
+                  color: RefColors.muted,
+                  size: 18,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Glass(
       radius: 18,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       child: Column(
         children: [
+          GestureDetector(
+            onTap: () => setState(() => _expanded = false),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(
+                          Icons.chat_bubble_rounded,
+                          color: RefColors.lime,
+                          size: 14,
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'CHAT DE LA SALA',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        if (_chatMessages.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: RefColors.lime.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '${_chatMessages.length}',
+                              style: const TextStyle(
+                                color: RefColors.lime,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        const SizedBox(width: 8),
+                        const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: RefColors.muted,
+                          size: 18,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const Divider(color: RefColors.border, height: 1, thickness: 1),
+          const SizedBox(height: 8),
           if (_chatMessages.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
@@ -4175,7 +4283,7 @@ class _CoopGameChatState extends State<_CoopGameChat> {
             )
           else
             ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 120),
+              constraints: const BoxConstraints(maxHeight: 100),
               child: ListView.builder(
                 shrinkWrap: true,
                 itemCount: _chatMessages.length,
