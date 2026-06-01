@@ -3,6 +3,7 @@ package application
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"log"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1261,3 +1262,12 @@ func hasReactionFromUser(reactions []domain.FeedReaction, userID string) bool {
 	}
 	return false
 }
+
+func (s *Service) ListAchievementsByUserIDs(userIDs []string) ([]domain.Achievement, error) {
+	return s.repo.ListAchievementsByUserIDs(userIDs)
+}
+
+func (s *Service) ListPublicSharedResourcesByUserIDs(userIDs []string) ([]domain.SharedResource, error) {
+	return s.repo.ListPublicSharedResourcesByUserIDs(userIDs)
+}
+
