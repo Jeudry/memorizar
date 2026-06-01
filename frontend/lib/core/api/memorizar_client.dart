@@ -432,11 +432,34 @@ class MemorizarClient {
     return _decode(r);
   }
 
+  Future<Map<String, dynamic>> listPublicRoomsPaged({
+    int? difficulty,
+    String? mode,
+    String? query,
+    bool? hideFull,
+    int page = 1,
+    int limit = 10,
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'limit': limit.toString(),
+      if (difficulty != null && difficulty > 0) 'difficulty': difficulty.toString(),
+      if (mode != null && mode.isNotEmpty) 'mode': mode,
+      if (query != null && query.isNotEmpty) 'query': query,
+      if (hideFull != null) 'hideFull': hideFull.toString(),
+    };
+    final baseUri = _uri('/v1/coop/rooms/public');
+    final uri = baseUri.replace(queryParameters: queryParams);
+    final r = await _http.get(uri, headers: _headers);
+    return await _decode(r);
+  }
+
   Future<List<dynamic>> listPublicRooms() async {
-    final r = await _http.get(_uri('/v1/coop/rooms/public'), headers: _headers);
-    final decoded = await _decode(r);
-    final list = decoded['data'];
-    if (list is List) return list;
+    try {
+      final decoded = await listPublicRoomsPaged(page: 1, limit: 100);
+      final list = decoded['rooms'];
+      if (list is List) return list;
+    } catch (_) {}
     return [];
   }
 

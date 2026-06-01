@@ -25,6 +25,18 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
   bool _creatingDeckInline = false;
   String? _selectedCreationType;
 
+  int _detailPage = 1;
+  final int _detailLimit = 4;
+  int _detailTotal = 0;
+  int _detailTotalPages = 0;
+  List<dynamic> _detailedRooms = [];
+  bool _loadingDetailedRooms = false;
+  int? _filterDifficulty;
+  String? _filterMode;
+  bool _filterHideFull = false;
+  final _searchQueryCtrl = TextEditingController();
+  Timer? _debounceTimer;
+
   void _loadPublicRooms() async {
     final coop = _coop;
     if (coop == null) return;
@@ -666,7 +678,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                         mainAxisSpacing: 10,
                         mainAxisExtent: 136,
                       ),
-                      itemCount: _publicRooms.length,
+                      itemCount: _publicRooms.length > 4 ? 4 : _publicRooms.length,
                       itemBuilder: (context, idx) {
                         final room = _publicRooms[idx];
                         final deckName = room['deckName']?.toString().isNotEmpty == true
@@ -784,6 +796,38 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                         );
                       },
                     ),
+                    if (_publicRooms.length > 4) ...[
+                      const SizedBox(height: 12),
+                      GestureDetector(
+                        onTap: () => _showLobbyDetailsModal(context),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: RefColors.lime.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: RefColors.lime.withValues(alpha: 0.25),
+                              width: 1,
+                            ),
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.explore_outlined, color: RefColors.lime, size: 16),
+                              SizedBox(width: 8),
+                              Text(
+                                'Explorar salas avanzadas con filtros 🔍',
+                                style: TextStyle(
+                                  color: RefColors.lime,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                 ],
               ),
             ),
@@ -914,6 +958,534 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
             ],
           ],
         ],
+      ),
+    );
+  }
+
+  void _showLobbyDetailsModal(BuildContext context) {
+    _detailPage = 1;
+    _filterDifficulty = null;
+    _filterMode = null;
+    _filterHideFull = false;
+    _searchQueryCtrl.clear();
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.65),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            void reloadDetailedRooms() async {
+              setModalState(() => _loadingDetailedRooms = true);
+              try {
+                final res = await _coop!.client.listPublicRoomsPaged(
+                  difficulty: _filterDifficulty,
+                  mode: _filterMode,
+                  query: _searchQueryCtrl.text.trim(),
+                  hideFull: _filterHideFull,
+                  page: _detailPage,
+                  limit: _detailLimit,
+                );
+                setModalState(() {
+                  _detailedRooms = res['rooms'] as List? ?? [];
+                  _detailTotal = res['total'] ?? 0;
+                  _detailTotalPages = res['totalPages'] ?? 0;
+                });
+              } catch (e) {
+                if (kDebugMode) debugPrint('[coop] failed: $e');
+              } finally {
+                setModalState(() => _loadingDetailedRooms = false);
+              }
+            }
+
+            if (_detailedRooms.isEmpty && !_loadingDetailedRooms && _searchQueryCtrl.text.isEmpty && _filterDifficulty == null && _filterMode == null && !_filterHideFull) {
+              Future.microtask(() => reloadDetailedRooms());
+            }
+
+            return Dialog(
+              backgroundColor: const Color(0xFF0F0C1B),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                  child: Container(
+                    width: 650,
+                    height: 580,
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0F0C1B).withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.explore_outlined, color: RefColors.lime, size: 22),
+                                SizedBox(width: 10),
+                                Text(
+                                  'Explorador de Salas Avanzado',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: -.4,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: reloadDetailedRooms,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.05),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.refresh_rounded, color: RefColors.lime, size: 18),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                GestureDetector(
+                                  onTap: () => Navigator.pop(ctx),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.05),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.close_rounded, color: Colors.white, size: 18),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _searchQueryCtrl,
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          decoration: InputDecoration(
+                            hintText: 'Buscar por nombre de mazo o código...',
+                            hintStyle: const TextStyle(color: RefColors.muted),
+                            prefixIcon: const Icon(Icons.search_rounded, color: RefColors.muted, size: 18),
+                            filled: true,
+                            fillColor: Colors.black.withValues(alpha: .25),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: RefColors.lime),
+                            ),
+                          ),
+                          onChanged: (val) {
+                            if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+                            _debounceTimer = Timer(const Duration(milliseconds: 380), () {
+                              _detailPage = 1;
+                              reloadDetailedRooms();
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            const Text(
+                              'Dificultad:',
+                              style: TextStyle(color: RefColors.dim, fontSize: 11, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: [
+                                    _buildFilterChip(
+                                      label: 'Todas',
+                                      selected: _filterDifficulty == null,
+                                      onTap: () {
+                                        setModalState(() {
+                                          _filterDifficulty = null;
+                                          _detailPage = 1;
+                                        });
+                                        reloadDetailedRooms();
+                                      },
+                                    ),
+                                    _buildFilterChip(
+                                      label: 'Fácil',
+                                      selected: _filterDifficulty == 1,
+                                      onTap: () {
+                                        setModalState(() {
+                                          _filterDifficulty = 1;
+                                          _detailPage = 1;
+                                        });
+                                        reloadDetailedRooms();
+                                      },
+                                    ),
+                                    _buildFilterChip(
+                                      label: 'Medio',
+                                      selected: _filterDifficulty == 2,
+                                      onTap: () {
+                                        setModalState(() {
+                                          _filterDifficulty = 2;
+                                          _detailPage = 1;
+                                        });
+                                        reloadDetailedRooms();
+                                      },
+                                    ),
+                                    _buildFilterChip(
+                                      label: 'Difícil',
+                                      selected: _filterDifficulty == 3,
+                                      onTap: () {
+                                        setModalState(() {
+                                          _filterDifficulty = 3;
+                                          _detailPage = 1;
+                                        });
+                                        reloadDetailedRooms();
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Text(
+                              'Modo de juego:',
+                              style: TextStyle(color: RefColors.dim, fontSize: 11, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: [
+                                    _buildFilterChip(
+                                      label: 'Todos',
+                                      selected: _filterMode == null,
+                                      onTap: () {
+                                        setModalState(() {
+                                          _filterMode = null;
+                                          _detailPage = 1;
+                                        });
+                                        reloadDetailedRooms();
+                                      },
+                                    ),
+                                    _buildFilterChip(
+                                      label: 'Grupal',
+                                      selected: _filterMode == 'grupal',
+                                      onTap: () {
+                                        setModalState(() {
+                                          _filterMode = 'grupal';
+                                          _detailPage = 1;
+                                        });
+                                        reloadDetailedRooms();
+                                      },
+                                    ),
+                                    _buildFilterChip(
+                                      label: 'Versus',
+                                      selected: _filterMode == 'versus',
+                                      onTap: () {
+                                        setModalState(() {
+                                          _filterMode = 'versus';
+                                          _detailPage = 1;
+                                        });
+                                        reloadDetailedRooms();
+                                      },
+                                    ),
+                                    _buildFilterChip(
+                                      label: 'Libre',
+                                      selected: _filterMode == 'libre',
+                                      onTap: () {
+                                        setModalState(() {
+                                          _filterMode = 'libre';
+                                          _detailPage = 1;
+                                        });
+                                        reloadDetailedRooms();
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: _filterHideFull,
+                              activeColor: RefColors.lime,
+                              side: const BorderSide(color: Colors.white24),
+                              onChanged: (val) {
+                                setModalState(() {
+                                  _filterHideFull = val ?? false;
+                                  _detailPage = 1;
+                                });
+                                reloadDetailedRooms();
+                              },
+                            ),
+                            const Text(
+                              'Ocultar salas llenas o completas',
+                              style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: _loadingDetailedRooms
+                              ? const Center(child: CircularProgressIndicator(color: RefColors.lime, strokeWidth: 2))
+                              : _detailedRooms.isEmpty
+                                  ? Center(
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(Icons.grid_view_rounded, color: Colors.white24, size: 36),
+                                          const SizedBox(height: 10),
+                                          const Text(
+                                            'No se encontraron salas con los filtros aplicados.',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(color: RefColors.muted, fontSize: 13, fontWeight: FontWeight.bold),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : ListView.separated(
+                                      itemCount: _detailedRooms.length,
+                                      separatorBuilder: (c, i) => const SizedBox(height: 10),
+                                      itemBuilder: (c, idx) {
+                                        final room = _detailedRooms[idx];
+                                        final code = room['code']?.toString() ?? '';
+                                        final deckName = room['deckName']?.toString().isNotEmpty == true
+                                            ? room['deckName'].toString()
+                                            : 'Mazo Personalizado';
+                                        final count = room['memberCount'] ?? 1;
+                                        final maxP = room['maxPlayers'] ?? 4;
+                                        final diff = room['difficulty'] ?? 1;
+                                        final mode = room['mode']?.toString() ?? 'grupal';
+
+                                        String diffLabel = 'Fácil';
+                                        Color diffColor = RefColors.lime;
+                                        if (diff == 2) {
+                                          diffLabel = 'Medio';
+                                          diffColor = Colors.orange;
+                                        } else if (diff == 3) {
+                                          diffLabel = 'Difícil';
+                                          diffColor = RefColors.urgent;
+                                        }
+
+                                        return Container(
+                                          padding: const EdgeInsets.all(14),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: .03),
+                                            borderRadius: BorderRadius.circular(16),
+                                            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Row(
+                                                      children: [
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                          decoration: BoxDecoration(
+                                                            color: RefColors.lime.withValues(alpha: .12),
+                                                            borderRadius: BorderRadius.circular(6),
+                                                          ),
+                                                          child: Text(
+                                                            code,
+                                                            style: const TextStyle(
+                                                              color: RefColors.lime,
+                                                              fontSize: 10,
+                                                              fontWeight: FontWeight.w900,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(width: 8),
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                          decoration: BoxDecoration(
+                                                            color: diffColor.withValues(alpha: .12),
+                                                            borderRadius: BorderRadius.circular(6),
+                                                          ),
+                                                          child: Text(
+                                                            diffLabel.toUpperCase(),
+                                                            style: TextStyle(
+                                                              color: diffColor,
+                                                              fontSize: 8,
+                                                              fontWeight: FontWeight.w900,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(width: 8),
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                          decoration: BoxDecoration(
+                                                            color: Colors.white12,
+                                                            borderRadius: BorderRadius.circular(6),
+                                                          ),
+                                                          child: Text(
+                                                            mode.toUpperCase(),
+                                                            style: const TextStyle(
+                                                              color: Colors.white70,
+                                                              fontSize: 8,
+                                                              fontWeight: FontWeight.w900,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 8),
+                                                    Text(
+                                                      deckName,
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 13,
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      '👥 $count / $maxP jugadores activos',
+                                                      style: const TextStyle(color: RefColors.muted, fontSize: 10, fontWeight: FontWeight.w500),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 14),
+                                              GestureDetector(
+                                                onTap: () {
+                                                  Navigator.pop(ctx);
+                                                  _joinPublic(code);
+                                                },
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                                  decoration: BoxDecoration(
+                                                    gradient: RefColors.primary,
+                                                    borderRadius: BorderRadius.circular(10),
+                                                  ),
+                                                  child: const Text(
+                                                    'Unirse →',
+                                                    style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                        ),
+                        const SizedBox(height: 14),
+                        if (_detailTotalPages > 1)
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              GestureDetector(
+                                onTap: _detailPage <= 1
+                                    ? null
+                                    : () {
+                                        setModalState(() => _detailPage--);
+                                        reloadDetailedRooms();
+                                      },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: _detailPage <= 1 ? Colors.white.withValues(alpha: 0.02) : Colors.white.withValues(alpha: 0.05),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.white.withValues(alpha: 0.03)),
+                                  ),
+                                  child: Text(
+                                    '← Anterior',
+                                    style: TextStyle(
+                                      color: _detailPage <= 1 ? Colors.white24 : Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                'Página $_detailPage de $_detailTotalPages',
+                                style: const TextStyle(color: RefColors.muted, fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
+                              GestureDetector(
+                                onTap: _detailPage >= _detailTotalPages
+                                    ? null
+                                    : () {
+                                        setModalState(() => _detailPage++);
+                                        reloadDetailedRooms();
+                                      },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: _detailPage >= _detailTotalPages ? Colors.white.withValues(alpha: 0.02) : Colors.white.withValues(alpha: 0.05),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.white.withValues(alpha: 0.03)),
+                                  ),
+                                  child: Text(
+                                    'Siguiente →',
+                                    style: TextStyle(
+                                      color: _detailPage >= _detailTotalPages ? Colors.white24 : Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFilterChip({required String label, required bool selected, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(right: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: selected ? RefColors.lime.withValues(alpha: .15) : Colors.white.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? RefColors.lime.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.05),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? RefColors.lime : Colors.white70,
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
       ),
     );
   }
