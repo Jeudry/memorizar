@@ -16,23 +16,35 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
   final _joinCtrl = TextEditingController();
   bool _busy = false;
   String? _error;
+  bool _initialized = false;
+  String? _currentUserId;
 
   @override
   void initState() {
     super.initState();
-    _coop = CoopService(client: AppScope.of(context).api);
-    _sub = _coop.stateStream.listen((s) {
-      if (!mounted) return;
-      final wasInGame = _state?.currentDeckId != null;
-      setState(() => _state = s);
-      // Cuando el host empuja la primera tarjeta y el invitado todavía
-      // está en el lobby, lo llevamos automáticamente al game screen.
-      final nowInGame = s.currentDeckId != null;
-      final iAmHost = s.hostId == AppScope.of(context).currentUser?.id;
-      if (!iAmHost && nowInGame && !wasInGame) {
-        Navigator.pushNamed(context, AppRoutes.cooperativoJuego);
-      }
-    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      final store = AppScope.of(context);
+      _currentUserId = store.currentUser?.id;
+      _coop = CoopService(client: store.api);
+      _sub = _coop.stateStream.listen((s) {
+        if (!mounted) return;
+        final wasInGame = _state?.currentDeckId != null;
+        setState(() => _state = s);
+        // Cuando el host empuja la primera tarjeta y el invitado todavía
+        // está en el lobby, lo llevamos automáticamente al game screen.
+        final nowInGame = s.currentDeckId != null;
+        final iAmHost = _currentUserId == s.hostId;
+        if (!iAmHost && nowInGame && !wasInGame) {
+          Navigator.pushNamed(context, AppRoutes.cooperativoJuego);
+        }
+      });
+      _initialized = true;
+    }
   }
 
   @override
