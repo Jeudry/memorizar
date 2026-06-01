@@ -2330,6 +2330,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     final coopState = CoopService.active?.state;
 
     bool isBlocked = false;
+    bool showLockOverlay = false;
     String blockText = '';
     
     if (isCoop && coopState != null) {
@@ -2341,14 +2342,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         
         if (isMeFailed) {
           isBlocked = true;
+          showLockOverlay = true;
           blockText = 'Inhabilitado por fallar ❌\nEspera al siguiente ejercicio';
         } else if (!isMe) {
           isBlocked = true;
+          showLockOverlay = false;
           blockText = 'Esperando el turno de $activeUser ⏳';
         }
       } else if (mode == 'libre') {
         if (_cooldownSecondsLeft > 0) {
           isBlocked = true;
+          showLockOverlay = true;
           blockText = '⏳ Cooldown activo. Espera ${_cooldownSecondsLeft}s…';
         }
       }
@@ -2412,28 +2416,42 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 progress: step.clamp(1, totalSteps),
               ),
             
-            Expanded(
-              child: Stack(
+            (() {
+              final isScrollable = slug != '01-escuchar' &&
+                  !_isFirstLetterSlug(slug) &&
+                  !_isFogSlug(slug) &&
+                  !_isFinalVoiceSlug(slug);
+
+              final isMyTurnActive = isCoop && coopState != null && (
+                coopState.mode == 'libre'
+                    ? _cooldownSecondsLeft <= 0
+                    : (_activeTurnUserId == CoopService.activeUserId && !_failedUserIds.contains(CoopService.activeUserId))
+              );
+
+              final exerciseContent = Stack(
                 children: [
                   AbsorbPointer(
                     absorbing: isBlocked,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        if (slug == '01-escuchar' ||
-                            _isFirstLetterSlug(slug) ||
-                            _isFogSlug(slug) ||
-                            _isFinalVoiceSlug(slug))
+                        if (!isScrollable)
                           Expanded(
+                            child: _CoopTurnGlow(
+                              active: isMyTurnActive,
+                              child: _RedFlash(
+                                active: _nonVoiceWrongRecent(),
+                                child: _realExerciseBody(context, store, card, deck, slug),
+                              ),
+                            ),
+                          )
+                        else
+                          _CoopTurnGlow(
+                            active: isMyTurnActive,
                             child: _RedFlash(
                               active: _nonVoiceWrongRecent(),
                               child: _realExerciseBody(context, store, card, deck, slug),
                             ),
-                          )
-                        else
-                          _RedFlash(
-                            active: _nonVoiceWrongRecent(),
-                            child: _realExerciseBody(context, store, card, deck, slug),
                           ),
                         const SizedBox(height: 14),
                         if (isCoop) ...[
@@ -2445,7 +2463,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                       ],
                     ),
                   ),
-                  if (isBlocked)
+                  if (isBlocked && showLockOverlay)
                     Positioned.fill(
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(24),
@@ -2490,8 +2508,16 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                       ),
                     ),
                 ],
-              ),
-            ),
+              );
+
+              if (isScrollable) {
+                return exerciseContent;
+              } else {
+                return Expanded(
+                  child: exerciseContent,
+                );
+              }
+            })(),
           ],
         ),
       ),
@@ -4378,6 +4404,87 @@ class _RedFlash extends StatelessWidget {
       ),
       padding: const EdgeInsets.all(2),
       child: child,
+    );
+  }
+}
+
+class _CoopTurnGlow extends StatefulWidget {
+  final bool active;
+  final Widget child;
+
+  const _CoopTurnGlow({required this.active, required this.child});
+
+  @override
+  State<_CoopTurnGlow> createState() => _CoopTurnGlowState();
+}
+
+class _CoopTurnGlowState extends State<_CoopTurnGlow> with SingleTickerProviderStateMixin {
+  AnimationController? _controller;
+  Animation<double>? _glowAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+    _glowAnimation = Tween<double>(begin: 4.0, end: 24.0).animate(
+      CurvedAnimation(parent: _controller!, curve: Curves.easeInOut),
+    );
+    if (widget.active) {
+      _controller!.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _CoopTurnGlow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active != oldWidget.active) {
+      if (widget.active) {
+        _controller!.repeat(reverse: true);
+      } else {
+        _controller!.stop();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.active) {
+      return widget.child;
+    }
+
+    return AnimatedBuilder(
+      animation: _glowAnimation!,
+      builder: (context, child) {
+        return Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: RefColors.lime.withValues(alpha: 0.85),
+              width: 3.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: RefColors.lime.withValues(alpha: 0.38),
+                blurRadius: _glowAnimation!.value,
+                spreadRadius: _glowAnimation!.value / 6,
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: widget.child,
+          ),
+        );
+      },
     );
   }
 }
