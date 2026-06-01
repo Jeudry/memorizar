@@ -338,7 +338,7 @@ class AppStore extends ChangeNotifier {
             unawaited(() async {
               try {
                 final requester = await api.getUser(req.requesterId);
-                final name = requester.displayName.isNotEmpty ? requester.displayName : requester.email;
+                final name = requester.user.displayName.isNotEmpty ? requester.user.displayName : requester.user.email;
                 await PushService.instance.showLocalNow(
                   id: req.id.hashCode,
                   title: '¡Solicitud de Amistad! 👥',
