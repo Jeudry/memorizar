@@ -22,6 +22,7 @@ class AppRoutes {
   static const ejercicios = '/ejercicios';
   static const flashcards = '/flashcards';
   static const premium = '/premium';
+  static const planes = '/planes';
   static const flow = '/ejercicios-flow';
   static const bgNocturnoMate = '/preview/background/nocturno-mate';
   static const bgVinoAhumado = '/preview/background/vino-ahumado';

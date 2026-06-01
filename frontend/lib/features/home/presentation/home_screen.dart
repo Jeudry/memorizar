@@ -4,6 +4,8 @@ import '../../../core/app_state.dart';
 import '../../../core/theme.dart';
 import 'glyph_icon.dart';
 import '../../../core/ui/main_tab_shell.dart';
+import '../../plans/presentation/plans_screen.dart';
+import '../../missions/presentation/missions_panel.dart';
 
 class HomeScreen extends StatelessWidget {
   final HomeBackgroundVariant backgroundVariant;
@@ -58,6 +60,10 @@ class HomeScreen extends StatelessWidget {
 
           // Community Bar
           const _CoopBar(),
+          const SizedBox(height: 18),
+
+          // Misiones del día
+          const MissionsPanel(),
           const SizedBox(height: 18),
 
           // Amigos
@@ -1171,28 +1177,109 @@ class _MemorizarGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _MemCard(
-            title: 'Biblia',
-            subtitle: 'Versículos · capítulos · libros',
-            emoji: '✝️',
-            color: AppColors.accentSun,
-            route: '/biblia',
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _MemCard(
+                title: 'Biblia',
+                subtitle: 'Versículos · capítulos · libros',
+                emoji: '✝️',
+                color: AppColors.accentSun,
+                route: '/biblia',
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _MemCard(
+                title: 'Especificar',
+                subtitle: 'Pega tu contenido',
+                emoji: '✨',
+                color: AppColors.accentViolet,
+                route: '/especificar',
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _MemCard(
-            title: 'Especificar',
-            subtitle: 'Pega tu contenido',
-            emoji: '✨',
-            color: AppColors.accentViolet,
-            route: '/especificar',
-          ),
+        const SizedBox(height: 10),
+        _MemCardHorizontal(
+          title: 'Planes de lectura',
+          subtitle: 'Recorridos guiados día por día',
+          emoji: '📖',
+          color: AppColors.accentCyan,
+          route: '/planes',
         ),
       ],
+    );
+  }
+}
+
+class _MemCardHorizontal extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final String emoji;
+  final Color color;
+  final String route;
+
+  const _MemCardHorizontal({
+    required this.title,
+    required this.subtitle,
+    required this.emoji,
+    required this.color,
+    required this.route,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.pushNamed(context, route),
+      child: GlassCard(
+        padding: const EdgeInsets.all(14),
+        color: AppColors.glassBg,
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.glassBorder),
+                gradient: LinearGradient(
+                  colors: [color.withValues(alpha: .22), color.withValues(alpha: .04)],
+                ),
+              ),
+              child: Center(child: GlyphIcon(emoji, size: 20)),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.inkMuted,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.inkMuted),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -40,6 +40,8 @@ import '../../moderation/presentation/report_dialog.dart';
 import '../../settings/presentation/settings_screen.dart';
 import 'glyph_icon.dart';
 import 'home_screen.dart';
+import '../../plans/presentation/plans_screen.dart';
+import '../../missions/presentation/missions_panel.dart';
 
 // Imports for the extracted shared building blocks.
 import '../../../core/router/app_routes.dart';
@@ -190,6 +192,7 @@ Map<String, WidgetBuilder> buildAppRoutes() => {
   AppRoutes.ejercicios: (_) => ExerciseFlowScreen(data: flowScreens.first),
   AppRoutes.flashcards: (_) => const FlashcardsScreen(),
   AppRoutes.premium: (_) => const PremiumScreen(),
+  AppRoutes.planes: (_) => const PlansScreen(),
   '${AppRoutes.flow}/progress-tree': (_) => const _ProgressTreeScreen(),
   for (final screen in flowScreens)
     '${AppRoutes.flow}/${screen.slug}': (_) => ExerciseFlowScreen(data: screen),
