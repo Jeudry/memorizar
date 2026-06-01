@@ -34,19 +34,30 @@ class SocialAuthCancelled implements Exception {
 /// Servicio de Autenticación Social real e integrado con los SDK oficiales.
 /// Soporta de forma directa Web (Chrome), macOS Desktop y Android/iOS.
 class SocialAuthService {
+  static const _webClientId =
+      '106168748090-3krdd1sakko189j93aimecj5s61i9cr2.apps.googleusercontent.com';
+
   final GoogleSignIn _google;
 
   SocialAuthService({GoogleSignIn? google})
-      : _google = google ??
-            GoogleSignIn(
-              clientId: kIsWeb
-                  ? '106168748090-3krdd1sakko189j93aimecj5s61i9cr2.apps.googleusercontent.com'
-                  : (Platform.isMacOS
-                      ? '106168748090-7a0q71bdnaq64g7q79o9eipr34dv8phs.apps.googleusercontent.com'
-                      : null),
-              serverClientId: '106168748090-3krdd1sakko189j93aimecj5s61i9cr2.apps.googleusercontent.com',
-              scopes: const ['email', 'profile'],
-            );
+      : _google = google ?? _createGoogleSignIn();
+
+  static GoogleSignIn _createGoogleSignIn() {
+    String? clientId;
+    if (kIsWeb) {
+      clientId = _webClientId;
+    } else if (Platform.isMacOS) {
+      clientId = '106168748090-7a0q71bdnaq64g7q79o9eipr34dv8phs.apps.googleusercontent.com';
+    } else if (Platform.isAndroid) {
+      clientId = '106168748090-nth3427k9lc496nrnk94i6bhn28l65qv.apps.googleusercontent.com';
+    }
+    
+    return GoogleSignIn(
+      scopes: const ['email', 'profile'],
+      serverClientId: _webClientId,
+      clientId: clientId,
+    );
+  }
 
   /// Ejecuta el flujo real de autenticación con Google.
   Future<SocialAuthResult> signInWithGoogle() async {
@@ -55,6 +66,7 @@ class SocialAuthService {
       if (account == null) {
         throw const SocialAuthCancelled('google');
       }
+      await account.authentication;
       return SocialAuthResult(
         provider: 'google',
         providerUserId: account.id,

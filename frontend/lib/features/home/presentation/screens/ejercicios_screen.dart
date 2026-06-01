@@ -425,15 +425,6 @@ class _ExerciseOption extends StatelessWidget {
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  if (tip != null)
-                    Text(
-                      tip!,
-                      style: const TextStyle(
-                        color: RefColors.muted,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
                 ],
               ),
             ),

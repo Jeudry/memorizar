@@ -1078,6 +1078,19 @@ func (s *Service) seed() {
 	if out1 == nil || out2 == nil || out3 == nil {
 		return
 	}
+	hash, _ := bcrypt.GenerateFromPassword([]byte("12345678"), bcrypt.DefaultCost)
+	if u1, _ := s.repo.FindUserByID(out1.User.ID); u1 != nil {
+		u1.PasswordHash = string(hash)
+		_ = s.repo.SaveUser(*u1)
+	}
+	if u2, _ := s.repo.FindUserByID(out2.User.ID); u2 != nil {
+		u2.PasswordHash = string(hash)
+		_ = s.repo.SaveUser(*u2)
+	}
+	if u3, _ := s.repo.FindUserByID(out3.User.ID); u3 != nil {
+		u3.PasswordHash = string(hash)
+		_ = s.repo.SaveUser(*u3)
+	}
 	friendship1, _ := s.RequestFriend(out2.User.ID, out1.User.ID)
 	if friendship1 != nil {
 		_, _ = s.AcceptFriend(out1.User.ID, friendship1.ID)

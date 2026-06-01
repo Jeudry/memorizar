@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/app_state.dart';
 import '../../../core/theme.dart';
 import 'glyph_icon.dart';
+import '../../../core/ui/main_tab_shell.dart';
 
 class HomeScreen extends StatelessWidget {
   final HomeBackgroundVariant backgroundVariant;
@@ -15,6 +16,91 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
+    final isInsideShell = MainTabShell.of(context) != null;
+
+    final content = SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // App Header
+          const _AppHeader(),
+          const SizedBox(height: 18),
+
+          // Hero Section (Pendientes)
+          const _HeroSection(),
+          const SizedBox(height: 18),
+
+          // Memorizar algo nuevo
+          const _SectionHeader(title: 'Memorizar algo nuevo'),
+          const _MemorizarGrid(),
+          const SizedBox(height: 12),
+          const _PremiumHomeCard(),
+          const SizedBox(height: 18),
+
+          // De la comunidad
+          _SectionHeader(
+            title: store.hasDecks ? 'Tus mazos' : 'Tu biblioteca',
+            trailing: TextButton(
+              onPressed: () =>
+                  Navigator.pushNamed(context, '/comunidad'),
+              child: const Text(
+                'Ver más',
+                style: TextStyle(
+                  color: AppColors.inkMuted,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+          const _CommunitySlider(),
+          const SizedBox(height: 18),
+
+          // Community Bar
+          const _CoopBar(),
+          const SizedBox(height: 18),
+
+          // Amigos
+          _SectionHeader(
+            title: 'Amigos',
+            trailing: TextButton(
+              onPressed: () => Navigator.pushNamed(context, '/amigos'),
+              child: const Text(
+                '+ Invitar',
+                style: TextStyle(
+                  color: AppColors.inkMuted,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+          const _FriendsSlider(),
+          const SizedBox(height: 18),
+
+          // Logros
+          _SectionHeader(
+            title: 'Actividad',
+            trailing: TextButton(
+              onPressed: () => Navigator.pushNamed(context, '/stats'),
+              child: const Text(
+                'Ver todo',
+                style: TextStyle(
+                  color: AppColors.inkMuted,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+          _ActivityFeed(),
+          const SizedBox(height: 100), // Space for bottom nav
+        ],
+      ),
+    );
+
+    if (isInsideShell) {
+      return content;
+    }
+
     return Scaffold(
       body: Stack(
         children: [
@@ -23,84 +109,7 @@ class HomeScreen extends StatelessWidget {
 
           // Main Content
           SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // App Header
-                  const _AppHeader(),
-                  const SizedBox(height: 18),
-
-                  // Hero Section (Pendientes)
-                  const _HeroSection(),
-                  const SizedBox(height: 18),
-
-                  // Memorizar algo nuevo
-                  const _SectionHeader(title: 'Memorizar algo nuevo'),
-                  const _MemorizarGrid(),
-                  const SizedBox(height: 12),
-                  const _PremiumHomeCard(),
-                  const SizedBox(height: 18),
-
-                  // De la comunidad
-                  _SectionHeader(
-                    title: store.hasDecks ? 'Tus mazos' : 'Tu biblioteca',
-                    trailing: TextButton(
-                      onPressed: () =>
-                          Navigator.pushNamed(context, '/comunidad'),
-                      child: const Text(
-                        'Ver más',
-                        style: TextStyle(
-                          color: AppColors.inkMuted,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const _CommunitySlider(),
-                  const SizedBox(height: 18),
-
-                  // Community Bar
-                  const _CoopBar(),
-                  const SizedBox(height: 18),
-
-                  // Amigos
-                  _SectionHeader(
-                    title: 'Amigos',
-                    trailing: TextButton(
-                      onPressed: () => Navigator.pushNamed(context, '/amigos'),
-                      child: const Text(
-                        '+ Invitar',
-                        style: TextStyle(
-                          color: AppColors.inkMuted,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const _FriendsSlider(),
-                  const SizedBox(height: 18),
-
-                  // Logros
-                  _SectionHeader(
-                    title: 'Actividad',
-                    trailing: TextButton(
-                      onPressed: () => Navigator.pushNamed(context, '/stats'),
-                      child: const Text(
-                        'Ver todo',
-                        style: TextStyle(
-                          color: AppColors.inkMuted,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                  _ActivityFeed(),
-                  const SizedBox(height: 100), // Space for bottom nav
-                ],
-              ),
-            ),
+            child: content,
           ),
 
           // Bottom Nav
@@ -961,19 +970,40 @@ class _HeroSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          for (var i = 0; i < topCards.length; i++) ...[
-            _HeroItem(
-              emoji: topCards[i].icon,
-              title: topCards[i].front,
-              subtitle:
-                  '${topCards[i].source} · retención ${topCards[i].retention}%',
-              eta: '~${(topCards[i].lapses + 3).clamp(3, 7)} min',
-              isUrgent: topCards[i].retention < 50,
-              isToday: topCards[i].retention >= 50,
-              isPriority: i == 0,
+          ShaderMask(
+            shaderCallback: (Rect bounds) {
+              return LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white,
+                  Colors.white,
+                  Colors.white.withOpacity(0.28),
+                  Colors.transparent,
+                ],
+                stops: const [0.0, 0.45, 0.88, 1.0],
+              ).createShader(bounds);
+            },
+            blendMode: BlendMode.dstIn,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < topCards.length; i++) ...[
+                  _HeroItem(
+                    emoji: topCards[i].icon,
+                    title: topCards[i].front,
+                    subtitle:
+                        '${topCards[i].source} · retención ${topCards[i].retention}%',
+                    eta: '~${(topCards[i].lapses + 3).clamp(3, 7)} min',
+                    isUrgent: topCards[i].retention < 50,
+                    isToday: topCards[i].retention >= 50,
+                    isPriority: i == 0,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ],
             ),
-            const SizedBox(height: 8),
-          ],
+          ),
           const SizedBox(height: 8),
           const Divider(color: AppColors.glassBorder, height: 1),
           const SizedBox(height: 6),
@@ -1237,6 +1267,8 @@ class _MemCard extends StatelessWidget {
                     ),
                     Text(
                       subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 11,
                         color: AppColors.inkMuted,
@@ -1523,20 +1555,26 @@ class _CoopBar extends StatelessWidget {
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.accentLime, Color(0xFF3ED97A)],
+          InkWell(
+            onTap: () {
+              Navigator.pushNamed(context, AppRoutes.cooperativo);
+            },
+            borderRadius: BorderRadius.circular(999),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppColors.accentLime, Color(0xFF3ED97A)],
+                ),
+                borderRadius: BorderRadius.circular(999),
               ),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: const Text(
-              'Abrir',
-              style: TextStyle(
-                color: Colors.black,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
+              child: const Text(
+                'Abrir',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'main_tab_shell.dart';
 
 import '../router/app_routes.dart';
 
@@ -20,7 +21,10 @@ class RefBackButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap ??
           () {
-            if (Navigator.canPop(context)) {
+            final shell = MainTabShell.of(context);
+            if (shell != null && shell.activeRoute != AppRoutes.home) {
+              shell.goToRoute(AppRoutes.home);
+            } else if (Navigator.canPop(context)) {
               Navigator.pop(context);
             } else {
               Navigator.pushReplacementNamed(context, AppRoutes.home);
