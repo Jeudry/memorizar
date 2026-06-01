@@ -524,8 +524,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         }
 
         final store = AppScope.of(context);
-        final currentSlug = widget.data.slug;
-        final isHost = s.hostId == CoopService.activeUserId;
 
         if (s.currentCardIndex != store.sessionCardsCompleted) {
           store.setSessionCardsCompleted(s.currentCardIndex);
@@ -535,16 +533,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             _cooldownTimer?.cancel();
             _cooldownTimer = null;
           });
-        }
-
-        if (!isHost && s.currentSlug != null && s.currentSlug!.isNotEmpty && s.currentSlug != currentSlug) {
-          setState(() {
-            _failedUserIds.clear();
-            _cooldownSecondsLeft = 0;
-            _cooldownTimer?.cancel();
-            _cooldownTimer = null;
-          });
-          Navigator.pushReplacementNamed(context, '${AppRoutes.flow}/${s.currentSlug}');
         }
       });
 
@@ -556,6 +544,19 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             setState(() {
               _failedUserIds.add(failedUserId);
             });
+          }
+        } else if (msg.type == 'card') {
+          final senderId = msg.userId;
+          final slug = msg.payload?['slug'] as String? ?? '';
+          final currentSlug = widget.data.slug;
+          if (senderId != CoopService.activeUserId && slug.isNotEmpty && slug != currentSlug) {
+            setState(() {
+              _failedUserIds.clear();
+              _cooldownSecondsLeft = 0;
+              _cooldownTimer?.cancel();
+              _cooldownTimer = null;
+            });
+            Navigator.pushReplacementNamed(context, '${AppRoutes.flow}/$slug');
           }
         }
       });
@@ -2211,12 +2212,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     
     final isMeActive = isTurnos && _activeTurnUserId == CoopService.activeUserId;
     final isMeFailed = isTurnos && _failedUserIds.contains(CoopService.activeUserId);
+    final completed = AppScope.of(context).isExerciseStepCompleted(widget.data.slug);
     
     if (isTurnos) {
       if (isMeFailed) {
         message = 'INHABILITADO · Has fallado en este ejercicio ❌';
         glowColor = RefColors.pink;
         icon = Icons.cancel_outlined;
+      } else if (completed) {
+        message = '¡Paso completado! Esperando al resto del equipo… ⏳';
+        glowColor = RefColors.lime;
+        icon = Icons.check_circle_outline_rounded;
       } else if (isMeActive) {
         message = '⚡ ¡TU TURNO! Responde ahora 🎯';
         glowColor = RefColors.lime;
@@ -2232,6 +2238,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         message = '⏳ COOLDOWN ACTIVO · Espera ${_cooldownSecondsLeft}s';
         glowColor = RefColors.pink;
         icon = Icons.timer_outlined;
+      } else if (completed) {
+        message = '¡Paso completado! Esperando al resto del equipo… ⏳';
+        glowColor = RefColors.lime;
+        icon = Icons.check_circle_outline_rounded;
       } else {
         message = '⚡ MODO LIBRE · ¡Cualquiera puede responder! 🚀';
         glowColor = RefColors.lime;
@@ -2241,22 +2251,24 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       return const SizedBox.shrink();
     }
     
+    final isGlowActive = isMeActive && !completed;
+    
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: glowColor.withValues(alpha: isMeActive ? 0.25 : 0.1),
-            blurRadius: isMeActive ? 16 : 8,
-            spreadRadius: isMeActive ? 1 : 0,
+            color: glowColor.withValues(alpha: isGlowActive ? 0.25 : 0.1),
+            blurRadius: isGlowActive ? 16 : 8,
+            spreadRadius: isGlowActive ? 1 : 0,
           ),
         ],
       ),
       child: Glass(
         radius: 16,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        border: Border.all(color: glowColor.withValues(alpha: isMeActive ? 0.6 : 0.2)),
+        border: Border.all(color: glowColor.withValues(alpha: isGlowActive ? 0.6 : 0.2)),
         child: Row(
           children: [
             Container(
@@ -2278,12 +2290,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 13,
-                  fontWeight: isMeActive ? FontWeight.w900 : FontWeight.w700,
-                  letterSpacing: isMeActive ? 0.5 : 0.2,
+                  fontWeight: isGlowActive ? FontWeight.w900 : FontWeight.w700,
+                  letterSpacing: isGlowActive ? 0.5 : 0.2,
                 ),
               ),
             ),
-            if (isMeActive)
+            if (isGlowActive)
               Container(
                 width: 8,
                 height: 8,
@@ -2428,15 +2440,15 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     : (_activeTurnUserId == CoopService.activeUserId && !_failedUserIds.contains(CoopService.activeUserId))
               );
 
-              final exerciseContent = Stack(
+              final exerciseContent = Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  AbsorbPointer(
-                    absorbing: isBlocked,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (!isScrollable)
-                          Expanded(
+                  if (!isScrollable)
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          AbsorbPointer(
+                            absorbing: isBlocked,
                             child: _CoopTurnGlow(
                               active: isMyTurnActive,
                               child: _RedFlash(
@@ -2444,68 +2456,125 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                                 child: _realExerciseBody(context, store, card, deck, slug),
                               ),
                             ),
-                          )
-                        else
-                          _CoopTurnGlow(
+                          ),
+                          if (isBlocked && showLockOverlay)
+                            Positioned.fill(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(24),
+                                child: Glass(
+                                  color: Colors.black.withValues(alpha: 0.55),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                                  child: Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(24.0),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            _cooldownSecondsLeft > 0
+                                                ? Icons.timer_outlined
+                                                : _failedUserIds.contains(CoopService.activeUserId)
+                                                    ? Icons.cancel_outlined
+                                                    : Icons.lock_outline_rounded,
+                                            color: _failedUserIds.contains(CoopService.activeUserId)
+                                                ? RefColors.pink
+                                                : _cooldownSecondsLeft > 0
+                                                    ? RefColors.sun
+                                                    : RefColors.muted,
+                                            size: 56,
+                                          ),
+                                          const SizedBox(height: 18),
+                                          Text(
+                                            blockText,
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                              height: 1.4,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    )
+                  else
+                    Stack(
+                      children: [
+                        AbsorbPointer(
+                          absorbing: isBlocked,
+                          child: _CoopTurnGlow(
                             active: isMyTurnActive,
                             child: _RedFlash(
                               active: _nonVoiceWrongRecent(),
                               child: _realExerciseBody(context, store, card, deck, slug),
                             ),
                           ),
-                        const SizedBox(height: 14),
-                        if (isCoop) ...[
-                          _coopExerciseFooter(context, store, card, deck, slug),
-                          const SizedBox(height: 14),
-                          const _CoopGameChat(),
-                        ] else
-                          _realExerciseFooter(context, store, card, deck, slug),
-                      ],
-                    ),
-                  ),
-                  if (isBlocked && showLockOverlay)
-                    Positioned.fill(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
-                        child: Glass(
-                          color: Colors.black.withValues(alpha: 0.55),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-                          child: Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24.0),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    _cooldownSecondsLeft > 0
-                                        ? Icons.timer_outlined
-                                        : _failedUserIds.contains(CoopService.activeUserId)
-                                            ? Icons.cancel_outlined
-                                            : Icons.lock_outline_rounded,
-                                    color: _failedUserIds.contains(CoopService.activeUserId)
-                                        ? RefColors.pink
-                                        : _cooldownSecondsLeft > 0
-                                            ? RefColors.sun
-                                            : RefColors.muted,
-                                    size: 56,
-                                  ),
-                                  const SizedBox(height: 18),
-                                  Text(
-                                    blockText,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      height: 1.4,
+                        ),
+                        if (isBlocked && showLockOverlay)
+                          Positioned.fill(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(24),
+                              child: Glass(
+                                color: Colors.black.withValues(alpha: 0.55),
+                                border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                                child: Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24.0),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          _cooldownSecondsLeft > 0
+                                              ? Icons.timer_outlined
+                                              : _failedUserIds.contains(CoopService.activeUserId)
+                                                  ? Icons.cancel_outlined
+                                                  : Icons.lock_outline_rounded,
+                                          color: _failedUserIds.contains(CoopService.activeUserId)
+                                              ? RefColors.pink
+                                              : _cooldownSecondsLeft > 0
+                                                  ? RefColors.sun
+                                                  : RefColors.muted,
+                                          size: 56,
+                                        ),
+                                        const SizedBox(height: 18),
+                                        Text(
+                                          blockText,
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            height: 1.4,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
+                      ],
+                    ),
+                  const SizedBox(height: 14),
+                  if (isCoop) ...[
+                    AbsorbPointer(
+                      absorbing: isBlocked,
+                      child: _coopExerciseFooter(context, store, card, deck, slug),
+                    ),
+                    const SizedBox(height: 14),
+                    const _CoopGameChat(),
+                  ] else
+                    AbsorbPointer(
+                      absorbing: isBlocked,
+                      child: _realExerciseFooter(context, store, card, deck, slug),
                     ),
                 ],
               );
@@ -3889,9 +3958,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   ) {
     final completed = store.isExerciseStepCompleted(slug);
     final isHost = CoopService.activeUserId == CoopService.active?.state?.hostId;
+    final coopState = CoopService.active?.state;
+    final mode = coopState?.mode ?? 'turnos';
+    final isMyTurn = mode == 'libre' || (_activeTurnUserId == CoopService.activeUserId && !_failedUserIds.contains(CoopService.activeUserId));
+    final canAdvance = isHost || isMyTurn;
     
     if (completed) {
-      if (isHost) {
+      if (canAdvance) {
         return Cta(
           'Continuar →',
           onTap: () {
