@@ -3957,57 +3957,25 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     String slug,
   ) {
     final completed = store.isExerciseStepCompleted(slug);
-    final isHost = CoopService.activeUserId == CoopService.active?.state?.hostId;
-    final coopState = CoopService.active?.state;
-    final mode = coopState?.mode ?? 'turnos';
-    final isMyTurn = mode == 'libre' || (_activeTurnUserId == CoopService.activeUserId && !_failedUserIds.contains(CoopService.activeUserId));
-    final canAdvance = isHost || isMyTurn;
     
     if (completed) {
-      if (canAdvance) {
-        return Cta(
-          'Continuar →',
-          onTap: () {
-            ActiveMediaRegistry.stopAll();
-            final steps = _sessionFlowSteps(store);
-            final stepIndex = steps.indexWhere((step) => step.slug == slug);
-            final nextSlug = (stepIndex >= 0 && stepIndex < steps.length - 1)
-                ? steps[stepIndex + 1].slug
-                : 'progress-tree';
-            
-            CoopService.active!.broadcastCard(
-              deckId: deck.id,
-              cardIndex: store.sessionCardsCompleted,
-              slug: nextSlug,
-            );
-            
-            _navigateToNextStepOrComplete(context, store, slug);
-          },
-        );
-      } else {
-        return const Glass(
-          padding: EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(RefColors.lime)),
-              ),
-              SizedBox(width: 12),
-              Text(
-                '¡Paso completado! Esperando al Host…',
-                style: TextStyle(
-                  color: RefColors.lime,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        );
-      }
+      return Cta(
+        'Continuar →',
+        onTap: () {
+          ActiveMediaRegistry.stopAll();
+          final steps = _sessionFlowSteps(store);
+          final isLastStep = steps.isNotEmpty && steps.last.slug == slug;
+          final nextSlug = isLastStep ? 'final-review' : 'progress-tree';
+          
+          CoopService.active!.broadcastCard(
+            deckId: deck.id,
+            cardIndex: store.sessionCardsCompleted,
+            slug: nextSlug,
+          );
+          
+          _navigateToNextStepOrComplete(context, store, slug);
+        },
+      );
     }
     
     return _realExerciseFooter(context, store, card, deck, slug);
