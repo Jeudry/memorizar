@@ -255,6 +255,16 @@ class MemorizarClient {
         .toList();
   }
 
+  Future<RemoteUser> getUser(String targetUserId) async {
+    final encoded = Uri.encodeQueryComponent(targetUserId);
+    final r = await _http.get(
+      _uri('/v1/social/user?id=$encoded'),
+      headers: _headers,
+    );
+    final body = await _decode(r);
+    return RemoteUser.fromJson(body);
+  }
+
   Future<Friendship> requestFriend(String friendUserId) async {
     final r = await _http.post(
       _uri('/v1/social/friends/request'),
