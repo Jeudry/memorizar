@@ -2158,8 +2158,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 },
               ),
               const SizedBox(height: 8),
-              _CoopLiveScoreboard(state: coopState),
-              const SizedBox(height: 14),
               _CoopTeamRow(state: coopState, answeredUsers: const {}),
               const SizedBox(height: 14),
               RefProgress((store.sessionCardsCompleted + 1) / store.sessionDailyTarget),
