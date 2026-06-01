@@ -3,7 +3,16 @@
 part of '../ui_screens.dart';
 
 class EspecificarScreen extends StatefulWidget {
-  const EspecificarScreen({super.key});
+  final bool embedded;
+  final void Function(String deckId, String title)? onDeckCreated;
+  final VoidCallback? onCancel;
+
+  const EspecificarScreen({
+    super.key,
+    this.embedded = false,
+    this.onDeckCreated,
+    this.onCancel,
+  });
 
   @override
   State<EspecificarScreen> createState() => _EspecificarScreenState();
@@ -13,6 +22,7 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
   late final TextEditingController _titleController;
   late final TextEditingController _contentController;
   List<MemoryCardData> _segmentedCards = const [];
+  bool _submitting = false;
 
   @override
   void initState() {
@@ -90,18 +100,14 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
   }
 
   void _createDeck() {
+    if (_submitting) return;
     final cards = _segmentedCards.isEmpty
         ? AppScope.of(context).segmentContent(
             _contentController.text,
             title: _titleController.text,
           )
         : _segmentedCards;
-    final created = AppScope.of(context).createDeckFromCards(
-      title: _titleController.text,
-      icon: '🧠',
-      cards: cards,
-    );
-    if (created == null) {
+    if (cards.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Pega o escribe contenido antes de continuar.'),
@@ -109,7 +115,26 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
       );
       return;
     }
-    Navigator.pushNamed(context, AppRoutes.iniciar);
+    setState(() => _submitting = true);
+    final created = AppScope.of(context).createDeckFromCards(
+      title: _titleController.text,
+      icon: '🧠',
+      cards: cards,
+    );
+    if (created == null) {
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pega o escribe contenido antes de continuar.'),
+        ),
+      );
+      return;
+    }
+    if (widget.embedded && widget.onDeckCreated != null) {
+      widget.onDeckCreated!(created.id, created.title);
+    } else {
+      Navigator.pushNamed(context, AppRoutes.iniciar);
+    }
   }
 
   void _clearAll() {
@@ -136,17 +161,17 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
   @override
   Widget build(BuildContext context) {
     final cards = _segmentedCards;
-    return ReferencePage(
-      active: AppRoutes.home,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!widget.embedded) ...[
           const RefTopBar(title: 'Nuevo contenido'),
           const _StepIndicator(active: 0, count: 3),
           const _PageHead(
             'Pega lo que quieres memorizar',
             'La app lo segmenta en tarjetas automáticamente · puedes editarlas después',
           ),
+        ],
           Glass(
             color: Colors.transparent,
             gradient: const LinearGradient(
@@ -284,19 +309,25 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    GestureDetector(
-                      onTap: _pasteFromClipboard,
-                      child: const _ToolChip('📋 Pegar'),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: _pasteFromClipboard,
+                        child: const _ToolChip('📋 Pegar'),
+                      ),
                     ),
                     const SizedBox(width: 6),
-                    GestureDetector(
-                      onTap: _clearAll,
-                      child: const _ToolChip('🧹 Limpiar'),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: _clearAll,
+                        child: const _ToolChip('🧹 Limpiar'),
+                      ),
                     ),
                     const SizedBox(width: 6),
-                    GestureDetector(
-                      onTap: () => Navigator.pushNamed(context, AppRoutes.settings),
-                      child: const _ToolChip('⚙️ Ajustes'),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => Navigator.pushNamed(context, AppRoutes.settings),
+                        child: const _ToolChip('⚙️ Ajustes'),
+                      ),
                     ),
                   ],
                 ),
@@ -383,7 +414,14 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
             ],
           ),
         ],
-      ),
+      );
+
+    if (widget.embedded) {
+      return content;
+    }
+    return ReferencePage(
+      active: AppRoutes.home,
+      child: content,
     );
   }
 }

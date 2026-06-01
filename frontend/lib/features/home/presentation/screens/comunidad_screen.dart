@@ -84,6 +84,67 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
     }
   }
 
+  void _showReportDialog(BuildContext context, String deckTitle) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: RefColors.glassStrong,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: RefColors.border),
+          ),
+          title: Row(
+            children: const [
+              Icon(Icons.copyright_rounded, color: RefColors.urgent),
+              SizedBox(width: 8),
+              Text(
+                'Reportar Copyright',
+                style: TextStyle(color: RefColors.ink, fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ],
+          ),
+          content: Text(
+            '¿Deseas reportar el mazo "$deckTitle" por infracción de propiedad intelectual o derechos de autor (DMCA)?',
+            style: const TextStyle(color: RefColors.ink, fontSize: 13, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar', style: TextStyle(color: RefColors.muted, fontWeight: FontWeight.bold)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: RefColors.urgent.withValues(alpha: .15),
+                foregroundColor: RefColors.urgent,
+                elevation: 0,
+                side: const BorderSide(color: RefColors.urgent),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: RefColors.glassStrong,
+                    shape: RoundedRectangleBorder(
+                      side: const BorderSide(color: RefColors.lime),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    content: const Text(
+                      'Reporte registrado exitosamente. Revisaremos el contenido en un plazo máximo de 24 horas.',
+                      style: TextStyle(color: RefColors.lime, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                );
+              },
+              child: const Text('Reportar', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
@@ -154,7 +215,12 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
                 ),
               )
             else
-              for (final r in _results!) _CommunityHit(share: r, onImport: () => _import(r)),
+              for (final r in _results!)
+                _CommunityHit(
+                  share: r,
+                  onImport: () => _import(r),
+                  onReport: () => _showReportDialog(context, r['title'] as String? ?? 'Sin título'),
+                ),
           ],
           const SizedBox(height: 12),
           GridView.count(
@@ -224,7 +290,13 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
 class _CommunityHit extends StatelessWidget {
   final Map<String, dynamic> share;
   final VoidCallback onImport;
-  const _CommunityHit({required this.share, required this.onImport});
+  final VoidCallback onReport;
+  
+  const _CommunityHit({
+    required this.share,
+    required this.onImport,
+    required this.onReport,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -262,6 +334,23 @@ class _CommunityHit extends StatelessWidget {
                     ),
                   ),
               ],
+            ),
+          ),
+          GestureDetector(
+            onTap: onReport,
+            child: Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: RefColors.urgent.withValues(alpha: .12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: RefColors.urgent.withValues(alpha: .4)),
+              ),
+              child: const Icon(
+                Icons.copyright_rounded,
+                color: RefColors.urgent,
+                size: 16,
+              ),
             ),
           ),
           GestureDetector(

@@ -1,8 +1,14 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../../../core/api/models.dart';
 import '../../../core/app_state.dart';
 import '../../../core/theme.dart';
 import 'glyph_icon.dart';
+import '../../../core/ui/main_tab_shell.dart';
+import '../../plans/presentation/plans_screen.dart';
+import '../../missions/presentation/missions_panel.dart';
+import 'ui_screens.dart';
+import '../../cooperativo/data/coop_service.dart';
 
 class HomeScreen extends StatelessWidget {
   final HomeBackgroundVariant backgroundVariant;
@@ -15,6 +21,101 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
+    final isInsideShell = MainTabShell.of(context) != null;
+
+    final content = SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // App Header
+          const _AppHeader(),
+          const SizedBox(height: 18),
+
+          // Hero Section (Pendientes)
+          const _HeroSection(),
+          const SizedBox(height: 18),
+
+          // Memorizar algo nuevo
+          const _SectionHeader(title: 'Memorizar algo nuevo'),
+          const _MemorizarGrid(),
+          const SizedBox(height: 12),
+          const _CoopBar(),
+          const SizedBox(height: 12),
+          const _PremiumHomeCard(),
+          const SizedBox(height: 18),
+
+          // De la comunidad
+          _SectionHeader(
+            title: store.hasDecks ? 'Tus mazos' : 'Tu biblioteca',
+            trailing: TextButton(
+              onPressed: () =>
+                  Navigator.pushNamed(context, '/comunidad'),
+              child: const Text(
+                'Ver más',
+                style: TextStyle(
+                  color: AppColors.inkMuted,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+          const _CommunitySlider(),
+          const SizedBox(height: 18),
+
+
+
+          // Misiones del día
+          const MissionsPanel(),
+          const SizedBox(height: 18),
+
+          // Amigos
+          _SectionHeader(
+            title: 'Amigos',
+            trailing: TextButton(
+              onPressed: () {
+                if (store.isLoggedIn) {
+                  AmigosScreen.showAddFriendModal(context);
+                } else {
+                  Navigator.pushNamed(context, '/amigos');
+                }
+              },
+              child: const Text(
+                '+ Invitar',
+                style: TextStyle(
+                  color: AppColors.inkMuted,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+          const _FriendsSlider(),
+          const SizedBox(height: 18),
+
+          // Logros
+          _SectionHeader(
+            title: 'Actividad',
+            trailing: TextButton(
+              onPressed: () => Navigator.pushNamed(context, '/stats'),
+              child: const Text(
+                'Ver todo',
+                style: TextStyle(
+                  color: AppColors.inkMuted,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+          _ActivityFeed(),
+          const SizedBox(height: 180), // Space for bottom nav
+        ],
+      ),
+    );
+
+    if (isInsideShell) {
+      return content;
+    }
+
     return Scaffold(
       body: Stack(
         children: [
@@ -23,84 +124,7 @@ class HomeScreen extends StatelessWidget {
 
           // Main Content
           SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // App Header
-                  const _AppHeader(),
-                  const SizedBox(height: 18),
-
-                  // Hero Section (Pendientes)
-                  const _HeroSection(),
-                  const SizedBox(height: 18),
-
-                  // Memorizar algo nuevo
-                  const _SectionHeader(title: 'Memorizar algo nuevo'),
-                  const _MemorizarGrid(),
-                  const SizedBox(height: 12),
-                  const _PremiumHomeCard(),
-                  const SizedBox(height: 18),
-
-                  // De la comunidad
-                  _SectionHeader(
-                    title: store.hasDecks ? 'Tus mazos' : 'Tu biblioteca',
-                    trailing: TextButton(
-                      onPressed: () =>
-                          Navigator.pushNamed(context, '/comunidad'),
-                      child: const Text(
-                        'Ver más',
-                        style: TextStyle(
-                          color: AppColors.inkMuted,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const _CommunitySlider(),
-                  const SizedBox(height: 18),
-
-                  // Community Bar
-                  const _CoopBar(),
-                  const SizedBox(height: 18),
-
-                  // Amigos
-                  _SectionHeader(
-                    title: 'Amigos',
-                    trailing: TextButton(
-                      onPressed: () => Navigator.pushNamed(context, '/amigos'),
-                      child: const Text(
-                        '+ Invitar',
-                        style: TextStyle(
-                          color: AppColors.inkMuted,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const _FriendsSlider(),
-                  const SizedBox(height: 18),
-
-                  // Logros
-                  _SectionHeader(
-                    title: 'Actividad',
-                    trailing: TextButton(
-                      onPressed: () => Navigator.pushNamed(context, '/stats'),
-                      child: const Text(
-                        'Ver todo',
-                        style: TextStyle(
-                          color: AppColors.inkMuted,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                  _ActivityFeed(),
-                  const SizedBox(height: 100), // Space for bottom nav
-                ],
-              ),
-            ),
+            child: content,
           ),
 
           // Bottom Nav
@@ -466,66 +490,68 @@ void _showAccountMenu(BuildContext context) {
           border: Border.all(color: AppColors.glassBorder),
         ),
         padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (store.isLoggedIn) ...[
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (store.isLoggedIn) ...[
+                _AccountMenuRow(
+                  icon: Icons.account_circle_outlined,
+                  label: store.currentUser?.displayName ?? 'Mi cuenta',
+                  subtitle: store.currentUser?.email ?? '',
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    Navigator.pushNamed(context, '/account');
+                  },
+                ),
+                _AccountMenuRow(
+                  icon: Icons.inbox_outlined,
+                  label: 'Compartidos conmigo',
+                  subtitle: 'Mazos que tus amigos te enviaron',
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    Navigator.pushNamed(context, '/inbox');
+                  },
+                ),
+              ] else
+                _AccountMenuRow(
+                  icon: Icons.login_rounded,
+                  label: 'Iniciar sesión',
+                  subtitle: 'Sincroniza tus mazos y conecta con amigos',
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    Navigator.pushNamed(context, '/login');
+                  },
+                ),
               _AccountMenuRow(
-                icon: Icons.account_circle_outlined,
-                label: store.currentUser?.displayName ?? 'Mi cuenta',
-                subtitle: store.currentUser?.email ?? '',
+                icon: Icons.settings_outlined,
+                label: 'Ajustes',
+                subtitle: 'Tema, idioma, accesibilidad, recordatorios',
                 onTap: () {
                   Navigator.of(sheetCtx).pop();
-                  Navigator.pushNamed(context, '/account');
+                  Navigator.pushNamed(context, '/settings');
                 },
               ),
               _AccountMenuRow(
-                icon: Icons.inbox_outlined,
-                label: 'Compartidos conmigo',
-                subtitle: 'Mazos que tus amigos te enviaron',
+                icon: Icons.gavel_rounded,
+                label: 'Legal y privacidad',
+                subtitle: 'Términos, Privacidad, DMCA, Comunidad',
                 onTap: () {
                   Navigator.of(sheetCtx).pop();
-                  Navigator.pushNamed(context, '/inbox');
+                  Navigator.pushNamed(context, '/legal');
                 },
               ),
-            ] else
               _AccountMenuRow(
-                icon: Icons.login_rounded,
-                label: 'Iniciar sesión',
-                subtitle: 'Sincroniza tus mazos y conecta con amigos',
+                icon: Icons.shield_outlined,
+                label: 'Moderación',
+                subtitle: 'Cola de reportes recibidos',
                 onTap: () {
                   Navigator.of(sheetCtx).pop();
-                  Navigator.pushNamed(context, '/login');
+                  Navigator.pushNamed(context, '/moderation');
                 },
               ),
-            _AccountMenuRow(
-              icon: Icons.settings_outlined,
-              label: 'Ajustes',
-              subtitle: 'Tema, idioma, accesibilidad, recordatorios',
-              onTap: () {
-                Navigator.of(sheetCtx).pop();
-                Navigator.pushNamed(context, '/settings');
-              },
-            ),
-            _AccountMenuRow(
-              icon: Icons.gavel_rounded,
-              label: 'Legal y privacidad',
-              subtitle: 'Términos, Privacidad, DMCA, Comunidad',
-              onTap: () {
-                Navigator.of(sheetCtx).pop();
-                Navigator.pushNamed(context, '/legal');
-              },
-            ),
-            _AccountMenuRow(
-              icon: Icons.shield_outlined,
-              label: 'Moderación',
-              subtitle: 'Cola de reportes recibidos',
-              onTap: () {
-                Navigator.of(sheetCtx).pop();
-                Navigator.pushNamed(context, '/moderation');
-              },
-            ),
-          ],
+            ],
+          ),
         ),
       );
     },
@@ -616,7 +642,13 @@ class _AppHeader extends StatelessWidget {
     return Row(
       children: [
         GestureDetector(
-          onTap: () => _showAccountMenu(context),
+          onTap: () {
+            if (store.isLoggedIn) {
+              _showAccountMenu(context);
+            } else {
+              Navigator.pushNamed(context, '/login');
+            }
+          },
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -629,16 +661,20 @@ class _AppHeader extends StatelessWidget {
                   border: Border.all(color: AppColors.glassBorder),
                 ),
                 child: Center(
-                  child: Text(
-                    store.isLoggedIn
-                        ? (store.currentUser?.initial ?? 'U')
-                        : '?',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      fontSize: 18,
-                    ),
-                  ),
+                  child: store.isLoggedIn
+                      ? Text(
+                          store.currentUser?.initial ?? 'U',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            fontSize: 18,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.login_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                 ),
               ),
               if (store.totalNotifications > 0)
@@ -949,19 +985,40 @@ class _HeroSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          for (var i = 0; i < topCards.length; i++) ...[
-            _HeroItem(
-              emoji: topCards[i].icon,
-              title: topCards[i].front,
-              subtitle:
-                  '${topCards[i].source} · retención ${topCards[i].retention}%',
-              eta: '~${(topCards[i].lapses + 3).clamp(3, 7)} min',
-              isUrgent: topCards[i].retention < 50,
-              isToday: topCards[i].retention >= 50,
-              isPriority: i == 0,
+          ShaderMask(
+            shaderCallback: (Rect bounds) {
+              return LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white,
+                  Colors.white,
+                  Colors.white.withOpacity(0.28),
+                  Colors.transparent,
+                ],
+                stops: const [0.0, 0.45, 0.88, 1.0],
+              ).createShader(bounds);
+            },
+            blendMode: BlendMode.dstIn,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < topCards.length; i++) ...[
+                  _HeroItem(
+                    emoji: topCards[i].icon,
+                    title: topCards[i].front,
+                    subtitle:
+                        '${topCards[i].source} · retención ${topCards[i].retention}%',
+                    eta: '~${(topCards[i].lapses + 3).clamp(3, 7)} min',
+                    isUrgent: topCards[i].retention < 50,
+                    isToday: topCards[i].retention >= 50,
+                    isPriority: i == 0,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ],
             ),
-            const SizedBox(height: 8),
-          ],
+          ),
           const SizedBox(height: 8),
           const Divider(color: AppColors.glassBorder, height: 1),
           const SizedBox(height: 6),
@@ -1129,28 +1186,109 @@ class _MemorizarGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _MemCard(
-            title: 'Biblia',
-            subtitle: 'Versículos · capítulos · libros',
-            emoji: '✝️',
-            color: AppColors.accentSun,
-            route: '/biblia',
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _MemCard(
+                title: 'Biblia',
+                subtitle: 'Versículos · capítulos · libros',
+                emoji: '✝️',
+                color: AppColors.accentSun,
+                route: '/biblia',
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _MemCard(
+                title: 'Especificar',
+                subtitle: 'Pega tu contenido',
+                emoji: '✨',
+                color: AppColors.accentViolet,
+                route: '/especificar',
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _MemCard(
-            title: 'Especificar',
-            subtitle: 'Pega tu contenido',
-            emoji: '✨',
-            color: AppColors.accentViolet,
-            route: '/especificar',
-          ),
+        const SizedBox(height: 10),
+        _MemCardHorizontal(
+          title: 'Planes de lectura',
+          subtitle: 'Recorridos guiados día por día',
+          emoji: '📖',
+          color: AppColors.accentCyan,
+          route: '/planes',
         ),
       ],
+    );
+  }
+}
+
+class _MemCardHorizontal extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final String emoji;
+  final Color color;
+  final String route;
+
+  const _MemCardHorizontal({
+    required this.title,
+    required this.subtitle,
+    required this.emoji,
+    required this.color,
+    required this.route,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.pushNamed(context, route),
+      child: GlassCard(
+        padding: const EdgeInsets.all(14),
+        color: AppColors.glassBg,
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.glassBorder),
+                gradient: LinearGradient(
+                  colors: [color.withValues(alpha: .22), color.withValues(alpha: .04)],
+                ),
+              ),
+              child: Center(child: GlyphIcon(emoji, size: 20)),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.inkMuted,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.inkMuted),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1225,6 +1363,8 @@ class _MemCard extends StatelessWidget {
                     ),
                     Text(
                       subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 11,
                         color: AppColors.inkMuted,
@@ -1457,82 +1597,137 @@ class _CoopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final store = AppScope.of(context);
-    if (!store.hasDecks) {
-      return const _EmptyHomePanel(
-        icon: '🤝',
-        title: 'Cooperativo listo para tus mazos',
-        body: 'Crea primero contenido real para abrir una sala de estudio.',
+    final activeCoop = CoopService.active;
+
+    if (activeCoop == null) {
+      return _buildCard(
+        context: context,
+        title: 'Sala Cooperativa',
+        subtitle: 'Crea una sala privada o únete a una partida',
+        avatarLabel: '👥',
+        avatarColor: AppColors.accentPink,
+        buttonText: 'Abrir',
       );
     }
-    final deck = store.activeDeck;
-    return GlassCard(
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 56,
-            child: Stack(
-              children: [
-                _SmallAvatar(
-                  label: deck.title.characters.first.toUpperCase(),
-                  color: AppColors.accentPink,
-                ),
-                Positioned(
-                  left: 24,
-                  child: _SmallAvatar(label: '+', color: AppColors.accentCyan),
-                ),
-              ],
+
+    return StreamBuilder<CoopRoomState>(
+      stream: activeCoop.stateStream,
+      initialData: activeCoop.state,
+      builder: (context, snapshot) {
+        final state = snapshot.data;
+        if (state == null) {
+          return _buildCard(
+            context: context,
+            title: 'Sala Cooperativa',
+            subtitle: 'Crea una sala privada o únete a una partida',
+            avatarLabel: '👥',
+            avatarColor: AppColors.accentPink,
+            buttonText: 'Abrir',
+          );
+        }
+
+        final deckName = state.lobbyDeckName;
+        final deckSelected = deckName != null && deckName.isNotEmpty;
+        final title = deckSelected ? 'Estudiar $deckName en equipo' : 'Sala Cooperativa Activa';
+        final subtitle = 'Código: ${state.code} · ${state.memberIds.length}/${state.sessionMaxPlayers} jugadores';
+        final avatarLabel = deckSelected ? deckName.characters.first.toUpperCase() : '👥';
+        final avatarColor = AppColors.accentLime;
+
+        return _buildCard(
+          context: context,
+          title: title,
+          subtitle: subtitle,
+          avatarLabel: avatarLabel,
+          avatarColor: avatarColor,
+          buttonText: 'Volver',
+        );
+      },
+    );
+  }
+
+  Widget _buildCard({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required String avatarLabel,
+    required Color avatarColor,
+    required String buttonText,
+  }) {
+    return GestureDetector(
+      onTap: () => Navigator.pushNamed(context, '/cooperativo'),
+      child: GlassCard(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 56,
+              child: Stack(
+                children: [
+                  _SmallAvatar(
+                    label: avatarLabel,
+                    color: avatarColor,
+                  ),
+                  Positioned(
+                    left: 24,
+                    child: _SmallAvatar(label: '+', color: AppColors.accentCyan),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Estudiar ${deck.title}',
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.accentLime,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            InkWell(
+              onTap: () => Navigator.pushNamed(context, '/cooperativo'),
+              borderRadius: BorderRadius.circular(999),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.accentLime, Color(0xFF3ED97A)],
+                  ),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  buttonText,
                   style: const TextStyle(
-                    fontSize: 13,
+                    color: Colors.black,
+                    fontSize: 11,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                Row(
-                  children: [
-                    Text(
-                      '${deck.cards.length} tarjetas · sala privada',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.accentLime,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.accentLime, Color(0xFF3ED97A)],
-              ),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: const Text(
-              'Abrir',
-              style: TextStyle(
-                color: Colors.black,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
+
 
 class _SmallAvatar extends StatelessWidget {
   final String label;
@@ -1617,7 +1812,7 @@ class _ActivityFeed extends StatefulWidget {
 }
 
 class _ActivityFeedState extends State<_ActivityFeed> {
-  List<dynamic>? _entries;
+  List<FeedEntry>? _entries;
   bool _loading = false;
   bool _attempted = false;
 
@@ -1657,7 +1852,7 @@ class _ActivityFeedState extends State<_ActivityFeed> {
         child: Column(
           children: [
             for (final raw in _entries!.take(5).toList().asMap().entries) ...[
-              _RemoteFeedRow(entry: raw.value as Map<String, dynamic>),
+              _RemoteFeedRow(entry: raw.value as FeedEntry),
               if (raw.key != 4 && raw.key < _entries!.length - 1)
                 const Divider(color: AppColors.glassBorder, height: 20),
             ],
@@ -1709,28 +1904,32 @@ class _ActivityFeedState extends State<_ActivityFeed> {
 /// Una fila del feed remoto. Mapea por `type` (achievement / activity /
 /// share) a iconos y colores distintos.
 class _RemoteFeedRow extends StatelessWidget {
-  final Map<String, dynamic> entry;
+  final FeedEntry entry;
   const _RemoteFeedRow({required this.entry});
 
   @override
   Widget build(BuildContext context) {
-    final type = (entry['type'] as String?) ?? '';
-    final title = (entry['title'] as String?) ?? '';
-    final description = (entry['description'] as String?) ?? '';
-    final emoji = (entry['emoji'] as String?) ?? '';
+    final type = entry.type.name;
+    final title = entry.title;
+    final description = entry.description;
     final initial = title.isNotEmpty ? title.substring(0, 1).toUpperCase() : '?';
-    final color = type == 'achievement'
+    final color = entry.type == FeedEntryType.achievement
         ? AppColors.accentSun
-        : type == 'share'
+        : entry.type == FeedEntryType.share
             ? AppColors.accentLime
             : AppColors.accentCyan;
+    final emoji = entry.type == FeedEntryType.achievement
+        ? '🏆'
+        : entry.type == FeedEntryType.share
+            ? '🤝'
+            : '✨';
     return _FeedItem(
       label: initial,
       color: color,
       name: title,
       action: description,
       time: 'Hoy',
-      emoji: emoji.isEmpty ? '✨' : emoji,
+      emoji: emoji,
     );
   }
 }

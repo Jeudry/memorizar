@@ -57,6 +57,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/public/shares/", s.handlePublicShare)
 	s.mux.HandleFunc("/v1/social/friends/request", s.withAuth(s.handleFriendRequest))
 	s.mux.HandleFunc("/v1/social/friends/accept", s.withAuth(s.handleFriendAccept))
+	s.mux.HandleFunc("/v1/social/friends/invite/accept", s.withAuth(s.handleFriendInviteAccept))
 	s.mux.HandleFunc("/v1/social/feed", s.withAuth(s.handleFeed))
 	s.mux.HandleFunc("/v1/social/feed/reactions", s.withAuth(s.handleFeedReaction))
 	s.mux.HandleFunc("/v1/social/feed/comments", s.withAuth(s.handleFeedComment))
@@ -68,6 +69,9 @@ func (s *Server) registerRoutes() {
 	// Cooperativo en tiempo real (websocket).
 	s.mux.HandleFunc("/v1/coop/rooms", s.withAuth(s.handleCoopCreateRoom))
 	s.mux.HandleFunc("/v1/coop/rooms/lookup", s.withAuth(s.handleCoopLookup))
+	s.mux.HandleFunc("/v1/coop/rooms/public", s.withAuth(s.handleCoopListPublicRooms))
+	s.mux.HandleFunc("/v1/coop/invite", s.withAuth(s.handleCoopInvite))
+	s.mux.HandleFunc("/v1/coop/invites/pending", s.withAuth(s.handleCoopGetPendingInvites))
 	s.mux.HandleFunc("/v1/coop/ws", s.coop.HandleWebsocket)
 }
 
@@ -218,8 +222,22 @@ func (s *Server) handleFriends(w http.ResponseWriter, r *http.Request, userID st
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+
+	friendsList := make([]map[string]any, len(friends))
+	for i, f := range friends {
+		friendsList[i] = map[string]any{
+			"id":            f.ID,
+			"email":         f.Email,
+			"displayName":   f.DisplayName,
+			"avatarUrl":     f.AvatarURL,
+			"locale":        f.Locale,
+			"emailVerified": f.EmailVerified,
+			"isOnline":      s.coop.IsUserOnline(f.ID),
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"friends":         friends,
+		"friends":         friendsList,
 		"pendingRequests": pending,
 	})
 }
@@ -326,6 +344,26 @@ func (s *Server) handleFriendAccept(w http.ResponseWriter, r *http.Request, user
 			status = http.StatusForbidden
 		}
 		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, friendship)
+}
+
+func (s *Server) handleFriendInviteAccept(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		ReferrerID string `json:"referrerId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	friendship, err := s.service.AcceptInviteFriend(userID, strings.TrimSpace(body.ReferrerID))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, friendship)
@@ -648,11 +686,31 @@ func (s *Server) handleCoopCreateRoom(w http.ResponseWriter, r *http.Request, us
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	room := s.coop.CreateRoom(userID)
+	type CreateInput struct {
+		IsPublic bool   `json:"isPublic"`
+		DeckID   string `json:"deckId"`
+		DeckName string `json:"deckName"`
+	}
+	input := CreateInput{
+		IsPublic: true, // Default to public
+	}
+	if r.ContentLength > 0 {
+		_ = json.NewDecoder(r.Body).Decode(&input)
+	}
+	room := s.coop.CreateRoom(userID, input.IsPublic, input.DeckID, input.DeckName)
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"code":   room.Code,
 		"hostId": room.HostID,
 	})
+}
+
+func (s *Server) handleCoopListPublicRooms(w http.ResponseWriter, r *http.Request, _ string) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	rooms := s.coop.ListPublicRooms()
+	writeJSON(w, http.StatusOK, rooms)
 }
 
 func (s *Server) handleCoopLookup(w http.ResponseWriter, r *http.Request, _ string) {
@@ -671,9 +729,42 @@ func (s *Server) handleCoopLookup(w http.ResponseWriter, r *http.Request, _ stri
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"code":   room.Code,
-		"hostId": room.HostID,
+		"code":     room.Code,
+		"hostId":   room.HostID,
+		"deckId":   room.DeckID,
+		"deckName": room.DeckName,
 	})
+}
+
+func (s *Server) handleCoopInvite(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		FriendUserID string `json:"friendUserId"`
+		RoomCode     string `json:"roomCode"`
+		HostName     string `json:"hostName"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	s.coop.AddInvitation(strings.TrimSpace(body.FriendUserID), strings.TrimSpace(body.RoomCode), strings.TrimSpace(body.HostName))
+	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}
+
+func (s *Server) handleCoopGetPendingInvites(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	invites := s.coop.GetPendingInvitations(userID)
+	if invites == nil {
+		invites = []coop.CoopInvitation{}
+	}
+	s.coop.ClearPendingInvitations(userID)
+	writeJSON(w, http.StatusOK, invites)
 }
 
 var _ = domain.ProviderGoogle

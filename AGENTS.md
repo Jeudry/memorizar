@@ -4,11 +4,11 @@ Motor de memorización genérico con SRS (Spaced Repetition System). El deck pri
 
 ---
 
-## IMPORTANTE: Frontend primero
+## Integración de Arquitectura
 
-**El desarrollo arranca por el frontend.** La UI avanza con datos mock y persistencia local (Drift) sin depender del backend. El backend entra en Fase 3, cuando el frontend ya esté funcional y visualmente completo.
+**El frontend y el backend están activamente integrados.** Todo el estado y flujo de autenticación, repetición y sincronización de mazos viaja a través de peticiones HTTP reales (Dio) hacia el backend en Go (puerto 8080) y persistencia local integrada.
 
-No bloquear trabajo de UI esperando endpoints — si algo necesita datos del backend, usar mocks o Drift local.
+No simular datos o usar maquetaciones mock si existen endpoints funcionales en el backend.
 
 ---
 
@@ -16,8 +16,8 @@ No bloquear trabajo de UI esperando endpoints — si algo necesita datos del bac
 
 ```
 Memorizar/
-  frontend/     # Flutter app (arrancamos aquí)
-  backend/      # Go API (Fase 3+)
+  frontend/     # Flutter app
+  backend/      # Go API
   docs/
     adr/        # Architecture Decision Records
 ```
@@ -33,20 +33,16 @@ cd frontend && flutter run
 # Generar código (Riverpod, Drift, Freezed)
 cd frontend && flutter pub run build_runner build --delete-conflicting-outputs
 
-# Backend (Fase 3+)
+# Backend
 cd backend && go run cmd/api/main.go       # puerto 8080
 cd backend && air                          # live reload
 
-# Docker (Fase 3+)
+# Docker
 docker-compose up
 ```
 
-### Hot Restart (Antigravity ONLY)
-**CRITICAL:** NEVER use `manage_task` tool with `send_input` 'R' to perform a Flutter hot restart.
-Instead, ALWAYS run the automatic hot restart trigger script:
-```bash
-dart /Users/sargon/.gemini/antigravity/brain/ad9a501d-71ee-4863-a468-bff6eb05a209/scratch/hot_restart.dart
-```
+### Hot Restart & Hot Reload (Antigravity)
+Utilizar la herramienta `manage_task` con la acción `send_input` y el comando `'r'` para Hot Reload o `'R'` para Hot Restart directamente sobre la tarea en ejecución de `flutter run`.
 
 ---
 
@@ -56,8 +52,8 @@ dart /Users/sargon/.gemini/antigravity/brain/ad9a501d-71ee-4863-a468-bff6eb05a20
 - State: `Riverpod 2.x` con code generation (`riverpod_annotation`)
 - Routing: `go_router`
 - Models: `Freezed` + `json_serializable`
-- Local DB: `Drift` (SQLite tipado) — offline-first desde el día uno
-- HTTP: `Dio` (dormido hasta Fase 3)
+- Local DB: `Drift` (SQLite tipado) — offline-first sincronizado
+- HTTP: `Dio` — activo y conectado al backend
 - UI: `google_fonts` (Outfit headings, DM Sans body)
 - Hooks: `flutter_hooks` + `hooks_riverpod`
 
@@ -74,12 +70,11 @@ frontend/lib/
     home/         # dashboard / estadísticas
 ```
 
-**Fase actual: Fase 1 — UI completa con mocks.**
-No conectar Dio todavía. Todo el estado viene de providers con datos hardcodeados o Drift local.
+**Estado actual:** Integración completa de producción. Comunicación Dio activa hacia el backend.
 
 ---
 
-## Backend (Go) — Fase 3+
+## Backend (Go)
 
 **Stack:**
 - Go 1.24+, puerto **8080** (no usar 3000)
@@ -99,8 +94,6 @@ backend/
   migrations/
   docs/adr/
 ```
-
-**No tocar el backend hasta terminar Fase 2 del frontend.**
 
 ---
 
@@ -127,3 +120,27 @@ El deck "Biblia" tiene metadatos extra: `book`, `chapter`, `verse`.
 
 - Rama base: `main` (siempre crear desde main — no preguntar)
 - Naming: `feature/MM-{número}_{descripción}`
+
+---
+
+## 🛡️ PROTOCOLO DE SEGURIDAD DE GIT (MANDATORIO PARA IA)
+
+Para evitar la pérdida accidental de código de producción, conflictos híbridos y errores de compilación, todo agente que trabaje en este repositorio **DEBE** acatar estrictamente las siguientes reglas:
+
+### 1. Control de Archivos sin Registrar (Untracked)
+- **Regla:** Antes de ejecutar cualquier comando destructivo (`git checkout .`, `git reset --hard`, `git clean`), ejecuta siempre `git status`.
+- **Acción:** Si existen directorios o archivos nuevos sin registrar (como `missions/`, `plans/`, etc.), **debes agregarlos inmediatamente al stage (`git add .`)** para que Git los rastree. Nunca los dejes en limbo como untracked para evitar que se pierdan en worktrees ocultos o stashes.
+
+### 2. Recuperación Segura de Stashes
+- **Regla:** Si aplicas un `git stash pop` y se generan conflictos de fusión, **NUNCA** los borres o deshagas con un reset masivo.
+- **Acción:** Inspecciona cada archivo marcado como "both modified" y resuelve pacientemente todos los marcadores (`<<<<<<<`, `=======`, `>>>>>>>`) combinando la lógica de ambas partes. Si no puedes resolverlos, utiliza `git stash apply` en lugar de `pop` para no perder la copia de seguridad física del stash.
+
+### 3. Cero Commits con Errores de Sintaxis o Marcadores
+- **Regla:** Queda prohibido hacer commits, push o crear Pull Requests que contengan marcadores de conflicto sobrantes en el código o fallos de compilación.
+- **Acción:** Tras resolver conflictos, ejecuta obligatoriamente `flutter analyze` en el frontend y `go build` en el backend. Confirma que el reporte arroje **cero errores** antes de proceder a la firma del commit.
+
+### 4. Búsqueda de Cambios "Perdidos"
+- Si el usuario reporta que se perdieron cambios que ya se habían avanzado, **no declares el trabajo perdido** de inmediato. Realiza la búsqueda exhaustiva en:
+  1. La lista de stashes locales: `git stash list`
+  2. El registro interno de referencias de Git: `git reflog`
+  3. Los subdirectorios ocultos de trabajo del worktree: `.claude/worktrees/`

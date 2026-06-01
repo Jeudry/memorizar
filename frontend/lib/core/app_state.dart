@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,6 +9,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../features/moderation/data/report_models.dart';
 import 'api/memorizar_client.dart';
 import 'api/models.dart';
+import 'db/app_database.dart';
+import 'services/push_service.dart';
+import 'package:drift/drift.dart' as drift;
 
 /// Visibility level for a memory deck. Defaults to [private] — going to
 /// [friends] or [public] requires the user to acknowledge they have rights
@@ -162,11 +166,102 @@ final emptyDeck = MemoryDeckData(
 );
 
 class AppStore extends ChangeNotifier {
-  AppStore({MemorizarClient? api}) : api = api ?? MemorizarClient();
+  String? pendingReferrerId;
+
+  AppStore({
+    MemorizarClient? api,
+    AppDatabase? db,
+    this.enableDatabasePersistence = true,
+  })  : api = api ?? MemorizarClient(),
+        db = db ?? (enableDatabasePersistence ? AppDatabase() : null) {
+    if (kIsWeb) {
+      final ref = Uri.base.queryParameters['ref'];
+      if (ref != null && ref.isNotEmpty) {
+        pendingReferrerId = ref;
+      }
+    }
+  }
 
   /// Cliente HTTP del backend Go. Lo expongo público para que features que
   /// hablan directo con la API (Amigos, Feed) lo reusen sin duplicarlo.
   final MemorizarClient api;
+  final AppDatabase? db;
+  final bool enableDatabasePersistence;
+
+  Future<void> loadDecksFromDatabase() async {
+    if (db == null) return;
+    final dbDecks = await db!.getAllDecks();
+    if (dbDecks.isEmpty) {
+      // Pre-cargar mazo de demostración de Filipenses 4
+      final demoDeck = DecksCompanion(
+        id: const drift.Value('demo-filipenses-4'),
+        title: const drift.Value('Filipenses 4'),
+        subtitle: const drift.Value('2 versículos de demostración'),
+        icon: const drift.Value('✝️'),
+        isBible: const drift.Value(true),
+        createdAt: drift.Value(DateTime.now()),
+      );
+      await db!.upsertDeck(demoDeck);
+
+      final demoCards = [
+        CardsCompanion(
+          id: const drift.Value('fil-4-13'),
+          deckId: const drift.Value('demo-filipenses-4'),
+          front: const drift.Value('Filipenses 4:13'),
+          back: const drift.Value('Todo lo puedo en Cristo que me fortalece.'),
+          source: const drift.Value('RV1909'),
+          icon: const drift.Value('✝️'),
+          retention: const drift.Value(74),
+          lapses: const drift.Value(0),
+        ),
+        CardsCompanion(
+          id: const drift.Value('fil-4-19'),
+          deckId: const drift.Value('demo-filipenses-4'),
+          front: const drift.Value('Filipenses 4:19'),
+          back: const drift.Value('Mi Dios, pues, suplirá todo lo que os falta conforme a sus riquezas en gloria en Cristo Jesús.'),
+          source: const drift.Value('RV1909'),
+          icon: const drift.Value('✝️'),
+          retention: const drift.Value(74),
+          lapses: const drift.Value(0),
+        ),
+      ];
+
+      for (final card in demoCards) {
+        await db!.upsertCard(card);
+      }
+      
+      return loadDecksFromDatabase();
+    }
+
+    _decks.clear();
+    for (final d in dbDecks) {
+      final dbCards = await db!.getCardsForDeck(d.id);
+      final cards = dbCards.map((c) => MemoryCardData(
+        id: c.id,
+        front: c.front,
+        back: c.back,
+        source: c.source,
+        icon: c.icon,
+        retention: c.retention,
+        lapses: c.lapses,
+      )).toList();
+
+      _decks.add(MemoryDeckData(
+        id: d.id,
+        title: d.title,
+        subtitle: d.subtitle,
+        icon: d.icon,
+        createdAt: d.createdAt,
+        isBible: d.isBible,
+        cards: cards,
+      ));
+    }
+    
+    if (_decks.isNotEmpty && _activeDeckId == null) {
+      _activeDeckId = _decks.first.id;
+    }
+    notifyListeners();
+  }
 
   // ─── Auth ───────────────────────────────────────────────────────────────
 
@@ -183,6 +278,54 @@ class AppStore extends ChangeNotifier {
   /// usando la app. La diferencia con "no logueado" es semántica solamente —
   /// hoy ambos se comportan igual.
   bool get isGuest => !isLoggedIn;
+
+  Timer? _inviteTimer;
+  final List<Map<String, dynamic>> _pendingCoopInvites = [];
+  List<Map<String, dynamic>> get pendingCoopInvites => List.unmodifiable(_pendingCoopInvites);
+
+  void clearPendingCoopInvite(String roomCode) {
+    _pendingCoopInvites.removeWhere((i) => i['roomCode'] == roomCode);
+    notifyListeners();
+  }
+
+  void _startInviteTimer() {
+    _inviteTimer?.cancel();
+    _inviteTimer = Timer.periodic(const Duration(seconds: 4), (timer) async {
+      if (!isLoggedIn) return;
+      try {
+        final invites = await api.getPendingCoopInvites();
+        if (invites.isNotEmpty) {
+          bool updated = false;
+          for (final invite in invites) {
+            if (invite is Map<String, dynamic>) {
+              final code = invite['roomCode'] as String? ?? '';
+              final alreadyHas = _pendingCoopInvites.any((i) => i['roomCode'] == code);
+              if (!alreadyHas && code.isNotEmpty) {
+                _pendingCoopInvites.add(invite);
+                updated = true;
+                
+                final hostName = invite['hostName'] as String? ?? 'Tu amigo';
+                unawaited(PushService.instance.showLocalNow(
+                  id: code.hashCode,
+                  title: '¡Invitación Cooperativa! 🎮',
+                  body: '$hostName te invita a unirte a su sala $code.',
+                ));
+              }
+            }
+          }
+          if (updated) {
+            notifyListeners();
+          }
+        }
+      } catch (_) {}
+    });
+  }
+
+  void _stopInviteTimer() {
+    _inviteTimer?.cancel();
+    _inviteTimer = null;
+    _pendingCoopInvites.clear();
+  }
 
   /// Conteo de invitaciones de amistad pendientes (donde YO soy el
   /// destinatario). Se refresca con [refreshPendingCount] al loguearse y
@@ -218,6 +361,9 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> bootstrapSession() async {
+    if (enableDatabasePersistence) {
+      await loadDecksFromDatabase();
+    }
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_kSessionTokenKey);
     final userJson = prefs.getString(_kSessionUserKey);
@@ -228,9 +374,24 @@ class AppStore extends ChangeNotifier {
           RemoteUser.fromJson(jsonDecode(userJson) as Map<String, dynamic>);
       api.setSessionToken(token);
       notifyListeners();
+      _startInviteTimer();
+      unawaited(checkAndApplyPendingReferrer());
     } catch (_) {
       await prefs.remove(_kSessionTokenKey);
       await prefs.remove(_kSessionUserKey);
+    }
+  }
+
+  Future<void> checkAndApplyPendingReferrer() async {
+    final ref = pendingReferrerId;
+    if (ref != null && ref.isNotEmpty && isLoggedIn) {
+      try {
+        await api.acceptFriendInvite(ref);
+        pendingReferrerId = null;
+        unawaited(refreshPendingCount());
+      } catch (e) {
+        debugPrint('Error auto-accepting friend invite: $e');
+      }
     }
   }
 
@@ -269,6 +430,8 @@ class AppStore extends ChangeNotifier {
     api.setSessionToken(_sessionToken);
     await _persistSession(result.session.token, result.user);
     notifyListeners();
+    _startInviteTimer();
+    unawaited(checkAndApplyPendingReferrer());
     // Bajar snapshot remoto en background (best-effort, no bloquea login).
     unawaited(pullProgressSnapshot());
     unawaited(refreshPendingCount());
@@ -279,6 +442,7 @@ class AppStore extends ChangeNotifier {
     _sessionToken = null;
     api.setSessionToken(null);
     await _clearPersistedSession();
+    _stopInviteTimer();
     notifyListeners();
   }
 
@@ -297,6 +461,8 @@ class AppStore extends ChangeNotifier {
     api.setSessionToken(_sessionToken);
     await _persistSession(result.session.token, result.user);
     notifyListeners();
+    _startInviteTimer();
+    unawaited(checkAndApplyPendingReferrer());
     unawaited(pullProgressSnapshot());
     unawaited(refreshPendingCount());
   }
@@ -311,6 +477,8 @@ class AppStore extends ChangeNotifier {
     api.setSessionToken(_sessionToken);
     await _persistSession(result.session.token, result.user);
     notifyListeners();
+    _startInviteTimer();
+    unawaited(checkAndApplyPendingReferrer());
     unawaited(pullProgressSnapshot());
     unawaited(refreshPendingCount());
   }
@@ -640,6 +808,7 @@ class AppStore extends ChangeNotifier {
 
   final List<MemoryDeckData> _decks = [];
   final List<BibleVerseData> _bibleVerses = [];
+  final Set<String> _loadedBibleBooks = {};
   final List<BibleVerseData> _selectedBibleVerses = [];
   final Set<String> _completedExerciseSteps = {};
   final Map<String, String> _exerciseVoiceReads = {};
@@ -663,8 +832,7 @@ class AppStore extends ChangeNotifier {
   List<BibleVerseData> get bibleVerses => List.unmodifiable(_bibleVerses);
   List<BibleVerseData> get selectedBibleVerses =>
       List.unmodifiable(_selectedBibleVerses);
-  Set<String> get loadedBibleBooks =>
-      _bibleVerses.map((verse) => verse.book).toSet();
+  Set<String> get loadedBibleBooks => _loadedBibleBooks;
   bool get hasDecks => _decks.isNotEmpty;
   MemoryDeckData get activeDeck {
     if (_decks.isEmpty) return emptyDeck;
@@ -681,7 +849,7 @@ class AppStore extends ChangeNotifier {
     if (deck.isBible && deck.cards.length > 1 && _sessionDailyTarget > 1) {
       final count = _sessionDailyTarget.clamp(1, deck.cards.length);
       final subList = deck.cards.take(count).toList();
-      final combinedFront = subList.map((c) => c.front).join('; ');
+      final combinedFront = _collapseBibleReferences(subList.map((c) => c.front).toList());
       final combinedBack = subList.map((c) => c.back.trim()).join(' ');
       return MemoryCardData(
         id: 'combined-${deck.id}-$count',
@@ -782,6 +950,20 @@ class AppStore extends ChangeNotifier {
 
   String get bibleVersion => _bibleVersion;
 
+  /// Indexación rápida O(1) de versículos por libro y capítulo para la versión activa.
+  final Map<String, Map<int, List<BibleVerseData>>> _versesCache = {};
+
+  void _rebuildVersesCache() {
+    _versesCache.clear();
+    _loadedBibleBooks.clear();
+    for (final verse in _bibleVerses) {
+      _loadedBibleBooks.add(verse.book);
+      final bookCache = _versesCache.putIfAbsent(verse.book, () => {});
+      final chapterList = bookCache.putIfAbsent(verse.chapter, () => []);
+      chapterList.add(verse);
+    }
+  }
+
   void setBibleVersion(String version) {
     if (!_bibleByVersion.containsKey(version)) return;
     if (_bibleVersion == version) return;
@@ -789,6 +971,7 @@ class AppStore extends ChangeNotifier {
     _bibleVerses
       ..clear()
       ..addAll(_bibleByVersion[version]!);
+    _rebuildVersesCache();
     notifyListeners();
   }
 
@@ -816,15 +999,14 @@ class AppStore extends ChangeNotifier {
     _bibleVerses
       ..clear()
       ..addAll(_bibleByVersion[initial] ?? const []);
+    _rebuildVersesCache();
   }
 
   List<BibleVerseData> versesFor(String book, int chapter) {
     final canonicalBook = _canonicalBookName(book);
-    return _bibleVerses
-        .where(
-          (verse) => verse.book == canonicalBook && verse.chapter == chapter,
-        )
-        .toList();
+    final bookCache = _versesCache[canonicalBook];
+    if (bookCache == null) return const [];
+    return bookCache[chapter] ?? const [];
   }
 
   List<BibleVerseData> searchBible(String rawQuery) {
@@ -1223,14 +1405,62 @@ class AppStore extends ChangeNotifier {
     return chapters.every((c) => isWholeChapterSelected(canonical, c));
   }
 
-  bool createBibleDeckFromSelection() {
-    if (_selectedBibleVerses.isEmpty) return false;
-    final grouped = _selectedBibleVerses.first;
-    final title = '${grouped.book} ${grouped.chapter}';
+  Future<void> _persistDeckToDatabase(MemoryDeckData deck) async {
+    if (!enableDatabasePersistence) return;
+    final companion = DecksCompanion(
+      id: drift.Value(deck.id),
+      title: drift.Value(deck.title),
+      subtitle: drift.Value(deck.subtitle),
+      icon: drift.Value(deck.icon),
+      isBible: drift.Value(deck.isBible),
+      createdAt: drift.Value(deck.createdAt),
+    );
+    await db!.upsertDeck(companion);
+    for (final card in deck.cards) {
+      await db!.upsertCard(CardsCompanion(
+        id: drift.Value(card.id),
+        deckId: drift.Value(deck.id),
+        front: drift.Value(card.front),
+        back: drift.Value(card.back),
+        source: drift.Value(card.source),
+        icon: drift.Value(card.icon),
+        retention: drift.Value(card.retention),
+        lapses: drift.Value(card.lapses),
+      ));
+    }
+  }
+
+  String? createBibleDeckFromSelection() {
+    if (_selectedBibleVerses.isEmpty) return null;
+    
+    String title;
+    String subtitle;
+    
+    if (_selectedBibleVerses.length == _bibleVerses.length) {
+      title = 'Toda la Biblia';
+      subtitle = '31,102 versículos';
+    } else {
+      final refs = _selectedBibleVerses.map((v) => v.ref).toList();
+      title = _collapseBibleReferences(refs);
+      if (title.length > 32) {
+        final uniqueBooks = _selectedBibleVerses.map((v) => v.book).toSet();
+        if (uniqueBooks.length == 1) {
+          final book = uniqueBooks.first;
+          if (isWholeBookSelected(book)) {
+            title = '$book (Completo)';
+          } else {
+            title = '$book (Selección)';
+          }
+        } else {
+          title = 'Selección Bíblica';
+        }
+      }
+      subtitle = '${_selectedBibleVerses.length} versículos';
+    }
     final deck = MemoryDeckData(
       id: 'bible-${DateTime.now().microsecondsSinceEpoch}',
       title: title,
-      subtitle: '${_selectedBibleVerses.length} versículos seleccionados',
+      subtitle: subtitle,
       icon: '✝️',
       isBible: true,
       createdAt: DateTime.now(),
@@ -1248,7 +1478,8 @@ class AppStore extends ChangeNotifier {
     );
     _decks.insert(0, deck);
     setActiveDeck(deck.id);
-    return true;
+    unawaited(_persistDeckToDatabase(deck));
+    return deck.id;
   }
 
   MemoryDeckData? createDeckFromRawContent({
@@ -1295,6 +1526,7 @@ class AppStore extends ChangeNotifier {
     );
     _decks.insert(0, deck);
     setActiveDeck(deck.id);
+    unawaited(_persistDeckToDatabase(deck));
     return deck;
   }
 
@@ -1383,6 +1615,9 @@ class AppStore extends ChangeNotifier {
           retention: (card.retention + (correct ? 8 : -14)).clamp(18, 100),
           lapses: card.lapses + (correct ? 0 : 1),
         );
+        if (enableDatabasePersistence) {
+          unawaited(db!.updateCardRetention(cards[i].id, cards[i].retention, cards[i].lapses));
+        }
       }
       _decks[deckIndex] = MemoryDeckData(
         id: deck.id,
@@ -1407,6 +1642,9 @@ class AppStore extends ChangeNotifier {
       retention: (card.retention + (correct ? 8 : -14)).clamp(18, 100),
       lapses: card.lapses + (correct ? 0 : 1),
     );
+    if (enableDatabasePersistence) {
+      unawaited(db!.updateCardRetention(cards[_currentCardIndex].id, cards[_currentCardIndex].retention, cards[_currentCardIndex].lapses));
+    }
     _decks[deckIndex] = MemoryDeckData(
       id: deck.id,
       title: deck.title,
@@ -1681,3 +1919,68 @@ const bibleBooks = [
   BibleBookData('Judas', 'Jud', 1),
   BibleBookData('Apocalipsis', 'Apoc', 22),
 ];
+
+String _collapseBibleReferences(List<String> references) {
+  if (references.isEmpty) return '';
+  if (references.length == 1) return references.first;
+
+  final groups = <String, List<int>>{};
+  final order = <String>[];
+
+  final regex = RegExp(
+    r'^((?:[1-3]\s*)?[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?:\s+[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)*)\s+(\d+):(\d+)$'
+  );
+
+  var hasUnparsed = false;
+
+  for (final ref in references) {
+    final cleanRef = ref.trim();
+    final match = regex.firstMatch(cleanRef);
+    if (match == null) {
+      hasUnparsed = true;
+      break;
+    }
+    final book = match.group(1)!.trim();
+    final chapter = match.group(2)!;
+    final verse = int.tryParse(match.group(3)!) ?? 0;
+
+    final key = '$book $chapter';
+    if (!groups.containsKey(key)) {
+      groups[key] = [];
+      order.add(key);
+    }
+    groups[key]!.add(verse);
+  }
+
+  if (hasUnparsed || groups.isEmpty) {
+    return references.join('; ');
+  }
+
+  final formattedGroups = <String>[];
+  for (final key in order) {
+    final verses = groups[key]!;
+    if (verses.isEmpty) continue;
+
+    final sorted = [...verses]..sort();
+    final ranges = <String>[];
+    var start = sorted.first;
+    var prev = start;
+    for (var i = 1; i < sorted.length; i++) {
+      final n = sorted[i];
+      if (n == prev + 1) {
+        prev = n;
+      } else {
+        ranges.add(start == prev ? '$start' : '$start-$prev');
+        start = n;
+        prev = n;
+      }
+    }
+    ranges.add(start == prev ? '$start' : '$start-$prev');
+    final compactedVerses = ranges.join(', ');
+
+    formattedGroups.add('$key:$compactedVerses');
+  }
+
+  return formattedGroups.join('; ');
+}
+

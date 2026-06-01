@@ -2,8 +2,82 @@
 // BibliaScreen + pickers (book/chapter/verse), themes, version dropdown.
 part of '../ui_screens.dart';
 
+class _BibleStudyStatus {
+  final Map<String, int> verseRetentions = {};
+
+  _BibleStudyStatus(AppStore store) {
+    for (final deck in store.decks) {
+      for (final card in deck.cards) {
+        final parts = card.front.split('·');
+        final ref = parts.first.trim();
+        final currentMax = verseRetentions[ref] ?? -1;
+        if (card.retention > currentMax) {
+          verseRetentions[ref] = card.retention;
+        }
+      }
+    }
+  }
+
+  bool isVerseCompleted(String book, int chapter, int verse) {
+    final ret = verseRetentions['$book $chapter:$verse'];
+    return ret != null && ret >= 80;
+  }
+
+  bool isVerseInProgress(String book, int chapter, int verse) {
+    final ret = verseRetentions['$book $chapter:$verse'];
+    return ret != null && ret < 80;
+  }
+
+  bool isChapterCompleted(String book, int chapter, List<BibleVerseData> allChapterVerses) {
+    if (allChapterVerses.isEmpty) return false;
+    return allChapterVerses.every((v) => isVerseCompleted(book, chapter, v.verse));
+  }
+
+  bool isChapterInProgress(String book, int chapter, List<BibleVerseData> allChapterVerses) {
+    if (allChapterVerses.isEmpty) return false;
+    final anyStudied = allChapterVerses.any((v) => verseRetentions.containsKey('$book $chapter:${v.verse}'));
+    final allCompleted = allChapterVerses.every((v) => isVerseCompleted(book, chapter, v.verse));
+    return anyStudied && !allCompleted;
+  }
+
+  bool isBookCompleted(String book, AppStore store) {
+    final chapters = _chapterCountFor(book);
+    if (chapters <= 0) return false;
+    for (int c = 1; c <= chapters; c++) {
+      final verses = store.versesFor(book, c);
+      if (!isChapterCompleted(book, c, verses)) return false;
+    }
+    return true;
+  }
+
+  bool isBookInProgress(String book, AppStore store) {
+    final chapters = _chapterCountFor(book);
+    if (chapters <= 0) return false;
+    var anyStudied = false;
+    var allCompleted = true;
+    for (int c = 1; c <= chapters; c++) {
+      final verses = store.versesFor(book, c);
+      if (verses.isEmpty) continue;
+      final anyInChap = verses.any((v) => verseRetentions.containsKey('$book $c:${v.verse}'));
+      final chapComp = isChapterCompleted(book, c, verses);
+      if (anyInChap) anyStudied = true;
+      if (!chapComp) allCompleted = false;
+    }
+    return anyStudied && !allCompleted;
+  }
+}
+
 class BibliaScreen extends StatefulWidget {
-  const BibliaScreen({super.key});
+  final bool embedded;
+  final void Function(String deckId, String title)? onDeckCreated;
+  final VoidCallback? onCancel;
+
+  const BibliaScreen({
+    super.key,
+    this.embedded = false,
+    this.onDeckCreated,
+    this.onCancel,
+  });
 
   @override
   State<BibliaScreen> createState() => _BibliaScreenState();
@@ -92,14 +166,19 @@ class _BibliaScreenState extends State<BibliaScreen> {
   }
 
   void _finishBibleSelection() {
-    final created = AppScope.of(context).createBibleDeckFromSelection();
-    if (!created) {
+    final createdId = AppScope.of(context).createBibleDeckFromSelection();
+    if (createdId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Selecciona al menos un versículo.')),
       );
       return;
     }
-    Navigator.pushNamed(context, AppRoutes.iniciar);
+    if (widget.embedded && widget.onDeckCreated != null) {
+      final deck = AppScope.of(context).decks.firstWhere((d) => d.id == createdId);
+      widget.onDeckCreated!(createdId, deck.title);
+    } else {
+      Navigator.pushNamed(context, AppRoutes.iniciar);
+    }
   }
 
   @override
@@ -113,39 +192,60 @@ class _BibliaScreenState extends State<BibliaScreen> {
         .map((verse) => verse.verse)
         .toSet();
     final confirmingSelection = _step == 'continue';
-    return ReferencePage(
-      active: AppRoutes.repasar,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!widget.embedded) ...[
           const RefTopBar(title: 'Elegir de la Biblia'),
-          if (!confirmingSelection) ...[
-            Glass(
-              radius: 18,
-              color: HtmlRefColors.glassBg,
-              border: Border.all(color: HtmlRefColors.glassBorder),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              child: Row(
-                children: [
-                  const Icon(Icons.search, size: 18, color: RefColors.muted),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _searchController,
-                      onChanged: (_) => setState(() {}),
-                      style: const TextStyle(
+        ],
+        if (!confirmingSelection) ...[
+          Glass(
+            radius: 18,
+            color: HtmlRefColors.glassBg,
+            border: Border.all(color: HtmlRefColors.glassBorder),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                const Icon(Icons.search, size: 18, color: RefColors.muted),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (_) => setState(() {}),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: RefColors.ink,
+                    ),
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      isDense: true,
+                      hintText: 'Ej: Juan 3:16, Salmos 23, Rom 8:28-30',
+                      hintStyle: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        color: RefColors.ink,
+                        color: RefColors.dim,
                       ),
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        isDense: true,
-                        hintText: 'Ej: Juan 3:16, Salmos 23, Rom 8:28-30',
-                        hintStyle: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: RefColors.dim,
+                    ),
+                  ),
+                ),
+                if (_isSearching)
+                  GestureDetector(
+                    onTap: _clearSearch,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: HtmlRefColors.glassStrong,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          '×',
+                          style: TextStyle(
+                            color: RefColors.ink,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                     ),
@@ -264,16 +364,35 @@ class _BibliaScreenState extends State<BibliaScreen> {
                         ? entries
                         : entries.take(8).toList();
                     final hidden = entries.length - visible.length;
+
+                    final listWidget = Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final e in visible)
+                          _SelectedVerseRef(
+                            e.title,
+                            e.subtitle,
+                            onRemove: () {
+                              store.removeBibleVerses(e.verses);
+                              setState(() {});
+                            },
+                          ),
+                      ],
+                    );
+
                     return [
-                      for (final e in visible)
-                        _SelectedVerseRef(
-                          e.title,
-                          e.subtitle,
-                          onRemove: () {
-                            store.removeBibleVerses(e.verses);
-                            setState(() {});
-                          },
-                        ),
+                      if (visible.length > 4)
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 180),
+                          child: Scrollbar(
+                            thumbVisibility: true,
+                            child: SingleChildScrollView(
+                              child: listWidget,
+                            ),
+                          ),
+                        )
+                      else
+                        listWidget,
                       if (hidden > 0)
                         Padding(
                           padding: const EdgeInsets.only(top: 6),
@@ -291,16 +410,23 @@ class _BibliaScreenState extends State<BibliaScreen> {
               ],
             ),
           ),
-          if (!confirmingSelection) ...[
-            const SizedBox(height: 14),
-            const _ThemesBrowse(),
-          ],
-          // El CTA global "Siguiente →" se removió: el flujo ya tiene sus
-          // propios botones ("Confirmar versículos →" en la lista del
-          // capítulo, "Finalizar" en la pantalla de revisión) y mostrar otro
-          // CTA aquí abajo confundía.
+        if (!confirmingSelection) ...[
+          const SizedBox(height: 14),
+          const _ThemesBrowse(),
         ],
-      ),
+        // El CTA global "Siguiente →" se removió: el flujo ya tiene sus
+        // propios botones ("Confirmar versículos →" en la lista del
+        // capítulo, "Finalizar" en la pantalla de revisión) y mostrar otro
+        // CTA aquí abajo confundía.
+      ],
+    );
+
+    if (widget.embedded) {
+      return content;
+    }
+    return ReferencePage(
+      active: AppRoutes.repasar,
+      child: content,
     );
   }
 }
@@ -885,8 +1011,8 @@ class _ChapterGrid extends StatelessWidget {
       _chapterCountFor(selectedBook),
       (index) => index + 1,
     );
-    const selected = <int>{};
-    const partial = <int>{};
+    final store = AppScope.of(context);
+    final status = _BibleStudyStatus(store);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -907,25 +1033,46 @@ class _ChapterGrid extends StatelessWidget {
           ),
           itemBuilder: (context, index) {
             final chapter = chapters[index];
-            final isSelected = selected.contains(chapter);
-            final isPartial = partial.contains(chapter);
+            final allInChapter = store.versesFor(selectedBook, chapter);
+            final selectedInStore = store.selectedBibleVerses
+                .where((v) => v.book == selectedBook && v.chapter == chapter)
+                .map((v) => v.verse)
+                .toSet();
+            final isSelected = allInChapter.isNotEmpty && selectedInStore.length == allInChapter.length;
+            final isPartial = selectedInStore.isNotEmpty && selectedInStore.length < allInChapter.length;
+
+            final isComp = status.isChapterCompleted(selectedBook, chapter, allInChapter);
+            final isProg = status.isChapterInProgress(selectedBook, chapter, allInChapter);
+
+            final finalBg = isSelected
+                ? RefColors.pink
+                : isComp
+                    ? RefColors.lime.withValues(alpha: .18)
+                    : isProg
+                        ? RefColors.sun.withValues(alpha: .18)
+                        : isPartial
+                            ? HtmlRefColors.bookPartial
+                            : HtmlRefColors.glassSoft;
+
+            final finalBorder = isSelected
+                ? Colors.transparent
+                : isComp
+                    ? RefColors.lime.withValues(alpha: .75)
+                    : isProg
+                        ? RefColors.sun.withValues(alpha: .75)
+                        : isPartial
+                            ? HtmlRefColors.bookPartialBorder
+                            : Colors.transparent;
+
             return GestureDetector(
               onTap: () => onChapter(chapter),
               child: Container(
                 decoration: BoxDecoration(
-                  color: isSelected
-                      ? RefColors.pink
-                      : isPartial
-                      ? HtmlRefColors.bookPartial
-                      : HtmlRefColors.glassSoft,
+                  color: finalBg,
                   borderRadius: BorderRadius.circular(7),
                   border: Border.all(
                     width: 1.4,
-                    color: isSelected
-                        ? Colors.transparent
-                        : isPartial
-                        ? HtmlRefColors.bookPartialBorder
-                        : Colors.transparent,
+                    color: finalBorder,
                   ),
                 ),
                 child: Center(
@@ -986,6 +1133,11 @@ class _BookGrid extends StatelessWidget {
             final book = books[index];
             final isSelected = selected.contains(book);
             final isPartial = partial.contains(book);
+            final store = AppScope.of(context);
+            final status = _BibleStudyStatus(store);
+            final isComp = status.isBookCompleted(book, store);
+            final isProg = status.isBookInProgress(book, store);
+
             // Category tint applied to unselected tiles. The selected /
             // partial states still win above this.
             final acc = bookAccents[book];
@@ -995,23 +1147,36 @@ class _BookGrid extends StatelessWidget {
             final defaultBorder = acc != null
                 ? acc.withValues(alpha: .65)
                 : Colors.transparent;
+
+            final finalBg = isSelected
+                ? HtmlRefColors.bookSelected
+                : isComp
+                    ? RefColors.lime.withValues(alpha: .18)
+                    : isProg
+                        ? RefColors.sun.withValues(alpha: .18)
+                        : isPartial
+                            ? HtmlRefColors.bookPartial
+                            : defaultBg;
+
+            final finalBorder = isSelected
+                ? RefColors.pink
+                : isComp
+                    ? RefColors.lime.withValues(alpha: .75)
+                    : isProg
+                        ? RefColors.sun.withValues(alpha: .75)
+                        : isPartial
+                            ? HtmlRefColors.bookPartialBorder
+                            : defaultBorder;
+
             return GestureDetector(
               onTap: () => onBook(book),
               child: Container(
                 decoration: BoxDecoration(
-                  color: isSelected
-                      ? HtmlRefColors.bookSelected
-                      : isPartial
-                      ? HtmlRefColors.bookPartial
-                      : defaultBg,
+                  color: finalBg,
                   borderRadius: BorderRadius.circular(9),
                   border: Border.all(
                     width: 1.4,
-                    color: isSelected
-                        ? RefColors.pink
-                        : isPartial
-                        ? HtmlRefColors.bookPartialBorder
-                        : defaultBorder,
+                    color: finalBorder,
                   ),
                 ),
                 child: Center(
@@ -1138,10 +1303,15 @@ class _VersePickerState extends State<_VersePicker> {
                   padding: EdgeInsets.zero,
                   itemBuilder: (context, index) {
                     final verse = verses[index];
+                    final status = _BibleStudyStatus(store);
+                    final isComp = status.isVerseCompleted(canonicalBook, widget.selectedChapter, verse.verse);
+                    final isProg = status.isVerseInProgress(canonicalBook, widget.selectedChapter, verse.verse);
                     return _VerseItem(
                       number: verse.verse,
                       text: verse.text,
                       selected: effectiveSelected.contains(verse.verse),
+                      isCompleted: isComp,
+                      isInProgress: isProg,
                       onTap: () => widget.onVerse(verse.verse),
                     );
                   },
@@ -1488,18 +1658,12 @@ class _ShareDeckSheetState extends State<_ShareDeckSheet> {
                 child: SingleChildScrollView(
                   child: Column(
                     children: [
-                      for (final f in friends)
-                        () {
-                          final myId = store.currentUser?.id ?? '';
-                          final otherId = f.requesterId == myId
-                              ? f.addresseeId
-                              : f.requesterId;
-                          return _ShareFriendRow(
-                            label: otherId,
-                            busy: _busyFriendId == otherId,
-                            onTap: () => _share(otherId, otherId),
-                          );
-                        }(),
+                      for (final friend in friends)
+                        _ShareFriendRow(
+                          label: friend.displayName.isEmpty ? friend.email : friend.displayName,
+                          busy: _busyFriendId == friend.id,
+                          onTap: () => _share(friend.id, friend.displayName.isEmpty ? friend.email : friend.displayName),
+                        ),
                     ],
                   ),
                 ),
@@ -1855,6 +2019,16 @@ List<_SelectionEntry> _summarizeSelection(
 ) {
   if (selected.isEmpty) return const [];
 
+  if (selected.length == store.bibleVerses.length) {
+    return [
+      _SelectionEntry(
+        'Toda la Biblia',
+        '31,102 versículos seleccionados',
+        selected,
+      ),
+    ];
+  }
+
   // Group selected verses: book → chapter → verse numbers.
   final byBook = <String, Map<int, List<int>>>{};
   for (final v in selected) {
@@ -2139,10 +2313,10 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     '11-primera-letra-n2',
   ];
   final level3Optional = <String>[
-    if (store.isPremium) '09-quiz',
     '12-completar-n3',
     '13-primera-letra-n3',
     '15-banco-completo',
+    '09-quiz-avanzado',
   ];
 
   final slugs = <String>[
@@ -2155,11 +2329,12 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     if (difficulty >= 0) ...[
       ...pick(level2, difficulty == 0 ? 1 : (difficulty == 1 ? 2 : 3)),
       '17-niebla-n2',
+      '09-quiz', // Quiz clásico de consolidación al final del nivel 2
     ],
     
     // Nivel 3: práctica premium/avanzada + niebla N3 al final del nivel 3
     if (difficulty >= 1) ...[
-      ...pick(level3Optional, difficulty == 1 ? 2 : 3),
+      ...pick(level3Optional, difficulty == 1 ? 1 : 2),
       '16-niebla-n3',
     ],
   ];
@@ -2571,28 +2746,48 @@ class _VerseItem extends StatelessWidget {
   final int number;
   final String text;
   final bool selected;
+  final bool isCompleted;
+  final bool isInProgress;
   final VoidCallback onTap;
 
   const _VerseItem({
     required this.number,
     required this.text,
     required this.selected,
+    this.isCompleted = false,
+    this.isInProgress = false,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final finalBg = selected
+        ? const Color(0x2EFF3EA5)
+        : isCompleted
+            ? RefColors.lime.withValues(alpha: .1)
+            : isInProgress
+                ? RefColors.sun.withValues(alpha: .1)
+                : HtmlRefColors.glassSoft;
+
+    final finalBorder = selected
+        ? RefColors.pink
+        : isCompleted
+            ? RefColors.lime.withValues(alpha: .5)
+            : isInProgress
+                ? RefColors.sun.withValues(alpha: .5)
+                : Colors.transparent;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 4),
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? const Color(0x2EFF3EA5) : HtmlRefColors.glassSoft,
+          color: finalBg,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             width: 1.5,
-            color: selected ? RefColors.pink : Colors.transparent,
+            color: finalBorder,
           ),
         ),
         child: Row(

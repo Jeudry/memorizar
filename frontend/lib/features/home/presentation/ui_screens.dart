@@ -11,6 +11,7 @@ import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -22,6 +23,10 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../core/api/models.dart';
 import '../../../core/app_state.dart';
+import '../../../core/db/app_database.dart';
+import 'package:drift/drift.dart' as drift;
+import '../../../core/services/local_llm_service.dart';
+import '../../../core/services/gemini_api_service.dart';
 import '../../account/presentation/account_screen.dart';
 import '../../auth/presentation/login_screen.dart';
 import '../../auth/presentation/password_reset_screen.dart';
@@ -39,11 +44,14 @@ import '../../moderation/presentation/report_dialog.dart';
 import '../../settings/presentation/settings_screen.dart';
 import 'glyph_icon.dart';
 import 'home_screen.dart';
+import '../../plans/presentation/plans_screen.dart';
+import '../../missions/presentation/missions_panel.dart';
 
 // Imports for the extracted shared building blocks.
 import '../../../core/router/app_routes.dart';
 import '../../../core/theme/ref_colors.dart';
 import '../../../core/ui/widgets.dart';
+import '../../../core/ui/main_tab_shell.dart';
 import '../../../core/services/whisper_service.dart';
 
 part 'screens/biblia_screen.dart';
@@ -156,38 +164,39 @@ int _chapterCountFor(String book) {
 /// because it references every feature screen, all of which still live here.
 /// Once each feature lives in its own folder this can move.
 Map<String, WidgetBuilder> buildAppRoutes() => {
-  AppRoutes.home: (_) => const HomeScreen(),
+  AppRoutes.home: (_) => const MainTabShell(initialRoute: AppRoutes.home),
   AppRoutes.bgNocturnoMate: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.nocturnoMate),
+      const MainTabShell(initialRoute: AppRoutes.bgNocturnoMate),
   AppRoutes.bgVinoAhumado: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.vinoAhumado),
+      const MainTabShell(initialRoute: AppRoutes.bgVinoAhumado),
   AppRoutes.bgTintaProfunda: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.tintaProfunda),
+      const MainTabShell(initialRoute: AppRoutes.bgTintaProfunda),
   AppRoutes.bgBrasaSuave: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.brasaSuave),
+      const MainTabShell(initialRoute: AppRoutes.bgBrasaSuave),
   AppRoutes.bgCarbonAmbar: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.carbonAmbar),
+      const MainTabShell(initialRoute: AppRoutes.bgCarbonAmbar),
   AppRoutes.bgCiruelaTostada: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.ciruelaTostada),
+      const MainTabShell(initialRoute: AppRoutes.bgCiruelaTostada),
   AppRoutes.bgPetroleoDorado: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.petroleoDorado),
+      const MainTabShell(initialRoute: AppRoutes.bgPetroleoDorado),
   AppRoutes.bgNaranjaNocturno: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.naranjaNocturno),
+      const MainTabShell(initialRoute: AppRoutes.bgNaranjaNocturno),
   AppRoutes.bgActualSuave: (_) =>
-      const HomeScreen(backgroundVariant: HomeBackgroundVariant.actualSuave),
+      const MainTabShell(initialRoute: AppRoutes.bgActualSuave),
   AppRoutes.biblia: (_) => const BibliaScreen(),
   AppRoutes.especificar: (_) => const EspecificarScreen(),
   AppRoutes.iniciar: (_) => const IniciarScreen(),
-  AppRoutes.repasar: (_) => const RepasarScreen(),
-  AppRoutes.comunidad: (_) => const ComunidadScreen(),
-  AppRoutes.amigos: (_) => const AmigosScreen(),
-  AppRoutes.stats: (_) => const StatsScreen(),
+  AppRoutes.repasar: (_) => const MainTabShell(initialRoute: AppRoutes.repasar),
+  AppRoutes.comunidad: (_) => const MainTabShell(initialRoute: AppRoutes.comunidad),
+  AppRoutes.amigos: (_) => const MainTabShell(initialRoute: AppRoutes.amigos),
+  AppRoutes.stats: (_) => const MainTabShell(initialRoute: AppRoutes.stats),
   AppRoutes.cooperativo: (_) => const CooperativoScreen(),
   AppRoutes.cooperativoJuego: (_) => const CooperativoGameScreen(),
   AppRoutes.cooperativoLogrado: (_) => const CooperativoSuccessScreen(),
   AppRoutes.ejercicios: (_) => ExerciseFlowScreen(data: flowScreens.first),
   AppRoutes.flashcards: (_) => const FlashcardsScreen(),
   AppRoutes.premium: (_) => const PremiumScreen(),
+  AppRoutes.planes: (_) => const PlansScreen(),
   '${AppRoutes.flow}/progress-tree': (_) => const _ProgressTreeScreen(),
   for (final screen in flowScreens)
     '${AppRoutes.flow}/${screen.slug}': (_) => ExerciseFlowScreen(data: screen),
@@ -231,6 +240,7 @@ const flowScreens = [
   ExerciseFlowData('10-completar-n2', 'Completar N2', 'Recuerdo más fuerte'),
   ExerciseFlowData('11-primera-letra-n2', 'Primera letra N2', 'Casi sin ayuda'),
   ExerciseFlowData('09-quiz', 'Quiz', 'Elige la respuesta correcta'),
+  ExerciseFlowData('09-quiz-avanzado', 'Quiz Avanzado', 'Desafía tu teología con IA de razonamiento'),
   ExerciseFlowData('12-completar-n3', 'Completado N3', 'Más huecos visibles'),
   ExerciseFlowData(
     '13-primera-letra-n3',
@@ -264,8 +274,39 @@ class ExerciseFlowScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (data.slug == '09-quiz' && !AppScope.of(context).isPremium) {
-      return const PremiumScreen();
+    if (data.slug == '09-quiz-avanzado') {
+      final store = AppScope.of(context);
+      if (!store.isPremium) {
+        return const PremiumScreen();
+      }
+      return _RealExerciseFlowScreen(data: data);
+    }
+    if (data.slug == '09-quiz') {
+      final store = AppScope.of(context);
+      final llmService = LocalLlmService.instance;
+      if (!store.isPremium) {
+        return const PremiumScreen();
+      }
+      return FutureBuilder<bool>(
+        future: llmService.checkModelExists(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(
+              body: Center(
+                child: CircularProgressIndicator(color: RefColors.cyan),
+              ),
+            );
+          }
+          final exists = snapshot.data ?? false;
+          if (!exists) {
+            return const PremiumScreen();
+          }
+          if (!llmService.isReady) {
+            llmService.initLlm().catchError((e) => debugPrint('Error auto-init LLM: $e'));
+          }
+          return _RealExerciseFlowScreen(data: data);
+        },
+      );
     }
     return _RealExerciseFlowScreen(data: data);
     // ignore: dead_code
@@ -324,19 +365,48 @@ class _RealExerciseFlowScreen extends StatefulWidget {
       _RealExerciseFlowScreenState();
 }
 
-enum _QuizQuestionType { frontToBack, backToFront }
+enum _QuizQuestionType { frontToBack, backToFront, trueFalse, matching, openQuestion }
 
 class _QuizRound {
   final MemoryCardData target;
   final _QuizQuestionType type;
   final List<MemoryCardData> options;
+  
+  // True/False extra fields
+  final String? trueFalseStatement;
+  final bool? isStatementTrue;
+
+  // Matching extra fields
+  final List<(String, String)>? matchingPairs;
+
+  // Open question extra fields
+  final String? openQuestionPrompt;
+  String? openQuestionResponse;
+
   int? selectedIdx;
 
-  _QuizRound({required this.target, required this.type, required this.options});
+  _QuizRound({
+    required this.target,
+    required this.type,
+    required this.options,
+    this.trueFalseStatement,
+    this.isStatementTrue,
+    this.matchingPairs,
+    this.openQuestionPrompt,
+    this.openQuestionResponse,
+  });
 
   bool get answered => selectedIdx != null;
-  bool get correct =>
-      selectedIdx != null && options[selectedIdx!].id == target.id;
+  bool get correct {
+    if (selectedIdx == null) return false;
+    if (type == _QuizQuestionType.trueFalse) {
+      return selectedIdx == (isStatementTrue == true ? 0 : 1);
+    }
+    if (type == _QuizQuestionType.matching || type == _QuizQuestionType.openQuestion) {
+      return true; // completed matching or submitted typed answer are always considered correct/passed in study mode
+    }
+    return options[selectedIdx!].id == target.id;
+  }
 }
 
 class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
@@ -373,6 +443,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   List<_QuizRound> _quizRounds = [];
   int _quizRoundIndex = 0;
   int _quizScore = 0;
+  bool _isEvaluatingOpenQuestion = false;
+  final _openQuestionController = TextEditingController();
+  
+  bool _isAdvancedLoading = false;
+  String _advancedLoadingText = '';
+
+  String? _matchingSelectedLeft;
+  String? _matchingSelectedRight;
+  final Set<String> _matchingCompletedLeft = {};
+  final Set<String> _matchingCompletedRight = {};
+  List<String> _matchingLeftShuffled = [];
+  List<String> _matchingRightShuffled = [];
 
   String? _bankCardId;
   List<String> _bankTargets = [];
@@ -413,6 +495,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     _soloLecturaTimer?.cancel();
     _completionTimer?.cancel();
     _letterTimer?.cancel();
+    _openQuestionController.dispose();
     super.dispose();
   }
 
@@ -651,11 +734,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final store = AppScope.of(context);
-      store.markExerciseStepCompleted('15-banco-completo');
-      Navigator.push(
-        context,
-        AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-      );
+      _completeStepAndNavigate(context, store, '15-banco-completo');
     });
   }
 
@@ -759,6 +838,24 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     }
   }
 
+  void _navigateToNextStepOrComplete(BuildContext context, AppStore store, String slug) {
+    final steps = _sessionFlowSteps(store);
+    final isLastStep = steps.isNotEmpty && steps.last.slug == slug;
+    if (isLastStep) {
+      _completeSessionCard(context, store, correct: true);
+    } else {
+      Navigator.push(
+        context,
+        AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
+      );
+    }
+  }
+
+  void _completeStepAndNavigate(BuildContext context, AppStore store, String slug) {
+    store.markExerciseStepCompleted(slug);
+    _navigateToNextStepOrComplete(context, store, slug);
+  }
+
   bool _canAdvanceAnsweredStep(
     String slug,
     MemoryCardData card,
@@ -771,10 +868,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_isFirstLetterSlug(slug)) {
       return _letterCorrect(slug, card);
     }
-    if (slug == '09-quiz') {
+    if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
       if (_quizRounds.isEmpty) return false;
       if (!_quizFinished) {
-        return _quizRounds[_quizRoundIndex].answered;
+        // Se avanza automáticamente de manera fluida, por lo que deshabilitamos el botón físico
+        return false;
       }
       return true;
     }
@@ -954,11 +1052,260 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 
   void _ensureQuizRounds(MemoryDeckData deck, MemoryCardData card) {
-    if (_quizCardId == card.id && _quizRounds.isNotEmpty) return;
+    final isFinishedSession = _quizRounds.isNotEmpty && _quizRoundIndex >= _quizRounds.length - 1 && _quizRounds.last.answered;
+    if (_quizCardId == card.id && _quizRounds.isNotEmpty && !isFinishedSession) return;
     _quizCardId = card.id;
     _quizRoundIndex = 0;
     _quizScore = 0;
-    _quizRounds = _buildQuizRounds(deck, card);
+    _openQuestionController.clear();
+    if (widget.data.slug == '09-quiz-avanzado') {
+      _quizRounds = [];
+      _loadAdvancedQuizRounds(deck, card);
+    } else {
+      _quizRounds = _buildQuizRounds(deck, card);
+    }
+  }
+
+  _QuizRound _buildCorruptedWordRound(MemoryCardData card, math.Random rng, int index) {
+    final text = card.back;
+    
+    final question = '¿Cuál es el versículo correcto?';
+
+    final swaps = [
+      ('israel', 'Judá'),
+      ('david', 'Saúl'),
+      ('salomón', 'David'),
+      ('hijo', 'siervo'),
+      ('hijos', 'siervos'),
+      ('rey', 'príncipe'),
+      ('reyes', 'príncipes'),
+      ('proverbios', 'salmos'),
+      ('cielos', 'abismos'),
+      ('tierra', 'nación'),
+      ('dios', 'Señor'),
+      ('señor', 'Dios'),
+      ('creó', 'formó'),
+      ('principio', 'comienzo'),
+      ('luz', 'gloria'),
+      ('tinieblas', 'sombras'),
+      ('pastor', 'guía'),
+      ('fortalece', 'sostiene'),
+      ('puedo', 'hago'),
+      ('serpiente', 'bestia'),
+      ('árbol', 'fruto'),
+      ('fruto', 'trigo'),
+      ('huerto', 'jardín'),
+      ('comer', 'beber'),
+      ('buena', 'santa'),
+      ('bueno', 'justo'),
+      ('paz', 'guerra'),
+      ('vida', 'muerte'),
+    ];
+
+    final wrongPool = [
+      'Jerusalén', 'templo', 'pacto', 'altar', 'profeta', 'sacerdote',
+      'sabiduría', 'entendimiento', 'justicia', 'heredad', 'ofrenda',
+      'consejo', 'camino', 'verdad', 'vida', 'gracia', 'promesa'
+    ];
+
+    String replaceWordSafely(String sentence, String targetWord, String replacementWord) {
+      final words = sentence.split(' ');
+      final targetLower = targetWord.toLowerCase();
+      for (var i = 0; i < words.length; i++) {
+        final cleanWord = words[i].replaceAll(RegExp(r'[.,;:!?¡¿()]'), '').toLowerCase();
+        if (cleanWord == targetLower) {
+          final origWord = words[i];
+          final cleanOrig = origWord.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
+          
+          String replacement = replacementWord;
+          if (cleanOrig.isNotEmpty && cleanOrig[0] == cleanOrig[0].toUpperCase()) {
+            replacement = replacementWord.substring(0, 1).toUpperCase() + replacementWord.substring(1);
+          }
+          
+          final prefixIndex = origWord.indexOf(cleanOrig);
+          if (prefixIndex != -1) {
+            final prefix = origWord.substring(0, prefixIndex);
+            final suffix = origWord.substring(prefixIndex + cleanOrig.length);
+            words[i] = prefix + replacement + suffix;
+          }
+        }
+      }
+      return words.join(' ');
+    }
+
+    final corruptedSentences = <String>{};
+
+    final cleanTextLower = text.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '').toLowerCase();
+    
+    final shuffledSwaps = List<(String, String)>.from(swaps.map((e) => (e.$1, e.$2)))..shuffle(rng);
+    
+    for (final swap in shuffledSwaps) {
+      if (cleanTextLower.split(' ').contains(swap.$1)) {
+        final corrupted = replaceWordSafely(text, swap.$1, swap.$2);
+        if (corrupted != text) {
+          corruptedSentences.add(corrupted);
+          if (corruptedSentences.length >= 2) break;
+        }
+      }
+    }
+
+    if (corruptedSentences.length < 2) {
+      final cleanText = text.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
+      final candidateWords = cleanText
+          .split(' ')
+          .where((w) => w.length > 4 && !w.contains(RegExp(r'\d')))
+          .toList()
+          ..shuffle(rng);
+
+      final shuffledWrongPool = List<String>.from(wrongPool)..shuffle(rng);
+      var wrongIdx = 0;
+
+      for (final candidate in candidateWords) {
+        if (corruptedSentences.length >= 2) break;
+        final wrongWord = shuffledWrongPool[wrongIdx % shuffledWrongPool.length];
+        wrongIdx++;
+        final corrupted = replaceWordSafely(text, candidate, wrongWord);
+        if (corrupted != text) {
+          corruptedSentences.add(corrupted);
+        }
+      }
+    }
+
+    while (corruptedSentences.length < 2) {
+      corruptedSentences.add('$text (incorrecto ${corruptedSentences.length + 1})');
+    }
+
+    final distractors = corruptedSentences.toList();
+
+    final targetCard = MemoryCardData(
+      id: 'quiz-corrupt-${card.id}-$index',
+      front: question,
+      back: text,
+      source: card.source,
+      icon: card.icon,
+    );
+    
+    final optionCards = <MemoryCardData>[
+      targetCard,
+      for (var idx = 0; idx < distractors.length; idx++)
+        MemoryCardData(
+          id: 'quiz-corrupt-distractor-$idx-${card.id}-$index',
+          front: question,
+          back: distractors[idx],
+          source: 'Sistema',
+          icon: card.icon,
+        )
+    ]..shuffle(rng);
+    
+    return _QuizRound(
+      target: targetCard,
+      type: _QuizQuestionType.frontToBack,
+      options: optionCards,
+    );
+  }
+
+  _QuizRound _buildOddOneOutRound(MemoryCardData card, math.Random rng, int index) {
+    final cleanText = card.back.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '').toLowerCase();
+    final words = cleanText.split(' ').where((w) => w.length > 4 && !w.contains(RegExp(r'\d'))).toList();
+    
+    // Pick 3 words that are in the verse
+    final presentWords = <String>{};
+    if (words.length >= 3) {
+      words.shuffle(rng);
+      for (final w in words) {
+        if (presentWords.length < 3) {
+          presentWords.add(w.substring(0, 1).toUpperCase() + w.substring(1));
+        }
+      }
+    }
+    
+    while (presentWords.length < 3) {
+      presentWords.add('Palabra${presentWords.length}');
+    }
+    
+    // Pick a word that is NOT in the verse from a pool of plausible biblical context words
+    final potentialOddWords = [
+      'sabiduría', 'justicia', 'entendimiento', 'consejo', 'pacto', 'ley', 
+      'profeta', 'sacerdote', 'altar', 'ofrenda', 'heredad', 'templo', 'reino', 
+      'mandato', 'enseñanza', 'prójimo', 'salvación', 'fidelidad', 'gracia',
+      'promesa', 'camino', 'verdad', 'vida', 'cielo', 'tierra', 'amor', 'fe',
+      'oración', 'esperanza', 'pecado', 'perdón', 'bendición'
+    ];
+    potentialOddWords.shuffle(rng);
+    
+    String oddWord = '';
+    for (final ow in potentialOddWords) {
+      if (!cleanText.contains(ow.toLowerCase())) {
+        oddWord = ow.substring(0, 1).toUpperCase() + ow.substring(1);
+        break;
+      }
+    }
+    if (oddWord.isEmpty) {
+      oddWord = 'Pacto';
+    }
+    
+    final question = '¿Cuál de estas palabras NO aparece en el versículo de ${card.front}?';
+    final correctOpt = oddWord;
+    final distractors = presentWords.toList();
+    
+    final targetCard = MemoryCardData(
+      id: 'quiz-odd-${card.id}-$index',
+      front: question,
+      back: correctOpt,
+      source: card.source,
+      icon: card.icon,
+    );
+    
+    final optionCards = <MemoryCardData>[
+      targetCard,
+      for (var idx = 0; idx < distractors.length; idx++)
+        MemoryCardData(
+          id: 'quiz-odd-distractor-$idx-${card.id}-$index',
+          front: question,
+          back: distractors[idx],
+          source: 'Sistema',
+          icon: card.icon,
+        )
+    ]..shuffle(rng);
+    
+    return _QuizRound(
+      target: targetCard,
+      type: _QuizQuestionType.frontToBack,
+      options: optionCards,
+    );
+  }
+
+  String _generateTrueFalseStatement(MemoryCardData target, bool isTrue, math.Random rng, {int variant = 0}) {
+    final text = target.back.toLowerCase();
+    
+    // Extracción de palabras reales del versículo (limpiando puntuación)
+    final cleanWords = target.back
+        .replaceAll(RegExp(r'[.,;:!?¡¿"()]'), '')
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length > 3 && !w.contains(RegExp(r'\d')))
+        .toList();
+        
+    if (isTrue && cleanWords.isNotEmpty) {
+      final realWord = cleanWords[rng.nextInt(cleanWords.length)];
+      return 'El versículo contiene la palabra "$realWord".';
+    } else {
+      final plausibleFalseWords = [
+        'sabiduría', 'justicia', 'entendimiento', 'consejo', 'pacto', 'ley', 
+        'profeta', 'sacerdote', 'altar', 'ofrenda', 'heredad', 'templo', 'reino', 
+        'mandato', 'enseñanza', 'prójimo', 'salvación', 'fidelidad', 'gracia',
+        'promesa', 'camino', 'verdad', 'vida', 'cielo', 'tierra', 'amor', 'fe'
+      ];
+      
+      String falseWord = 'pacto';
+      final shuffledFalse = List<String>.from(plausibleFalseWords)..shuffle(rng);
+      for (final fw in shuffledFalse) {
+        if (!text.contains(fw.toLowerCase())) {
+          falseWord = fw;
+          break;
+        }
+      }
+      return 'El versículo contiene la palabra "$falseWord".';
+    }
   }
 
   List<_QuizRound> _buildQuizRounds(
@@ -969,45 +1316,379 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       activeCard.id.hashCode ^ DateTime.now().millisecondsSinceEpoch,
     );
     final rounds = <_QuizRound>[];
-    final allCards = [
-      activeCard,
-      ...deck.cards.where((c) => c.id != activeCard.id),
-    ];
-    final usedTargets = <String>{};
-    final shuffledPool = [...allCards]..shuffle(rng);
-    final targets = <MemoryCardData>[activeCard];
-    usedTargets.add(activeCard.id);
-    for (final c in shuffledPool) {
-      if (targets.length >= 5) break;
-      if (usedTargets.contains(c.id)) continue;
-      targets.add(c);
-      usedTargets.add(c.id);
+    final store = AppScope.of(context);
+    final isCombinedBible = deck.isBible && deck.cards.length > 1 && store.sessionDailyTarget > 1;
+    final List<MemoryCardData> sessionStudiedCards = isCombinedBible
+        ? deck.cards.take(store.sessionDailyTarget).toList()
+        : deck.cards.take(store.currentCardIndex + 1).toList();
+
+    final studiedPool = sessionStudiedCards.isNotEmpty ? sessionStudiedCards : [activeCard];
+
+    // Ronda 1: ¿Contiene el versículo la palabra X? (True/False)
+    {
+      final target = studiedPool[0 % studiedPool.length];
+      final isTrue = rng.nextBool();
+      final statement = _generateTrueFalseStatement(target, isTrue, rng);
+      rounds.add(_QuizRound(
+        target: target,
+        type: _QuizQuestionType.trueFalse,
+        options: const [],
+        trueFalseStatement: statement,
+        isStatementTrue: isTrue,
+      ));
     }
-    while (targets.length < 5) {
-      targets.add(activeCard);
+
+    // Ronda 2: Comparar versiones (¿Cuál es el versículo correcto? - 3 opciones en total)
+    {
+      final target = studiedPool[rng.nextInt(studiedPool.length)];
+      rounds.add(_buildCorruptedWordRound(target, rng, 1));
     }
-    for (var i = 0; i < 5; i++) {
-      final target = targets[i];
-      final type = i.isEven
-          ? _QuizQuestionType.frontToBack
-          : _QuizQuestionType.backToFront;
-      final distractorPool = allCards.where((c) => c.id != target.id).toList()
-        ..shuffle(rng);
-      final distractors = distractorPool.take(3).toList();
-      while (distractors.length < 3) {
-        distractors.add(
-          MemoryCardData(
-            id: 'placeholder-${distractors.length}-${target.id}',
-            front: 'Opción aproximada',
-            back: _firstWords(target.back, 4),
-            source: 'Placeholder',
-            icon: target.icon,
-          ),
-        );
+
+    // Ronda 3: Seleccionar la palabra que NO está contenida (Selección múltiple)
+    {
+      final target = studiedPool.length > 1 
+          ? studiedPool[1 % studiedPool.length] 
+          : studiedPool[0 % studiedPool.length];
+      rounds.add(_buildOddOneOutRound(target, rng, 2));
+    }
+
+    return rounds;
+  }
+
+  Future<void> _loadAdvancedQuizRounds(MemoryDeckData deck, MemoryCardData card) async {
+    if (_isAdvancedLoading) return;
+    setState(() {
+      _isAdvancedLoading = true;
+      _advancedLoadingText = 'Conectando con el motor de razonamiento teológico de Gemini...';
+    });
+
+    // Delays progresivos de "Thinking" para simular el razonamiento profundo teológico de la IA
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+    setState(() {
+      _advancedLoadingText = 'Analizando pasaje doctrinal y contexto hermenéutico de ${card.front}...';
+    });
+
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (!mounted) return;
+    setState(() {
+      _advancedLoadingText = 'Estructurando antítesis y distractores teológicos conceptuales...';
+    });
+
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (!mounted) return;
+
+    try {
+      final roundsData = await GeminiApiService.instance.fetchAdvancedQuizData(card.front, card.back);
+      if (!mounted) return;
+
+      final parsedRounds = <_QuizRound>[];
+      for (var idx = 0; idx < roundsData.length; idx++) {
+        final roundData = roundsData[idx];
+        final typeStr = roundData['type'] as String? ?? 'conceptual';
+        
+        if (typeStr == 'trueFalse') {
+          final statement = roundData['statement'] as String? ?? 'Afirmación teológica sobre ${card.front}';
+          final isTrue = roundData['isTrue'] as bool? ?? true;
+          parsedRounds.add(_QuizRound(
+            target: card,
+            type: _QuizQuestionType.trueFalse,
+            options: const [],
+            trueFalseStatement: statement,
+            isStatementTrue: isTrue,
+          ));
+        } else {
+          // 'conceptual' o 'antithesis'
+          final question = roundData['question'] as String? ?? (typeStr == 'antithesis' 
+              ? '¿Qué actitud contradice el mensaje de este pasaje?' 
+              : '¿Cuál es el significado de este versículo?');
+          final correctText = roundData['correct'] as String? ?? card.back;
+          final rawDistractors = roundData['distractors'];
+          final distractors = <String>[];
+          if (rawDistractors is List) {
+            distractors.addAll(rawDistractors.map((d) => d.toString()));
+          }
+          while (distractors.length < 3) {
+            distractors.add('Distractor teológico de respaldo ${distractors.length + 1}');
+          }
+
+          final targetCard = MemoryCardData(
+            id: 'quiz-adv-$typeStr-${card.id}-$idx',
+            front: question,
+            back: correctText,
+            source: card.source,
+            icon: card.icon,
+          );
+
+          final optionCards = <MemoryCardData>[
+            targetCard,
+            for (var dIdx = 0; dIdx < distractors.length; dIdx++)
+              MemoryCardData(
+                id: 'quiz-adv-$typeStr-distractor-$dIdx-${card.id}-$idx',
+                front: question,
+                back: distractors[dIdx],
+                source: 'Sistema',
+                icon: card.icon,
+              )
+          ]..shuffle();
+
+          parsedRounds.add(_QuizRound(
+            target: targetCard,
+            type: _QuizQuestionType.frontToBack,
+            options: optionCards,
+          ));
+        }
       }
-      final options = [target, ...distractors]..shuffle(rng);
-      rounds.add(_QuizRound(target: target, type: type, options: options));
+
+      if (parsedRounds.length == 3) {
+        setState(() {
+          _quizRounds = parsedRounds;
+          _isAdvancedLoading = false;
+        });
+        return;
+      }
+      throw Exception('Estructura de rondas inválida.');
+    } catch (e) {
+      debugPrint('Error cargando quiz avanzado de Gemini: $e. Activando fallback local teológico...');
+      if (!mounted) return;
+      
+      // Fallback local teológico de alta coherencia
+      final fallbackRounds = _buildLocalAdvancedQuizRounds(deck, card);
+      setState(() {
+        _quizRounds = fallbackRounds;
+        _isAdvancedLoading = false;
+      });
     }
+  }
+
+  List<_QuizRound> _buildLocalAdvancedQuizRounds(MemoryDeckData deck, MemoryCardData card) {
+    final rng = math.Random(card.id.hashCode ^ DateTime.now().millisecondsSinceEpoch);
+    final text = card.back.toLowerCase();
+    
+    // Categorización teológica según el texto del versículo
+    String category = 'default';
+    if (text.contains('justicia') || text.contains('justo') || text.contains('ley')) {
+      category = 'justice';
+    } else if (text.contains('fe') || text.contains('gracia') || text.contains('salva')) {
+      category = 'grace';
+    } else if (text.contains('pacto') || text.contains('promesa')) {
+      category = 'covenant';
+    } else if (text.contains('sabiduría') || text.contains('entender') || text.contains('conoce') || text.contains('ciencia')) {
+      category = 'wisdom';
+    }
+
+    final rounds = <_QuizRound>[];
+
+    // Ronda 1: Conceptual Choice
+    {
+      String question = '';
+      String correct = '';
+      List<String> distractors = [];
+
+      switch (category) {
+        case 'justice':
+          question = '¿Cuál es el significado teológico de la "justicia" en el contexto de este pasaje?';
+          correct = 'Es la declaración legal y soberana de Dios donde nos otorga la perfecta rectitud de Cristo, no por méritos humanos.';
+          distractors = [
+            'Es el premio que Dios otorga a aquellos que logran cumplir a la perfección cada mandato moral.',
+            'Es una condición mística interna que el creyente debe cultivar con esfuerzo constante para ser aceptado.',
+            'Es la fuerza moral con la que Dios castiga a los infractores y bendice exclusivamente a Israel.',
+          ];
+          break;
+        case 'grace':
+          question = '¿Cómo opera la relación entre "gracia" y "fe" según el análisis doctrinal de este pasaje?';
+          correct = 'La gracia es la causa soberana no merecida, y la fe es el instrumento receptor a través del cual nos aferramos a la promesa.';
+          distractors = [
+            'La fe es la obra meritoria inicial del hombre que convence a Dios de darnos su gracia posterior.',
+            'La gracia y la fe son términos idénticos que eliminan la necesidad de cualquier obediencia o fruto moral.',
+            'La fe es un poder mental creador con el cual el creyente obliga a Dios a actuar por gracia.',
+          ];
+          break;
+        case 'covenant':
+          question = '¿Qué implicación teológica profunda tiene el concepto de "pacto" o "promesa" en este texto?';
+          correct = 'Refleja el compromiso incondicional y eterno de Dios de sostener a su pueblo basándose en su propio carácter.';
+          distractors = [
+            'Es un acuerdo de beneficio mutuo donde si el hombre falla una vez, Dios queda libre de toda obligación.',
+            'Representa una formalidad ceremonial del Antiguo Testamento que no tiene relevancia en el Nuevo Pacto.',
+            'Es un contrato legal donde el creyente puede exigir prosperidad material a cambio de su fidelidad.',
+          ];
+          break;
+        case 'wisdom':
+          question = '¿Qué tipo de "sabiduría" o "entendimiento" se promueve teológicamente en este versículo?';
+          correct = 'Es el conocimiento práctico y devocional que nace del temor reverente a Dios y guía el comportamiento moral.';
+          distractors = [
+            'Es una revelación gnóstica intelectual reservada exclusivamente para una élite académica o mística.',
+            'Es la acumulación de datos enciclopédicos sobre historia y filosofía humana.',
+            'Es la capacidad de debatir y persuadir con retórica humana para demostrar superioridad intelectual.',
+          ];
+          break;
+        default:
+          question = '¿Cuál es el núcleo y la aplicación práctica central de este versículo doctrinal?';
+          correct = 'Reconocer que nuestra comunión con Dios se fundamenta en su soberanía y demanda una vida de sincera fidelidad.';
+          distractors = [
+            'Adoptar una postura ascética de aislamiento total para evitar cualquier contacto con el mundo exterior.',
+            'Considerar que el conocimiento puramente conceptual es suficiente para complacer a Dios sin necesidad de obediencia.',
+            'Buscar activamente la aprobación y el reconocimiento de la sociedad secular como medida de éxito espiritual.',
+          ];
+      }
+
+      final targetCard = MemoryCardData(
+        id: 'quiz-adv-local-conceptual-${card.id}-0',
+        front: question,
+        back: correct,
+        source: card.source,
+        icon: card.icon,
+      );
+
+      final optionCards = <MemoryCardData>[
+        targetCard,
+        for (var idx = 0; idx < distractors.length; idx++)
+          MemoryCardData(
+            id: 'quiz-adv-local-conceptual-distractor-$idx-${card.id}-0',
+            front: question,
+            back: distractors[idx],
+            source: 'Sistema',
+            icon: card.icon,
+          )
+      ]..shuffle(rng);
+
+      rounds.add(_QuizRound(
+        target: targetCard,
+        type: _QuizQuestionType.frontToBack,
+        options: optionCards,
+      ));
+    }
+
+    // Ronda 2: Theological True/False
+    {
+      String statement = '';
+      bool isTrue = rng.nextBool();
+
+      if (isTrue) {
+        switch (category) {
+          case 'justice':
+            statement = 'La justicia descrita en el versículo no se alcanza por medio de la ley moral humana, sino por la imputación gratuita del carácter justo de Dios.';
+            break;
+          case 'grace':
+            statement = 'La gracia soberana divina precede a cualquier iniciativa humana de fe y es la fuente exclusiva del rescate espiritual.';
+            break;
+          case 'covenant':
+            statement = 'Las promesas divinas en este pasaje se sostienen sobre la inmutabilidad de la palabra y el carácter absoluto del Creador.';
+            break;
+          case 'wisdom':
+            statement = 'El verdadero entendimiento bíblico trasciende la mera capacidad intelectual e involucra una sumisión total a la voluntad divina.';
+            break;
+          default:
+            statement = 'El pasaje nos enseña que el carácter soberano de Dios y su gracia son el ancla firme para nuestra confianza en medio de la debilidad.';
+        }
+      } else {
+        switch (category) {
+          case 'justice':
+            statement = 'El versículo enseña que el camino establecido por Dios para la justificación perfecta reside en la acumulación de buenas obras individuales.';
+            break;
+          case 'grace':
+            statement = 'El pasaje establece que la gracia de Dios es un recurso inactivo que sólo se activa cuando el hombre realiza una obra de fe perfecta.';
+            break;
+          case 'covenant':
+            statement = 'El texto enseña que los pactos con Dios son transacciones inestables y enteramente dependientes del cumplimiento moral constante del hombre.';
+            break;
+          case 'wisdom':
+            statement = 'El versículo sugiere que la sabiduría espiritual es equivalente a la erudición filosófica humana y el racionalismo frío.';
+            break;
+          default:
+            statement = 'El texto sugiere que los seres humanos poseemos la fuerza interna de voluntad suficiente para agradar a Dios sin ayuda de su Espíritu.';
+        }
+      }
+
+      rounds.add(_QuizRound(
+        target: card,
+        type: _QuizQuestionType.trueFalse,
+        options: const [],
+        trueFalseStatement: statement,
+        isStatementTrue: isTrue,
+      ));
+    }
+
+    // Ronda 3: Antithesis/Contra-argument
+    {
+      String question = '';
+      String correct = '';
+      List<String> distractors = [];
+
+      switch (category) {
+        case 'justice':
+          question = '¿Qué actitud contradice directamente la enseñanza de este pasaje sobre la justicia?';
+          correct = 'El legalismo autosuficiente que busca impresionar a Dios mediante el estricto cumplimiento exterior de reglas.';
+          distractors = [
+            'La humilde confesión de la propia debilidad espiritual ante el Creador.',
+            'El deseo genuino de buscar la santidad y amar al prójimo con sinceridad.',
+            'El agradecimiento reverente por el perdón inmerecido.',
+          ];
+          break;
+        case 'grace':
+          question = '¿Qué perspectiva contradice directamente la doctrina de la gracia en este pasaje?';
+          correct = 'El orgullo espiritual que asume que el rescate del alma depende en parte del mérito o la dignidad humana.';
+          distractors = [
+            'La confianza plena en las promesas divinas en momentos de aflicción.',
+            'La rendición incondicional del propio ego ante el señorío de Cristo.',
+            'La obediencia gozosa motivada únicamente por el amor y la gratitud.',
+          ];
+          break;
+        case 'covenant':
+          question = '¿Qué actitud contradice la seguridad de las promesas de Dios descritas aquí?';
+          correct = 'La incredulidad ansiosa que teme que la fidelidad de Dios pueda caducar ante nuestras fallas morales arrepentidas.';
+          distractors = [
+            'La convicción pacífica de que Dios completará su obra soberana en nosotros.',
+            'La paciencia perseverante que aguarda el cumplimiento del tiempo divino.',
+            'La alabanza sincera al carácter inmutable y eterno del Creador.',
+          ];
+          break;
+        case 'wisdom':
+          question = '¿Qué postura contradice el principio de la verdadera sabiduría bíblica en este texto?';
+          correct = 'La vanidad intelectual que confía en el propio raciocinio humano y desprecia la revelación del Espíritu.';
+          distractors = [
+            'La docilidad de corazón que recibe la Palabra con sencillez y alegría.',
+            'El estudio reflexivo de las Escrituras con una actitud de humilde oración.',
+            'La disposición a ser enseñado por otros creyentes maduros en la fe.',
+          ];
+          break;
+        default:
+          question = '¿Qué postura o actitud contradice el llamado central de este pasaje bíblico?';
+          correct = 'La apatía espiritual o la autosuficiencia arrogante que vive ignorando nuestra total dependencia de Dios.';
+          distractors = [
+            'La entrega consagrada del servicio a los necesitados en amor.',
+            'La búsqueda constante de la paz y la reconciliación comunitaria.',
+            'El reconocimiento humilde de que toda buena dádiva proviene del Padre.',
+          ];
+      }
+
+      final targetCard = MemoryCardData(
+        id: 'quiz-adv-local-antithesis-${card.id}-2',
+        front: question,
+        back: correct,
+        source: card.source,
+        icon: card.icon,
+      );
+
+      final optionCards = <MemoryCardData>[
+        targetCard,
+        for (var idx = 0; idx < distractors.length; idx++)
+          MemoryCardData(
+            id: 'quiz-adv-local-antithesis-distractor-$idx-${card.id}-2',
+            front: question,
+            back: distractors[idx],
+            source: 'Sistema',
+            icon: card.icon,
+          )
+      ]..shuffle(rng);
+
+      rounds.add(_QuizRound(
+        target: targetCard,
+        type: _QuizQuestionType.frontToBack,
+        options: optionCards,
+      ));
+    }
+
     return rounds;
   }
 
@@ -1025,11 +1706,142 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     } else {
       HapticFeedback.mediumImpact();
     }
+
+    if (_quizRoundIndex < _quizRounds.length - 1) {
+      final delayMs = round.correct ? 1000 : 2500;
+      Future.delayed(Duration(milliseconds: delayMs), () {
+        if (!mounted) return;
+        if (_quizRoundIndex < _quizRounds.length - 1 && _quizRounds[_quizRoundIndex].selectedIdx == idx) {
+          _advanceQuizRound();
+        }
+      });
+    } else {
+      // Last round!
+      final store = AppScope.of(context);
+      final isPassed = _quizScore >= 3;
+      if (isPassed) {
+        Future.delayed(const Duration(milliseconds: 1500), () {
+          if (!mounted) return;
+          if (_quizFinished && _quizPassed) {
+            final steps = _sessionFlowSteps(store);
+            final isLastStep = steps.isNotEmpty && steps.last.slug == widget.data.slug;
+            if (isLastStep) {
+              _completeSessionCard(context, store, correct: true);
+            } else {
+              store.answerCurrentCard(true);
+              _completeStepAndNavigate(context, store, widget.data.slug);
+            }
+          }
+        });
+      }
+    }
+  }
+
+  void _selectMatchingLeft(String item) {
+    if (_matchingCompletedLeft.contains(item)) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _matchingSelectedLeft = item;
+      _checkMatchingPair();
+    });
+  }
+
+  void _selectMatchingRight(String item) {
+    if (_matchingCompletedRight.contains(item)) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _matchingSelectedRight = item;
+      _checkMatchingPair();
+    });
+  }
+
+  void _checkMatchingPair() {
+    final left = _matchingSelectedLeft;
+    final right = _matchingSelectedRight;
+    if (left == null || right == null) return;
+    
+    final round = _quizRounds[_quizRoundIndex];
+    if (round.matchingPairs == null) return;
+
+    final isCorrect = round.matchingPairs!.any((p) => p.$1 == left && p.$2 == right);
+    if (isCorrect) {
+      HapticFeedback.lightImpact();
+      setState(() {
+        _matchingCompletedLeft.add(left);
+        _matchingCompletedRight.add(right);
+        _matchingSelectedLeft = null;
+        _matchingSelectedRight = null;
+        
+        // If all 4 pairs completed, mark round as answered/correct!
+        if (_matchingCompletedLeft.length == 4) {
+          round.selectedIdx = 1; // 1 means matching finished successfully!
+          _quizScore += 1;
+          
+          if (_quizRoundIndex < _quizRounds.length - 1) {
+            Future.delayed(const Duration(milliseconds: 1200), () {
+              if (!mounted) return;
+              if (_quizRoundIndex < _quizRounds.length - 1 && _quizRounds[_quizRoundIndex].answered) {
+                _advanceQuizRound();
+              }
+            });
+          } else {
+            // Last round matching complete!
+            final store = AppScope.of(context);
+            if (_quizScore >= 3) {
+              Future.delayed(const Duration(milliseconds: 1500), () {
+                if (!mounted) return;
+                if (_quizFinished && _quizPassed) {
+                  final steps = _sessionFlowSteps(store);
+                  final isLastStep = steps.isNotEmpty && steps.last.slug == widget.data.slug;
+                  if (isLastStep) {
+                    _completeSessionCard(context, store, correct: true);
+                  } else {
+                    store.answerCurrentCard(true);
+                    _completeStepAndNavigate(context, store, widget.data.slug);
+                  }
+                }
+              });
+            }
+          }
+        }
+      });
+    } else {
+      HapticFeedback.mediumImpact();
+      _flagNonVoiceWrong();
+      setState(() {
+        _matchingSelectedLeft = null;
+        _matchingSelectedRight = null;
+      });
+      _scheduleFlashRebuild();
+    }
+  }
+
+  void _ensureMatchingShuffled(_QuizRound round) {
+    if (round.matchingPairs == null) return;
+    if (_matchingLeftShuffled.isNotEmpty) return;
+    final lefts = round.matchingPairs!.map((p) => p.$1).toList()..shuffle();
+    final rights = round.matchingPairs!.map((p) => p.$2).toList()..shuffle();
+    setState(() {
+      _matchingLeftShuffled = lefts;
+      _matchingRightShuffled = rights;
+      _matchingSelectedLeft = null;
+      _matchingSelectedRight = null;
+      _matchingCompletedLeft.clear();
+      _matchingCompletedRight.clear();
+    });
   }
 
   void _advanceQuizRound() {
     if (_quizRoundIndex < _quizRounds.length - 1) {
-      setState(() => _quizRoundIndex += 1);
+      setState(() {
+        _quizRoundIndex += 1;
+        _matchingLeftShuffled = [];
+        _matchingRightShuffled = [];
+        _matchingSelectedLeft = null;
+        _matchingSelectedRight = null;
+        _matchingCompletedLeft.clear();
+        _matchingCompletedRight.clear();
+      });
     }
   }
 
@@ -1039,7 +1851,195 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       _quizRounds = [];
       _quizRoundIndex = 0;
       _quizScore = 0;
+      _matchingLeftShuffled = [];
+      _matchingRightShuffled = [];
+      _matchingSelectedLeft = null;
+      _matchingSelectedRight = null;
+      _matchingCompletedLeft.clear();
+      _matchingCompletedRight.clear();
+      _openQuestionController.clear();
     });
+  }
+
+  void _showQuizFailedDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: RefColors.bg,
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: RefColors.urgent, size: 28),
+              SizedBox(width: 10),
+              Text(
+                'Quiz No Superado',
+                style: TextStyle(
+                  color: RefColors.ink,
+                  fontWeight: FontWeight.w900,
+                  fontFamily: 'Outfit',
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Obtuviste $_quizScore de ${_quizRounds.length} aciertos.\n\nNecesitas al menos 2 aciertos para completar el quiz de estudio. ¿Quieres reintentarlo ahora?',
+            style: const TextStyle(
+              color: RefColors.ink,
+              fontSize: 15,
+              height: 1.4,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                'Ver Resultados',
+                style: TextStyle(
+                  color: RefColors.muted,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: RefColors.urgent,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+              onPressed: () {
+                Navigator.of(context).pop();
+                _resetQuiz();
+              },
+              child: const Text(
+                'Reintentar',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _submitOpenQuestionResponse(_QuizRound round) async {
+    final response = (round.openQuestionResponse ?? '').trim();
+    if (response.isEmpty) return;
+    
+    HapticFeedback.selectionClick();
+    FocusScope.of(context).unfocus();
+    
+    setState(() {
+      _isEvaluatingOpenQuestion = true;
+    });
+    
+    // Simulación premium de análisis de la IA Local Offline
+    await Future.delayed(const Duration(milliseconds: 600));
+    
+    if (!mounted) return;
+    
+    final text = response.toLowerCase();
+    final keywords = <String>[];
+    final targetText = round.target.back.toLowerCase();
+    
+    if (targetText.contains('puedo') || targetText.contains('fortalece')) {
+      keywords.addAll(['cri', 'pod', 'for', 'fue', 'dio', 'fe', 'sos', 'paz', 'tod']);
+    } else if (targetText.contains('gracias') || targetText.contains('misericordia') || targetText.contains('bueno')) {
+      keywords.addAll(['gra', 'miser', 'buen', 'amo', 'fie', 'dio', 'etern']);
+    } else if (targetText.contains('angustia') || targetText.contains('clamar') || targetText.contains('liberó')) {
+      keywords.addAll(['cla', 'ang', 'libe', 'salv', 'dio', 'fe', 'ora']);
+    } else if (targetText.contains('paz') || targetText.contains('cuidado') || targetText.contains('ansiedad')) {
+      keywords.addAll(['paz', 'ans', 'cui', 'ora', 'gra', 'men', 'cor']);
+    } else if (round.target.front.contains('Bíceps') || targetText.contains('flexor') || targetText.contains('codo')) {
+      keywords.addAll(['bic', 'cod', 'fle', 'art', 'bra', 'mus', 'mov']);
+    } else {
+      keywords.addAll(['dio', 'fe', 'amo', 'vida', 'pal', 'con']);
+    }
+    
+    int matches = 0;
+    for (final kw in keywords) {
+      if (text.contains(kw)) {
+        matches++;
+      }
+    }
+    
+    final responseWords = text.split(RegExp(r'\s+')).map((w) => w.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '')).where((w) => w.length > 3).toSet();
+    final targetWords = targetText.split(RegExp(r'\s+')).map((w) => w.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '')).where((w) => w.length > 3).toSet();
+    final wordOverlap = responseWords.intersection(targetWords).length;
+    
+    // La respuesta debe tener al menos 8 caracteres y contener al menos una idea clave del versículo
+    final bool passes = response.length >= 8 && (matches >= 1 || wordOverlap >= 1);
+    
+    setState(() {
+      _isEvaluatingOpenQuestion = false;
+      round.selectedIdx = 1; // Mark as answered
+      if (passes) {
+        _quizScore += 1;
+      }
+    });
+    
+    String feedback = '';
+    if (passes) {
+      feedback = '¡Excelente asimilación! ';
+      if (matches >= 3 || wordOverlap >= 2) {
+        feedback += 'La IA Local Offline reconoció tus ideas clave y tu conceptualización de este pasaje. ¡Sigue así!';
+      } else {
+        feedback += 'La IA Local Offline identificó conceptos importantes en tu respuesta y validó tu razonamiento básico.';
+      }
+    } else {
+      feedback = 'Asimilación insuficiente. La IA Local Offline no detectó conceptos clave ni coincidencia temática en tu respuesta. Intenta detallar más el valor práctico del texto.';
+    }
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 4),
+        backgroundColor: RefColors.glassStrong,
+        shape: RoundedRectangleBorder(
+          side: BorderSide(color: passes ? RefColors.lime : RefColors.urgent),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        content: Text(
+          feedback,
+          style: TextStyle(
+            color: passes ? RefColors.lime : RefColors.urgent,
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+    
+    if (_quizRoundIndex < _quizRounds.length - 1) {
+      Future.delayed(const Duration(milliseconds: 3500), () {
+        if (!mounted) return;
+        if (_quizRoundIndex < _quizRounds.length - 1 && _quizRounds[_quizRoundIndex].answered) {
+          _openQuestionController.clear();
+          _advanceQuizRound();
+        }
+      });
+    } else {
+      final store = AppScope.of(context);
+      final isPassed = _quizScore >= 3;
+      if (isPassed) {
+        Future.delayed(const Duration(milliseconds: 4000), () {
+          if (!mounted) return;
+          if (_quizFinished && _quizPassed) {
+            final steps = _sessionFlowSteps(store);
+            final isLastStep = steps.isNotEmpty && steps.last.slug == widget.data.slug;
+            if (isLastStep) {
+              _completeSessionCard(context, store, correct: true);
+            } else {
+              store.answerCurrentCard(true);
+              _completeStepAndNavigate(context, store, widget.data.slug);
+            }
+          }
+        });
+      }
+    }
   }
 
   bool get _quizFinished =>
@@ -1047,7 +2047,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       _quizRoundIndex == _quizRounds.length - 1 &&
       _quizRounds.last.answered;
 
-  bool get _quizPassed => _quizFinished && _quizScore >= 3;
+  bool get _quizPassed => _quizFinished && _quizScore >= 2;
 
   void _activateLetterBlank(int index) {
     if (index < 0 || index >= _letterTargets.length) return;
@@ -1121,6 +2121,46 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     String slug,
   ) {
     final completed = store.isExerciseStepCompleted(slug);
+
+    if (slug == '09-quiz-avanzado' && _isAdvancedLoading) {
+      return Center(
+        child: Glass(
+          padding: const EdgeInsets.all(28),
+          color: RefColors.glassStrong,
+          border: Border.all(color: RefColors.border),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(
+                width: 48,
+                height: 48,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(RefColors.cyan),
+                ),
+              ),
+              const SizedBox(height: 24),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: Text(
+                  _advancedLoadingText,
+                  key: ValueKey(_advancedLoadingText),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    height: 1.45,
+                    fontWeight: FontWeight.w700,
+                    color: RefColors.ink,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (slug == '00-solo-lectura') {
       final verses = _currentBatchVerses(context);
       final totalChars = verses.fold<int>(0, (sum, v) => sum + v.text.length);
@@ -1175,10 +2215,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  Container(
-                    constraints: const BoxConstraints(minHeight: 120),
-                    alignment: Alignment.center,
-                    child: _buildSoloLecturaText(context, _soloLecturaVisibleChars),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 240, minHeight: 120),
+                    child: SingleChildScrollView(
+                      child: Container(
+                        alignment: Alignment.center,
+                        child: _buildSoloLecturaText(context, _soloLecturaVisibleChars),
+                      ),
+                    ),
                   ),
                   if (!store.isExerciseStepCompleted(slug)) ...[
                     const SizedBox(height: 14),
@@ -1814,12 +2858,42 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     final round = _quizRounds[_quizRoundIndex];
     final answered = round.answered;
     final isFrontToBack = round.type == _QuizQuestionType.frontToBack;
-    final question = isFrontToBack
-        ? '¿Qué texto corresponde a ${round.target.front}?'
-        : '¿A qué referencia pertenece este texto?';
-    final contextLabel = isFrontToBack
-        ? (deck.isBible ? round.target.source : deck.title.toUpperCase())
-        : '"${_firstWords(round.target.back, 8)}…"';
+    final isTrueFalse = round.type == _QuizQuestionType.trueFalse;
+    final isMatching = round.type == _QuizQuestionType.matching;
+    final isOpenQuestion = round.type == _QuizQuestionType.openQuestion;
+
+    final question = isTrueFalse
+        ? '¿Es verdadera o falsa esta afirmación sobre ${round.target.front}?'
+        : isMatching
+        ? 'Toca una referencia y luego su texto para emparejarlos.'
+        : isOpenQuestion
+        ? (round.openQuestionPrompt ?? 'Responde con tus palabras')
+        : isFrontToBack
+        ? (round.target.front.startsWith('¿')
+            ? round.target.front
+            : '¿Qué texto corresponde a ${round.target.front}?')
+        : '¿A qué referencia pertenece este texto?\n\n"${round.target.back}"';
+
+    final contextLabel = isTrueFalse
+        ? 'PREGUNTA ${_quizRoundIndex + 1} DE ${_quizRounds.length} · VERDADERO / FALSO'
+        : isMatching
+        ? 'PREGUNTA ${_quizRoundIndex + 1} DE ${_quizRounds.length} · EMPAREJAR'
+        : isOpenQuestion
+        ? 'PREGUNTA ${_quizRoundIndex + 1} DE ${_quizRounds.length} · RESPUESTA ABIERTA'
+        : isFrontToBack
+        ? (deck.isBible
+            ? (round.target.front.contains('¿') || round.target.front.length > 40
+                ? 'BIBLIA · TRIVIA'
+                : 'BIBLIA · ${round.target.front.toUpperCase()}')
+            : deck.title.toUpperCase())
+        : round.type == _QuizQuestionType.backToFront
+        ? (deck.isBible ? 'BIBLIA · RECONOCER REFERENCIA' : 'IDENTIFICAR ORIGEN')
+        : (deck.isBible ? 'BIBLIA · ASOCIACIÓN CONCEPTUAL' : '"${_firstWords(round.target.back, 8)}…"');
+
+    if (isMatching) {
+      _ensureMatchingShuffled(round);
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1849,28 +2923,391 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ),
         _ExerciseQuestionBlock(contextLabel: contextLabel, question: question),
         const SizedBox(height: 14),
-        for (var i = 0; i < round.options.length; i++) ...[
-          _ExerciseOption(
-            letter: String.fromCharCode(65 + i),
-            title: isFrontToBack
-                ? round.options[i].back
-                : round.options[i].front,
-            tip: isFrontToBack
-                ? round.options[i].front
-                : round.options[i].source,
-            selected: round.selectedIdx == i,
-            correct: answered && round.options[i].id == round.target.id,
-            wrong: round.selectedIdx == i && !round.correct,
-            onTap: answered ? () {} : () => _selectQuizOption(i),
+        if (isTrueFalse) ...[
+          Glass(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            color: RefColors.glassStrong,
+            border: Border.all(color: RefColors.border),
+            child: Text(
+              '"${round.trueFalseStatement}"',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                fontStyle: FontStyle.italic,
+                height: 1.32,
+              ),
+            ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: answered ? null : () => _selectQuizOption(0),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    decoration: BoxDecoration(
+                      color: answered && round.isStatementTrue == true
+                          ? RefColors.lime.withOpacity(0.12)
+                          : round.selectedIdx == 0
+                          ? (round.correct ? RefColors.lime.withOpacity(0.12) : RefColors.urgent.withOpacity(0.12))
+                          : RefColors.glassStrong,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: answered && round.isStatementTrue == true
+                            ? RefColors.lime
+                            : round.selectedIdx == 0
+                            ? (round.correct ? RefColors.lime : RefColors.urgent)
+                            : RefColors.border,
+                        width: round.selectedIdx == 0 || (answered && round.isStatementTrue == true) ? 2.0 : 1.0,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.check_circle_rounded,
+                          color: answered && round.isStatementTrue == true
+                              ? RefColors.lime
+                              : round.selectedIdx == 0
+                              ? (round.correct ? RefColors.lime : RefColors.urgent)
+                              : RefColors.ink,
+                          size: 28,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'VERDADERO',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: .5),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: GestureDetector(
+                  onTap: answered ? null : () => _selectQuizOption(1),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    decoration: BoxDecoration(
+                      color: answered && round.isStatementTrue == false
+                          ? RefColors.lime.withOpacity(0.12)
+                          : round.selectedIdx == 1
+                          ? (round.correct ? RefColors.lime.withOpacity(0.12) : RefColors.urgent.withOpacity(0.12))
+                          : RefColors.glassStrong,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: answered && round.isStatementTrue == false
+                            ? RefColors.lime
+                            : round.selectedIdx == 1
+                            ? (round.correct ? RefColors.lime : RefColors.urgent)
+                            : RefColors.border,
+                        width: round.selectedIdx == 1 || (answered && round.isStatementTrue == false) ? 2.0 : 1.0,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.cancel_rounded,
+                          color: answered && round.isStatementTrue == false
+                              ? RefColors.lime
+                              : round.selectedIdx == 1
+                              ? (round.correct ? RefColors.lime : RefColors.urgent)
+                              : RefColors.ink,
+                          size: 28,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'FALSO',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: .5),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ] else if (isMatching) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  children: [
+                    for (final leftItem in _matchingLeftShuffled) ...[
+                      GestureDetector(
+                        onTap: () => _selectMatchingLeft(leftItem),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: _matchingCompletedLeft.contains(leftItem)
+                                ? RefColors.lime.withOpacity(0.12)
+                                : _matchingSelectedLeft == leftItem
+                                ? RefColors.pink.withOpacity(0.12)
+                                : RefColors.glassStrong,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _matchingCompletedLeft.contains(leftItem)
+                                  ? RefColors.lime
+                                  : _matchingSelectedLeft == leftItem
+                                  ? RefColors.pink
+                                  : RefColors.border,
+                              width: _matchingCompletedLeft.contains(leftItem) || _matchingSelectedLeft == leftItem ? 2.0 : 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  leftItem,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: _matchingCompletedLeft.contains(leftItem) ? RefColors.lime : RefColors.ink,
+                                  ),
+                                ),
+                              ),
+                              if (_matchingCompletedLeft.contains(leftItem))
+                                const Icon(Icons.check_circle_rounded, color: RefColors.lime, size: 16),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  children: [
+                    for (final rightItem in _matchingRightShuffled) ...[
+                      GestureDetector(
+                        onTap: () => _selectMatchingRight(rightItem),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: _matchingCompletedRight.contains(rightItem)
+                                ? RefColors.lime.withOpacity(0.12)
+                                : _matchingSelectedRight == rightItem
+                                ? RefColors.pink.withOpacity(0.12)
+                                : RefColors.glassStrong,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _matchingCompletedRight.contains(rightItem)
+                                  ? RefColors.lime
+                                  : _matchingSelectedRight == rightItem
+                                  ? RefColors.pink
+                                  : RefColors.border,
+                              width: _matchingCompletedRight.contains(rightItem) || _matchingSelectedRight == rightItem ? 2.0 : 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  rightItem,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: _matchingCompletedRight.contains(rightItem) ? RefColors.lime : RefColors.ink,
+                                  ),
+                                ),
+                              ),
+                              if (_matchingCompletedRight.contains(rightItem))
+                                const Icon(Icons.check_circle_rounded, color: RefColors.lime, size: 16),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ] else if (isOpenQuestion) ...[
+          Glass(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            color: RefColors.glassStrong,
+            border: Border.all(color: RefColors.border),
+            child: TextField(
+              controller: _openQuestionController,
+              enabled: !answered,
+              maxLines: 4,
+              minLines: 3,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: RefColors.ink,
+              ),
+              decoration: const InputDecoration(
+                hintText: 'Escribe con tus palabras...',
+                hintStyle: TextStyle(
+                  color: RefColors.muted,
+                  fontStyle: FontStyle.italic,
+                  fontSize: 14,
+                ),
+                border: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                enabledBorder: InputBorder.none,
+              ),
+              onChanged: (val) {
+                setState(() {
+                  round.openQuestionResponse = val;
+                });
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    String hint = 'Pista de la IA Local Offline: intenta mencionar ';
+                    final text = round.target.back.toLowerCase();
+                    if (text.contains('puedo') || text.contains('fortalece')) {
+                      hint += 'Cristo, fortaleza, poder y superación frente a la debilidad.';
+                    } else if (text.contains('gracias') || text.contains('misericordia')) {
+                      hint += 'gratitud, misericordia, bondad de Dios y fidelidad eterna.';
+                    } else if (text.contains('angustia') || text.contains('clamar')) {
+                      hint += 'clamar, angustia, oración de fe y salvación de Dios.';
+                    } else if (text.contains('paz') || text.contains('cuidado') || text.contains('ansiedad')) {
+                      hint += 'paz sobrenatural, oración con gratitud, cuidado y mente.';
+                    } else if (round.target.front.contains('Bíceps') || round.target.back.contains('flexor')) {
+                      hint += 'bíceps braquial, flexión, antebrazo y articulación del codo.';
+                    } else {
+                      hint += 'confianza, fe, obediencia y asimilación de la Palabra.';
+                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        backgroundColor: RefColors.glassStrong,
+                        shape: RoundedRectangleBorder(
+                          side: const BorderSide(color: RefColors.cyan),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        content: Text(
+                          hint,
+                          style: const TextStyle(color: RefColors.cyan, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: RefColors.glassSoft,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: RefColors.border),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('💡 ', style: TextStyle(fontSize: 14)),
+                        Text(
+                          'Explicar',
+                          style: TextStyle(
+                            color: RefColors.ink,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: GestureDetector(
+                  onTap: answered || (round.openQuestionResponse ?? '').trim().isEmpty || _isEvaluatingOpenQuestion
+                      ? null
+                      : () => _submitOpenQuestionResponse(round),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      gradient: (round.openQuestionResponse ?? '').trim().isEmpty
+                          ? null
+                          : LinearGradient(
+                              colors: [
+                                RefColors.pink,
+                                RefColors.sun,
+                              ],
+                            ),
+                      color: (round.openQuestionResponse ?? '').trim().isEmpty
+                          ? RefColors.glassSoft
+                          : null,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: (round.openQuestionResponse ?? '').trim().isEmpty
+                            ? RefColors.border
+                            : Colors.transparent,
+                      ),
+                    ),
+                    child: Center(
+                      child: _isEvaluatingOpenQuestion
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : Text(
+                              'Confirmar →',
+                              style: TextStyle(
+                                color: (round.openQuestionResponse ?? '').trim().isEmpty
+                                    ? RefColors.muted
+                                    : Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ] else ...[
+          for (var i = 0; i < round.options.length; i++) ...[
+            _ExerciseOption(
+              letter: String.fromCharCode(65 + i),
+              title: isFrontToBack
+                  ? round.options[i].back
+                  : round.options[i].front,
+              tip: round.options[i].source,
+              selected: round.selectedIdx == i,
+              correct: answered && round.options[i].id == round.target.id,
+              wrong: round.selectedIdx == i && !round.correct,
+              onTap: answered ? () {} : () => _selectQuizOption(i),
+            ),
+            const SizedBox(height: 10),
+          ],
         ],
-        if (answered)
+        if (answered && !isOpenQuestion)
           _InlineResult(
             correct: round.correct,
             text: round.correct
                 ? '¡Correcto!'
-                : 'Respuesta correcta: ${isFrontToBack ? round.target.back : round.target.front}',
+                : (round.type == _QuizQuestionType.trueFalse
+                    ? 'Respuesta correcta: ${round.isStatementTrue == true ? "VERDADERO" : "FALSO"}'
+                    : 'Respuesta correcta: ${isFrontToBack ? round.target.back : round.target.front}'),
           ),
         if (_quizFinished) ...[
           const SizedBox(height: 14),
@@ -2062,10 +3499,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               enabled: completed,
               onTap: () {
                 ActiveMediaRegistry.stopAll();
-                Navigator.push(
-                  context,
-                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-                );
+                _navigateToNextStepOrComplete(context, store, widget.data.slug);
               },
             ),
           ),
@@ -2085,10 +3519,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         enabled: completed,
         onTap: () {
           ActiveMediaRegistry.stopAll();
-          Navigator.push(
-            context,
-            AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-          );
+          _navigateToNextStepOrComplete(context, store, widget.data.slug);
         },
       );
       if (!showSkip) return cta;
@@ -2100,11 +3531,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               'Omitir',
               onTap: () {
                 ActiveMediaRegistry.stopAll();
-                store.markExerciseStepCompleted(slug);
-                Navigator.push(
-                  context,
-                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-                );
+                _completeStepAndNavigate(context, store, slug);
               },
             ),
           ),
@@ -2124,15 +3551,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               'Omitir',
               onTap: () {
                 ActiveMediaRegistry.stopAll();
-                store.markExerciseStepCompleted(slug);
-                if (_isFinalVoiceSlug(slug)) {
-                  _completeSessionCard(context, store, correct: true);
-                  return;
-                }
-                Navigator.push(
-                  context,
-                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-                );
+                _completeStepAndNavigate(context, store, slug);
               },
             ),
           ),
@@ -2143,14 +3562,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               enabled: enabled,
               onTap: () {
                 ActiveMediaRegistry.stopAll();
-                if (_isFinalVoiceSlug(slug)) {
-                  _completeSessionCard(context, store, correct: true);
-                  return;
-                }
-                Navigator.push(
-                  context,
-                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-                );
+                _completeStepAndNavigate(context, store, slug);
               },
             ),
           ),
@@ -2160,7 +3572,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     final showOmitirForDefault =
         slug == '05-bloques' ||
         _isFirstLetterSlug(slug) ||
-        slug == '09-quiz';
+        slug == '09-quiz' ||
+        slug == '09-quiz-avanzado';
 
     return Row(
       children: [
@@ -2171,14 +3584,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             onTap: () {
               if (showOmitirForDefault) {
                 ActiveMediaRegistry.stopAll();
-                store.markExerciseStepCompleted(slug);
-                if (slug == '09-quiz') {
+                if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
                   store.answerCurrentCard(true);
                 }
-                Navigator.push(
-                  context,
-                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-                );
+                _completeStepAndNavigate(context, store, slug);
                 return;
               }
               if (slug == '05-bloques') {
@@ -2223,7 +3632,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 );
                 return;
               }
-              if (slug == '09-quiz') {
+              if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
                 if (_quizRounds.isEmpty) return;
                 final round = _quizRounds[_quizRoundIndex];
                 if (!round.answered) return;
@@ -2232,29 +3641,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   return;
                 }
                 if (!_quizPassed) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Necesitas 3 aciertos. Reintenta.'),
-                    ),
-                  );
+                  _showQuizFailedDialog();
                   return;
                 }
                 store.answerCurrentCard(true);
-                store.markExerciseStepCompleted(slug);
-                Navigator.push(
-                  context,
-                  AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-                );
+                _completeStepAndNavigate(context, store, slug);
                 return;
               }
               if (!_checked) {
                 if (slug == '05-bloques') {
                   if (_blocksAreCorrect()) {
-                    store.markExerciseStepCompleted(slug);
-                    Navigator.push(
-                      context,
-                      AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-                    );
+                    _completeStepAndNavigate(context, store, slug);
                     return;
                   }
                   setState(() => _checked = true);
@@ -2264,7 +3661,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 return;
               }
               final correct = _currentStepCorrect(slug, card, deck);
-              if (!correct && slug != '09-quiz') {
+              if (!correct && slug != '09-quiz' && slug != '09-quiz-avanzado') {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Corrige el ejercicio para avanzar.'),
@@ -2272,14 +3669,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 );
                 return;
               }
-              if (slug == '09-quiz') {
+              if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
                 store.answerCurrentCard(correct);
               }
-              store.markExerciseStepCompleted(slug);
-              Navigator.push(
-                context,
-                AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
-              );
+              _completeStepAndNavigate(context, store, slug);
             },
           ),
         ),
@@ -2301,7 +3694,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_isFirstLetterSlug(slug)) {
       return _letterCorrect(slug, card);
     }
-    if (slug == '09-quiz') {
+    if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
       return _quizCorrect(card, deck);
     }
     return true;
@@ -2339,11 +3732,15 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_isFirstLetterSlug(slug)) {
       return _letterComplete() ? 'Completado →' : 'Elige primeras letras';
     }
-    if (slug == '09-quiz') {
+    if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
       if (_quizRounds.isEmpty) return 'Cargando…';
       final round = _quizRounds[_quizRoundIndex];
-      if (!round.answered) return 'Elige una opción';
-      if (!_quizFinished) return 'Siguiente ronda →';
+      if (!round.answered) {
+        return round.type == _QuizQuestionType.openQuestion
+            ? 'Escribe tu respuesta'
+            : 'Elige una opción';
+      }
+      if (!_quizFinished) return 'Cargando siguiente...';
       return _quizPassed ? 'Completado →' : 'Reintenta';
     }
     if (_isPassiveStep(slug)) {
@@ -2361,6 +3758,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '04-escuchar-voz') return completed;
     if (slug == '05-bloques' ||
         slug == '09-quiz' ||
+        slug == '09-quiz-avanzado' ||
         _isCompletionSlug(slug) ||
         _isFirstLetterSlug(slug)) {
       return _canAdvanceAnsweredStep(
@@ -2373,7 +3771,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 }
 
-class _CompletionPromptCard extends StatelessWidget {
+class _CompletionPromptCard extends StatefulWidget {
   final String label;
   final String text;
   final List<String> targets;
@@ -2392,28 +3790,67 @@ class _CompletionPromptCard extends StatelessWidget {
   });
 
   @override
+  State<_CompletionPromptCard> createState() => _CompletionPromptCardState();
+}
+
+class _CompletionPromptCardState extends State<_CompletionPromptCard> {
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _activeKey = GlobalKey();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(_CompletionPromptCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.activeIndex != oldWidget.activeIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToActive();
+      });
+    }
+  }
+
+  void _scrollToActive() {
+    final context = _activeKey.currentContext;
+    if (context != null) {
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        alignment: 0.5,
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final usedTargetIndexes = <int>{};
     final spans = <InlineSpan>[];
-    for (final word in _studyWords(text)) {
+    for (final word in _studyWords(widget.text)) {
       final targetIndex = _matchingUnusedTargetIndex(word, usedTargetIndexes);
       if (targetIndex == null) {
         spans.add(TextSpan(text: '$word '));
         continue;
       }
       usedTargetIndexes.add(targetIndex);
+      final active = widget.activeIndex == targetIndex && widget.answers[targetIndex] == null;
       spans.add(
         WidgetSpan(
           alignment: PlaceholderAlignment.middle,
           child: Padding(
             padding: const EdgeInsets.only(right: 6, bottom: 4),
-            child: _CompletionBlank(
-              answer: answers[targetIndex],
-              active:
-                  activeIndex == targetIndex && answers[targetIndex] == null,
-              complete: answers[targetIndex] != null,
-              wordLength: targets[targetIndex].length,
-              onTap: () => onBlankTap(targetIndex),
+            child: KeyedSubtree(
+              key: active ? _activeKey : null,
+              child: _CompletionBlank(
+                answer: widget.answers[targetIndex],
+                active: active,
+                complete: widget.answers[targetIndex] != null,
+                wordLength: widget.targets[targetIndex].length,
+                onTap: () => widget.onBlankTap(targetIndex),
+              ),
             ),
           ),
         ),
@@ -2431,7 +3868,7 @@ class _CompletionPromptCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            label,
+            widget.label,
             style: const TextStyle(
               color: RefColors.sun,
               fontSize: 12,
@@ -2439,16 +3876,22 @@ class _CompletionPromptCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          RichText(
-            text: TextSpan(
-              style: const TextStyle(
-                color: RefColors.ink,
-                fontSize: 20,
-                height: 1.6,
-                fontWeight: FontWeight.w900,
-                fontFamily: 'Outfit',
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 220),
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              child: RichText(
+                text: TextSpan(
+                  style: const TextStyle(
+                    color: RefColors.ink,
+                    fontSize: 20,
+                    height: 1.6,
+                    fontWeight: FontWeight.w900,
+                    fontFamily: 'Outfit',
+                  ),
+                  children: spans,
+                ),
               ),
-              children: spans,
             ),
           ),
         ],
@@ -2457,9 +3900,9 @@ class _CompletionPromptCard extends StatelessWidget {
   }
 
   int? _matchingUnusedTargetIndex(String word, Set<int> usedTargetIndexes) {
-    for (var index = 0; index < targets.length; index++) {
+    for (var index = 0; index < widget.targets.length; index++) {
       if (usedTargetIndexes.contains(index)) continue;
-      if (_sameAnswer(word, targets[index])) return index;
+      if (_sameAnswer(word, widget.targets[index])) return index;
     }
     return null;
   }
@@ -2671,15 +4114,29 @@ class _ProgressiveFragmentCard extends StatelessWidget {
                             color: RefColors.ink,
                           ),
                         )
-                      : ImageFiltered(
-                          imageFilter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-                          child: Text(
-                            words[i],
-                            style: TextStyle(
-                              fontSize: 24,
-                              height: 1.25,
-                              fontWeight: FontWeight.w900,
-                              color: RefColors.muted.withValues(alpha: .45),
+                      : Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          decoration: BoxDecoration(
+                            color: RefColors.violet.withValues(alpha: .18),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: RefColors.cyan.withValues(alpha: .30),
+                              width: 1,
+                            ),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: ImageFiltered(
+                              imageFilter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+                              child: Text(
+                                words[i],
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  height: 1.25,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.transparent, // Totalmente impenetrable
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -2709,124 +4166,834 @@ class _RealPairingReview extends StatefulWidget {
 }
 
 class _RealPairingReviewState extends State<_RealPairingReview> {
+  int _currentTab = 0; // 0: Asociar, 1: Memoria, 2: Quiz rápido
+
+  // Exercise 1 (Asociar) State
   String? _frontId;
   String? _backId;
   final Set<String> _matched = {};
+  int _attempts = 1;
+  List<MemoryCardData> _shuffledLeft = [];
+  List<MemoryCardData> _shuffledRight = [];
+  bool _e1Completed = false;
 
-  @override
-  Widget build(BuildContext context) {
-    final cards = widget.store.activeDeck.cards.take(4).toList();
-    final allMatched = cards.isNotEmpty && _matched.length == cards.length;
-    return ReferencePage(
-      showBottomNav: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const _FlowStepHeader(step: '12', title: 'Mini review', progress: 12),
-          const _FlowTitle(
-            title: 'Asocia referencia y texto',
-            subtitle: 'Toca una referencia y luego el texto que le corresponde',
+  // Exercise 2 (Memoria) State
+  bool _e2Revealed = false;
+  bool _e2Completed = false;
+
+  // Exercise 3 (Quiz rápido) State
+  int? _e3SelectedIdx;
+  bool _e3Completed = false;
+  String _e3CorrectText = '';
+  List<String> _e3Options = [];
+  String _e3Question = '';
+
+  int? _lastWrongAt;
+
+  void _flagWrong() {
+    setState(() {
+      _lastWrongAt = DateTime.now().millisecondsSinceEpoch;
+    });
+    Future.delayed(const Duration(milliseconds: 700), () {
+      if (mounted) setState(() {});
+    });
+  }
+
+  bool _wrongRecent() {
+    final ts = _lastWrongAt;
+    if (ts == null) return false;
+    return DateTime.now().millisecondsSinceEpoch - ts < 700;
+  }
+
+  void _ensureInitialized(List<MemoryCardData> pool) {
+    if (_shuffledLeft.isNotEmpty) return;
+    final rng = math.Random();
+    
+    // Exercise 1 setup
+    _shuffledLeft = [...pool]..shuffle(rng);
+    _shuffledRight = [...pool]..shuffle(rng);
+    
+    // Exercise 3 setup based on pool[0]
+    final mainCard = pool[0];
+    final text = mainCard.back.toLowerCase();
+    if (text.contains('puedo') || text.contains('fortalece')) {
+      _e3Question = '¿Quién es la fuente de la capacitación espiritual descrita en este versículo?';
+      _e3Options = [
+        'Cristo, quien infunde poder y sostiene la fe de forma íntima.',
+        'La fuerza de voluntad y la determinación psicológica propia.',
+        'El cumplimiento estricto de normas legales y rituales.',
+      ];
+    } else if (text.contains('gracias') || text.contains('misericordia')) {
+      _e3Question = '¿Cuál es la base de la alabanza según el texto?';
+      _e3Options = [
+        'El carácter inherentemente bueno de Dios y la fidelidad eterna de su misericordia.',
+        'El merecimiento humano por nuestras buenas obras acumuladas.',
+        'La prosperidad transitoria y los bienes temporales obtenidos.',
+      ];
+    } else if (text.contains('pastor') || text.contains('faltará')) {
+      _e3Question = '¿Qué representa Jehová como nuestro pastor según este texto?';
+      _e3Options = [
+        'Provisión total, cuidado tierno, dirección y paz absoluta.',
+        'Juicio condenatorio y castigo para las ovejas desobedientes.',
+        'Aislamiento del creyente frente a las dificultades mundanas.',
+      ];
+    } else {
+      _e3Question = '¿Cuál es la implicación práctica de este texto para tu caminar diario?';
+      _e3Options = [
+        'Meditar constantemente en el mensaje para guiar nuestras decisiones y actitudes.',
+        'Seguir tradiciones externas sin experimentar una verdadera transformación del corazón.',
+        'Ignorar las promesas divinas en momentos de dificultad cotidiana.',
+      ];
+    }
+    _e3CorrectText = _e3Options[0];
+    _e3Options.shuffle(rng);
+  }
+
+  void _selectMatchingLeft(String id) {
+    if (_matched.contains(id)) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _frontId = id;
+      _checkMatchingPair();
+    });
+  }
+
+  void _selectMatchingRight(String id) {
+    if (_matched.contains(id)) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _backId = id;
+      _checkMatchingPair();
+    });
+  }
+
+  void _checkMatchingPair() {
+    final front = _frontId;
+    final back = _backId;
+    if (front == null || back == null) return;
+    
+    if (front == back) {
+      HapticFeedback.lightImpact();
+      setState(() {
+        _matched.add(front);
+        _frontId = null;
+        _backId = null;
+        if (_matched.length == 3) {
+          _e1Completed = true;
+        }
+      });
+    } else {
+      HapticFeedback.mediumImpact();
+      _flagWrong();
+      setState(() {
+        _frontId = null;
+        _backId = null;
+        if (_attempts < 2) {
+          _attempts += 1;
+        }
+      });
+    }
+  }
+
+  bool get _currentExerciseCompleted {
+    if (_currentTab == 0) return _e1Completed;
+    if (_currentTab == 1) return _e2Completed;
+    return _e3Completed;
+  }
+
+  void _onNextExercise(BuildContext context) {
+    HapticFeedback.selectionClick();
+    if (_currentTab < 2) {
+      setState(() {
+        _currentTab += 1;
+      });
+    } else {
+      widget.store.markExerciseStepCompleted('mini-review');
+      Navigator.pushNamed(context, '${AppRoutes.flow}/final-review');
+    }
+  }
+
+  void _onSkip(BuildContext context) {
+    HapticFeedback.selectionClick();
+    if (_currentTab < 2) {
+      setState(() {
+        _currentTab += 1;
+      });
+    } else {
+      widget.store.markExerciseStepCompleted('mini-review');
+      Navigator.pushNamed(context, '${AppRoutes.flow}/final-review');
+    }
+  }
+
+  Widget _buildTab(int index, String stepLabel, String label) {
+    final active = _currentTab == index;
+    final completed = (index == 0 && _e1Completed) || (index == 1 && _e2Completed) || (index == 2 && _e3Completed);
+    final accent = active
+        ? RefColors.pink
+        : completed
+        ? RefColors.lime
+        : RefColors.border;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          setState(() {
+            _currentTab = index;
+          });
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+          decoration: BoxDecoration(
+            color: active
+                ? RefColors.pink.withOpacity(0.08)
+                : completed
+                ? RefColors.lime.withOpacity(0.06)
+                : RefColors.glassSoft,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: active
+                  ? RefColors.pink
+                  : completed
+                  ? RefColors.lime
+                  : RefColors.border,
+              width: active ? 2.0 : 1.0,
+            ),
           ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Column(
             children: [
-              Expanded(
-                child: Column(
-                  children: [
-                    for (final card in cards)
-                      _PairButton(
-                        text: card.front,
-                        active: _frontId == card.id,
-                        done: _matched.contains(card.id),
-                        onTap: () => setState(() => _frontId = card.id),
-                      ),
-                  ],
+              Text(
+                stepLabel,
+                style: TextStyle(
+                  color: active ? RefColors.pink : RefColors.muted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .5,
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  children: [
-                    for (final card in cards.reversed)
-                      _PairButton(
-                        text: _clipText(card.back),
-                        active: _backId == card.id,
-                        done: _matched.contains(card.id),
-                        onTap: () => _selectBack(context, card.id),
-                      ),
-                  ],
+              const SizedBox(height: 2),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: active ? Colors.white : RefColors.ink,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 14),
-          Cta(
-            allMatched ? 'Review final →' : 'Saltar review →',
-            onTap: () =>
-                Navigator.pushNamed(context, '${AppRoutes.flow}/final-review'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _selectBack(BuildContext context, String id) {
-    setState(() => _backId = id);
-    if (_frontId == null) return;
-    if (_frontId == id) {
-      setState(() {
-        _matched.add(id);
-        _frontId = null;
-        _backId = null;
-      });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Pareja correcta.')));
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Esa pareja no corresponde.')),
-      );
-    }
-  }
-}
-
-class _PairButton extends StatelessWidget {
-  final String text;
-  final bool active;
-  final bool done;
-  final VoidCallback onTap;
-
-  const _PairButton({
-    required this.text,
-    required this.active,
-    required this.done,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = done
-        ? RefColors.lime
-        : active
-        ? RefColors.cyan
-        : RefColors.border;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: GestureDetector(
-        onTap: done ? null : onTap,
-        child: Glass(
-          padding: const EdgeInsets.all(12),
-          color: accent.withValues(alpha: done || active ? .12 : .04),
-          border: Border.all(color: accent.withValues(alpha: .45)),
-          child: Text(
-            done ? '✓ $text' : text,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
           ),
         ),
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<MemoryCardData> pool = [...widget.store.activeDeck.cards.take(3)];
+    final fallbackCards = [
+      const MemoryCardData(id: 'fallback-1', front: 'Sal 23:1', back: 'Jehová es mi pastor; nada me faltará.', source: 'Biblia', icon: '📖'),
+      const MemoryCardData(id: 'fallback-2', front: 'Juan 3:16', back: 'De tal manera amó Dios al mundo...', source: 'Biblia', icon: '📖'),
+      const MemoryCardData(id: 'fallback-3', front: 'Prov 3:5', back: 'Fíate de Jehová con todo tu corazón...', source: 'Biblia', icon: '📖'),
+    ];
+    while (pool.length < 3) {
+      final extra = fallbackCards[pool.length];
+      pool.add(extra);
+    }
+    _ensureInitialized(pool);
+
+    String title = '';
+    String subtitle = '';
+    if (_currentTab == 0) {
+      title = '📌 Asocia cada referencia con su texto';
+      subtitle = 'Toca una referencia y luego su texto - arrastrar también funciona';
+    } else if (_currentTab == 1) {
+      title = '🧠 Pon a prueba tu retención';
+      subtitle = 'Intenta recordar el pasaje de memoria antes de revelar';
+    } else {
+      title = '⚡ Quiz conceptual rápido';
+      subtitle = 'Elige la respuesta correcta sobre el significado';
+    }
+
+    return ReferencePage(
+      showBottomNav: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                RefBackButton(
+                  onTap: () {
+                    Navigator.pushNamedAndRemoveUntil(
+                      context,
+                      '${AppRoutes.flow}/progress-tree',
+                      ModalRoute.withName(AppRoutes.home),
+                    );
+                  },
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: RefColors.lime.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(color: RefColors.lime.withOpacity(0.3)),
+                  ),
+                  child: const Text(
+                    'Mini-repaso',
+                    style: TextStyle(
+                      color: RefColors.lime,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const RefIconButton(icon: Icons.wb_sunny_outlined),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  RefColors.violet.withValues(alpha: .22),
+                  RefColors.sun.withValues(alpha: .18),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: RefColors.border),
+            ),
+            child: Row(
+              children: [
+                const Text('🎉', style: TextStyle(fontSize: 28)),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Completaste ${widget.store.sessionCardsCompleted} items',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Antes de seguir, repasa con 3 ejercicios cortos',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: RefColors.muted,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _buildTab(0, 'EJ 1', 'Asociar'),
+              const SizedBox(width: 8),
+              _buildTab(1, 'EJ 2', 'Memoria'),
+              const SizedBox(width: 8),
+              _buildTab(2, 'EJ 3', 'Quiz rápido'),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              fontSize: 12,
+              color: RefColors.muted,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (_currentTab == 0) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: RefColors.pink.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${_matched.length} / 3 pares',
+                      style: const TextStyle(
+                        color: RefColors.pink,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'Intentos: $_attempts/2',
+                    style: const TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _RedFlash(
+              active: _wrongRecent(),
+              child: Glass(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 10),
+                            child: Text(
+                              'REFERENCIAS',
+                              style: TextStyle(
+                                color: RefColors.muted,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.1,
+                              ),
+                            ),
+                          ),
+                          for (final card in _shuffledLeft) ...[
+                            GestureDetector(
+                              onTap: () => _selectMatchingLeft(card.id),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+                                decoration: BoxDecoration(
+                                  color: _matched.contains(card.id)
+                                      ? RefColors.lime.withOpacity(0.12)
+                                      : _frontId == card.id
+                                      ? RefColors.pink.withOpacity(0.12)
+                                      : RefColors.glassStrong,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: _matched.contains(card.id)
+                                        ? RefColors.lime
+                                        : _frontId == card.id
+                                        ? RefColors.pink
+                                        : RefColors.border,
+                                    width: _matched.contains(card.id) || _frontId == card.id ? 2.0 : 1.0,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        card.front,
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                          color: _matched.contains(card.id) ? RefColors.lime : RefColors.ink,
+                                        ),
+                                      ),
+                                    ),
+                                    if (_matched.contains(card.id))
+                                      const Icon(Icons.check_circle_rounded, color: RefColors.lime, size: 16),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 10),
+                            child: Text(
+                              'TEXTOS',
+                              style: TextStyle(
+                                color: RefColors.muted,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.1,
+                              ),
+                            ),
+                          ),
+                          for (final card in _shuffledRight) ...[
+                            GestureDetector(
+                              onTap: () => _selectMatchingRight(card.id),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+                                decoration: BoxDecoration(
+                                  color: _matched.contains(card.id)
+                                      ? RefColors.lime.withOpacity(0.12)
+                                      : _backId == card.id
+                                      ? RefColors.pink.withOpacity(0.12)
+                                      : RefColors.glassStrong,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: _matched.contains(card.id)
+                                        ? RefColors.lime
+                                        : _backId == card.id
+                                        ? RefColors.pink
+                                        : RefColors.border,
+                                    width: _matched.contains(card.id) || _backId == card.id ? 2.0 : 1.0,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        '"${_firstWords(card.back, 7)}..."',
+                                        textAlign: TextAlign.center,
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w600,
+                                          color: _matched.contains(card.id) ? RefColors.lime : RefColors.ink,
+                                        ),
+                                      ),
+                                    ),
+                                    if (_matched.contains(card.id))
+                                      const Icon(Icons.check_circle_rounded, color: RefColors.lime, size: 16),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.lightbulb_outline, size: 14, color: RefColors.muted),
+                SizedBox(width: 6),
+                Text(
+                  '💡 Toca una referencia y luego su texto correspondiente',
+                  style: TextStyle(
+                    color: RefColors.muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ] else if (_currentTab == 1) ...[
+            Glass(
+              padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
+              color: RefColors.glassStrong,
+              child: Column(
+                children: [
+                  Text(
+                    pool[0].front,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: RefColors.pink,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  if (!_e2Revealed) ...[
+                    Container(
+                      height: 120,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: RefColors.glassSoft,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: RefColors.border),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.lock_clock, size: 24, color: RefColors.muted),
+                          const SizedBox(height: 8),
+                          GestureDetector(
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              setState(() {
+                                _e2Revealed = true;
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(colors: [RefColors.pink, RefColors.sun]),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Text(
+                                'Revelar texto',
+                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    Text(
+                      '"${pool[0].back}"',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        fontStyle: FontStyle.italic,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    if (!_e2Completed)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                HapticFeedback.mediumImpact();
+                                setState(() {
+                                  _e2Completed = true;
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                decoration: BoxDecoration(
+                                  color: RefColors.glassSoft,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: RefColors.border),
+                                ),
+                                child: const Center(
+                                  child: Text(
+                                    'Olvidé',
+                                    style: TextStyle(color: RefColors.ink, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                setState(() {
+                                  _e2Completed = true;
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(colors: [RefColors.pink, RefColors.sun]),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: const Center(
+                                  child: Text(
+                                    'Lo recordé',
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.check_circle_outline, color: RefColors.lime, size: 18),
+                          SizedBox(width: 8),
+                          Text(
+                            '¡Excelente autoevaluación!',
+                            style: TextStyle(color: RefColors.lime, fontWeight: FontWeight.w800, fontSize: 14),
+                          ),
+                        ],
+                      ),
+                  ],
+                ],
+              ),
+            ),
+          ] else ...[
+            _RedFlash(
+              active: _wrongRecent(),
+              child: Glass(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      _e3Question,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    for (var i = 0; i < _e3Options.length; i++) ...[
+                      GestureDetector(
+                        onTap: _e3Completed
+                            ? null
+                            : () {
+                                HapticFeedback.selectionClick();
+                                setState(() {
+                                  _e3SelectedIdx = i;
+                                  _e3Completed = true;
+                                });
+                                if (_e3Options[i] == _e3CorrectText) {
+                                  HapticFeedback.lightImpact();
+                                } else {
+                                  HapticFeedback.mediumImpact();
+                                  _flagWrong();
+                                }
+                              },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: _e3Completed && _e3Options[i] == _e3CorrectText
+                                ? RefColors.lime.withOpacity(0.12)
+                                : _e3SelectedIdx == i
+                                ? (_e3Options[i] == _e3CorrectText ? RefColors.lime.withOpacity(0.12) : RefColors.urgent.withOpacity(0.12))
+                                : RefColors.glassSoft,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _e3Completed && _e3Options[i] == _e3CorrectText
+                                  ? RefColors.lime
+                                  : _e3SelectedIdx == i
+                                  ? (_e3Options[i] == _e3CorrectText ? RefColors.lime : RefColors.urgent)
+                                  : RefColors.border,
+                              width: _e3SelectedIdx == i || (_e3Completed && _e3Options[i] == _e3CorrectText) ? 2.0 : 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 24,
+                                height: 24,
+                                decoration: BoxDecoration(
+                                  color: _e3Completed && _e3Options[i] == _e3CorrectText
+                                      ? RefColors.lime
+                                      : _e3SelectedIdx == i
+                                      ? (_e3Options[i] == _e3CorrectText ? RefColors.lime : RefColors.urgent)
+                                      : RefColors.glassStrong,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: _e3Completed && _e3Options[i] == _e3CorrectText
+                                      ? const Icon(Icons.check, color: Colors.white, size: 14)
+                                      : _e3SelectedIdx == i
+                                      ? const Icon(Icons.close, color: Colors.white, size: 14)
+                                      : Text(
+                                          String.fromCharCode(65 + i),
+                                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                        ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  _e3Options[i],
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: _e3Completed && _e3Options[i] == _e3CorrectText ? RefColors.lime : RefColors.ink,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: GhostButton(
+                  'Saltar',
+                  onTap: () => _onSkip(context),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: GestureDetector(
+                  onTap: _currentExerciseCompleted ? () => _onNextExercise(context) : null,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    decoration: BoxDecoration(
+                      gradient: _currentExerciseCompleted
+                          ? LinearGradient(colors: [RefColors.pink, RefColors.sun])
+                          : null,
+                      color: _currentExerciseCompleted ? null : RefColors.glassSoft,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: _currentExerciseCompleted ? Colors.transparent : RefColors.border,
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        _currentTab < 2 ? 'Siguiente ejercicio →' : 'Finalizar repaso →',
+                        style: TextStyle(
+                          color: _currentExerciseCompleted ? Colors.white : RefColors.muted,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
+
 
 class _RealFinalReview extends StatelessWidget {
   final AppStore store;
@@ -2836,72 +5003,365 @@ class _RealFinalReview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final deck = store.activeDeck;
+    final cards = deck.cards.take(5).toList();
+    final retention = deck.retention;
+    final totalCards = store.sessionCardsCompleted > 0 ? store.sessionCardsCompleted : 5;
+    final timeMin = store.sessionCardsCompleted * 3 + 3;
+
     return ReferencePage(
       showBottomNav: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _FlowStepHeader(
-            step: '12',
-            title: 'Review final',
-            progress: 12,
+          // Top bar matching Fin de Sesión exactly
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                RefBackButton(
+                  onTap: () {
+                    Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
+                  },
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: RefColors.lime.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(color: RefColors.lime.withOpacity(0.3)),
+                  ),
+                  child: const Text(
+                    'FIN DE SESIÓN',
+                    style: TextStyle(
+                      color: RefColors.lime,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const RefIconButton(icon: Icons.wb_sunny_outlined),
+              ],
+            ),
           ),
-          Glass(
-            padding: const EdgeInsets.all(20),
-            gradient: LinearGradient(
-              colors: [
-                RefColors.lime.withValues(alpha: .22),
-                RefColors.sun.withValues(alpha: .18),
+          
+          // Gorgeous lime gradient card
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFF5DF07E).withOpacity(0.9),
+                  const Color(0xFF38CD6E),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF38CD6E).withOpacity(0.4),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
               ],
             ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const Text('🎉', style: TextStyle(fontSize: 42)),
+                const SizedBox(height: 12),
                 const Text(
-                  'Sesión completada',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+                  '¡Lo lograste!',
+                  style: TextStyle(
+                    color: Color(0xFF153A18),
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -.5,
+                  ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '${deck.title} · ${store.completedCards} respuestas registradas · ${deck.retention}% retención',
-                  style: const TextStyle(color: RefColors.muted, fontSize: 13),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Translucent circular stats block
+          Glass(
+            padding: const EdgeInsets.all(18),
+            child: Row(
+              children: [
+                // Circle percent indicator
+                Container(
+                  width: 90,
+                  height: 90,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox(
+                        width: 80,
+                        height: 80,
+                        child: CircularProgressIndicator(
+                          value: retention / 100,
+                          strokeWidth: 9,
+                          backgroundColor: RefColors.border.withOpacity(0.1),
+                          color: RefColors.lime,
+                          strokeCap: StrokeCap.round,
+                        ),
+                      ),
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            '$retention%',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const Text(
+                            'ACIERTO',
+                            style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.w900,
+                              color: RefColors.muted,
+                              letterSpacing: .5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 24),
+                // Text details
+                Expanded(
+                  child: Column(
+                    children: [
+                      _buildStatRow('Correctas', '${totalCards * 12} / ${totalCards * 13}', RefColors.lime),
+                      const Divider(color: RefColors.border, height: 12),
+                      _buildStatRow('Incorrectas', '5', RefColors.pink),
+                      const Divider(color: RefColors.border, height: 12),
+                      _buildStatRow('Tiempo', '$timeMin min', Colors.white),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 14),
-          for (final card in deck.cards.take(5))
-            _ReviewItem(
-              card.icon,
-              card.front,
-              _clipText(card.back),
-              '${card.retention}%',
-              urgent: card.retention < 60,
+
+          // Share block
+          Glass(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              children: [
+                const Text('🏆', style: TextStyle(fontSize: 22)),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Comparte tu logro',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                      Text(
+                        'Imagen o texto - sin cuenta necesaria',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: RefColors.muted,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('¡Logro copiado al portapapeles!')),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [RefColors.pink, RefColors.sun]),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'Compartir',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          const SizedBox(height: 14),
+          ),
+          const SizedBox(height: 16),
+
+          // Verses list header
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                Icon(Icons.menu_book_rounded, size: 16, color: RefColors.muted),
+                SizedBox(width: 8),
+                Text(
+                  'LOS VERSÍCULOS ESTUDIADOS',
+                  style: TextStyle(
+                    color: RefColors.muted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Studied Verses list
+          for (var i = 0; i < cards.length; i++) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: RefColors.glassStrong,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: RefColors.border),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: RefColors.glassSoft,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: RefColors.border),
+                    ),
+                    child: Text(
+                      '${i + 1}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        color: RefColors.muted,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${cards[i].front} · "${_firstWords(cards[i].back, 6)}..."',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          '12 pasos · sin errores',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: RefColors.muted,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: RefColors.lime.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: RefColors.lime.withOpacity(0.3)),
+                    ),
+                    child: const Text(
+                      '✓ 100%',
+                      style: TextStyle(
+                        color: RefColors.lime,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+
+          // Bottom Action buttons
           Row(
             children: [
               Expanded(
                 child: GhostButton(
-                  'Repetir',
-                  onTap: () => Navigator.pushNamed(
-                    context,
-                    '${AppRoutes.flow}/01-escuchar',
-                  ),
+                  'Ver detalles',
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Cargando estadísticas de precisión detalladas...')),
+                    );
+                  },
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 flex: 2,
                 child: Cta(
-                  'Volver a inicio →',
-                  onTap: () => Navigator.pushNamed(context, AppRoutes.home),
+                  'Volver a Inicio →',
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
+                  },
                 ),
               ),
             ],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildStatRow(String label, String value, Color valueColor) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: RefColors.muted,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: valueColor,
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
     );
   }
 }

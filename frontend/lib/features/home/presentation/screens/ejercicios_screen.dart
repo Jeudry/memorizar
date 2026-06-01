@@ -420,22 +420,11 @@ class _ExerciseOption extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  if (tip != null)
-                    Text(
-                      tip!,
-                      style: const TextStyle(
-                        color: RefColors.muted,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
                 ],
               ),
             ),
