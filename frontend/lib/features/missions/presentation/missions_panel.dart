@@ -3,7 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../../../core/app_state.dart';
-import '../../home/presentation/ui_screens.dart' show RefColors;
+import '../../../../core/theme/ref_colors.dart';
 import '../data/missions.dart';
 import '../data/missions_tracker.dart';
 
