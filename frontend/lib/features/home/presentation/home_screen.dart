@@ -1557,7 +1557,7 @@ class _CoopBar extends StatelessWidget {
           ),
           InkWell(
             onTap: () {
-              Navigator.pushNamed(context, AppRoutes.cooperativo);
+              Navigator.pushNamed(context, '/cooperativo');
             },
             borderRadius: BorderRadius.circular(999),
             child: Container(
