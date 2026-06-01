@@ -282,6 +282,7 @@ class AppStore extends ChangeNotifier {
   Timer? _inviteTimer;
   final List<Map<String, dynamic>> _pendingCoopInvites = [];
   List<Map<String, dynamic>> get pendingCoopInvites => List.unmodifiable(_pendingCoopInvites);
+  final Set<String> _notifiedFriendRequests = {};
 
   void clearPendingCoopInvite(String roomCode) {
     _pendingCoopInvites.removeWhere((i) => i['roomCode'] == roomCode);
@@ -292,6 +293,8 @@ class AppStore extends ChangeNotifier {
     _inviteTimer?.cancel();
     _inviteTimer = Timer.periodic(const Duration(seconds: 4), (timer) async {
       if (!isLoggedIn) return;
+      
+      // 1. Detección de invitaciones cooperativas pendientes
       try {
         final invites = await api.getPendingCoopInvites();
         if (invites.isNotEmpty) {
@@ -316,6 +319,43 @@ class AppStore extends ChangeNotifier {
           if (updated) {
             notifyListeners();
           }
+        }
+      } catch (_) {}
+
+      // 2. Detección de solicitudes de amistad pendientes nuevas
+      try {
+        final friends = await api.listFriends();
+        final me = _currentUser?.id ?? '';
+        final pending = friends.pendingRequests.where((f) => f.addresseeId == me).toList();
+        
+        bool socialUpdated = false;
+        for (final req in pending) {
+          if (!_notifiedFriendRequests.contains(req.id)) {
+            _notifiedFriendRequests.add(req.id);
+            socialUpdated = true;
+            
+            // Buscar nombre del solicitante de forma asíncrona
+            unawaited(() async {
+              try {
+                final requester = await api.getUser(req.requesterId);
+                final name = requester.displayName.isNotEmpty ? requester.displayName : requester.email;
+                await PushService.instance.showLocalNow(
+                  id: req.id.hashCode,
+                  title: '¡Solicitud de Amistad! 👥',
+                  body: '$name quiere conectar contigo en Memorizar.',
+                );
+              } catch (_) {
+                await PushService.instance.showLocalNow(
+                  id: req.id.hashCode,
+                  title: '¡Solicitud de Amistad! 👥',
+                  body: 'Alguien quiere conectar contigo en Memorizar.',
+                );
+              }
+            }());
+          }
+        }
+        if (socialUpdated) {
+          unawaited(refreshPendingCount());
         }
       } catch (_) {}
     });

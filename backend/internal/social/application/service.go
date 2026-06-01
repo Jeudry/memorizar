@@ -224,17 +224,44 @@ func (s *Service) RequestFriend(requesterID, addresseeID string) (*domain.Friend
 	if err := s.repo.SaveFriendship(friendship); err != nil {
 		return nil, err
 	}
+
+	// Recuperar usuarios para la simulación de correo e información de la notificación
+	requester, _ := s.repo.FindUserByID(requesterID)
+	addressee, _ := s.repo.FindUserByID(addresseeID)
+
+	requesterName := "Alguien"
+	if requester != nil && requester.DisplayName != "" {
+		requesterName = requester.DisplayName
+	} else if requester != nil {
+		requesterName = requester.Email
+	}
+
 	s.notifySafe(notify.Notification{
 		Type:   notify.EventFriendRequested,
 		UserID: addresseeID,
 		Title:  "Nueva solicitud de amistad",
-		Body:   s.userDisplay(requesterID) + " quiere conectar contigo.",
+		Body:   requesterName + " quiere conectar contigo.",
 		Data: map[string]string{
 			"friendshipId": friendship.ID,
 			"requesterId":  requesterID,
 			"deeplink":     "memorizar://amigos",
 		},
 	})
+
+	// Simulación de correo electrónico robusta y visible en los logs
+	if requester != nil && addressee != nil {
+		log.Printf("\n========================================================================\n" +
+			"[EMAIL SIMULATOR] ENVIADO A: " + addressee.Email + "\n" +
+			"ASUNTO: ¡" + requesterName + " quiere ser tu amigo en Memorizar! 👥\n" +
+			"CUERPO:\n" +
+			"  ¡Hola!\n" +
+			"  " + requesterName + " (" + requester.Email + ") te ha enviado una solicitud de\n" +
+			"  amistad en Memorizar.\n\n" +
+			"  Para aceptarla, abre la aplicación e ingresa a la sección de amigos.\n\n" +
+			"  - El Equipo de Memorizar 🎯\n" +
+			"========================================================================\n")
+	}
+
 	return &friendship, nil
 }
 

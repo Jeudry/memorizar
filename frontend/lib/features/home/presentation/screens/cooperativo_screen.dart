@@ -2119,7 +2119,7 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
           child: Dialog(
             backgroundColor: Colors.transparent,
             insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-            child: FutureBuilder<RemoteUser>(
+            child: FutureBuilder<UserProfileResult>(
               future: store.api.getUser(targetUserId),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -2156,7 +2156,12 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
                   );
                 }
                 
-                final user = snapshot.data!;
+                final profile = snapshot.data!;
+                final user = profile.user;
+                final achievements = profile.achievements;
+                final sharedCount = profile.sharedCount;
+                final achievementsCount = profile.achievementsCount;
+                
                 final displayName = user.displayName.isNotEmpty ? user.displayName : user.email;
                 final email = user.email.isNotEmpty ? user.email : 'Sin correo';
                 final isMe = user.id == me;
@@ -2231,7 +2236,7 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 4),
                           Text(
                             'ID: ${user.id}',
                             textAlign: TextAlign.center,
@@ -2241,6 +2246,167 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
                               fontFamily: 'monospace',
                             ),
                           ),
+                          const SizedBox(height: 20),
+                          
+                          // Bento style Row for user stats
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              // Shared decks count
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: .04),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(color: Colors.white.withValues(alpha: .05)),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      const Text(
+                                        'COMPARTIDOS',
+                                        style: TextStyle(
+                                          color: RefColors.dim,
+                                          fontSize: 8,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: 0.8,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '📚 $sharedCount ${sharedCount == 1 ? "Mazo" : "Mazos"}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              // Achievements count
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: .04),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(color: Colors.white.withValues(alpha: .05)),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      const Text(
+                                        'LOGROS',
+                                        style: TextStyle(
+                                          color: RefColors.dim,
+                                          fontSize: 8,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: 0.8,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '🏆 $achievementsCount ${achievementsCount == 1 ? "Insignia" : "Insignias"}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          
+                          // Recents achievements
+                          const Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'LOGROS Y MEDALLAS RECIENTES:',
+                              style: TextStyle(
+                                color: RefColors.muted,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          if (achievements.isEmpty)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: .15),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.white.withValues(alpha: .03)),
+                              ),
+                              child: const Text(
+                                'Aún no ha desbloqueado insignias de estudio. ⏳',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: RefColors.dim,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            )
+                          else
+                            Container(
+                              height: 60,
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: achievements.length,
+                                itemBuilder: (context, idx) {
+                                  final ach = achievements[idx];
+                                  return Container(
+                                    margin: const EdgeInsets.only(right: 8),
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: .06),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(color: Colors.white.withValues(alpha: .08)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Text(
+                                          ach.emoji.isNotEmpty ? ach.emoji : '🏆',
+                                          style: const TextStyle(fontSize: 22),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Text(
+                                              ach.title,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            Text(
+                                              ach.description,
+                                              style: const TextStyle(
+                                                color: RefColors.dim,
+                                                fontSize: 8,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
                           const SizedBox(height: 24),
                           
                           if (isMe)

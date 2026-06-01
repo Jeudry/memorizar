@@ -219,3 +219,56 @@ class FeedEntry {
     );
   }
 }
+
+class RemoteAchievement {
+  final String id;
+  final String code;
+  final String title;
+  final String description;
+  final String emoji;
+  final DateTime? unlockedAt;
+
+  const RemoteAchievement({
+    required this.id,
+    required this.code,
+    required this.title,
+    required this.description,
+    required this.emoji,
+    this.unlockedAt,
+  });
+
+  factory RemoteAchievement.fromJson(Map<String, dynamic> json) => RemoteAchievement(
+        id: (json['id'] as String?) ?? '',
+        code: (json['code'] as String?) ?? '',
+        title: (json['title'] as String?) ?? '',
+        description: (json['description'] as String?) ?? '',
+        emoji: (json['emoji'] as String?) ?? '🏆',
+        unlockedAt: DateTime.tryParse((json['unlockedAt'] as String?) ?? ''),
+      );
+}
+
+class UserProfileResult {
+  final RemoteUser user;
+  final List<RemoteAchievement> achievements;
+  final int sharedCount;
+  final int achievementsCount;
+
+  const UserProfileResult({
+    required this.user,
+    required this.achievements,
+    this.sharedCount = 0,
+    this.achievementsCount = 0,
+  });
+
+  factory UserProfileResult.fromJson(Map<String, dynamic> json) {
+    final stats = json['stats'] as Map<String, dynamic>? ?? const {};
+    return UserProfileResult(
+      user: RemoteUser.fromJson(json['user'] as Map<String, dynamic>? ?? const {}),
+      achievements: ((json['achievements'] as List?) ?? const [])
+          .map((e) => RemoteAchievement.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      sharedCount: (stats['sharedCount'] as int?) ?? 0,
+      achievementsCount: (stats['achievementsCount'] as int?) ?? 0,
+    );
+  }
+}

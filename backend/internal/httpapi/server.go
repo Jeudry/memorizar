@@ -272,7 +272,25 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request, _ string)
 		return
 	}
 	sanitized := user.Sanitize()
-	writeJSON(w, http.StatusOK, sanitized)
+
+	// Cargar logros e insignias del usuario
+	achievements, _ := s.service.ListAchievementsByUserIDs([]string{targetID})
+	if achievements == nil {
+		achievements = []domain.Achievement{}
+	}
+
+	// Cargar recursos compartidos públicos del usuario para contar sus mazos
+	shares, _ := s.service.ListPublicSharedResourcesByUserIDs([]string{targetID})
+	sharedCount := len(shares)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user":         sanitized,
+		"achievements": achievements,
+		"stats": map[string]any{
+			"sharedCount":       sharedCount,
+			"achievementsCount": len(achievements),
+		},
+	})
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request, userID string) {
