@@ -21,7 +21,7 @@ class CoopRoomState {
   /// Mazo configurado en el lobby.
   final String? lobbyDeckId;
   final String? lobbyDeckName;
-  final String mode; // "grupal", "versus", "libre"
+  final String mode; // "turnos", "libre"
   final bool isPublic;
   final int sessionDifficulty;
   final int sessionDailyTarget;
@@ -37,7 +37,7 @@ class CoopRoomState {
     this.scores = const {},
     this.lobbyDeckId,
     this.lobbyDeckName,
-    this.mode = 'grupal',
+    this.mode = 'turnos',
     this.isPublic = true,
     this.sessionDifficulty = 1,
     this.sessionDailyTarget = 0,
@@ -165,7 +165,7 @@ class CoopService {
       hostId: hostId,
       lobbyDeckId: deckId,
       lobbyDeckName: deckName,
-      mode: 'grupal',
+      mode: 'turnos',
       isPublic: isPublic,
     );
     return _state!;
@@ -187,7 +187,7 @@ class CoopService {
     final hostId = (res['hostId'] as String?) ?? '';
     final deckId = (res['deckId'] as String?) ?? '';
     final deckName = (res['deckName'] as String?) ?? '';
-    final mode = (res['mode'] as String?) ?? 'grupal';
+    final mode = (res['mode'] as String?) ?? 'turnos';
     final isPublic = (res['isPublic'] as bool?) ?? true;
     await connect(
       code: code,
@@ -208,7 +208,7 @@ class CoopService {
     required String hostId,
     String? lobbyDeckId,
     String? lobbyDeckName,
-    String mode = 'grupal',
+    String mode = 'turnos',
     bool isPublic = true,
   }) async {
     await disconnect();
@@ -262,7 +262,7 @@ class CoopService {
         _stateCtrl.add(_state!);
         break;
       case 'mode':
-        final mode = (msg.payload?['mode'] as String?) ?? 'grupal';
+        final mode = (msg.payload?['mode'] as String?) ?? 'turnos';
         _state = state.copyWith(mode: mode);
         _stateCtrl.add(_state!);
         break;

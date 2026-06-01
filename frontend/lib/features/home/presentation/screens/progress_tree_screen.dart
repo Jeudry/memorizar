@@ -186,7 +186,13 @@ class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
                     onTap: () {
                       final keepGoing = store.advanceToNextSessionCard(correct: true);
                       unawaited(store.pushProgressSnapshot());
-                      if (keepGoing) {
+                      if (CoopService.active != null) {
+                        Navigator.pushNamedAndRemoveUntil(
+                          context,
+                          AppRoutes.cooperativoLogrado,
+                          (route) => route.isFirst,
+                        );
+                      } else if (keepGoing) {
                         Navigator.pushNamedAndRemoveUntil(
                           context,
                           '${AppRoutes.flow}/progress-tree',

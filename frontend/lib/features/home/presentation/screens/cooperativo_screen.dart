@@ -3302,14 +3302,11 @@ class _CoopSettingsCard extends StatelessWidget {
         : (roomState.lobbyDeckId == null || roomState.lobbyDeckId!.isEmpty ? 'Elegir' : 'Cambiar →');
 
     // Mapear modo cooperativo a descripción
-    String modeDesc = 'Todos responden · el grupo avanza junto';
-    String modeLabel = 'Grupal';
-    if (roomState.mode == 'versus') {
-      modeDesc = 'El primero que responda gana el punto';
-      modeLabel = 'Versus';
-    } else if (roomState.mode == 'libre') {
-      modeDesc = 'Cualquiera puede pasar las tarjetas sin esperar';
-      modeLabel = 'Libre';
+    String modeDesc = '1x1 van respondiendo ordenadamente';
+    String modeLabel = 'Prueba por Turno';
+    if (roomState.mode == 'libre') {
+      modeDesc = 'Cualquiera responde · 8s cooldown si fallas';
+      modeLabel = 'Estudio Libre';
     }
 
     final totalCards = deck?.cards.length ?? 0;
@@ -3467,28 +3464,18 @@ class _CoopSettingsCard extends StatelessWidget {
               const SizedBox(height: 12),
               ListTile(
                 leading: const Icon(Icons.groups_rounded, color: RefColors.lime),
-                title: const Text('Modo Grupal', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                subtitle: const Text('Todos responden · el grupo avanza junto', style: TextStyle(color: RefColors.muted, fontSize: 11)),
-                trailing: roomState.mode == 'grupal' ? const Icon(Icons.check_circle, color: RefColors.lime) : null,
+                title: const Text('Prueba por Turno', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                subtitle: const Text('1x1 van respondiendo ordenadamente', style: TextStyle(color: RefColors.muted, fontSize: 11)),
+                trailing: roomState.mode == 'turnos' ? const Icon(Icons.check_circle, color: RefColors.lime) : null,
                 onTap: () {
-                  coop.broadcastMode('grupal');
-                  Navigator.pop(ctx);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.emoji_events_rounded, color: RefColors.pink),
-                title: const Text('Modo Versus', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                subtitle: const Text('El primero que responda gana el punto', style: TextStyle(color: RefColors.muted, fontSize: 11)),
-                trailing: roomState.mode == 'versus' ? const Icon(Icons.check_circle, color: RefColors.pink) : null,
-                onTap: () {
-                  coop.broadcastMode('versus');
+                  coop.broadcastMode('turnos');
                   Navigator.pop(ctx);
                 },
               ),
               ListTile(
                 leading: const Icon(Icons.bolt_rounded, color: RefColors.cyan),
                 title: const Text('Estudio Libre', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                subtitle: const Text('Cualquiera puede pasar las tarjetas sin esperar', style: TextStyle(color: RefColors.muted, fontSize: 11)),
+                subtitle: const Text('Cualquiera responde · 8s cooldown si fallas', style: TextStyle(color: RefColors.muted, fontSize: 11)),
                 trailing: roomState.mode == 'libre' ? const Icon(Icons.check_circle, color: RefColors.cyan) : null,
                 onTap: () {
                   coop.broadcastMode('libre');
@@ -3694,15 +3681,19 @@ class _CoopSettingRow extends StatelessWidget {
 class _CoopTeamRow extends StatelessWidget {
   final CoopRoomState state;
   final Set<String> answeredUsers;
+  final String? activeTurnUserId;
+  final Set<String> failedUserIds;
 
   const _CoopTeamRow({
     required this.state,
     required this.answeredUsers,
+    this.activeTurnUserId,
+    this.failedUserIds = const {},
   });
 
   @override
   Widget build(BuildContext context) {
-    final entries = state.memberIds.toList();
+    final entries = state.memberIds.toList()..sort();
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
@@ -3720,13 +3711,16 @@ class _CoopTeamRow extends StatelessWidget {
     final isMe = userId == CoopService.activeUserId;
     final displayName = isMe ? 'Tú' : userId;
     
-    final hasAnswered = answeredUsers.contains(userId);
+    final hasFailed = failedUserIds.contains(userId);
+    final isActive = activeTurnUserId == userId;
     
     final String statusText;
-    if (hasAnswered) {
-      statusText = '✓ Respondió';
+    if (hasFailed) {
+      statusText = '❌ Inhabilitado';
+    } else if (isActive) {
+      statusText = isMe ? '⚡ ¡TU TURNO!' : '⚡ Su turno';
     } else {
-      statusText = isMe ? 'Tu turno...' : 'Esperando';
+      statusText = 'Espera';
     }
 
     final gradients = [
@@ -3741,8 +3735,10 @@ class _CoopTeamRow extends StatelessWidget {
       userId.substring(0, 1).toUpperCase(),
       displayName,
       statusText,
-      done: hasAnswered,
-      answering: !hasAnswered,
+      done: isActive,
+      answering: !hasFailed && !isActive,
+      failed: hasFailed,
+      isMe: isMe,
       gradient: gradient,
     );
   }
@@ -3754,6 +3750,8 @@ class _CoopMate extends StatelessWidget {
   final String status;
   final bool done;
   final bool answering;
+  final bool failed;
+  final bool isMe;
   final Gradient gradient;
 
   const _CoopMate(
@@ -3762,43 +3760,71 @@ class _CoopMate extends StatelessWidget {
     this.status, {
     this.done = false,
     this.answering = false,
+    this.failed = false,
+    this.isMe = false,
     this.gradient = RefColors.primary,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Glass(
-      radius: 14,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      child: Row(
-        children: [
-          Fav(avatar, size: 30, gradient: gradient),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                name,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
+    Color borderColor = Colors.white.withValues(alpha: 0.05);
+    Color statusColor = RefColors.muted;
+    
+    if (failed) {
+      borderColor = RefColors.pink.withValues(alpha: 0.3);
+      statusColor = RefColors.pink;
+    } else if (done) {
+      borderColor = RefColors.lime.withValues(alpha: 0.5);
+      statusColor = RefColors.lime;
+    } else if (answering) {
+      statusColor = RefColors.muted;
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: borderColor,
+          width: isMe ? 2 : 1.5,
+        ),
+        boxShadow: done ? [
+          BoxShadow(
+            color: RefColors.lime.withValues(alpha: 0.15),
+            blurRadius: 8,
+            spreadRadius: 0,
+          )
+        ] : null,
+      ),
+      child: Glass(
+        radius: 14,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Fav(avatar, size: 30, gradient: gradient),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: isMe ? FontWeight.w900 : FontWeight.w700,
+                    color: Colors.white,
+                  ),
                 ),
-              ),
-              Text(
-                status,
-                style: TextStyle(
-                  color: done
-                      ? RefColors.lime
-                      : answering
-                      ? RefColors.sun
-                      : RefColors.muted,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
+                Text(
+                  status,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -4194,54 +4220,142 @@ class _CoopScoreCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final coop = CoopService.active;
+    final state = coop?.state;
+    
+    if (state == null) {
+      return Glass(
+        padding: const EdgeInsets.all(18),
+        child: const Center(
+          child: Text(
+            'No hay datos de sesión disponibles',
+            style: TextStyle(color: RefColors.muted),
+          ),
+        ),
+      );
+    }
+
+    final members = state.memberIds.toList()..sort();
+    final scores = state.scores;
+    
+    int totalCorrect = 0;
+    for (final m in members) {
+      final score = scores[m] ?? 0;
+      totalCorrect += score ~/ 10;
+    }
+    
+    final target = state.sessionDailyTarget > 0 ? state.sessionDailyTarget : 1;
+    final percent = ((totalCorrect / (target * members.length)) * 100).clamp(0.0, 100.0).round();
+
     return Glass(
       padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: SweepGradient(
+                    colors: [RefColors.lime, RefColors.lime, RefColors.glassSoft],
+                    stops: [0, .85, .85],
+                  ),
+                ),
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: RefColors.bg,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        '$percent%',
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                      ),
+                      const Text(
+                        'COMPLETADO',
+                        style: TextStyle(
+                          color: RefColors.muted,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  children: [
+                    _CoopScoreRow('Total correctas', '$totalCorrect'),
+                    _CoopScoreRow('Objetivo sala', '$target por jugador'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          const Divider(color: Colors.white10, height: 1),
+          const SizedBox(height: 12),
+          const Text(
+            'RESPUESTAS CORRECTAS POR MIEMBRO (ORDEN NEUTRAL)',
+            style: TextStyle(
+              color: RefColors.muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (final m in members) ...[
+            _buildMemberScoreRow(m, scores[m] ?? 0),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMemberScoreRow(String userId, int score) {
+    final isMe = userId == CoopService.activeUserId;
+    final name = isMe ? 'Tú ($userId)' : userId;
+    final correct = score ~/ 10;
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
           Container(
-            width: 100,
-            height: 100,
-            padding: const EdgeInsets.all(5),
+            width: 10,
+            height: 10,
             decoration: const BoxDecoration(
+              color: RefColors.lime,
               shape: BoxShape.circle,
-              gradient: SweepGradient(
-                colors: [RefColors.lime, RefColors.lime, RefColors.glassSoft],
-                stops: [0, .85, .85],
-              ),
             ),
-            child: Container(
-              decoration: const BoxDecoration(
-                color: RefColors.bg,
-                shape: BoxShape.circle,
-              ),
-              child: const Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    '85%',
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
-                  ),
-                  Text(
-                    'ACIERTO',
-                    style: TextStyle(
-                      color: RefColors.muted,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                ],
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              name,
+              style: TextStyle(
+                color: isMe ? Colors.white : RefColors.muted,
+                fontSize: 13,
+                fontWeight: isMe ? FontWeight.w900 : FontWeight.w700,
               ),
             ),
           ),
-          const SizedBox(width: 16),
-          const Expanded(
-            child: Column(
-              children: [
-                _CoopScoreRow('Correctas', '17 / 20'),
-                _CoopScoreRow('Incorrectas', '3'),
-                _CoopScoreRow('Tiempo', '12 min'),
-              ],
+          Text(
+            '$correct correctas',
+            style: const TextStyle(
+              color: RefColors.lime,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ],

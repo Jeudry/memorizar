@@ -472,6 +472,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   int? _lastNonVoiceWrongAt;
   void _flagNonVoiceWrong() {
     _lastNonVoiceWrongAt = DateTime.now().millisecondsSinceEpoch;
+    final coop = CoopService.active;
+    if (coop != null) {
+      final mode = coop.state?.mode ?? 'turnos';
+      if (mode == 'libre') {
+        _startCooldown();
+      } else if (mode == 'turnos') {
+        _broadcastFail();
+        setState(() {
+          _failedUserIds.add(CoopService.activeUserId ?? '');
+        });
+      }
+    }
   }
   bool _nonVoiceWrongRecent() {
     final ts = _lastNonVoiceWrongAt;
@@ -483,6 +495,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   bool _fogFinished = false;
   bool _fogShowHintTemp = false;
   StreamSubscription<CoopRoomState>? _coopStateSub;
+  StreamSubscription<CoopMessage>? _coopMsgSub;
+  final Set<String> _failedUserIds = {};
+  int _cooldownSecondsLeft = 0;
+  Timer? _cooldownTimer;
 
   @override
   void initState() {
@@ -513,10 +529,34 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
         if (s.currentCardIndex != store.sessionCardsCompleted) {
           store.setSessionCardsCompleted(s.currentCardIndex);
+          setState(() {
+            _failedUserIds.clear();
+            _cooldownSecondsLeft = 0;
+            _cooldownTimer?.cancel();
+            _cooldownTimer = null;
+          });
         }
 
         if (!isHost && s.currentSlug != null && s.currentSlug!.isNotEmpty && s.currentSlug != currentSlug) {
+          setState(() {
+            _failedUserIds.clear();
+            _cooldownSecondsLeft = 0;
+            _cooldownTimer?.cancel();
+            _cooldownTimer = null;
+          });
           Navigator.pushReplacementNamed(context, '${AppRoutes.flow}/${s.currentSlug}');
+        }
+      });
+
+      _coopMsgSub = coop.messages.listen((msg) {
+        if (!mounted) return;
+        if (msg.type == 'coop_fail') {
+          final failedUserId = msg.payload?['userId'] as String? ?? msg.userId;
+          if (failedUserId.isNotEmpty) {
+            setState(() {
+              _failedUserIds.add(failedUserId);
+            });
+          }
         }
       });
     }
@@ -532,6 +572,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   @override
   void dispose() {
     _coopStateSub?.cancel();
+    _coopMsgSub?.cancel();
+    _cooldownTimer?.cancel();
     _soloLecturaTimer?.cancel();
     _completionTimer?.cancel();
     _letterTimer?.cancel();
@@ -845,7 +887,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     // la navegación.
     unawaited(store.pushProgressSnapshot());
     if (!mounted) return;
-    if (keepGoing) {
+    
+    if (CoopService.active != null) {
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRoutes.cooperativoLogrado,
+        (route) => route.isFirst,
+      );
+    } else if (keepGoing) {
       // Reset estado UI per-tarjeta (banco, completar, niebla, etc.).
       setState(() {
         _completionCardId = null;
@@ -2095,6 +2144,167 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     setState(() => _activeLetterIndex = index);
   }
 
+  String? get _activeTurnUserId {
+    final coop = CoopService.active;
+    if (coop == null) return null;
+    final state = coop.state;
+    if (state == null) return null;
+    if (state.mode != 'turnos') return null;
+    
+    final members = state.memberIds.toList()..sort();
+    if (members.isEmpty) return null;
+    
+    int startIndex = state.currentCardIndex % members.length;
+    for (int i = 0; i < members.length; i++) {
+      final idx = (startIndex + i) % members.length;
+      final candidate = members[idx];
+      if (!_failedUserIds.contains(candidate)) {
+        return candidate;
+      }
+    }
+    return members[startIndex];
+  }
+
+  void _startCooldown() {
+    _cooldownTimer?.cancel();
+    setState(() {
+      _cooldownSecondsLeft = 8;
+    });
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        if (_cooldownSecondsLeft > 1) {
+          _cooldownSecondsLeft--;
+        } else {
+          _cooldownSecondsLeft = 0;
+          timer.cancel();
+        }
+      });
+    });
+  }
+
+  void _broadcastFail() {
+    final coop = CoopService.active;
+    if (coop == null) return;
+    coop.send(CoopMessage(
+      type: 'coop_fail',
+      userId: CoopService.activeUserId ?? '',
+      payload: {'userId': CoopService.activeUserId ?? ''},
+    ));
+  }
+
+  Widget _buildTurnBannerNotification() {
+    final coop = CoopService.active;
+    if (coop == null) return const SizedBox.shrink();
+    final state = coop.state;
+    if (state == null) return const SizedBox.shrink();
+    
+    final mode = state.mode;
+    final isTurnos = mode == 'turnos';
+    
+    String message = '';
+    Color glowColor = RefColors.lime;
+    IconData icon = Icons.bolt_rounded;
+    
+    final isMeActive = isTurnos && _activeTurnUserId == CoopService.activeUserId;
+    final isMeFailed = isTurnos && _failedUserIds.contains(CoopService.activeUserId);
+    
+    if (isTurnos) {
+      if (isMeFailed) {
+        message = 'INHABILITADO · Has fallado en este ejercicio ❌';
+        glowColor = RefColors.pink;
+        icon = Icons.cancel_outlined;
+      } else if (isMeActive) {
+        message = '⚡ ¡TU TURNO! Responde ahora 🎯';
+        glowColor = RefColors.lime;
+        icon = Icons.bolt_rounded;
+      } else {
+        final activeName = _activeTurnUserId ?? 'Compañero';
+        message = 'Esperando el turno de $activeName... ⏳';
+        glowColor = RefColors.violet;
+        icon = Icons.hourglass_empty_rounded;
+      }
+    } else if (mode == 'libre') {
+      if (_cooldownSecondsLeft > 0) {
+        message = '⏳ COOLDOWN ACTIVO · Espera ${_cooldownSecondsLeft}s';
+        glowColor = RefColors.pink;
+        icon = Icons.timer_outlined;
+      } else {
+        message = '⚡ MODO LIBRE · ¡Cualquiera puede responder! 🚀';
+        glowColor = RefColors.lime;
+        icon = Icons.flash_on_rounded;
+      }
+    } else {
+      return const SizedBox.shrink();
+    }
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: glowColor.withValues(alpha: isMeActive ? 0.25 : 0.1),
+            blurRadius: isMeActive ? 16 : 8,
+            spreadRadius: isMeActive ? 1 : 0,
+          ),
+        ],
+      ),
+      child: Glass(
+        radius: 16,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        border: Border.all(color: glowColor.withValues(alpha: isMeActive ? 0.6 : 0.2)),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: glowColor.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                color: glowColor,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: isMeActive ? FontWeight.w900 : FontWeight.w700,
+                  letterSpacing: isMeActive ? 0.5 : 0.2,
+                ),
+              ),
+            ),
+            if (isMeActive)
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: RefColors.lime,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: RefColors.lime.withValues(alpha: 0.8),
+                      blurRadius: 6,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
@@ -2118,6 +2328,31 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
     final isCoop = CoopService.active != null;
     final coopState = CoopService.active?.state;
+
+    bool isBlocked = false;
+    String blockText = '';
+    
+    if (isCoop && coopState != null) {
+      final mode = coopState.mode;
+      if (mode == 'turnos') {
+        final activeUser = _activeTurnUserId;
+        final isMe = activeUser == CoopService.activeUserId;
+        final isMeFailed = _failedUserIds.contains(CoopService.activeUserId);
+        
+        if (isMeFailed) {
+          isBlocked = true;
+          blockText = 'Inhabilitado por fallar ❌\nEspera al siguiente ejercicio';
+        } else if (!isMe) {
+          isBlocked = true;
+          blockText = 'Esperando el turno de $activeUser ⏳';
+        }
+      } else if (mode == 'libre') {
+        if (_cooldownSecondsLeft > 0) {
+          isBlocked = true;
+          blockText = '⏳ Cooldown activo. Espera ${_cooldownSecondsLeft}s…';
+        }
+      }
+    }
 
     return PopScope(
       canPop: false,
@@ -2158,7 +2393,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 },
               ),
               const SizedBox(height: 8),
-              _CoopTeamRow(state: coopState, answeredUsers: const {}),
+              _CoopTeamRow(
+                state: coopState,
+                answeredUsers: const {},
+                activeTurnUserId: _activeTurnUserId,
+                failedUserIds: _failedUserIds,
+              ),
+              const SizedBox(height: 14),
+              _buildTurnBannerNotification(),
               const SizedBox(height: 14),
               RefProgress((store.sessionCardsCompleted + 1) / store.sessionDailyTarget),
               const SizedBox(height: 14),
@@ -2170,28 +2412,86 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 progress: step.clamp(1, totalSteps),
               ),
             
-            if (slug == '01-escuchar' ||
-                _isFirstLetterSlug(slug) ||
-                _isFogSlug(slug) ||
-                _isFinalVoiceSlug(slug))
-              Expanded(
-                child: _RedFlash(
-                  active: _nonVoiceWrongRecent(),
-                  child: _realExerciseBody(context, store, card, deck, slug),
-                ),
-              )
-            else
-              _RedFlash(
-                active: _nonVoiceWrongRecent(),
-                child: _realExerciseBody(context, store, card, deck, slug),
+            Expanded(
+              child: Stack(
+                children: [
+                  AbsorbPointer(
+                    absorbing: isBlocked,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (slug == '01-escuchar' ||
+                            _isFirstLetterSlug(slug) ||
+                            _isFogSlug(slug) ||
+                            _isFinalVoiceSlug(slug))
+                          Expanded(
+                            child: _RedFlash(
+                              active: _nonVoiceWrongRecent(),
+                              child: _realExerciseBody(context, store, card, deck, slug),
+                            ),
+                          )
+                        else
+                          _RedFlash(
+                            active: _nonVoiceWrongRecent(),
+                            child: _realExerciseBody(context, store, card, deck, slug),
+                          ),
+                        const SizedBox(height: 14),
+                        if (isCoop) ...[
+                          _coopExerciseFooter(context, store, card, deck, slug),
+                          const SizedBox(height: 14),
+                          const _CoopGameChat(),
+                        ] else
+                          _realExerciseFooter(context, store, card, deck, slug),
+                      ],
+                    ),
+                  ),
+                  if (isBlocked)
+                    Positioned.fill(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: Glass(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24.0),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    _cooldownSecondsLeft > 0
+                                        ? Icons.timer_outlined
+                                        : _failedUserIds.contains(CoopService.activeUserId)
+                                            ? Icons.cancel_outlined
+                                            : Icons.lock_outline_rounded,
+                                    color: _failedUserIds.contains(CoopService.activeUserId)
+                                        ? RefColors.pink
+                                        : _cooldownSecondsLeft > 0
+                                            ? RefColors.sun
+                                            : RefColors.muted,
+                                    size: 56,
+                                  ),
+                                  const SizedBox(height: 18),
+                                  Text(
+                                    blockText,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-            const SizedBox(height: 14),
-            if (isCoop) ...[
-              _coopExerciseFooter(context, store, card, deck, slug),
-              const SizedBox(height: 14),
-              const _CoopGameChat(),
-            ] else
-              _realExerciseFooter(context, store, card, deck, slug),
+            ),
           ],
         ),
       ),
