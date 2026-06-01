@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/Jeudry/memorizar/backend/internal/coop"
@@ -747,8 +748,52 @@ func (s *Server) handleCoopListPublicRooms(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	rooms := s.coop.ListPublicRooms()
-	writeJSON(w, http.StatusOK, rooms)
+
+	q := r.URL.Query()
+
+	difficulty := 0
+	if diffStr := q.Get("difficulty"); diffStr != "" {
+		if val, err := strconv.Atoi(diffStr); err == nil {
+			difficulty = val
+		}
+	}
+
+	mode := q.Get("mode")
+	query := q.Get("query")
+
+	hideFull := false
+	if hideStr := q.Get("hideFull"); hideStr == "true" {
+		hideFull = true
+	}
+
+	page := 1
+	if pageStr := q.Get("page"); pageStr != "" {
+		if val, err := strconv.Atoi(pageStr); err == nil && val > 0 {
+			page = val
+		}
+	}
+
+	limit := 10
+	if limitStr := q.Get("limit"); limitStr != "" {
+		if val, err := strconv.Atoi(limitStr); err == nil && val > 0 {
+			limit = val
+		}
+	}
+
+	rooms, total := s.coop.ListPublicRoomsPaged(difficulty, mode, query, hideFull, page, limit)
+
+	totalPages := 0
+	if limit > 0 {
+		totalPages = (total + limit - 1) / limit
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"rooms":      rooms,
+		"total":      total,
+		"page":       page,
+		"limit":      limit,
+		"totalPages": totalPages,
+	})
 }
 
 func (s *Server) handleCoopLookup(w http.ResponseWriter, r *http.Request, _ string) {
