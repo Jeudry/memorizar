@@ -2122,8 +2122,87 @@ List<_SelectionEntry> _summarizeSelection(
   return entries;
 }
 
+/// Tarjetas del paso actual en una sesión de Biblia.
+///
+/// - En modo cooperativo cada paso es 1 tarjeta individual (no se
+///   combinan), preservando el contrato introducido en el fix
+///   `6574aa7 fix(coop): disable automatic bible card combining`.
+/// - En modo solo, si el mazo es bíblico y el target diario > 1,
+///   devuelve el slice de `target` tarjetas correspondiente al paso
+///   actual, calculado a partir de `sessionCardsCompleted * target`.
+///   Esto permite que un mazo con N tarjetas y target T genere
+///   `ceil(N / T)` pasos, cada uno mostrando T versículos juntos.
+/// - En cualquier otro caso (no bíblico, target=1, mazo con 1 sola
+///   tarjeta) devuelve la tarjeta activa como una lista de un solo
+///   elemento.
+List<MemoryCardData> _currentStepCards(BuildContext context) {
+  final store = AppScope.of(context);
+  final deck = store.activeDeck;
+  if (CoopService.active != null) return [store.activeCard];
+  if (deck.isBible && deck.cards.length > 1 && store.sessionDailyTarget > 1) {
+    final target = store.sessionDailyTarget;
+    final start = (store.sessionCardsCompleted * target).clamp(
+      0,
+      deck.cards.length,
+    );
+    final end = (start + target).clamp(start, deck.cards.length);
+    return deck.cards.sublist(start, end);
+  }
+  return [store.activeCard];
+}
+
 String _cardStudyText(BuildContext context) {
-  return AppScope.of(context).activeCard.back;
+  return _currentStepCards(context).map((c) => c.back.trim()).join(' ');
+}
+
+/// Compacts a list of Bible references like
+/// `['Salmos 106:1', 'Salmos 106:2']` into `'Salmos 106:1-2'`. Múltiples
+/// libros/capítulos se unen con `'; '`. Es la versión local usada para
+/// componer el header del paso actual en `_cardSourceText` — no necesita
+/// cubrir todos los edge cases de `_collapseBibleReferences` en
+/// `app_state.dart` porque opera sobre tarjetas que ya vienen del backend
+/// con el formato canónico.
+String _collapseRefsForStep(List<String> refs) {
+  if (refs.isEmpty) return '';
+  if (refs.length == 1) return refs.first;
+  final regex = RegExp(r'^(.*\D)(\d+)$');
+  final groups = <String, List<int>>{};
+  final order = <String>[];
+  for (final ref in refs) {
+    final m = regex.firstMatch(ref.trim());
+    if (m == null) return refs.join('; ');
+    final book = m.group(1)!;
+    final verse = int.tryParse(m.group(2)!) ?? 0;
+    if (!groups.containsKey(book)) {
+      groups[book] = [];
+      order.add(book);
+    }
+    groups[book]!.add(verse);
+  }
+  final parts = <String>[];
+  for (final book in order) {
+    final verses = groups[book]!..sort();
+    if (verses.length == 1) {
+      parts.add('$book${verses.first}');
+      continue;
+    }
+    final ranges = <String>[];
+    var start = verses.first;
+    var prev = start;
+    for (var i = 1; i < verses.length; i++) {
+      final n = verses[i];
+      if (n == prev + 1) {
+        prev = n;
+      } else {
+        ranges.add(start == prev ? '$start' : '$start-$prev');
+        start = n;
+        prev = n;
+      }
+    }
+    ranges.add(start == prev ? '$start' : '$start-$prev');
+    parts.add('$book${ranges.join(',')}');
+  }
+  return parts.join('; ');
 }
 
 /// Versos del batch/grupo actual, con número y texto. Si la sesión es de
@@ -2131,21 +2210,13 @@ String _cardStudyText(BuildContext context) {
 /// se extrae del front (`"Salmo 1:1"` → 1). Para decks no bíblicos donde
 /// el front no es una referencia, el número es secuencial 1..N.
 List<({int number, String text})> _currentBatchVerses(BuildContext context) {
-  final store = AppScope.of(context);
-  final deck = store.activeDeck;
-  final List<MemoryCardData> batch;
-  if (deck.isBible && deck.cards.length > 1 && store.sessionDailyTarget > 1) {
-    final count = store.sessionDailyTarget.clamp(1, deck.cards.length);
-    batch = deck.cards.take(count).toList();
-  } else {
-    batch = [store.activeCard];
-  }
+  final cards = _currentStepCards(context);
   return [
-    for (var i = 0; i < batch.length; i++)
+    for (var i = 0; i < cards.length; i++)
       () {
-        final m = RegExp(r':(\d+)$').firstMatch(batch[i].front.trim());
+        final m = RegExp(r':(\d+)$').firstMatch(cards[i].front.trim());
         final num = int.tryParse(m?.group(1) ?? '') ?? (i + 1);
-        return (number: num, text: batch[i].back);
+        return (number: num, text: cards[i].back);
       }()
   ];
 }
@@ -2202,8 +2273,11 @@ class _VerseLine extends StatelessWidget {
 
 String _cardSourceText(BuildContext context) {
   final store = AppScope.of(context);
-  final card = store.activeCard;
-  if (store.activeDeck.isBible) return '${card.front} · ${card.source}';
+  final cards = _currentStepCards(context);
+  if (store.activeDeck.isBible) {
+    final fronts = _collapseRefsForStep(cards.map((c) => c.front).toList());
+    return '$fronts · ${cards.first.source}';
+  }
   // Para decks no bíblicos, el `source` por defecto es "Contenido propio"
   // que es redundante (ya estás dentro de tu mazo). Solo mostramos el
   // título del deck.
