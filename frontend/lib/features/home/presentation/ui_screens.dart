@@ -2197,125 +2197,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     ));
   }
 
-  Widget _buildTurnBannerNotification() {
-    final coop = CoopService.active;
-    if (coop == null) return const SizedBox.shrink();
-    final state = coop.state;
-    if (state == null) return const SizedBox.shrink();
-    
-    final mode = state.mode;
-    final isTurnos = mode == 'turnos';
-    
-    String message = '';
-    Color glowColor = RefColors.lime;
-    IconData icon = Icons.bolt_rounded;
-    
-    final isMeActive = isTurnos && _activeTurnUserId == CoopService.activeUserId;
-    final isMeFailed = isTurnos && _failedUserIds.contains(CoopService.activeUserId);
-    final completed = AppScope.of(context).isExerciseStepCompleted(widget.data.slug);
-    
-    if (isTurnos) {
-      if (isMeFailed) {
-        message = 'INHABILITADO · Has fallado en este ejercicio ❌';
-        glowColor = RefColors.pink;
-        icon = Icons.cancel_outlined;
-      } else if (completed) {
-        message = '¡Paso completado! Esperando al resto del equipo… ⏳';
-        glowColor = RefColors.lime;
-        icon = Icons.check_circle_outline_rounded;
-      } else if (isMeActive) {
-        message = '⚡ ¡TU TURNO! Responde ahora 🎯';
-        glowColor = RefColors.lime;
-        icon = Icons.bolt_rounded;
-      } else {
-        final activeName = _activeTurnUserId ?? 'Compañero';
-        message = 'Esperando el turno de $activeName... ⏳';
-        glowColor = RefColors.violet;
-        icon = Icons.hourglass_empty_rounded;
-      }
-    } else if (mode == 'libre') {
-      if (_cooldownSecondsLeft > 0) {
-        message = '⏳ COOLDOWN ACTIVO · Espera ${_cooldownSecondsLeft}s';
-        glowColor = RefColors.pink;
-        icon = Icons.timer_outlined;
-      } else if (completed) {
-        message = '¡Paso completado! Esperando al resto del equipo… ⏳';
-        glowColor = RefColors.lime;
-        icon = Icons.check_circle_outline_rounded;
-      } else {
-        message = '⚡ MODO LIBRE · ¡Cualquiera puede responder! 🚀';
-        glowColor = RefColors.lime;
-        icon = Icons.flash_on_rounded;
-      }
-    } else {
-      return const SizedBox.shrink();
-    }
-    
-    final isGlowActive = isMeActive && !completed;
-    
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: glowColor.withValues(alpha: isGlowActive ? 0.25 : 0.1),
-            blurRadius: isGlowActive ? 16 : 8,
-            spreadRadius: isGlowActive ? 1 : 0,
-          ),
-        ],
-      ),
-      child: Glass(
-        radius: 16,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        border: Border.all(color: glowColor.withValues(alpha: isGlowActive ? 0.6 : 0.2)),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: glowColor.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                color: glowColor,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: isGlowActive ? FontWeight.w900 : FontWeight.w700,
-                  letterSpacing: isGlowActive ? 0.5 : 0.2,
-                ),
-              ),
-            ),
-            if (isGlowActive)
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: RefColors.lime,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: RefColors.lime.withValues(alpha: 0.8),
-                      blurRadius: 6,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -2415,8 +2297,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 activeTurnUserId: _activeTurnUserId,
                 failedUserIds: _failedUserIds,
               ),
-              const SizedBox(height: 10),
-              _buildTurnBannerNotification(),
               const SizedBox(height: 10),
               RefProgress((store.sessionCardsCompleted + 1) / store.sessionDailyTarget),
               const SizedBox(height: 10),

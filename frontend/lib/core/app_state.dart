@@ -234,7 +234,7 @@ class AppStore extends ChangeNotifier {
       return loadDecksFromDatabase();
     }
 
-    _decks.clear();
+    final loadedDecks = <MemoryDeckData>[];
     for (final d in dbDecks) {
       final dbCards = await db!.getCardsForDeck(d.id);
       final cards = dbCards.map((c) => MemoryCardData(
@@ -247,7 +247,7 @@ class AppStore extends ChangeNotifier {
         lapses: c.lapses,
       )).toList();
 
-      _decks.add(MemoryDeckData(
+      loadedDecks.add(MemoryDeckData(
         id: d.id,
         title: d.title,
         subtitle: d.subtitle,
@@ -258,6 +258,8 @@ class AppStore extends ChangeNotifier {
       ));
     }
     
+    _decks.clear();
+    _decks.addAll(loadedDecks);
     if (_decks.isNotEmpty && _activeDeckId == null) {
       _activeDeckId = _decks.first.id;
     }
