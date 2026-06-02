@@ -44,6 +44,20 @@ docker-compose up
 ### Hot Restart & Hot Reload (Antigravity)
 Utilizar la herramienta `manage_task` con la acción `send_input` y el comando `'r'` para Hot Reload o `'R'` para Hot Restart directamente sobre la tarea en ejecución de `flutter run`.
 
+### Convenciones de puertos (NO CAMBIAR)
+
+**SIEMPRE** respetar estos puertos al levantar dev servers:
+
+| Servicio | Puerto | Comando |
+|---|---|---|
+| Backend (Go API) | `:8080` | `cd backend && go run cmd/api/main.go` |
+| **Flutter Web (Chrome)** | **`:8081`** | `cd frontend && flutter run -d chrome --web-port=8081 --web-hostname=127.0.0.1` |
+| Flutter macOS / iOS / Android | default | `cd frontend && flutter run -d <device>` |
+
+- **El puerto `8081` para la web es FIJO**, no usar otro. Motivo: puerto memorable, sin colisión con el backend (8080), y permite bookmarks/scripts estables.
+- Si por alguna razón `8081` estuviera ocupado, **preguntar antes** de cambiarlo.
+- Al levantar backend + web + macOS en paralelo, los tres coexisten sin conflicto (8080 API, 8081 web, macOS usa loopback local).
+
 ---
 
 ## Frontend (Flutter)
