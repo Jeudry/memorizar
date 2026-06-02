@@ -47,6 +47,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
   int? _pendingStartDailyTarget;
   int? _pendingStartDifficulty;
 
+
   void _loadPublicRooms() async {
     final coop = _coop;
     if (coop == null) return;
@@ -602,7 +603,6 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
   Widget _buildCountdownOverlay() {
     final seconds = _countdownSeconds;
     if (seconds == null) return const SizedBox.shrink();
-    
     return Positioned.fill(
       child: Glass(
         color: Colors.black.withValues(alpha: 0.85),
@@ -663,239 +663,6 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final state = _state;
-    final store = AppScope.of(context);
-    return Stack(
-      children: [
-        ReferencePage(
-          active: AppRoutes.amigos,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (state == null)
-                _CoopTopBar(center: 'Modo cooperativo')
-              else if (!_creatingDeckInline)
-                _CoopTopBar(center: 'Sala cooperativa')
-              else
-                _CoopMinimizedHeader(
-                  roomState: state,
-                  onBack: () {
-                    setState(() {
-                      _clearInlineDeckForm();
-                    });
-                  },
-                ),
-              if (state == null) ...[
-                Glass(
-                  padding: const EdgeInsets.all(14),
-                  gradient: LinearGradient(
-                    colors: [
-                      RefColors.violet.withValues(alpha: .24),
-                      RefColors.pink.withValues(alpha: .24),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        'Crear una sala',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Genera un código de 6 letras y compártelo con tus amigos.',
-                        style: TextStyle(color: RefColors.muted, fontSize: 11),
-                      ),
-                      const SizedBox(height: 12),
-                      Cta('+ Crear sala', onTap: _busy ? null : _create, disabled: _busy),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _CoopJoinCard(
-                  joinCtrl: _joinCtrl,
-                  busy: _busy,
-                  error: _error,
-                  onJoinTap: () => _joinCtrl.text.trim().isNotEmpty ? _joinPublic(_joinCtrl.text.trim()) : null,
-                ),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: _CoopPublicRoomsCard(
-                    loading: _loadingRooms,
-                    rooms: _publicRooms,
-                    onJoin: _joinPublic,
-                    onRefresh: _loadPublicRooms,
-                    onMoreRoomsTap: () => _showLobbyDetailsModal(context),
-                  ),
-                ),
-              ] else ...[
-                if (_creatingDeckInline) ...[
-                  if (_selectedCreationType == null)
-                    _CoopCreationSelector(
-                      onSelect: (type) {
-                        setState(() {
-                          _selectedCreationType = type;
-                          if (type == 'manual') {
-                            _addEmptyCardRow();
-                          }
-                        });
-                      },
-                      onCancel: () {
-                        setState(() {
-                          _creatingDeckInline = false;
-                        });
-                      },
-                    )
-                  else if (_selectedCreationType == 'manual')
-                    _CoopManualDeckForm(
-                      deckTitleCtrl: _deckTitleCtrl,
-                      cardCtrls: _cardCtrls,
-                      onAddRow: _addEmptyCardRow,
-                      onRemoveRow: _removeCardRow,
-                      onSave: () => _saveDeckInline(store, state),
-                      onCancel: () {
-                        setState(() {
-                          _selectedCreationType = null;
-                        });
-                      },
-                    )
-                  else if (_selectedCreationType == 'biblia')
-                    _CoopBibleDeckForm(
-                      bibleSearchCtrl: _bibleSearchCtrl,
-                      bibleSearchResults: _bibleSearchResults,
-                      inlineSelectedVerses: _inlineSelectedVerses,
-                      onSearch: (q) async {
-                        final res = await store.searchBible(q);
-                        setState(() {
-                          _bibleSearchResults = res;
-                        });
-                      },
-                      onToggleVerse: (v) {
-                        setState(() {
-                          if (_inlineSelectedVerses.contains(v)) {
-                            _inlineSelectedVerses.remove(v);
-                          } else {
-                            _inlineSelectedVerses.add(v);
-                          }
-                        });
-                      },
-                      onSave: () => _saveBibleDeckInline(store, state),
-                      onCancel: () {
-                        setState(() {
-                          _selectedCreationType = null;
-                        });
-                      },
-                    )
-                  else if (_selectedCreationType == 'texto')
-                    _CoopRawContentDeckForm(
-                      deckTitleCtrl: _deckTitleCtrl,
-                      rawContentCtrl: _rawContentCtrl,
-                      onSave: () => _saveRawContentDeckInline(store, state),
-                      onCancel: () {
-                        setState(() {
-                          _selectedCreationType = null;
-                        });
-                      },
-                    )
-                ] else ...[
-                  _CoopLobbyCard(
-                    roomState: state,
-                    onInviteTap: () => AmigosScreen.showAddFriendModal(context),
-                  ),
-                  const SizedBox(height: 12),
-                  _CoopSettingsCard(
-                    roomState: state,
-                    onCreateDeckTap: () {
-                      setState(() {
-                        _creatingDeckInline = true;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  if (state.hostId == AppScope.of(context).currentUser?.id) ...[
-                    Cta(
-                      'Iniciar partida →',
-                      disabled: (state.lobbyDeckId == null || state.lobbyDeckId!.isEmpty) || (state.memberIds.length <= 1),
-                      onTap: (state.lobbyDeckId == null || state.lobbyDeckId!.isEmpty) || (state.memberIds.length <= 1)
-                          ? null
-                          : () async {
-                              final selectedDeckId = state.lobbyDeckId!;
-                              final target = state.sessionDailyTarget == 0 ? 3 : state.sessionDailyTarget;
-                              final store = AppScope.of(context);
-                              store.configureSession(
-                                difficulty: state.sessionDifficulty,
-                                dailyTarget: target,
-                              );
-                              final d = store.decks.firstWhere((dk) => dk.id == selectedDeckId, orElse: () => store.activeDeck);
-                              final cardsList = d.cards.map((c) => {
-                                'id': c.id,
-                                'front': c.front,
-                                'back': c.back,
-                                'source': c.source,
-                                'icon': c.icon,
-                                'retention': c.retention,
-                                'lapses': c.lapses,
-                              }).toList();
-                              _coop!.broadcastLobbyDeck(deckId: selectedDeckId, deckName: d.title, cards: cardsList);
-                              _coop!.broadcastCountdown();
-                              
-                              _startLocalCountdown(() {
-                                _coop!.broadcastCard(deckId: selectedDeckId, cardIndex: 0, slug: '00-solo-lectura');
-                                if (context.mounted) {
-                                  Navigator.pushNamed(context, '${AppRoutes.flow}/00-solo-lectura');
-                                }
-                              });
-                            },
-                    ),
-                    if (state.lobbyDeckId == null || state.lobbyDeckId!.isEmpty) ...[
-                      const SizedBox(height: 6),
-                      const Text(
-                        '⚠️ Selecciona un mazo en la configuración antes de iniciar.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: RefColors.pink, fontSize: 11, fontWeight: FontWeight.bold),
-                      ),
-                    ] else if (state.memberIds.length <= 1) ...[
-                      const SizedBox(height: 6),
-                      const Text(
-                        '👥 Esperando a que se una al menos otro jugador...',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: RefColors.lime, fontSize: 11, fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ]
-                  else
-                    const Glass(
-                      padding: EdgeInsets.all(12),
-                      child: Text(
-                        'Esperando a que el host inicie la partida…',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: RefColors.muted, fontSize: 12),
-                      ),
-                    ),
-                  const SizedBox(height: 8),
-                  GhostButton(
-                    'Salir de la sala',
-                    onTap: () async {
-                      await _coop!.disconnect();
-                      CoopService.active = null;
-                      CoopService.activeUserId = null;
-                      if (mounted) setState(() => _state = null);
-                    },
-                  ),
-                ],
-              ],
-            ],
-          ),
-        ),
-        _buildCountdownOverlay(),
-      ],
-    );
-  }
-
   Future<void> _create() async {
     final store = AppScope.of(context);
     if (!store.isLoggedIn) {
@@ -950,8 +717,524 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     }
   }
 
-    );
-  }
+  @override
+  Widget build(BuildContext context) {
+    final state = _state;
+    return Stack(
+      children: [
+        ReferencePage(
+          active: AppRoutes.amigos,
+          child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (state == null)
+            _CoopTopBar(center: 'Modo cooperativo')
+          else if (!_creatingDeckInline)
+            _CoopTopBar(center: 'Sala cooperativa')
+          else
+            _CoopMinimizedHeader(
+              roomState: state,
+              onBack: () {
+                setState(() {
+                  _clearInlineDeckForm();
+                });
+              },
+            ),
+          if (state == null) ...[
+            Glass(
+              padding: const EdgeInsets.all(14),
+              gradient: LinearGradient(
+                colors: [
+                  RefColors.violet.withValues(alpha: .24),
+                  RefColors.pink.withValues(alpha: .24),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Crear una sala',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Genera un código de 6 letras y compártelo con tus amigos.',
+                    style: TextStyle(color: RefColors.muted, fontSize: 11),
+                  ),
+                  const SizedBox(height: 12),
+                  Cta('+ Crear sala', onTap: _busy ? null : _create, disabled: _busy),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Glass(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Unirse con código',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: HtmlRefColors.glassSoft,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: HtmlRefColors.glassBorder),
+                    ),
+                    child: TextField(
+                      controller: _joinCtrl,
+                      textCapitalization: TextCapitalization.characters,
+                      style: const TextStyle(
+                        color: RefColors.ink,
+                        fontSize: 18,
+                        letterSpacing: 4,
+                        fontWeight: FontWeight.w900,
+                      ),
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        isDense: true,
+                        hintText: 'ABC123',
+                        hintStyle: TextStyle(
+                          color: RefColors.dim,
+                          fontSize: 18,
+                          letterSpacing: 4,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Cta('Unirme →', onTap: _busy ? null : _join, disabled: _busy),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Glass(
+              padding: const EdgeInsets.all(16),
+              gradient: LinearGradient(
+                colors: [
+                  Colors.white.withValues(alpha: .06),
+                  Colors.white.withValues(alpha: .02),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.explore_outlined, color: RefColors.lime, size: 20),
+                          SizedBox(width: 8),
+                          Text(
+                            'Explorador de Salas Activas',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: -.3),
+                          ),
+                        ],
+                      ),
+                      GestureDetector(
+                        onTap: _loadPublicRooms,
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.05),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.refresh_rounded,
+                            size: 16,
+                            color: RefColors.lime,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Salas públicas creadas por tus amigos en este momento.',
+                    style: TextStyle(color: RefColors.muted, fontSize: 11, fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 16),
+                  if (_loadingRooms)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: CircularProgressIndicator(color: RefColors.lime, strokeWidth: 2),
+                      ),
+                    )
+                  else if (_publicRooms.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: .15),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                      ),
+                      child: const Column(
+                        children: [
+                          Icon(Icons.grid_view_rounded, color: RefColors.muted, size: 28),
+                          SizedBox(height: 8),
+                          Text(
+                            'No hay salas activas en este momento. ¡Sé el primero en crear una! 🌐',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: RefColors.dim, fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                        mainAxisExtent: 136,
+                      ),
+                      itemCount: _publicRooms.length > 4 ? 4 : _publicRooms.length,
+                      itemBuilder: (context, idx) {
+                        final room = _publicRooms[idx];
+                        final deckName = room['deckName']?.toString().isNotEmpty == true
+                            ? room['deckName'].toString()
+                            : 'Mazo Personalizado';
+                        final code = room['code'].toString();
+                        final count = room['memberCount'] ?? 1;
+                        
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: .04),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: RefColors.lime.withValues(alpha: .2),
+                              width: 1,
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: RefColors.lime.withValues(alpha: .12),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          code,
+                                          style: const TextStyle(
+                                            color: RefColors.lime,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                      ),
+                                      Row(
+                                        children: [
+                                          Container(
+                                            width: 6,
+                                            height: 6,
+                                            decoration: const BoxDecoration(
+                                              color: RefColors.lime,
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          const Text(
+                                            'LIVE',
+                                            style: TextStyle(
+                                              color: RefColors.lime,
+                                              fontSize: 8,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    deckName,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w900,
+                                      height: 1.2,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    '👥 $count / 4',
+                                    style: const TextStyle(
+                                      color: RefColors.muted,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  GestureDetector(
+                                    onTap: _busy ? null : () => _joinPublic(code),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                      decoration: BoxDecoration(
+                                        gradient: RefColors.primary,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Text(
+                                        'Unirse',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                    if (_publicRooms.length > 4) ...[
+                      const SizedBox(height: 12),
+                      GestureDetector(
+                        onTap: () => _showLobbyDetailsModal(context),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: RefColors.lime.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: RefColors.lime.withValues(alpha: 0.25),
+                              width: 1,
+                            ),
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.explore_outlined, color: RefColors.lime, size: 16),
+                              SizedBox(width: 8),
+                              Text(
+                                'Explorar salas avanzadas con filtros 🔍',
+                                style: TextStyle(
+                                  color: RefColors.lime,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                ],
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                _error!,
+                style: const TextStyle(color: RefColors.urgent, fontSize: 12),
+              ),
+            ],
+          ] else ...[
+            if (_creatingDeckInline) ...[
+              if (_selectedCreationType == null)
+                _CoopDeckTypeSelector(
+                  onSelectBible: () {
+                    setState(() {
+                      _selectedCreationType = 'biblia';
+                    });
+                  },
+                  onSelectSpecify: () {
+                    setState(() {
+                      _selectedCreationType = 'especificar';
+                    });
+                  },
+                )
+              else if (_selectedCreationType == 'biblia')
+                BibliaScreen(
+                  embedded: true,
+                  onDeckCreated: (deckId, title) {
+                    final store = AppScope.of(context);
+                    final d = store.decks.firstWhere(
+                      (dk) => dk.id == deckId,
+                      orElse: () => store.activeDeck,
+                    );
+                    final cardsList = d.cards.map((c) => {
+                      'id': c.id,
+                      'front': c.front,
+                      'back': c.back,
+                      'source': c.source,
+                      'icon': c.icon,
+                      'retention': c.retention,
+                      'lapses': c.lapses,
+                    }).toList();
+                    if (_coop != null) {
+                      _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
+                    }
+                    setState(() {
+                      _clearInlineDeckForm();
+                    });
+                  },
+                  onCancel: () {
+                    setState(() {
+                      _selectedCreationType = null;
+                    });
+                  },
+                )
+              else if (_selectedCreationType == 'especificar')
+                EspecificarScreen(
+                  embedded: true,
+                  onDeckCreated: (deckId, title) {
+                    final store = AppScope.of(context);
+                    final d = store.decks.firstWhere(
+                      (dk) => dk.id == deckId,
+                      orElse: () => store.activeDeck,
+                    );
+                    final cardsList = d.cards.map((c) => {
+                      'id': c.id,
+                      'front': c.front,
+                      'back': c.back,
+                      'source': c.source,
+                      'icon': c.icon,
+                      'retention': c.retention,
+                      'lapses': c.lapses,
+                    }).toList();
+                    if (_coop != null) {
+                      _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
+                    }
+                    setState(() {
+                      _clearInlineDeckForm();
+                    });
+                  },
+                  onCancel: () {
+                    setState(() {
+                      _selectedCreationType = null;
+                    });
+                  },
+                )
+            ] else ...[
+              _CoopLobbyCard(
+                roomState: state,
+                onInviteTap: () => AmigosScreen.showAddFriendModal(context),
+              ),
+              const SizedBox(height: 12),
+              _CoopSettingsCard(
+                roomState: state,
+                onCreateDeckTap: () {
+                  setState(() {
+                    _creatingDeckInline = true;
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+              if (state.hostId == AppScope.of(context).currentUser?.id) ...[
+                Cta(
+                  'Iniciar partida →',
+                  disabled: (state.lobbyDeckId == null || state.lobbyDeckId!.isEmpty) || (state.memberIds.length <= 1),
+                  onTap: (state.lobbyDeckId == null || state.lobbyDeckId!.isEmpty) || (state.memberIds.length <= 1)
+                      ? null
+                      : () async {
+                          final selectedDeckId = state.lobbyDeckId!;
+                          final target = state.sessionDailyTarget == 0 ? 3 : state.sessionDailyTarget;
+                          final store = AppScope.of(context);
+                          store.configureSession(
+                            difficulty: state.sessionDifficulty,
+                            dailyTarget: target,
+                          );
+                          final d = store.decks.firstWhere((dk) => dk.id == selectedDeckId, orElse: () => store.activeDeck);
+                          final cardsList = d.cards.map((c) => {
+                            'id': c.id,
+                            'front': c.front,
+                            'back': c.back,
+                            'source': c.source,
+                            'icon': c.icon,
+                            'retention': c.retention,
+                            'lapses': c.lapses,
+                          }).toList();
+                          _coop!.broadcastLobbyDeck(deckId: selectedDeckId, deckName: d.title, cards: cardsList);
+                          
+                          // Broadcast countdown so guests also start their local countdowns
+                          _coop!.broadcastCountdown();
+                          
+                          _startLocalCountdown(() {
+                            _coop!.broadcastCard(deckId: selectedDeckId, cardIndex: 0, slug: '00-solo-lectura');
+                            if (context.mounted) {
+                              Navigator.pushNamed(context, '${AppRoutes.flow}/00-solo-lectura');
+                            }
+                          });
+                        },
+                ),
+                if (state.lobbyDeckId == null || state.lobbyDeckId!.isEmpty) ...[
+                  const SizedBox(height: 6),
+                  const Text(
+                    '⚠️ Selecciona un mazo en la configuración antes de iniciar.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: RefColors.pink, fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ] else if (state.memberIds.length <= 1) ...[
+                  const SizedBox(height: 6),
+                  const Text(
+                    '👥 Esperando a que se una al menos otro jugador...',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: RefColors.lime, fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ]
+              else
+                const Glass(
+                  padding: EdgeInsets.all(12),
+                  child: Text(
+                    'Esperando a que el host inicie la partida…',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: RefColors.muted, fontSize: 12),
+                  ),
+                ),
+              const SizedBox(height: 8),
+              GhostButton(
+                'Salir de la sala',
+                onTap: () async {
+                  await _coop!.disconnect();
+                  CoopService.active = null;
+                  CoopService.activeUserId = null;
+                  if (mounted) setState(() => _state = null);
+                },
+              ),
+            ],
+          ],
+        ],
+      ),
+    ),
+    _buildCountdownOverlay(),
+  ],
+);
+}
 
   void _showLobbyDetailsModal(BuildContext context) {
     _detailPage = 1;
