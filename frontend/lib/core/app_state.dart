@@ -1594,6 +1594,15 @@ class AppStore extends ChangeNotifier {
     return deck;
   }
 
+  void addOrUpdateCoopDeck(MemoryDeckData deck) {
+    _decks.removeWhere((d) => d.id == deck.id);
+    _decks.insert(0, deck);
+    notifyListeners();
+    if (enableDatabasePersistence && db != null) {
+      unawaited(_persistDeckToDatabase(deck));
+    }
+  }
+
   List<MemoryCardData> segmentContent(
     String content, {
     String icon = '🧠',

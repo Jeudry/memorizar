@@ -166,35 +166,35 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
           debugPrint('[coop] Received deck message: deckId=$deckId, isBible=$isBible, cards count=${rawCards?.length}');
           if (deckId != null && deckId.isNotEmpty && title != null && rawCards != null) {
             final store = AppScope.of(context);
-            // Siempre upsert el mazo para asegurar la actualización de las tarjetas
-            await store.db!.upsertDeck(DecksCompanion(
-              id: drift.Value(deckId),
-              title: drift.Value(title),
-              subtitle: drift.Value('Mazo cooperativo compartido'),
-              icon: drift.Value('🎯'),
-              isBible: drift.Value(isBible),
-              createdAt: drift.Value(DateTime.now()),
-            ));
+            final cardsList = <MemoryCardData>[];
             for (var i = 0; i < rawCards.length; i++) {
               final c = rawCards[i];
               if (c is Map) {
                 final map = Map<String, dynamic>.from(c);
                 final cId = map['id'] as String? ?? 'cd_${deckId}_$i';
-                await store.db!.upsertCard(CardsCompanion(
-                  id: drift.Value(cId),
-                  deckId: drift.Value(deckId),
-                  front: drift.Value(map['front'] as String? ?? ''),
-                  back: drift.Value(map['back'] as String? ?? ''),
-                  source: drift.Value(map['source'] as String? ?? 'coop_room'),
-                  icon: drift.Value(map['icon'] as String? ?? '🎯'),
-                  retention: drift.Value((map['retention'] as int?) ?? 100),
-                  lapses: drift.Value((map['lapses'] as int?) ?? 0),
+                cardsList.add(MemoryCardData(
+                  id: cId,
+                  front: map['front'] as String? ?? '',
+                  back: map['back'] as String? ?? '',
+                  source: map['source'] as String? ?? 'coop_room',
+                  icon: map['icon'] as String? ?? '🎯',
+                  retention: (map['retention'] as int?) ?? 100,
+                  lapses: (map['lapses'] as int?) ?? 0,
                 ));
               }
             }
-            await store.loadDecksFromDatabase();
+            final deck = MemoryDeckData(
+              id: deckId,
+              title: title,
+              subtitle: 'Mazo cooperativo compartido',
+              icon: '🎯',
+              createdAt: DateTime.now(),
+              cards: cardsList,
+              isBible: isBible,
+            );
+            store.addOrUpdateCoopDeck(deck);
             store.setActiveDeck(deckId);
-            debugPrint('[coop] Deck processed and loaded into AppStore, active deck set to $deckId');
+            debugPrint('[coop] Deck processed and loaded into AppStore in memory, active deck set to $deckId');
             _checkGuestCanStartGame(store);
           }
         } else if (msg.type == 'join' && mounted) {
