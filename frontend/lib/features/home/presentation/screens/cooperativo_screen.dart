@@ -46,6 +46,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
   String? _pendingStartSlug;
   int? _pendingStartDailyTarget;
   int? _pendingStartDifficulty;
+  bool _hasPromptedDeck = false;
 
 
   void _loadPublicRooms() async {
@@ -119,25 +120,49 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
           }
         }
 
+        final wasInLobby = _state != null;
         setState(() => _state = s);
+
+        // Auto-prompt deck selection/creation for Host upon entering lobby
+        final isHost = s.hostId == _currentUserId;
+        final noDeckSelected = s.lobbyDeckId == null || s.lobbyDeckId!.isEmpty;
+        if (isHost && noDeckSelected && !wasInLobby && !_hasPromptedDeck) {
+          _hasPromptedDeck = true;
+          if (store.decks.isEmpty) {
+            setState(() {
+              _creatingDeckInline = true;
+            });
+          } else {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _showInitialDeckPrompt(context);
+              }
+            });
+          }
+        }
+
         // Cuando el host empuja la primera tarjeta y el invitado todavía
         // está en el lobby, lo llevamos automáticamente al game screen.
         final nowInGame = s.currentDeckId != null;
         final iAmHost = _currentUserId == s.hostId;
+        debugPrint('[coop] stateStream.listen: nowInGame=$nowInGame, wasInGame=$wasInGame, iAmHost=$iAmHost, currentDeckId=${s.currentDeckId}');
         if (!iAmHost && nowInGame && !wasInGame) {
           final target = s.sessionDailyTarget == 0 ? 3 : s.sessionDailyTarget;
           _pendingStartDeckId = s.currentDeckId;
           _pendingStartSlug = s.currentSlug?.isNotEmpty == true ? s.currentSlug! : '00-solo-lectura';
           _pendingStartDailyTarget = target;
           _pendingStartDifficulty = s.sessionDifficulty;
+          debugPrint('[coop] Guest: game started by host, pending setup stored: deckId=$_pendingStartDeckId, slug=$_pendingStartSlug');
           _checkGuestCanStartGame(store);
         }
       });
       _msgSub = _coop!.messages.listen((msg) async {
+        debugPrint('[coop] Received message: type=${msg.type}');
         if (msg.type == 'deck' && mounted) {
           final deckId = msg.payload?['deckId'] as String?;
           final title = msg.payload?['deckName'] as String?;
           final rawCards = msg.payload?['cards'] as List?;
+          debugPrint('[coop] Received deck message: deckId=$deckId, cards count=${rawCards?.length}');
           if (deckId != null && deckId.isNotEmpty && title != null && rawCards != null) {
             final store = AppScope.of(context);
             // Siempre upsert el mazo para asegurar la actualización de las tarjetas
@@ -167,16 +192,19 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
             }
             await store.loadDecksFromDatabase();
             store.setActiveDeck(deckId);
+            debugPrint('[coop] Deck processed and loaded into AppStore, active deck set to $deckId');
             _checkGuestCanStartGame(store);
           }
         } else if (msg.type == 'countdown' && mounted) {
           final store = AppScope.of(context);
+          debugPrint('[coop] Guest starting local countdown in response to countdown message');
           setState(() {
             _countdownStarted = true;
             _guestCountdownFinished = false;
           });
           _startLocalCountdown(() {
             _guestCountdownFinished = true;
+            debugPrint('[coop] Guest local countdown finished');
             _checkGuestCanStartGame(store);
           });
         }
@@ -524,20 +552,186 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     }
   }
 
+  void _showInitialDeckPrompt(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.8),
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 24),
+            child: Glass(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Icon(
+                    Icons.layers_outlined,
+                    color: RefColors.lime,
+                    size: 40,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'CONFIGURACIÓN INICIAL',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: RefColors.lime,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Mazo de la Sala',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Para comenzar la partida cooperativa, debes asignar un mazo. Elige uno existente de tu colección o crea uno nuevo.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 12,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Cta(
+                    'Elegir de mis mazos →',
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showDeckSelectorFromPrompt();
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  GhostButton(
+                    'Crear nuevo mazo',
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      setState(() {
+                        _creatingDeckInline = true;
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showDeckSelectorFromPrompt() {
+    final store = AppScope.of(context);
+    final coop = _coop;
+    if (coop == null) return;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF0F0C1B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 16),
+              const Center(
+                child: Text(
+                  'Selecciona un mazo para la sala',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: store.decks.length,
+                  itemBuilder: (context, idx) {
+                    final d = store.decks[idx];
+                    return ListTile(
+                      onTap: () {
+                        store.setActiveDeck(d.id);
+                        final cardsList = d.cards.map((c) => {
+                          'id': c.id,
+                          'front': c.front,
+                          'back': c.back,
+                          'source': c.source,
+                          'icon': c.icon,
+                          'retention': c.retention,
+                          'lapses': c.lapses,
+                        }).toList();
+                        coop.broadcastLobbyDeck(deckId: d.id, deckName: d.title, cards: cardsList);
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Mazo configurado a: ${d.title} 🎯'),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(d.icon.isNotEmpty ? d.icon : '🎯'),
+                      ),
+                      title: Text(
+                        d.title.isNotEmpty ? d.title : 'Mazo sin título',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text(
+                        '${d.cards.length} tarjetas',
+                        style: const TextStyle(color: RefColors.muted, fontSize: 11),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _startLocalCountdown(void Function() onFinished) {
+    debugPrint('[coop] Starting local countdown');
     _countdownTimer?.cancel();
     setState(() {
       _countdownSeconds = 3;
     });
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
+        debugPrint('[coop] Local countdown timer canceled - not mounted');
         timer.cancel();
         return;
       }
       setState(() {
         if (_countdownSeconds! > 1) {
           _countdownSeconds = _countdownSeconds! - 1;
+          debugPrint('[coop] Local countdown at $_countdownSeconds');
         } else {
+          debugPrint('[coop] Local countdown finished, triggering callback');
           _countdownSeconds = null;
           timer.cancel();
           onFinished();
@@ -548,6 +742,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
 
   void _checkGuestCanStartGame(AppStore store) {
     final canStart = !_countdownStarted || _guestCountdownFinished;
+    debugPrint('[coop] _checkGuestCanStartGame: canStart=$canStart, countdownStarted=$_countdownStarted, guestCountdownFinished=$_guestCountdownFinished, pendingStartDeckId=$_pendingStartDeckId, pendingStartSlug=$_pendingStartSlug');
     if (canStart && _pendingStartDeckId != null && _pendingStartSlug != null) {
       store.configureSession(
         difficulty: _pendingStartDifficulty ?? 0,
@@ -563,14 +758,17 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
       _guestCountdownFinished = false;
       _countdownStarted = false;
 
+      debugPrint('[coop] Redirecting guest to flow, calling _navigateWhenDeckReady');
       _navigateWhenDeckReady(store, deckId, slug);
     }
   }
 
   void _navigateWhenDeckReady(AppStore store, String deckId, String targetSlug) async {
+    debugPrint('[coop] _navigateWhenDeckReady: checking deck availability in store');
     int attempts = 0;
     while (attempts < 15) {
       final hasDeck = store.decks.any((d) => d.id == deckId && d.cards.isNotEmpty);
+      debugPrint('[coop] _navigateWhenDeckReady attempt $attempts: hasDeck=$hasDeck');
       if (hasDeck) {
         break;
       }
@@ -579,7 +777,11 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     }
     if (mounted) {
       store.setActiveDeck(deckId);
-      Navigator.pushNamed(context, '${AppRoutes.flow}/$targetSlug');
+      final finalPath = '${AppRoutes.flow}/$targetSlug';
+      debugPrint('[coop] Guest navigating to route: $finalPath');
+      Navigator.pushNamed(context, finalPath);
+    } else {
+      debugPrint('[coop] Guest navigation skipped: context not mounted');
     }
   }
 
@@ -604,59 +806,63 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     final seconds = _countdownSeconds;
     if (seconds == null) return const SizedBox.shrink();
     return Positioned.fill(
-      child: Glass(
-        color: Colors.black.withValues(alpha: 0.85),
-        radius: 0,
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'PREPARADOS',
-                style: TextStyle(
-                  color: RefColors.lime.withValues(alpha: 0.7),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 3,
-                ),
-              ),
-              const SizedBox(height: 20),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                transitionBuilder: (child, animation) {
-                  return ScaleTransition(
-                    scale: Tween<double>(begin: 0.6, end: 1.2).animate(
-                      CurvedAnimation(parent: animation, curve: Curves.elasticOut),
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0),
+          child: Container(
+            color: Colors.black.withValues(alpha: 0.5),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'PREPARADOS',
+                    style: TextStyle(
+                      color: RefColors.lime.withValues(alpha: 0.7),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 3,
                     ),
-                    child: FadeTransition(opacity: animation, child: child),
-                  );
-                },
-                child: Text(
-                  '$seconds',
-                  key: ValueKey(seconds),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 120,
-                    fontWeight: FontWeight.w900,
-                    shadows: [
-                      Shadow(
-                        color: RefColors.lime,
-                        blurRadius: 30,
-                      ),
-                    ],
                   ),
-                ),
+                  const SizedBox(height: 20),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    transitionBuilder: (child, animation) {
+                      return ScaleTransition(
+                        scale: Tween<double>(begin: 0.6, end: 1.2).animate(
+                          CurvedAnimation(parent: animation, curve: Curves.elasticOut),
+                        ),
+                        child: FadeTransition(opacity: animation, child: child),
+                      );
+                    },
+                    child: Text(
+                      '$seconds',
+                      key: ValueKey(seconds),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 120,
+                        fontWeight: FontWeight.w900,
+                        shadows: [
+                          Shadow(
+                            color: RefColors.lime,
+                            blurRadius: 30,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    '¡La partida cooperativa va a comenzar! 🚀',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 20),
-              const Text(
-                '¡La partida cooperativa va a comenzar! 🚀',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -1164,6 +1370,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                           final selectedDeckId = state.lobbyDeckId!;
                           final target = state.sessionDailyTarget == 0 ? 3 : state.sessionDailyTarget;
                           final store = AppScope.of(context);
+                          debugPrint('[coop] Host clicked start game. selectedDeckId=$selectedDeckId, target=$target');
                           store.configureSession(
                             difficulty: state.sessionDifficulty,
                             dailyTarget: target,
@@ -1181,12 +1388,16 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                           _coop!.broadcastLobbyDeck(deckId: selectedDeckId, deckName: d.title, cards: cardsList);
                           
                           // Broadcast countdown so guests also start their local countdowns
+                          debugPrint('[coop] Host broadcasting countdown');
                           _coop!.broadcastCountdown();
                           
                           _startLocalCountdown(() {
+                            debugPrint('[coop] Host countdown finished. Broadcasting first card and navigating.');
                             _coop!.broadcastCard(deckId: selectedDeckId, cardIndex: 0, slug: '00-solo-lectura');
                             if (context.mounted) {
                               Navigator.pushNamed(context, '${AppRoutes.flow}/00-solo-lectura');
+                            } else {
+                              debugPrint('[coop] Host navigation failed: context not mounted');
                             }
                           });
                         },
@@ -1223,7 +1434,12 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                   await _coop!.disconnect();
                   CoopService.active = null;
                   CoopService.activeUserId = null;
-                  if (mounted) setState(() => _state = null);
+                  if (mounted) {
+                    setState(() {
+                      _state = null;
+                      _hasPromptedDeck = false;
+                    });
+                  }
                 },
               ),
             ],
