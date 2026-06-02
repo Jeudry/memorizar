@@ -890,11 +890,36 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (!mounted) return;
     
     if (CoopService.active != null) {
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        AppRoutes.cooperativoLogrado,
-        (route) => route.isFirst,
-      );
+      if (keepGoing) {
+        setState(() {
+          _completionCardId = null;
+          _letterCardId = null;
+          _bankCardId = null;
+          _fogCardId = null;
+          _quizCardId = null;
+          _blockOrderCardId = null;
+          _checked = false;
+        });
+        
+        final isHost = CoopService.active?.state?.hostId == CoopService.activeUserId;
+        if (isHost) {
+          final nextIndex = store.sessionCardsCompleted;
+          CoopService.active!.updateLocalCardState(deckId: store.activeDeck.id, cardIndex: nextIndex, slug: '00-solo-lectura');
+          CoopService.active!.broadcastCard(deckId: store.activeDeck.id, cardIndex: nextIndex, slug: '00-solo-lectura');
+        }
+        
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '${AppRoutes.flow}/00-solo-lectura',
+          (route) => route.isFirst,
+        );
+      } else {
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          AppRoutes.cooperativoLogrado,
+          (route) => route.isFirst,
+        );
+      }
     } else if (keepGoing) {
       // Reset estado UI per-tarjeta (banco, completar, niebla, etc.).
       setState(() {
