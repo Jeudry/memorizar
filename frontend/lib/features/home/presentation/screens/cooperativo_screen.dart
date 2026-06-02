@@ -1284,6 +1284,14 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                     setState(() {
                       _clearInlineDeckForm();
                     });
+                    if (mounted) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CooperativoConfigScreen(),
+                        ),
+                      );
+                    }
                   },
                   onCancel: () {
                     setState(() {
@@ -1315,6 +1323,14 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                     setState(() {
                       _clearInlineDeckForm();
                     });
+                    if (mounted) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CooperativoConfigScreen(),
+                        ),
+                      );
+                    }
                   },
                   onCancel: () {
                     setState(() {
