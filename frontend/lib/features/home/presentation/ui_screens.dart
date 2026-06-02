@@ -472,6 +472,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   int? _lastNonVoiceWrongAt;
   void _flagNonVoiceWrong() {
     _lastNonVoiceWrongAt = DateTime.now().millisecondsSinceEpoch;
+    final coop = CoopService.active;
+    if (coop != null) {
+      final mode = coop.state?.mode ?? 'turnos';
+      if (mode == 'libre') {
+        _startCooldown();
+      } else if (mode == 'turnos') {
+        _broadcastFail();
+        setState(() {
+          _failedUserIds.add(CoopService.activeUserId ?? '');
+        });
+      }
+    }
   }
   bool _nonVoiceWrongRecent() {
     final ts = _lastNonVoiceWrongAt;
@@ -482,6 +494,74 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   String? _fogCardId;
   bool _fogFinished = false;
   bool _fogShowHintTemp = false;
+  StreamSubscription<CoopRoomState>? _coopStateSub;
+  StreamSubscription<CoopMessage>? _coopMsgSub;
+  final Set<String> _failedUserIds = {};
+  int _cooldownSecondsLeft = 0;
+  Timer? _cooldownTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    final coop = CoopService.active;
+    if (coop != null) {
+      _coopStateSub = coop.stateStream.listen((s) {
+        if (!mounted) return;
+
+        // Si el host abandonó la partida, cancelar y volver al home
+        final hostLeft = !s.memberIds.contains(s.hostId);
+        if (hostLeft) {
+          CoopService.active?.disconnect();
+          CoopService.active = null;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('La partida cooperativa ha sido cancelada por el Host.'),
+              backgroundColor: RefColors.urgent,
+            ),
+          );
+          Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
+          return;
+        }
+
+        final store = AppScope.of(context);
+
+        if (s.currentCardIndex != store.sessionCardsCompleted) {
+          store.setSessionCardsCompleted(s.currentCardIndex);
+          setState(() {
+            _failedUserIds.clear();
+            _cooldownSecondsLeft = 0;
+            _cooldownTimer?.cancel();
+            _cooldownTimer = null;
+          });
+        }
+      });
+
+      _coopMsgSub = coop.messages.listen((msg) {
+        if (!mounted) return;
+        if (msg.type == 'coop_fail') {
+          final failedUserId = msg.payload?['userId'] as String? ?? msg.userId;
+          if (failedUserId.isNotEmpty) {
+            setState(() {
+              _failedUserIds.add(failedUserId);
+            });
+          }
+        } else if (msg.type == 'card') {
+          final senderId = msg.userId;
+          final slug = msg.payload?['slug'] as String? ?? '';
+          final currentSlug = widget.data.slug;
+          if (senderId != CoopService.activeUserId && slug.isNotEmpty && slug != currentSlug) {
+            setState(() {
+              _failedUserIds.clear();
+              _cooldownSecondsLeft = 0;
+              _cooldownTimer?.cancel();
+              _cooldownTimer = null;
+            });
+            Navigator.pushReplacementNamed(context, '${AppRoutes.flow}/$slug');
+          }
+        }
+      });
+    }
+  }
 
   @override
   void reassemble() {
@@ -492,6 +572,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
   @override
   void dispose() {
+    _coopStateSub?.cancel();
+    _coopMsgSub?.cancel();
+    _cooldownTimer?.cancel();
     _soloLecturaTimer?.cancel();
     _completionTimer?.cancel();
     _letterTimer?.cancel();
@@ -805,7 +888,39 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     // la navegación.
     unawaited(store.pushProgressSnapshot());
     if (!mounted) return;
-    if (keepGoing) {
+    
+    if (CoopService.active != null) {
+      if (keepGoing) {
+        setState(() {
+          _completionCardId = null;
+          _letterCardId = null;
+          _bankCardId = null;
+          _fogCardId = null;
+          _quizCardId = null;
+          _blockOrderCardId = null;
+          _checked = false;
+        });
+        
+        final isHost = CoopService.active?.state?.hostId == CoopService.activeUserId;
+        if (isHost) {
+          final nextIndex = store.sessionCardsCompleted;
+          CoopService.active!.updateLocalCardState(deckId: store.activeDeck.id, cardIndex: nextIndex, slug: '00-solo-lectura');
+          CoopService.active!.broadcastCard(deckId: store.activeDeck.id, cardIndex: nextIndex, slug: '00-solo-lectura');
+        }
+        
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '${AppRoutes.flow}/00-solo-lectura',
+          (route) => route.isFirst,
+        );
+      } else {
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          AppRoutes.cooperativoLogrado,
+          (route) => route.isFirst,
+        );
+      }
+    } else if (keepGoing) {
       // Reset estado UI per-tarjeta (banco, completar, niebla, etc.).
       setState(() {
         _completionCardId = null;
@@ -2055,6 +2170,72 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     setState(() => _activeLetterIndex = index);
   }
 
+  String? get _activeTurnUserId {
+    final coop = CoopService.active;
+    if (coop == null) return null;
+    final state = coop.state;
+    if (state == null) return null;
+    if (state.mode != 'turnos') return null;
+    
+    final members = state.memberIds.toList()..sort();
+    if (members.isEmpty) return null;
+    
+    int startIndex = state.currentCardIndex % members.length;
+    for (int i = 0; i < members.length; i++) {
+      final idx = (startIndex + i) % members.length;
+      final candidate = members[idx];
+      if (!_failedUserIds.contains(candidate)) {
+        return candidate;
+      }
+    }
+    return members[startIndex];
+  }
+
+  void _startCooldown() {
+    _cooldownTimer?.cancel();
+    setState(() {
+      _cooldownSecondsLeft = 8;
+    });
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        if (_cooldownSecondsLeft > 1) {
+          _cooldownSecondsLeft--;
+        } else {
+          _cooldownSecondsLeft = 0;
+          timer.cancel();
+        }
+      });
+    });
+  }
+
+  void _broadcastFail() {
+    final coop = CoopService.active;
+    if (coop == null) return;
+    coop.send(CoopMessage(
+      type: 'coop_fail',
+      userId: CoopService.activeUserId ?? '',
+      payload: {'userId': CoopService.activeUserId ?? ''},
+    ));
+  }
+
+  bool _isInteractiveCoopSlug(String slug) {
+    return slug == '05-bloques' ||
+        slug == '06-completar-n1' ||
+        slug == '07-primera-letra-n1' ||
+        slug == '09-quiz' ||
+        slug == '09-quiz-avanzado' ||
+        slug == '10-completar-n2' ||
+        slug == '11-primera-letra-n2' ||
+        slug == '12-completar-n3' ||
+        slug == '13-primera-letra-n3';
+  }
+
+
+
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
@@ -2075,40 +2256,256 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       final verses = _currentBatchVerses(context);
       _soloLecturaVisibleChars = verses.fold<int>(0, (sum, v) => sum + v.text.length);
     }
-    return ReferencePage(
-      showBottomNav: false,
-      scrollable:
-          slug != '01-escuchar' &&
-          !_isFirstLetterSlug(slug) &&
-          !_isFogSlug(slug) &&
-          !_isFinalVoiceSlug(slug),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _FlowStepHeader(
-            step: '$step',
-            totalSteps: totalSteps,
-            title: _realStepTitle(slug),
-            progress: step.clamp(1, totalSteps),
-          ),
-          if (slug == '01-escuchar' ||
-              _isFirstLetterSlug(slug) ||
-              _isFogSlug(slug) ||
-              _isFinalVoiceSlug(slug))
-            Expanded(
-              child: _RedFlash(
-                active: _nonVoiceWrongRecent(),
-                child: _realExerciseBody(context, store, card, deck, slug),
+
+    final isCoop = CoopService.active != null;
+    final coopState = CoopService.active?.state;
+
+    bool isBlocked = false;
+    bool showLockOverlay = false;
+    String blockText = '';
+    
+    if (isCoop && coopState != null) {
+      final mode = coopState.mode;
+      if (mode == 'turnos' && _isInteractiveCoopSlug(slug)) {
+        final activeUser = _activeTurnUserId;
+        final isMe = activeUser == CoopService.activeUserId;
+        final isMeFailed = _failedUserIds.contains(CoopService.activeUserId);
+        
+        if (isMeFailed) {
+          isBlocked = true;
+          showLockOverlay = true;
+          blockText = 'Inhabilitado por fallar ❌\nEspera al siguiente ejercicio';
+        } else if (!isMe) {
+          isBlocked = true;
+          showLockOverlay = false;
+          blockText = 'Esperando el turno de $activeUser ⏳';
+        }
+      } else if (mode == 'libre') {
+        if (_cooldownSecondsLeft > 0) {
+          isBlocked = true;
+          showLockOverlay = true;
+          blockText = '⏳ Cooldown activo. Espera ${_cooldownSecondsLeft}s…';
+        }
+      }
+    }
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (isCoop) {
+          final shouldPop = await _showExitConfirmationDialog(context);
+          if (shouldPop && context.mounted) {
+            await CoopService.active?.disconnect();
+            CoopService.active = null;
+            Navigator.pop(context);
+          }
+        } else {
+          Navigator.pop(context);
+        }
+      },
+      child: ReferencePage(
+        showBottomNav: false,
+        scrollable:
+            slug != '01-escuchar' &&
+            !_isFirstLetterSlug(slug) &&
+            !_isFogSlug(slug) &&
+            !_isFinalVoiceSlug(slug),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (isCoop && coopState != null) ...[
+              _CoopTopBar(
+                center: 'EN JUEGO · ${store.sessionCardsCompleted + 1}/${store.sessionDailyTarget}',
+                live: true,
+                onBack: () async {
+                  final shouldPop = await _showExitConfirmationDialog(context);
+                  if (shouldPop && context.mounted) {
+                    await CoopService.active?.disconnect();
+                    CoopService.active = null;
+                    Navigator.pop(context);
+                  }
+                },
               ),
-            )
-          else
-            _RedFlash(
-              active: _nonVoiceWrongRecent(),
-              child: _realExerciseBody(context, store, card, deck, slug),
-            ),
-          const SizedBox(height: 14),
-          _realExerciseFooter(context, store, card, deck, slug),
-        ],
+              const SizedBox(height: 8),
+              _CoopTeamRow(
+                state: coopState,
+                answeredUsers: const {},
+                activeTurnUserId: _activeTurnUserId,
+                failedUserIds: _failedUserIds,
+              ),
+              const SizedBox(height: 10),
+              RefProgress((store.sessionCardsCompleted + 1) / store.sessionDailyTarget),
+              const SizedBox(height: 10),
+            ] else
+              _FlowStepHeader(
+                step: '$step',
+                totalSteps: totalSteps,
+                title: _realStepTitle(slug),
+                progress: step.clamp(1, totalSteps),
+              ),
+            
+            (() {
+              final isScrollable = slug != '01-escuchar' &&
+                  !_isFirstLetterSlug(slug) &&
+                  !_isFogSlug(slug) &&
+                  !_isFinalVoiceSlug(slug);
+
+              final isMyTurnActive = isCoop && coopState != null && (
+                coopState.mode == 'libre'
+                    ? _cooldownSecondsLeft <= 0
+                    : (_activeTurnUserId == CoopService.activeUserId && !_failedUserIds.contains(CoopService.activeUserId))
+              );
+
+              final exerciseContent = Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (!isScrollable)
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          AbsorbPointer(
+                            absorbing: isBlocked,
+                            child: _CoopTurnGlow(
+                              active: isMyTurnActive,
+                              child: _RedFlash(
+                                active: _nonVoiceWrongRecent(),
+                                child: _realExerciseBody(context, store, card, deck, slug),
+                              ),
+                            ),
+                          ),
+                          if (isBlocked && showLockOverlay)
+                            Positioned.fill(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(24),
+                                child: Glass(
+                                  color: Colors.black.withValues(alpha: 0.55),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                                  child: Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(24.0),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            _cooldownSecondsLeft > 0
+                                                ? Icons.timer_outlined
+                                                : _failedUserIds.contains(CoopService.activeUserId)
+                                                    ? Icons.cancel_outlined
+                                                    : Icons.lock_outline_rounded,
+                                            color: _failedUserIds.contains(CoopService.activeUserId)
+                                                ? RefColors.pink
+                                                : _cooldownSecondsLeft > 0
+                                                    ? RefColors.sun
+                                                    : RefColors.muted,
+                                            size: 56,
+                                          ),
+                                          const SizedBox(height: 18),
+                                          Text(
+                                            blockText,
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                              height: 1.4,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    )
+                  else
+                    Stack(
+                      children: [
+                        AbsorbPointer(
+                          absorbing: isBlocked,
+                          child: _CoopTurnGlow(
+                            active: isMyTurnActive,
+                            child: _RedFlash(
+                              active: _nonVoiceWrongRecent(),
+                              child: _realExerciseBody(context, store, card, deck, slug),
+                            ),
+                          ),
+                        ),
+                        if (isBlocked && showLockOverlay)
+                          Positioned.fill(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(24),
+                              child: Glass(
+                                color: Colors.black.withValues(alpha: 0.55),
+                                border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                                child: Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24.0),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          _cooldownSecondsLeft > 0
+                                              ? Icons.timer_outlined
+                                              : _failedUserIds.contains(CoopService.activeUserId)
+                                                  ? Icons.cancel_outlined
+                                                  : Icons.lock_outline_rounded,
+                                          color: _failedUserIds.contains(CoopService.activeUserId)
+                                              ? RefColors.pink
+                                              : _cooldownSecondsLeft > 0
+                                                  ? RefColors.sun
+                                                  : RefColors.muted,
+                                          size: 56,
+                                        ),
+                                        const SizedBox(height: 18),
+                                        Text(
+                                          blockText,
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            height: 1.4,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  const SizedBox(height: 10),
+                  if (isCoop) ...[
+                    AbsorbPointer(
+                      absorbing: isBlocked,
+                      child: _coopExerciseFooter(context, store, card, deck, slug),
+                    ),
+                    const SizedBox(height: 10),
+                    const _CoopGameChat(),
+                  ] else
+                    AbsorbPointer(
+                      absorbing: isBlocked,
+                      child: _realExerciseFooter(context, store, card, deck, slug),
+                    ),
+                ],
+              );
+
+              if (isScrollable) {
+                return exerciseContent;
+              } else {
+                return Expanded(
+                  child: exerciseContent,
+                );
+              }
+            })(),
+          ],
+        ),
       ),
     );
   }
@@ -3469,6 +3866,38 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     });
   }
 
+  Widget _coopExerciseFooter(
+    BuildContext context,
+    AppStore store,
+    MemoryCardData card,
+    MemoryDeckData deck,
+    String slug,
+  ) {
+    final completed = store.isExerciseStepCompleted(slug);
+    
+    if (completed) {
+      return Cta(
+        'Continuar →',
+        onTap: () {
+          ActiveMediaRegistry.stopAll();
+          final steps = _sessionFlowSteps(store);
+          final isLastStep = steps.isNotEmpty && steps.last.slug == slug;
+          final nextSlug = isLastStep ? 'final-review' : 'progress-tree';
+          
+          CoopService.active!.broadcastCard(
+            deckId: deck.id,
+            cardIndex: store.sessionCardsCompleted,
+            slug: nextSlug,
+          );
+          
+          _navigateToNextStepOrComplete(context, store, slug);
+        },
+      );
+    }
+    
+    return _realExerciseFooter(context, store, card, deck, slug);
+  }
+
   Widget _realExerciseFooter(
     BuildContext context,
     AppStore store,
@@ -3933,6 +4362,87 @@ class _RedFlash extends StatelessWidget {
       ),
       padding: const EdgeInsets.all(2),
       child: child,
+    );
+  }
+}
+
+class _CoopTurnGlow extends StatefulWidget {
+  final bool active;
+  final Widget child;
+
+  const _CoopTurnGlow({required this.active, required this.child});
+
+  @override
+  State<_CoopTurnGlow> createState() => _CoopTurnGlowState();
+}
+
+class _CoopTurnGlowState extends State<_CoopTurnGlow> with SingleTickerProviderStateMixin {
+  AnimationController? _controller;
+  Animation<double>? _glowAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+    _glowAnimation = Tween<double>(begin: 4.0, end: 24.0).animate(
+      CurvedAnimation(parent: _controller!, curve: Curves.easeInOut),
+    );
+    if (widget.active) {
+      _controller!.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _CoopTurnGlow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active != oldWidget.active) {
+      if (widget.active) {
+        _controller!.repeat(reverse: true);
+      } else {
+        _controller!.stop();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.active) {
+      return widget.child;
+    }
+
+    return AnimatedBuilder(
+      animation: _glowAnimation!,
+      builder: (context, child) {
+        return Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: RefColors.lime.withValues(alpha: 0.85),
+              width: 3.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: RefColors.lime.withValues(alpha: 0.38),
+                blurRadius: _glowAnimation!.value,
+                spreadRadius: _glowAnimation!.value / 6,
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: widget.child,
+          ),
+        );
+      },
     );
   }
 }
@@ -5387,3 +5897,37 @@ class _BankWord {
   final String word;
   _BankWord({required this.id, required this.word});
 }
+
+Future<bool> _showExitConfirmationDialog(BuildContext context) async {
+  final isHost = CoopService.activeUserId == CoopService.active?.state?.hostId;
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: const Color(0xFF0F0C1B),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(
+        isHost ? '¿Cancelar partida?' : '¿Salir de la sala?',
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+      ),
+      content: Text(
+        isHost 
+            ? 'Como eres el HOST, al salir cerrarás la sala y se cancelará la partida para todos los participantes.'
+            : '¿Estás seguro de que quieres abandonar la partida en curso?',
+        style: const TextStyle(color: RefColors.dim, fontSize: 13),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancelar', style: TextStyle(color: RefColors.muted)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: RefColors.urgent),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Salir', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        ),
+      ],
+    ),
+  );
+  return result ?? false;
+}
+

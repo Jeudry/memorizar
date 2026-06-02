@@ -12,15 +12,17 @@ class CoopRoomState {
   final String code;
   final String hostId;
   final Set<String> memberIds;
+  final Map<String, String> memberNames;
   /// Tarjeta actualmente sincronizada por el host. `null` antes de empezar.
   final String? currentDeckId;
   final int currentCardIndex;
+  final String? currentSlug;
   /// Puntaje acumulado por miembro (userId → score).
   final Map<String, int> scores;
   /// Mazo configurado en el lobby.
   final String? lobbyDeckId;
   final String? lobbyDeckName;
-  final String mode; // "grupal", "versus", "libre"
+  final String mode; // "turnos", "libre"
   final bool isPublic;
   final int sessionDifficulty;
   final int sessionDailyTarget;
@@ -30,12 +32,14 @@ class CoopRoomState {
     required this.code,
     required this.hostId,
     required this.memberIds,
+    this.memberNames = const {},
     this.currentDeckId,
     this.currentCardIndex = 0,
+    this.currentSlug,
     this.scores = const {},
     this.lobbyDeckId,
     this.lobbyDeckName,
-    this.mode = 'grupal',
+    this.mode = 'turnos',
     this.isPublic = true,
     this.sessionDifficulty = 1,
     this.sessionDailyTarget = 0,
@@ -44,6 +48,7 @@ class CoopRoomState {
 
   CoopRoomState copyWith({
     Set<String>? memberIds,
+    Map<String, String>? memberNames,
     Map<String, int>? scores,
     String? lobbyDeckId,
     String? lobbyDeckName,
@@ -52,13 +57,16 @@ class CoopRoomState {
     int? sessionDifficulty,
     int? sessionDailyTarget,
     int? sessionMaxPlayers,
+    String? currentSlug,
   }) =>
       CoopRoomState(
         code: code,
         hostId: hostId,
         memberIds: memberIds ?? this.memberIds,
+        memberNames: memberNames ?? this.memberNames,
         currentDeckId: currentDeckId,
         currentCardIndex: currentCardIndex,
+        currentSlug: currentSlug ?? this.currentSlug,
         scores: scores ?? this.scores,
         lobbyDeckId: lobbyDeckId ?? this.lobbyDeckId,
         lobbyDeckName: lobbyDeckName ?? this.lobbyDeckName,
@@ -69,13 +77,15 @@ class CoopRoomState {
         sessionMaxPlayers: sessionMaxPlayers ?? this.sessionMaxPlayers,
       );
 
-  CoopRoomState copyWithCard({required String deckId, required int cardIndex}) =>
+  CoopRoomState copyWithCard({required String deckId, required int cardIndex, String? slug}) =>
       CoopRoomState(
         code: code,
         hostId: hostId,
         memberIds: memberIds,
+        memberNames: memberNames,
         currentDeckId: deckId,
         currentCardIndex: cardIndex,
+        currentSlug: slug ?? this.currentSlug,
         scores: scores,
         lobbyDeckId: lobbyDeckId,
         lobbyDeckName: lobbyDeckName,
@@ -98,13 +108,17 @@ class CoopMessage {
     this.payload,
   });
 
-  factory CoopMessage.fromJson(Map<String, dynamic> json) => CoopMessage(
-        type: (json['type'] as String?) ?? '',
-        userId: (json['userId'] as String?) ?? '',
-        payload: json['payload'] is Map<String, dynamic>
-            ? json['payload'] as Map<String, dynamic>
-            : null,
-      );
+  factory CoopMessage.fromJson(Map<String, dynamic> json) {
+    Map<String, dynamic>? decodedPayload;
+    if (json['payload'] is Map) {
+      decodedPayload = Map<String, dynamic>.from(json['payload'] as Map);
+    }
+    return CoopMessage(
+      type: (json['type'] as String?) ?? '',
+      userId: (json['userId'] as String?) ?? '',
+      payload: decodedPayload,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'type': type,
@@ -160,7 +174,7 @@ class CoopService {
       hostId: hostId,
       lobbyDeckId: deckId,
       lobbyDeckName: deckName,
-      mode: 'grupal',
+      mode: 'turnos',
       isPublic: isPublic,
     );
     return _state!;
@@ -182,7 +196,7 @@ class CoopService {
     final hostId = (res['hostId'] as String?) ?? '';
     final deckId = (res['deckId'] as String?) ?? '';
     final deckName = (res['deckName'] as String?) ?? '';
-    final mode = (res['mode'] as String?) ?? 'grupal';
+    final mode = (res['mode'] as String?) ?? 'turnos';
     final isPublic = (res['isPublic'] as bool?) ?? true;
     await connect(
       code: code,
@@ -203,7 +217,7 @@ class CoopService {
     required String hostId,
     String? lobbyDeckId,
     String? lobbyDeckName,
-    String mode = 'grupal',
+    String mode = 'turnos',
     bool isPublic = true,
   }) async {
     await disconnect();
@@ -214,6 +228,7 @@ class CoopService {
       code: code,
       hostId: hostId,
       memberIds: {userId},
+      memberNames: {userId: name},
       lobbyDeckId: lobbyDeckId,
       lobbyDeckName: lobbyDeckName,
       mode: mode,
@@ -241,12 +256,22 @@ class CoopService {
     if (state == null) return;
     switch (msg.type) {
       case 'join':
-        _state = state.copyWith(memberIds: {...state.memberIds, msg.userId});
+        String name = msg.userId;
+        if (msg.payload != null && msg.payload!['name'] is String) {
+          name = msg.payload!['name'] as String;
+        }
+        _state = state.copyWith(
+          memberIds: {...state.memberIds, msg.userId},
+          memberNames: {...state.memberNames, msg.userId: name},
+        );
         _stateCtrl.add(_state!);
         break;
       case 'leave':
+        final newMembers = {...state.memberIds}..remove(msg.userId);
+        final newNames = {...state.memberNames}..remove(msg.userId);
         _state = state.copyWith(
-          memberIds: {...state.memberIds}..remove(msg.userId),
+          memberIds: newMembers,
+          memberNames: newNames,
         );
         _stateCtrl.add(_state!);
         break;
@@ -257,7 +282,7 @@ class CoopService {
         _stateCtrl.add(_state!);
         break;
       case 'mode':
-        final mode = (msg.payload?['mode'] as String?) ?? 'grupal';
+        final mode = (msg.payload?['mode'] as String?) ?? 'turnos';
         _state = state.copyWith(mode: mode);
         _stateCtrl.add(_state!);
         break;
@@ -267,10 +292,11 @@ class CoopService {
         _stateCtrl.add(_state!);
         break;
       case 'card':
-        // Host avanzó a una tarjeta nueva. Payload: {cardIndex, deckId}.
+        // Host avanzó a una tarjeta nueva. Payload: {cardIndex, deckId, slug}.
         final idx = (msg.payload?['cardIndex'] as int?) ?? 0;
         final deckId = (msg.payload?['deckId'] as String?) ?? '';
-        _state = state.copyWithCard(deckId: deckId, cardIndex: idx);
+        final slug = (msg.payload?['slug'] as String?) ?? '';
+        _state = state.copyWithCard(deckId: deckId, cardIndex: idx, slug: slug);
         _stateCtrl.add(_state!);
         break;
       case 'score':
@@ -310,19 +336,33 @@ class CoopService {
 
   /// Conveniencia para que el host empuje "estamos en la tarjeta N del
   /// deck D" a todos los miembros.
-  void broadcastCard({required String deckId, required int cardIndex}) {
+  void broadcastCard({required String deckId, required int cardIndex, String? slug}) {
     send(CoopMessage(
       type: 'card',
       userId: '',
-      payload: {'deckId': deckId, 'cardIndex': cardIndex},
+      payload: {
+        'deckId': deckId,
+        'cardIndex': cardIndex,
+        if (slug != null) 'slug': slug,
+      },
     ));
   }
 
-  void broadcastLobbyDeck({required String deckId, required String deckName}) {
+  void broadcastLobbyDeck({
+    required String deckId,
+    required String deckName,
+    bool isBible = false,
+    List<dynamic>? cards,
+  }) {
     send(CoopMessage(
       type: 'deck',
       userId: '',
-      payload: {'deckId': deckId, 'deckName': deckName},
+      payload: {
+        'deckId': deckId,
+        'deckName': deckName,
+        'isBible': isBible,
+        if (cards != null) 'cards': cards,
+      },
     ));
   }
 
@@ -363,6 +403,13 @@ class CoopService {
     _channel = null;
     _state = null;
     _sub = null;
+  }
+
+  void updateLocalCardState({required String deckId, required int cardIndex, String? slug}) {
+    final state = _state;
+    if (state == null) return;
+    _state = state.copyWithCard(deckId: deckId, cardIndex: cardIndex, slug: slug);
+    _stateCtrl.add(_state!);
   }
 
   void dispose() {

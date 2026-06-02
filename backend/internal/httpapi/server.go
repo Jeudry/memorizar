@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/Jeudry/memorizar/backend/internal/coop"
@@ -49,6 +50,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/auth/password/reset/confirm", s.handlePasswordResetConfirm)
 	s.mux.HandleFunc("/avatars/", s.handleAvatarServe)
 	s.mux.HandleFunc("/v1/social/friends", s.withAuth(s.handleFriends))
+	s.mux.HandleFunc("/v1/social/user", s.withAuth(s.handleGetUser))
 	s.mux.HandleFunc("/v1/social/suggestions", s.withAuth(s.handleSuggestions))
 	s.mux.HandleFunc("/v1/social/search", s.withAuth(s.handleSearch))
 	s.mux.HandleFunc("/v1/community/decks", s.withAuth(s.handleCommunitySearch))
@@ -253,6 +255,43 @@ func (s *Server) handleSuggestions(w http.ResponseWriter, r *http.Request, userI
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request, _ string) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	targetID := r.URL.Query().Get("id")
+	if targetID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing user id"})
+		return
+	}
+	user, err := s.service.GetUser(targetID)
+	if err != nil || user == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+		return
+	}
+	sanitized := user.Sanitize()
+
+	// Cargar logros e insignias del usuario
+	achievements, _ := s.service.ListAchievementsByUserIDs([]string{targetID})
+	if achievements == nil {
+		achievements = []domain.Achievement{}
+	}
+
+	// Cargar recursos compartidos públicos del usuario para contar sus mazos
+	shares, _ := s.service.ListPublicSharedResourcesByUserIDs([]string{targetID})
+	sharedCount := len(shares)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user":         sanitized,
+		"achievements": achievements,
+		"stats": map[string]any{
+			"sharedCount":       sharedCount,
+			"achievementsCount": len(achievements),
+		},
+	})
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request, userID string) {
@@ -709,8 +748,52 @@ func (s *Server) handleCoopListPublicRooms(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	rooms := s.coop.ListPublicRooms()
-	writeJSON(w, http.StatusOK, rooms)
+
+	q := r.URL.Query()
+
+	difficulty := 0
+	if diffStr := q.Get("difficulty"); diffStr != "" {
+		if val, err := strconv.Atoi(diffStr); err == nil {
+			difficulty = val
+		}
+	}
+
+	mode := q.Get("mode")
+	query := q.Get("query")
+
+	hideFull := false
+	if hideStr := q.Get("hideFull"); hideStr == "true" {
+		hideFull = true
+	}
+
+	page := 1
+	if pageStr := q.Get("page"); pageStr != "" {
+		if val, err := strconv.Atoi(pageStr); err == nil && val > 0 {
+			page = val
+		}
+	}
+
+	limit := 10
+	if limitStr := q.Get("limit"); limitStr != "" {
+		if val, err := strconv.Atoi(limitStr); err == nil && val > 0 {
+			limit = val
+		}
+	}
+
+	rooms, total := s.coop.ListPublicRoomsPaged(difficulty, mode, query, hideFull, page, limit)
+
+	totalPages := 0
+	if limit > 0 {
+		totalPages = (total + limit - 1) / limit
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"rooms":      rooms,
+		"total":      total,
+		"page":       page,
+		"limit":      limit,
+		"totalPages": totalPages,
+	})
 }
 
 func (s *Server) handleCoopLookup(w http.ResponseWriter, r *http.Request, _ string) {

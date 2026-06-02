@@ -5,6 +5,8 @@ class RemoteUser {
   final String id;
   final String email;
   final String displayName;
+  final String username;
+  final int age;
   final String avatarUrl;
   final String locale;
   final bool emailVerified;
@@ -14,6 +16,8 @@ class RemoteUser {
     required this.id,
     required this.email,
     required this.displayName,
+    this.username = '',
+    this.age = 0,
     this.avatarUrl = '',
     this.locale = '',
     this.emailVerified = false,
@@ -24,6 +28,8 @@ class RemoteUser {
         id: (json['id'] as String?) ?? '',
         email: (json['email'] as String?) ?? '',
         displayName: (json['displayName'] as String?) ?? '',
+        username: (json['username'] as String?) ?? '',
+        age: (json['age'] as int?) ?? 0,
         avatarUrl: (json['avatarUrl'] as String?) ?? '',
         locale: (json['locale'] as String?) ?? '',
         emailVerified: (json['emailVerified'] as bool?) ?? false,
@@ -34,14 +40,26 @@ class RemoteUser {
         'id': id,
         'email': email,
         'displayName': displayName,
+        'username': username,
+        'age': age,
         'avatarUrl': avatarUrl,
         'locale': locale,
         'emailVerified': emailVerified,
         'isOnline': isOnline,
       };
 
+  String get effectiveName {
+    if (displayName.isNotEmpty && !displayName.startsWith('usr_')) {
+      return displayName;
+    }
+    if (username.isNotEmpty) {
+      return username;
+    }
+    return id;
+  }
+
   String get initial =>
-      displayName.isNotEmpty ? displayName.substring(0, 1).toUpperCase() : '?';
+      effectiveName.isNotEmpty ? effectiveName.substring(0, 1).toUpperCase() : '?';
 }
 
 class Session {
@@ -216,6 +234,59 @@ class FeedEntry {
       title: title,
       description: description,
       createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? ''),
+    );
+  }
+}
+
+class RemoteAchievement {
+  final String id;
+  final String code;
+  final String title;
+  final String description;
+  final String emoji;
+  final DateTime? unlockedAt;
+
+  const RemoteAchievement({
+    required this.id,
+    required this.code,
+    required this.title,
+    required this.description,
+    required this.emoji,
+    this.unlockedAt,
+  });
+
+  factory RemoteAchievement.fromJson(Map<String, dynamic> json) => RemoteAchievement(
+        id: (json['id'] as String?) ?? '',
+        code: (json['code'] as String?) ?? '',
+        title: (json['title'] as String?) ?? '',
+        description: (json['description'] as String?) ?? '',
+        emoji: (json['emoji'] as String?) ?? '🏆',
+        unlockedAt: DateTime.tryParse((json['unlockedAt'] as String?) ?? ''),
+      );
+}
+
+class UserProfileResult {
+  final RemoteUser user;
+  final List<RemoteAchievement> achievements;
+  final int sharedCount;
+  final int achievementsCount;
+
+  const UserProfileResult({
+    required this.user,
+    required this.achievements,
+    this.sharedCount = 0,
+    this.achievementsCount = 0,
+  });
+
+  factory UserProfileResult.fromJson(Map<String, dynamic> json) {
+    final stats = json['stats'] as Map<String, dynamic>? ?? const {};
+    return UserProfileResult(
+      user: RemoteUser.fromJson(json['user'] as Map<String, dynamic>? ?? const {}),
+      achievements: ((json['achievements'] as List?) ?? const [])
+          .map((e) => RemoteAchievement.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      sharedCount: (stats['sharedCount'] as int?) ?? 0,
+      achievementsCount: (stats['achievementsCount'] as int?) ?? 0,
     );
   }
 }

@@ -1809,7 +1809,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
         ? 1.0
         : (words.isEmpty ? 0.0 : ((safeIndex + 1) / words.length));
     return Glass(
-      padding: const EdgeInsets.fromLTRB(22, 30, 22, 20),
+      padding: const EdgeInsets.fromLTRB(22, 16, 22, 12),
       gradient: LinearGradient(
         colors: [
           RefColors.violet.withValues(alpha: .28),
@@ -1829,7 +1829,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
               letterSpacing: 2,
             ),
           ),
-          const SizedBox(height: 34),
+          const SizedBox(height: 16),
           Expanded(
             child: Scrollbar(
               controller: _textScrollController,
@@ -1841,7 +1841,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
               ),
             ),
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: RefProgress(progress.clamp(.03, 1.0)),
@@ -1867,7 +1867,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
               ),
             ],
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [

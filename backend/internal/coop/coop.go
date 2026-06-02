@@ -62,6 +62,8 @@ type Room struct {
 	DeckName       string
 	Mode           string // "grupal", "versus", "libre"
 	MaxPlayers     int
+	Difficulty     int
+	DailyTarget    int
 }
 
 type CoopInvitation struct {
@@ -125,6 +127,9 @@ type PublicRoomInfo struct {
 	DeckName    string   `json:"deckName"`
 	Mode        string   `json:"mode"`
 	CreatedAt   string   `json:"createdAt"`
+	Difficulty  int      `json:"difficulty"`
+	DailyTarget int      `json:"dailyTarget"`
+	MaxPlayers  int      `json:"maxPlayers"`
 }
 
 // CreateRoom genera un código de 6 letras y devuelve la sala.
@@ -141,6 +146,8 @@ func (h *Hub) CreateRoom(hostID string, isPublic bool, deckID string, deckName s
 		DeckName:       deckName,
 		Mode:           "grupal",
 		MaxPlayers:     4,
+		Difficulty:     1,
+		DailyTarget:    0,
 	}
 	h.mu.Lock()
 	h.rooms[code] = room
@@ -164,11 +171,82 @@ func (h *Hub) ListPublicRooms() []PublicRoomInfo {
 				DeckName:    r.DeckName,
 				Mode:        r.Mode,
 				CreatedAt:   r.CreatedAt.Format(time.RFC3339),
+				Difficulty:  r.Difficulty,
+				DailyTarget: r.DailyTarget,
+				MaxPlayers:  r.MaxPlayers,
 			})
 		}
 		r.mu.RUnlock()
 	}
 	return list
+}
+
+// ListPublicRoomsPaged lists rooms applying paginated results and filters
+func (h *Hub) ListPublicRoomsPaged(difficulty int, mode string, query string, hideFull bool, page int, limit int) ([]PublicRoomInfo, int) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	filtered := []PublicRoomInfo{}
+	for _, r := range h.rooms {
+		r.mu.RLock()
+		if r.IsPublic && len(r.members) > 0 {
+			// Filtro por dificultad
+			if difficulty > 0 && r.Difficulty != difficulty {
+				r.mu.RUnlock()
+				continue
+			}
+			// Filtro por modo
+			if mode != "" && r.Mode != mode {
+				r.mu.RUnlock()
+				continue
+			}
+			// Filtro por nombre de mazo o código de sala
+			if query != "" && !strings.Contains(strings.ToLower(r.DeckName), strings.ToLower(query)) && !strings.Contains(strings.ToLower(r.Code), strings.ToLower(query)) {
+				r.mu.RUnlock()
+				continue
+			}
+			// Filtro por salas llenas
+			if hideFull && r.MaxPlayers > 0 && len(r.members) >= r.MaxPlayers {
+				r.mu.RUnlock()
+				continue
+			}
+
+			filtered = append(filtered, PublicRoomInfo{
+				Code:        r.Code,
+				HostID:      r.HostID,
+				MemberCount: len(r.members),
+				DeckID:      r.DeckID,
+				DeckName:    r.DeckName,
+				Mode:        r.Mode,
+				CreatedAt:   r.CreatedAt.Format(time.RFC3339),
+				Difficulty:  r.Difficulty,
+				DailyTarget: r.DailyTarget,
+				MaxPlayers:  r.MaxPlayers,
+			})
+		}
+		r.mu.RUnlock()
+	}
+
+	total := len(filtered)
+
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 10
+	}
+
+	start := (page - 1) * limit
+	if start >= total {
+		return []PublicRoomInfo{}, total
+	}
+
+	end := start + limit
+	if end > total {
+		end = total
+	}
+
+	return filtered[start:end], total
 }
 
 func (h *Hub) Get(code string) *Room {
@@ -219,9 +297,14 @@ func (h *Hub) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 func (r *Room) add(m *Member) {
 	r.mu.Lock()
 	r.LastActivityAt = time.Now().UTC()
-	// Enviar mensaje "join" por cada miembro existente al nuevo integrante
+	// Enviar mensaje "join" por cada miembro existente al nuevo integrante, incluyendo su nombre en el payload
 	for _, existing := range r.members {
-		msg := Message{Type: "join", UserID: existing.UserID}
+		payload, _ := json.Marshal(map[string]string{"name": existing.DisplayName})
+		msg := Message{
+			Type:    "join",
+			UserID:  existing.UserID,
+			Payload: payload,
+		}
 		data, _ := json.Marshal(msg)
 		select {
 		case m.send <- data:
@@ -230,7 +313,13 @@ func (r *Room) add(m *Member) {
 	}
 	r.members[m.UserID] = m
 	r.mu.Unlock()
-	r.broadcast(Message{Type: "join", UserID: m.UserID})
+
+	newPayload, _ := json.Marshal(map[string]string{"name": m.DisplayName})
+	r.broadcast(Message{
+		Type:    "join",
+		UserID:  m.UserID,
+		Payload: newPayload,
+	})
 }
 
 func (h *Hub) RemoveMember(r *Room, m *Member) {
@@ -333,12 +422,22 @@ func (m *Member) readLoop(room *Room) {
 			}
 		} else if msg.Type == "session_config" {
 			type SessionConfigPayload struct {
-				MaxPlayers int `json:"maxPlayers"`
+				MaxPlayers  int `json:"maxPlayers"`
+				Difficulty  int `json:"difficulty"`
+				DailyTarget int `json:"dailyTarget"`
 			}
 			var p SessionConfigPayload
-			if err := json.Unmarshal(msg.Payload, &p); err == nil && p.MaxPlayers > 0 {
+			if err := json.Unmarshal(msg.Payload, &p); err == nil {
 				room.mu.Lock()
-				room.MaxPlayers = p.MaxPlayers
+				if p.MaxPlayers > 0 {
+					room.MaxPlayers = p.MaxPlayers
+				}
+				if p.Difficulty > 0 {
+					room.Difficulty = p.Difficulty
+				}
+				if p.DailyTarget > 0 {
+					room.DailyTarget = p.DailyTarget
+				}
 				room.mu.Unlock()
 			}
 		}

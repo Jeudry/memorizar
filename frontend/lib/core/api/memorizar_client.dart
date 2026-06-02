@@ -62,6 +62,12 @@ class MemorizarClient {
       String friendlyMsg = rawError;
       if (rawError.contains('email already in use') || rawError.contains('already in use')) {
         friendlyMsg = 'Este correo electrónico ya está registrado. Por favor, inicia sesión.';
+      } else if (rawError.contains('username already in use')) {
+        friendlyMsg = 'Este nombre de usuario ya está en uso. Elige otro.';
+      } else if (rawError.contains('username must be 3-15 chars')) {
+        friendlyMsg = 'El usuario debe tener entre 3 y 15 letras, números o guiones bajos.';
+      } else if (rawError.contains('invalid age')) {
+        friendlyMsg = 'Por favor, introduce una edad válida.';
       } else if (rawError.contains('invalid credentials')) {
         friendlyMsg = 'El correo o la contraseña son incorrectos.';
       } else if (rawError.contains('password must be at least 8 characters') || rawError.contains('weak password')) {
@@ -118,6 +124,8 @@ class MemorizarClient {
     required String email,
     required String password,
     required String displayName,
+    required String username,
+    required int age,
   }) async {
     final r = await _http.post(
       _uri('/v1/auth/email/register'),
@@ -126,6 +134,8 @@ class MemorizarClient {
         'email': email,
         'password': password,
         'displayName': displayName,
+        'username': username,
+        'age': age,
       }),
     );
     return SessionResult.fromJson(await _decode(r));
@@ -147,11 +157,15 @@ class MemorizarClient {
     String? displayName,
     String? avatarUrl,
     String? locale,
+    String? username,
+    int? age,
   }) async {
     final body = <String, dynamic>{};
     if (displayName != null) body['displayName'] = displayName;
     if (avatarUrl != null) body['avatarUrl'] = avatarUrl;
     if (locale != null) body['locale'] = locale;
+    if (username != null) body['username'] = username;
+    if (age != null) body['age'] = age;
     final r = await _http.post(
       _uri('/v1/auth/profile'),
       headers: _headers,
@@ -253,6 +267,16 @@ class MemorizarClient {
     return list
         .map((e) => RemoteUser.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<UserProfileResult> getUser(String targetUserId) async {
+    final encoded = Uri.encodeQueryComponent(targetUserId);
+    final r = await _http.get(
+      _uri('/v1/social/user?id=$encoded'),
+      headers: _headers,
+    );
+    final body = await _decode(r);
+    return UserProfileResult.fromJson(body);
   }
 
   Future<Friendship> requestFriend(String friendUserId) async {
@@ -422,11 +446,34 @@ class MemorizarClient {
     return _decode(r);
   }
 
+  Future<Map<String, dynamic>> listPublicRoomsPaged({
+    int? difficulty,
+    String? mode,
+    String? query,
+    bool? hideFull,
+    int page = 1,
+    int limit = 10,
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'limit': limit.toString(),
+      if (difficulty != null && difficulty > 0) 'difficulty': difficulty.toString(),
+      if (mode != null && mode.isNotEmpty) 'mode': mode,
+      if (query != null && query.isNotEmpty) 'query': query,
+      if (hideFull != null) 'hideFull': hideFull.toString(),
+    };
+    final baseUri = _uri('/v1/coop/rooms/public');
+    final uri = baseUri.replace(queryParameters: queryParams);
+    final r = await _http.get(uri, headers: _headers);
+    return await _decode(r);
+  }
+
   Future<List<dynamic>> listPublicRooms() async {
-    final r = await _http.get(_uri('/v1/coop/rooms/public'), headers: _headers);
-    final decoded = await _decode(r);
-    final list = decoded['data'];
-    if (list is List) return list;
+    try {
+      final decoded = await listPublicRoomsPaged(page: 1, limit: 100);
+      final list = decoded['rooms'];
+      if (list is List) return list;
+    } catch (_) {}
     return [];
   }
 
