@@ -5,6 +5,8 @@ class RemoteUser {
   final String id;
   final String email;
   final String displayName;
+  final String username;
+  final int age;
   final String avatarUrl;
   final String locale;
   final bool emailVerified;
@@ -14,6 +16,8 @@ class RemoteUser {
     required this.id,
     required this.email,
     required this.displayName,
+    this.username = '',
+    this.age = 0,
     this.avatarUrl = '',
     this.locale = '',
     this.emailVerified = false,
@@ -24,6 +28,8 @@ class RemoteUser {
         id: (json['id'] as String?) ?? '',
         email: (json['email'] as String?) ?? '',
         displayName: (json['displayName'] as String?) ?? '',
+        username: (json['username'] as String?) ?? '',
+        age: (json['age'] as int?) ?? 0,
         avatarUrl: (json['avatarUrl'] as String?) ?? '',
         locale: (json['locale'] as String?) ?? '',
         emailVerified: (json['emailVerified'] as bool?) ?? false,
@@ -34,6 +40,8 @@ class RemoteUser {
         'id': id,
         'email': email,
         'displayName': displayName,
+        'username': username,
+        'age': age,
         'avatarUrl': avatarUrl,
         'locale': locale,
         'emailVerified': emailVerified,

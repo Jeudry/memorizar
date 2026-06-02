@@ -22,6 +22,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   final _nameCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController();
+  final _ageCtrl = TextEditingController();
   bool _busy = false;
   String? _error;
   
@@ -44,6 +46,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     _emailCtrl.dispose();
     _passCtrl.dispose();
     _nameCtrl.dispose();
+    _usernameCtrl.dispose();
+    _ageCtrl.dispose();
     _logoAnimationCtrl.dispose();
     super.dispose();
   }
@@ -63,15 +67,32 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     });
     try {
       if (_isSignUp) {
+        final name = _nameCtrl.text.trim();
+        final username = _usernameCtrl.text.trim();
+        final ageStr = _ageCtrl.text.trim();
+
+        if (name.isEmpty) {
+          throw Exception('El nombre completo es obligatorio.');
+        }
+        if (username.isEmpty) {
+          throw Exception('El nombre de usuario es obligatorio.');
+        }
+        if (!RegExp(r'^[a-zA-Z0-9_]{3,15}$').hasMatch(username)) {
+          throw Exception('El usuario debe tener entre 3 y 15 caracteres y solo contener letras, números o guiones bajos.');
+        }
+        final age = int.tryParse(ageStr);
+        if (age == null || age <= 0 || age > 120) {
+          throw Exception('Por favor, introduce una edad válida.');
+        }
         if (pass.length < 8) {
           throw Exception('La contraseña debe tener al menos 8 caracteres.');
         }
         await store.registerWithEmail(
           email: email,
           password: pass,
-          displayName: _nameCtrl.text.trim().isEmpty
-              ? email.split('@').first
-              : _nameCtrl.text.trim(),
+          displayName: name,
+          username: username,
+          age: age,
         );
       } else {
         await store.loginWithEmail(email: email, password: pass);
@@ -87,6 +108,42 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       setState(() => _error = _parseError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _checkAndNavigateOrPromptCompleteProfile() async {
+    final store = AppScope.of(context);
+    final user = store.currentUser;
+    if (user != null && (user.username.isEmpty || user.age == 0)) {
+      final completed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: Colors.black.withValues(alpha: .75),
+        builder: (context) => _CompleteProfileDialog(store: store),
+      );
+      if (completed == true) {
+        if (!mounted) return;
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          AppRoutes.home,
+          (_) => false,
+        );
+      } else {
+        await store.logout();
+        if (mounted) {
+          setState(() {
+            _busy = false;
+            _error = 'Debes completar tu perfil para poder iniciar sesión.';
+          });
+        }
+      }
+    } else {
+      if (!mounted) return;
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRoutes.home,
+        (_) => false,
+      );
     }
   }
 
@@ -119,13 +176,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         avatarUrl: result.avatarUrl,
       );
       if (!mounted) return;
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        AppRoutes.home,
-        (_) => false,
-      );
+      await _checkAndNavigateOrPromptCompleteProfile();
     } on SocialAuthCancelled {
       // Usuario canceló — no mostramos error.
+      if (mounted) setState(() => _busy = false);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = _parseError(e));
@@ -350,6 +404,19 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                           controller: _nameCtrl,
                           hint: 'Nombre completo',
                           icon: Icons.person_outline_rounded,
+                        ),
+                        const SizedBox(height: 10),
+                        _LoginField(
+                          controller: _usernameCtrl,
+                          hint: 'Nombre de usuario (@username)',
+                          icon: Icons.alternate_email_rounded,
+                        ),
+                        const SizedBox(height: 10),
+                        _LoginField(
+                          controller: _ageCtrl,
+                          hint: 'Edad (años)',
+                          icon: Icons.calendar_today_rounded,
+                          keyboardType: TextInputType.number,
                         ),
                         const SizedBox(height: 10),
                       ],
@@ -648,6 +715,169 @@ class _CompactProviderButtonState extends State<_CompactProviderButton> {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompleteProfileDialog extends StatefulWidget {
+  final AppStore store;
+  const _CompleteProfileDialog({required this.store});
+
+  @override
+  State<_CompleteProfileDialog> createState() => _CompleteProfileDialogState();
+}
+
+class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
+  final _usernameCtrl = TextEditingController();
+  final _ageCtrl = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _usernameCtrl.dispose();
+    _ageCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_busy) return;
+    final username = _usernameCtrl.text.trim();
+    final ageStr = _ageCtrl.text.trim();
+
+    if (username.isEmpty) {
+      setState(() => _error = 'El nombre de usuario es obligatorio.');
+      return;
+    }
+    if (!RegExp(r'^[a-zA-Z0-9_]{3,15}$').hasMatch(username)) {
+      setState(() => _error = 'El nombre de usuario debe tener entre 3 y 15 caracteres y solo contener letras, números o guiones bajos.');
+      return;
+    }
+    final age = int.tryParse(ageStr);
+    if (age == null || age <= 0 || age > 120) {
+      setState(() => _error = 'Por favor, introduce una edad válida.');
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+
+    try {
+      await widget.store.updateProfile(
+        username: username,
+        age: age,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = e.toString().replaceAll('Exception: ', '');
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Glass(
+          radius: 24,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Center(
+                child: Text(
+                  '¡Ya casi estás listo! 🚀',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Completa tu registro ingresando tu nombre de usuario y tu edad.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: RefColors.muted,
+                  fontSize: 12.5,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 20),
+              if (_error != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: RefColors.urgent.withValues(alpha: .1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: RefColors.urgent.withValues(alpha: .3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline_rounded, color: RefColors.urgent, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(color: RefColors.urgent, fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              _LoginField(
+                controller: _usernameCtrl,
+                hint: 'Nombre de usuario (@username)',
+                icon: Icons.alternate_email_rounded,
+              ),
+              const SizedBox(height: 12),
+              _LoginField(
+                controller: _ageCtrl,
+                hint: 'Edad (años)',
+                icon: Icons.calendar_today_rounded,
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 20),
+              _busy
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(RefColors.pink),
+                      ),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Cta(
+                          'Finalizar Registro',
+                          onTap: _submit,
+                        ),
+                        const SizedBox(height: 10),
+                        GhostButton(
+                          'Cancelar',
+                          onTap: () => Navigator.of(context).pop(false),
+                        ),
+                      ],
+                    ),
+            ],
           ),
         ),
       ),

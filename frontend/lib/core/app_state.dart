@@ -493,11 +493,15 @@ class AppStore extends ChangeNotifier {
     required String email,
     required String password,
     required String displayName,
+    required String username,
+    required int age,
   }) async {
     final result = await api.registerEmail(
       email: email,
       password: password,
       displayName: displayName,
+      username: username,
+      age: age,
     );
     _currentUser = result.user;
     _sessionToken = result.session.token;
@@ -543,12 +547,16 @@ class AppStore extends ChangeNotifier {
     String? displayName,
     String? avatarUrl,
     String? locale,
+    String? username,
+    int? age,
   }) async {
     if (!isLoggedIn) return;
     final updated = await api.updateProfile(
       displayName: displayName,
       avatarUrl: avatarUrl,
       locale: locale,
+      username: username,
+      age: age,
     );
     _currentUser = updated;
     if (_sessionToken != null) {
