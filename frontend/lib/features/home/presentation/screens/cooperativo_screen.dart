@@ -763,7 +763,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     }
     if (mounted) {
       store.setActiveDeck(deckId);
-      const finalPath = AppRoutes.cooperativoJuego;
+      final finalPath = '${AppRoutes.flow}/$targetSlug';
       debugPrint('[coop] Guest navigating to route: $finalPath');
       Navigator.pushNamed(context, finalPath);
     } else {
@@ -1407,7 +1407,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                             _coop!.updateLocalCardState(deckId: selectedDeckId, cardIndex: 0, slug: '00-solo-lectura');
                             _coop!.broadcastCard(deckId: selectedDeckId, cardIndex: 0, slug: '00-solo-lectura');
                             if (context.mounted) {
-                              Navigator.pushNamed(context, AppRoutes.cooperativoJuego);
+                              Navigator.pushNamed(context, '${AppRoutes.flow}/00-solo-lectura');
                             } else {
                               debugPrint('[coop] Host navigation failed: context not mounted');
                             }
@@ -4177,7 +4177,8 @@ class _CoopTeamRow extends StatelessWidget {
 
   Widget _buildMate(String userId, BuildContext context) {
     final isMe = userId == CoopService.activeUserId;
-    final displayName = isMe ? 'Tú' : userId;
+    final rawName = state.memberNames[userId];
+    final displayName = isMe ? 'Tú' : (rawName == null || rawName.isEmpty ? userId : rawName);
     
     final hasFailed = failedUserIds.contains(userId);
     final isActive = activeTurnUserId == userId;
@@ -4199,8 +4200,10 @@ class _CoopTeamRow extends StatelessWidget {
     ];
     final gradient = gradients[userId.hashCode % gradients.length];
 
+    final avatarLetter = displayName.isNotEmpty ? displayName.substring(0, 1).toUpperCase() : 'U';
+
     return _CoopMate(
-      userId.substring(0, 1).toUpperCase(),
+      avatarLetter,
       displayName,
       statusText,
       done: isActive,
@@ -4899,8 +4902,11 @@ class _CoopScoreCard extends StatelessWidget {
   }
 
   Widget _buildMemberScoreRow(String userId, int score) {
+    final state = CoopService.active?.state;
     final isMe = userId == CoopService.activeUserId;
-    final name = isMe ? 'Tú ($userId)' : userId;
+    final rawName = state?.memberNames[userId];
+    final displayName = isMe ? 'Tú' : (rawName == null || rawName.isEmpty ? userId : rawName);
+    final name = isMe ? '$displayName ($userId)' : displayName;
     final correct = score ~/ 10;
     
     return Padding(
