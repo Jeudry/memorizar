@@ -196,17 +196,22 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
             _checkGuestCanStartGame(store);
           }
         } else if (msg.type == 'countdown' && mounted) {
-          final store = AppScope.of(context);
-          debugPrint('[coop] Guest starting local countdown in response to countdown message');
-          setState(() {
-            _countdownStarted = true;
-            _guestCountdownFinished = false;
-          });
-          _startLocalCountdown(() {
-            _guestCountdownFinished = true;
-            debugPrint('[coop] Guest local countdown finished');
-            _checkGuestCanStartGame(store);
-          });
+          final iAmHost = _currentUserId == _state?.hostId;
+          if (iAmHost) {
+            debugPrint('[coop] Host ignoring broadcasted countdown message');
+          } else {
+            final store = AppScope.of(context);
+            debugPrint('[coop] Guest starting local countdown in response to countdown message');
+            setState(() {
+              _countdownStarted = true;
+              _guestCountdownFinished = false;
+            });
+            _startLocalCountdown(() {
+              _guestCountdownFinished = true;
+              debugPrint('[coop] Guest local countdown finished');
+              _checkGuestCanStartGame(store);
+            });
+          }
         }
       });
     }
