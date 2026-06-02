@@ -3969,6 +3969,12 @@ class _CoopSettingsCard extends StatelessWidget {
                               duration: const Duration(seconds: 2),
                             ),
                           );
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const CooperativoConfigScreen(),
+                            ),
+                          );
                         },
                         leading: Container(
                           padding: const EdgeInsets.all(8),
