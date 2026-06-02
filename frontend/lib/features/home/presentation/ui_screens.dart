@@ -2298,7 +2298,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           if (shouldPop && context.mounted) {
             await CoopService.active?.disconnect();
             CoopService.active = null;
-            Navigator.pop(context);
+            Navigator.pushNamedAndRemoveUntil(
+              context,
+              AppRoutes.cooperativo,
+              (route) => route.isFirst,
+            );
           }
         } else {
           Navigator.pop(context);
@@ -2323,7 +2327,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   if (shouldPop && context.mounted) {
                     await CoopService.active?.disconnect();
                     CoopService.active = null;
-                    Navigator.pop(context);
+                    Navigator.pushNamedAndRemoveUntil(
+                      context,
+                      AppRoutes.cooperativo,
+                      (route) => route.isFirst,
+                    );
                   }
                 },
               ),
