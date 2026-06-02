@@ -58,6 +58,32 @@ Utilizar la herramienta `manage_task` con la acción `send_input` y el comando `
 - Si por alguna razón `8081` estuviera ocupado, **preguntar antes** de cambiarlo.
 - Al levantar backend + web + macOS en paralelo, los tres coexisten sin conflicto (8080 API, 8081 web, macOS usa loopback local).
 
+### Gotcha: Flutter Web debug mode queda en negro 5-15 min en este Mac
+
+**Síntoma**: abrís `http://127.0.0.1:8081` y la página queda **negra/vacía** durante varios minutos, sin UI ni errores en consola. La consola solo muestra `DDC is about to load 932/932 scripts`. El server responde HTTP 200 al toque (es el shell HTML), pero Flutter no renderiza hasta que **todos** los scripts del DDC bajan.
+
+**Causa**: `flutter run -d chrome` por default usa el **Dart Development Compiler (DDC)**, que sirve ~932 archivos JS que el browser descarga secuencialmente. En este Mac el primer load es lentísimo (5-15 min). El problema NO es de red ni de código — es la naturaleza de DDC en debug.
+
+**Fix** — usar **profile mode** para iterar en web (es lo que está corriendo ahora):
+
+```bash
+cd frontend && flutter run -d chrome --profile --web-port=8081 --web-hostname=127.0.0.1
+```
+
+- Carga en ~10s en vez de 5-15 min.
+- **Trade-off**: pierde hot reload. Para ver un cambio hay que `R` (Hot Restart) o reiniciar la sesión.
+- Si la página queda negra, antes de tocar nada: **esperar 30s y refrescar**; en profile rara vez pasa, pero el primer build puede tardar.
+
+**Si necesitás hot reload sí o sí** (ej. tocando widgets con frecuencia), quedate en debug:
+
+```bash
+cd frontend && flutter run -d chrome --web-port=8081 --web-hostname=127.0.0.1
+```
+
+…y **esperá** los 5-15 min del primer load de DDC. Después de eso, hot reload funciona normal. La paciencia es la única cura en debug.
+
+**Para verificar el problema en DevTools**: Network → filtrar `.js` → ver cómo bajan uno a uno con tiempos altos.
+
 ---
 
 ## Frontend (Flutter)
