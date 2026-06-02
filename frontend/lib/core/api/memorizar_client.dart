@@ -58,12 +58,15 @@ class MemorizarClient {
           ? body['error'] as String
           : 'HTTP ${r.statusCode}';
       
-      // Traducir todos los errores comunes del backend en Go
+      // Traducir todos los errores comunes del backend en Go.
+      // Importante: chequear los casos más específicos ANTES de los genéricos
+      // (ej. "username already in use" antes que "already in use") para no
+      // mostrar el mensaje de email cuando el error es de username.
       String friendlyMsg = rawError;
-      if (rawError.contains('email already in use') || rawError.contains('already in use')) {
-        friendlyMsg = 'Este correo electrónico ya está registrado. Por favor, inicia sesión.';
-      } else if (rawError.contains('username already in use')) {
+      if (rawError.contains('username already in use')) {
         friendlyMsg = 'Este nombre de usuario ya está en uso. Elige otro.';
+      } else if (rawError.contains('email already in use')) {
+        friendlyMsg = 'Este correo electrónico ya está registrado. Por favor, inicia sesión.';
       } else if (rawError.contains('username must be 3-15 chars')) {
         friendlyMsg = 'El usuario debe tener entre 3 y 15 letras, números o guiones bajos.';
       } else if (rawError.contains('invalid age')) {

@@ -249,8 +249,13 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       }
     }
     
-    // Mapeo en español amigable
-    if (raw.contains('email already in use') || raw.contains('already in use')) {
+    // Mapeo en español amigable. Chequear casos específicos antes que
+    // genéricos (ej. "username already in use" antes que "already in use")
+    // para no mostrar el mensaje de email cuando el error es de username.
+    if (raw.contains('username already in use')) {
+      return 'Este nombre de usuario ya está en uso. Elige otro.';
+    }
+    if (raw.contains('email already in use')) {
       return 'Este correo electrónico ya está registrado. Por favor, inicia sesión.';
     }
     if (raw.contains('invalid credentials') || raw.contains('invalid session')) {
