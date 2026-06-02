@@ -897,8 +897,9 @@ class AppStore extends ChangeNotifier {
   MemoryCardData get activeCard {
     if (activeDeck.cards.isEmpty) return emptyCard;
     final deck = activeDeck;
+    final isCombinedBible = deck.isBible && deck.cards.length > 1 && _sessionDailyTarget > 1;
     // Si es Biblia, hay más de un versículo, y el usuario configuró estudiar más de 1 a la vez, se combinan.
-    if (false) {
+    if (isCombinedBible) {
       final count = _sessionDailyTarget.clamp(1, deck.cards.length);
       final subList = deck.cards.take(count).toList();
       final combinedFront = _collapseBibleReferences(subList.map((c) => c.front).toList());
@@ -1212,7 +1213,7 @@ class AppStore extends ChangeNotifier {
   /// Retorna `true` si todavía queda otra tarjeta dentro del target diario;
   /// `false` cuando la sesión ya completó su cuota y debe ir al review final.
   bool advanceToNextSessionCard({required bool correct}) {
-    final isCombinedBible = false;
+    final isCombinedBible = activeDeck.isBible && activeDeck.cards.length > 1 && _sessionDailyTarget > 1;
     answerCurrentCard(correct);
     if (isCombinedBible) {
       _sessionCardsCompleted = _sessionDailyTarget;
@@ -1680,9 +1681,10 @@ class AppStore extends ChangeNotifier {
     if (deckIndex < 0) return;
     final deck = activeDeck;
     final cards = [...deck.cards];
-    final isCombinedBible = false;
+    final isCombinedBible = deck.isBible && deck.cards.length > 1 && _sessionDailyTarget > 1;
     if (isCombinedBible) {
-      for (var i = 0; i < cards.length; i++) {
+      final limit = _sessionDailyTarget.clamp(1, cards.length);
+      for (var i = 0; i < limit; i++) {
         final card = cards[i];
         cards[i] = card.copyWith(
           retention: (card.retention + (correct ? 8 : -14)).clamp(18, 100),
@@ -1702,9 +1704,9 @@ class AppStore extends ChangeNotifier {
         isBible: deck.isBible,
       );
       if (correct) {
-        _correctAnswers += cards.length;
+        _correctAnswers += limit;
       } else {
-        _wrongAnswers += cards.length;
+        _wrongAnswers += limit;
       }
       _currentCardIndex = 0;
       notifyListeners();
