@@ -757,12 +757,10 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     final canStart = !_countdownStarted || _guestCountdownFinished;
     debugPrint('[coop] _checkGuestCanStartGame: canStart=$canStart, countdownStarted=$_countdownStarted, guestCountdownFinished=$_guestCountdownFinished, pendingStartDeckId=$_pendingStartDeckId, pendingStartSlug=$_pendingStartSlug');
     if (canStart && _pendingStartDeckId != null && _pendingStartSlug != null) {
-      store.configureSession(
-        difficulty: _pendingStartDifficulty ?? 0,
-        dailyTarget: _pendingStartDailyTarget ?? 3,
-      );
       final deckId = _pendingStartDeckId!;
       final slug = _pendingStartSlug!;
+      final difficulty = _pendingStartDifficulty ?? 0;
+      final dailyTarget = _pendingStartDailyTarget ?? 3;
       
       _pendingStartDeckId = null;
       _pendingStartSlug = null;
@@ -772,11 +770,17 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
       _countdownStarted = false;
 
       debugPrint('[coop] Redirecting guest to flow, calling _navigateWhenDeckReady');
-      _navigateWhenDeckReady(store, deckId, slug);
+      _navigateWhenDeckReady(store, deckId, slug, difficulty, dailyTarget);
     }
   }
 
-  void _navigateWhenDeckReady(AppStore store, String deckId, String targetSlug) async {
+  void _navigateWhenDeckReady(
+    AppStore store,
+    String deckId,
+    String targetSlug,
+    int difficulty,
+    int dailyTarget,
+  ) async {
     debugPrint('[coop] _navigateWhenDeckReady: checking deck availability in store');
     int attempts = 0;
     while (attempts < 15) {
@@ -790,8 +794,12 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     }
     if (mounted) {
       store.setActiveDeck(deckId);
+      store.configureSession(
+        difficulty: difficulty,
+        dailyTarget: dailyTarget,
+      );
       final finalPath = '${AppRoutes.flow}/$targetSlug';
-      debugPrint('[coop] Guest navigating to route: $finalPath');
+      debugPrint('[coop] Guest navigating to route: $finalPath, dailyTarget=$dailyTarget');
       Navigator.pushNamed(context, finalPath);
     } else {
       debugPrint('[coop] Guest navigation skipped: context not mounted');
@@ -1409,6 +1417,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                           final target = state.sessionDailyTarget == 0 ? 3 : state.sessionDailyTarget;
                           final store = AppScope.of(context);
                           debugPrint('[coop] Host clicked start game. selectedDeckId=$selectedDeckId, target=$target');
+                          store.setActiveDeck(selectedDeckId);
                           store.configureSession(
                             difficulty: state.sessionDifficulty,
                             dailyTarget: target,
