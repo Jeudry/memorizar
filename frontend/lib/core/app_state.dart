@@ -303,14 +303,15 @@ class AppStore extends ChangeNotifier {
         if (invites.isNotEmpty) {
           bool updated = false;
           for (final invite in invites) {
-            if (invite is Map<String, dynamic>) {
-              final code = invite['roomCode'] as String? ?? '';
+            if (invite is Map) {
+              final inviteMap = Map<String, dynamic>.from(invite);
+              final code = inviteMap['roomCode'] as String? ?? '';
               final alreadyHas = _pendingCoopInvites.any((i) => i['roomCode'] == code);
               if (!alreadyHas && code.isNotEmpty) {
-                _pendingCoopInvites.add(invite);
+                _pendingCoopInvites.add(inviteMap);
                 updated = true;
                 
-                final hostName = invite['hostName'] as String? ?? 'Tu amigo';
+                final hostName = inviteMap['hostName'] as String? ?? 'Tu amigo';
                 unawaited(PushService.instance.showLocalNow(
                   id: code.hashCode,
                   title: '¡Invitación Cooperativa! 🎮',
@@ -765,8 +766,8 @@ class AppStore extends ChangeNotifier {
       Map<String, dynamic>? snap;
       if (payload is String && payload.isNotEmpty) {
         snap = jsonDecode(payload) as Map<String, dynamic>;
-      } else if (payload is Map<String, dynamic>) {
-        snap = payload;
+      } else if (payload is Map) {
+        snap = Map<String, dynamic>.from(payload);
       }
       _latestRemoteSnapshot = snap;
       if (snap != null && autoApply) {

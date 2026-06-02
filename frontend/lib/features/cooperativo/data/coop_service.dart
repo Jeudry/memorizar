@@ -108,13 +108,17 @@ class CoopMessage {
     this.payload,
   });
 
-  factory CoopMessage.fromJson(Map<String, dynamic> json) => CoopMessage(
-        type: (json['type'] as String?) ?? '',
-        userId: (json['userId'] as String?) ?? '',
-        payload: json['payload'] is Map<String, dynamic>
-            ? json['payload'] as Map<String, dynamic>
-            : null,
-      );
+  factory CoopMessage.fromJson(Map<String, dynamic> json) {
+    Map<String, dynamic>? decodedPayload;
+    if (json['payload'] is Map) {
+      decodedPayload = Map<String, dynamic>.from(json['payload'] as Map);
+    }
+    return CoopMessage(
+      type: (json['type'] as String?) ?? '',
+      userId: (json['userId'] as String?) ?? '',
+      payload: decodedPayload,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'type': type,

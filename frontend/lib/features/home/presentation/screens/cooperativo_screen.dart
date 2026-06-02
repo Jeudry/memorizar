@@ -176,17 +176,18 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
             ));
             for (var i = 0; i < rawCards.length; i++) {
               final c = rawCards[i];
-              if (c is Map<String, dynamic>) {
-                final cId = c['id'] as String? ?? 'cd_${deckId}_$i';
+              if (c is Map) {
+                final map = Map<String, dynamic>.from(c);
+                final cId = map['id'] as String? ?? 'cd_${deckId}_$i';
                 await store.db!.upsertCard(CardsCompanion(
                   id: drift.Value(cId),
                   deckId: drift.Value(deckId),
-                  front: drift.Value(c['front'] as String? ?? ''),
-                  back: drift.Value(c['back'] as String? ?? ''),
-                  source: drift.Value(c['source'] as String? ?? 'coop_room'),
-                  icon: drift.Value(c['icon'] as String? ?? '🎯'),
-                  retention: drift.Value((c['retention'] as int?) ?? 100),
-                  lapses: drift.Value((c['lapses'] as int?) ?? 0),
+                  front: drift.Value(map['front'] as String? ?? ''),
+                  back: drift.Value(map['back'] as String? ?? ''),
+                  source: drift.Value(map['source'] as String? ?? 'coop_room'),
+                  icon: drift.Value(map['icon'] as String? ?? '🎯'),
+                  retention: drift.Value((map['retention'] as int?) ?? 100),
+                  lapses: drift.Value((map['lapses'] as int?) ?? 0),
                 ));
               }
             }
