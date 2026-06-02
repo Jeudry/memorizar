@@ -2222,6 +2222,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     ));
   }
 
+  bool _isInteractiveCoopSlug(String slug) {
+    return slug == '05-bloques' ||
+        slug == '06-completar-n1' ||
+        slug == '07-primera-letra-n1' ||
+        slug == '09-quiz' ||
+        slug == '09-quiz-avanzado' ||
+        slug == '10-completar-n2' ||
+        slug == '11-primera-letra-n2' ||
+        slug == '12-completar-n3' ||
+        slug == '13-primera-letra-n3';
+  }
+
 
 
   @override
@@ -2254,7 +2266,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     
     if (isCoop && coopState != null) {
       final mode = coopState.mode;
-      if (mode == 'turnos') {
+      if (mode == 'turnos' && _isInteractiveCoopSlug(slug)) {
         final activeUser = _activeTurnUserId;
         final isMe = activeUser == CoopService.activeUserId;
         final isMeFailed = _failedUserIds.contains(CoopService.activeUserId);
