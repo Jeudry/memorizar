@@ -338,6 +338,14 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
       );
 
       _clearInlineDeckForm();
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const CooperativoConfigScreen(),
+          ),
+        );
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error al guardar el mazo: $e')),
@@ -434,6 +442,14 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
         _bibleSearchCtrl.clear();
         _creatingDeckInline = false;
       });
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const CooperativoConfigScreen(),
+          ),
+        );
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error al guardar el mazo: $e')),
@@ -543,6 +559,14 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
         _deckTitleCtrl.clear();
         _creatingDeckInline = false;
       });
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const CooperativoConfigScreen(),
+          ),
+        );
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error al guardar el mazo: $e')),
@@ -630,6 +654,12 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                           SnackBar(
                             content: Text('Mazo configurado a: ${d.title} 🎯'),
                             duration: const Duration(seconds: 2),
+                          ),
+                        );
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const CooperativoConfigScreen(),
                           ),
                         );
                       },
