@@ -48,8 +48,18 @@ class RemoteUser {
         'isOnline': isOnline,
       };
 
+  String get effectiveName {
+    if (displayName.isNotEmpty && !displayName.startsWith('usr_')) {
+      return displayName;
+    }
+    if (username.isNotEmpty) {
+      return username;
+    }
+    return id;
+  }
+
   String get initial =>
-      displayName.isNotEmpty ? displayName.substring(0, 1).toUpperCase() : '?';
+      effectiveName.isNotEmpty ? effectiveName.substring(0, 1).toUpperCase() : '?';
 }
 
 class Session {

@@ -497,7 +497,7 @@ void _showAccountMenu(BuildContext context) {
               if (store.isLoggedIn) ...[
                 _AccountMenuRow(
                   icon: Icons.account_circle_outlined,
-                  label: store.currentUser?.displayName ?? 'Mi cuenta',
+                  label: store.currentUser?.effectiveName ?? 'Mi cuenta',
                   subtitle: store.currentUser?.email ?? '',
                   onTap: () {
                     Navigator.of(sheetCtx).pop();
@@ -724,7 +724,7 @@ class _AppHeader extends StatelessWidget {
               ),
               Text(
                 store.isLoggedIn
-                    ? 'Hola ${store.currentUser?.displayName ?? "Usuario"}'
+                    ? 'Hola ${store.currentUser?.effectiveName ?? "Usuario"}'
                     : 'Invitado',
                 style: const TextStyle(
                   fontSize: 17,

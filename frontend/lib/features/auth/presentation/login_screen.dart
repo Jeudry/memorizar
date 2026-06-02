@@ -23,7 +23,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   final _passCtrl = TextEditingController();
   final _nameCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
-  final _ageCtrl = TextEditingController();
+  final _birthDateCtrl = TextEditingController();
+  DateTime? _selectedBirthDate;
   bool _busy = false;
   String? _error;
   
@@ -47,9 +48,50 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     _passCtrl.dispose();
     _nameCtrl.dispose();
     _usernameCtrl.dispose();
-    _ageCtrl.dispose();
+    _birthDateCtrl.dispose();
     _logoAnimationCtrl.dispose();
     super.dispose();
+  }
+
+  int _calculateAge(DateTime birthDate) {
+    final today = DateTime.now();
+    int age = today.year - birthDate.year;
+    if (today.month < birthDate.month || (today.month == birthDate.month && today.day < birthDate.day)) {
+      age--;
+    }
+    return age;
+  }
+
+  Future<void> _selectBirthDate(BuildContext context) async {
+    final now = DateTime.now();
+    final firstDate = DateTime(now.year - 120);
+    final lastDate = DateTime(now.year - 1);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedBirthDate ?? DateTime(now.year - 18),
+      firstDate: firstDate,
+      lastDate: now,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: RefColors.cyan,
+              onPrimary: Colors.black,
+              surface: Color(0xFF161A22),
+              onSurface: Colors.white,
+            ),
+            dialogBackgroundColor: const Color(0xFF0F1219),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedBirthDate = picked;
+        _birthDateCtrl.text = "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+      });
+    }
   }
 
   Future<void> _emailSubmit() async {
@@ -69,7 +111,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       if (_isSignUp) {
         final name = _nameCtrl.text.trim();
         final username = _usernameCtrl.text.trim();
-        final ageStr = _ageCtrl.text.trim();
+        final birthDate = _selectedBirthDate;
 
         if (name.isEmpty) {
           throw Exception('El nombre completo es obligatorio.');
@@ -80,9 +122,12 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         if (!RegExp(r'^[a-zA-Z0-9_]{3,15}$').hasMatch(username)) {
           throw Exception('El usuario debe tener entre 3 y 15 caracteres y solo contener letras, números o guiones bajos.');
         }
-        final age = int.tryParse(ageStr);
-        if (age == null || age <= 0 || age > 120) {
-          throw Exception('Por favor, introduce una edad válida.');
+        if (birthDate == null) {
+          throw Exception('La fecha de nacimiento es obligatoria.');
+        }
+        final age = _calculateAge(birthDate);
+        if (age < 0 || age > 120) {
+          throw Exception('Por favor, selecciona una fecha de nacimiento válida.');
         }
         if (pass.length < 8) {
           throw Exception('La contraseña debe tener al menos 8 caracteres.');
@@ -409,14 +454,15 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         _LoginField(
                           controller: _usernameCtrl,
                           hint: 'Nombre de usuario (@username)',
-                          icon: Icons.alternate_email_rounded,
+                          icon: Icons.person_pin_rounded,
                         ),
                         const SizedBox(height: 10),
                         _LoginField(
-                          controller: _ageCtrl,
-                          hint: 'Edad (años)',
+                          controller: _birthDateCtrl,
+                          hint: 'Fecha de nacimiento',
                           icon: Icons.calendar_today_rounded,
-                          keyboardType: TextInputType.number,
+                          readOnly: true,
+                          onTap: () => _selectBirthDate(context),
                         ),
                         const SizedBox(height: 10),
                       ],
@@ -545,6 +591,8 @@ class _LoginField extends StatefulWidget {
   final IconData icon;
   final bool obscure;
   final TextInputType? keyboardType;
+  final bool readOnly;
+  final VoidCallback? onTap;
 
   const _LoginField({
     required this.controller,
@@ -552,6 +600,8 @@ class _LoginField extends StatefulWidget {
     required this.icon,
     this.obscure = false,
     this.keyboardType,
+    this.readOnly = false,
+    this.onTap,
   });
 
   @override
@@ -614,6 +664,8 @@ class _LoginFieldState extends State<_LoginField> {
               focusNode: _focusNode,
               obscureText: widget.obscure,
               keyboardType: widget.keyboardType,
+              readOnly: widget.readOnly,
+              onTap: widget.onTap,
               autocorrect: false,
               enableSuggestions: !widget.obscure,
               style: const TextStyle(
@@ -732,21 +784,61 @@ class _CompleteProfileDialog extends StatefulWidget {
 
 class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
   final _usernameCtrl = TextEditingController();
-  final _ageCtrl = TextEditingController();
+  final _birthDateCtrl = TextEditingController();
+  DateTime? _selectedBirthDate;
   bool _busy = false;
   String? _error;
 
   @override
   void dispose() {
     _usernameCtrl.dispose();
-    _ageCtrl.dispose();
+    _birthDateCtrl.dispose();
     super.dispose();
+  }
+
+  int _calculateAge(DateTime birthDate) {
+    final today = DateTime.now();
+    int age = today.year - birthDate.year;
+    if (today.month < birthDate.month || (today.month == birthDate.month && today.day < birthDate.day)) {
+      age--;
+    }
+    return age;
+  }
+
+  Future<void> _selectBirthDate(BuildContext context) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedBirthDate ?? DateTime(now.year - 18),
+      firstDate: DateTime(now.year - 120),
+      lastDate: now,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: RefColors.pink,
+              onPrimary: Colors.white,
+              surface: Color(0xFF140F26),
+              onSurface: Colors.white,
+            ),
+            dialogBackgroundColor: const Color(0xFF0F0C1B),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedBirthDate = picked;
+        _birthDateCtrl.text = "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+      });
+    }
   }
 
   Future<void> _submit() async {
     if (_busy) return;
     final username = _usernameCtrl.text.trim();
-    final ageStr = _ageCtrl.text.trim();
+    final birthDate = _selectedBirthDate;
 
     if (username.isEmpty) {
       setState(() => _error = 'El nombre de usuario es obligatorio.');
@@ -756,9 +848,13 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
       setState(() => _error = 'El nombre de usuario debe tener entre 3 y 15 caracteres y solo contener letras, números o guiones bajos.');
       return;
     }
-    final age = int.tryParse(ageStr);
-    if (age == null || age <= 0 || age > 120) {
-      setState(() => _error = 'Por favor, introduce una edad válida.');
+    if (birthDate == null) {
+      setState(() => _error = 'La fecha de nacimiento es obligatoria.');
+      return;
+    }
+    final age = _calculateAge(birthDate);
+    if (age < 0 || age > 120) {
+      setState(() => _error = 'Por favor, introduce una fecha de nacimiento válida.');
       return;
     }
 
@@ -809,7 +905,7 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Completa tu registro ingresando tu nombre de usuario y tu edad.',
+                'Completa tu registro ingresando tu nombre de usuario y tu fecha de nacimiento.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: RefColors.muted,
@@ -847,14 +943,15 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
               _LoginField(
                 controller: _usernameCtrl,
                 hint: 'Nombre de usuario (@username)',
-                icon: Icons.alternate_email_rounded,
+                icon: Icons.person_pin_rounded,
               ),
               const SizedBox(height: 12),
               _LoginField(
-                controller: _ageCtrl,
-                hint: 'Edad (años)',
+                controller: _birthDateCtrl,
+                hint: 'Fecha de nacimiento',
                 icon: Icons.calendar_today_rounded,
-                keyboardType: TextInputType.number,
+                readOnly: true,
+                onTap: () => _selectBirthDate(context),
               ),
               const SizedBox(height: 20),
               _busy

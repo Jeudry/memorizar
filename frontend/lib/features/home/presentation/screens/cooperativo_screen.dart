@@ -81,7 +81,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
       await _coop!.joinRoom(
         code: code,
         userId: store.currentUser!.id,
-        name: store.currentUser!.displayName,
+        name: store.currentUser!.effectiveName,
       );
       CoopService.active = _coop;
       CoopService.activeUserId = store.currentUser!.id;
@@ -754,7 +754,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     }
     if (mounted) {
       store.setActiveDeck(deckId);
-      final finalPath = '${AppRoutes.flow}/$targetSlug';
+      const finalPath = AppRoutes.cooperativoJuego;
       debugPrint('[coop] Guest navigating to route: $finalPath');
       Navigator.pushNamed(context, finalPath);
     } else {
@@ -786,13 +786,15 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
       child: ClipRect(
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0),
-          child: Container(
-            color: Colors.black.withValues(alpha: 0.5),
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
+          child: Material(
+            type: MaterialType.transparency,
+            child: Container(
+              color: Colors.black.withValues(alpha: 0.5),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
                     'PREPARADOS',
                     style: TextStyle(
                       color: RefColors.lime.withValues(alpha: 0.7),
@@ -843,8 +845,9 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Future<void> _create() async {
     final store = AppScope.of(context);
@@ -859,7 +862,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     try {
       await _coop!.createRoom(
         userId: store.currentUser!.id,
-        name: store.currentUser!.displayName,
+        name: store.currentUser!.effectiveName,
         isPublic: _isPublic,
         deckId: '',
         deckName: '',
@@ -889,7 +892,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
       await _coop!.joinRoom(
         code: code,
         userId: store.currentUser!.id,
-        name: store.currentUser!.displayName,
+        name: store.currentUser!.effectiveName,
       );
       CoopService.active = _coop;
       CoopService.activeUserId = store.currentUser!.id;
@@ -1388,7 +1391,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                             debugPrint('[coop] Host countdown finished. Broadcasting first card and navigating.');
                             _coop!.broadcastCard(deckId: selectedDeckId, cardIndex: 0, slug: '00-solo-lectura');
                             if (context.mounted) {
-                              Navigator.pushNamed(context, '${AppRoutes.flow}/00-solo-lectura');
+                              Navigator.pushNamed(context, AppRoutes.cooperativoJuego);
                             } else {
                               debugPrint('[coop] Host navigation failed: context not mounted');
                             }
@@ -2848,15 +2851,20 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
                 if (i > 0) const SizedBox(width: 14),
                 GestureDetector(
                   onTap: () => _showMemberProfile(memberIds[i]),
-                  child: _CoopParticipant(
-                    memberIds[i].isNotEmpty ? memberIds[i][0].toUpperCase() : '?',
-                    memberIds[i] == me ? '${memberIds[i]} (tú)' : memberIds[i],
-                    memberIds[i] == hostId ? 'Host' : 'Listo',
-                    host: memberIds[i] == hostId,
-                    ready: true,
-                    gradient: memberIds[i] == me
-                        ? RefColors.cool
-                        : (i % 2 == 0 ? RefColors.primary : RefColors.purple),
+                  child: Builder(
+                    builder: (context) {
+                      final displayName = widget.roomState.memberNames[memberIds[i]] ?? memberIds[i];
+                      return _CoopParticipant(
+                        displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
+                        memberIds[i] == me ? '$displayName (tú)' : displayName,
+                        memberIds[i] == hostId ? 'Host' : 'Listo',
+                        host: memberIds[i] == hostId,
+                        ready: true,
+                        gradient: memberIds[i] == me
+                            ? RefColors.cool
+                            : (i % 2 == 0 ? RefColors.primary : RefColors.purple),
+                      );
+                    }
                   ),
                 ),
               ],
@@ -2910,7 +2918,7 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
                           await store.api.sendCoopInvite(
                             friendUserId: f.id,
                             roomCode: widget.roomState.code,
-                            hostName: store.currentUser?.displayName ?? 'Tu amigo',
+                            hostName: store.currentUser?.effectiveName ?? 'Tu amigo',
                           );
                         } catch (e) {
                           debugPrint('Error sending coop invite: $e');

@@ -12,6 +12,7 @@ class CoopRoomState {
   final String code;
   final String hostId;
   final Set<String> memberIds;
+  final Map<String, String> memberNames;
   /// Tarjeta actualmente sincronizada por el host. `null` antes de empezar.
   final String? currentDeckId;
   final int currentCardIndex;
@@ -31,6 +32,7 @@ class CoopRoomState {
     required this.code,
     required this.hostId,
     required this.memberIds,
+    this.memberNames = const {},
     this.currentDeckId,
     this.currentCardIndex = 0,
     this.currentSlug,
@@ -46,6 +48,7 @@ class CoopRoomState {
 
   CoopRoomState copyWith({
     Set<String>? memberIds,
+    Map<String, String>? memberNames,
     Map<String, int>? scores,
     String? lobbyDeckId,
     String? lobbyDeckName,
@@ -60,6 +63,7 @@ class CoopRoomState {
         code: code,
         hostId: hostId,
         memberIds: memberIds ?? this.memberIds,
+        memberNames: memberNames ?? this.memberNames,
         currentDeckId: currentDeckId,
         currentCardIndex: currentCardIndex,
         currentSlug: currentSlug ?? this.currentSlug,
@@ -78,6 +82,7 @@ class CoopRoomState {
         code: code,
         hostId: hostId,
         memberIds: memberIds,
+        memberNames: memberNames,
         currentDeckId: deckId,
         currentCardIndex: cardIndex,
         currentSlug: slug ?? this.currentSlug,
@@ -219,6 +224,7 @@ class CoopService {
       code: code,
       hostId: hostId,
       memberIds: {userId},
+      memberNames: {userId: name},
       lobbyDeckId: lobbyDeckId,
       lobbyDeckName: lobbyDeckName,
       mode: mode,
@@ -246,12 +252,22 @@ class CoopService {
     if (state == null) return;
     switch (msg.type) {
       case 'join':
-        _state = state.copyWith(memberIds: {...state.memberIds, msg.userId});
+        String name = msg.userId;
+        if (msg.payload != null && msg.payload!['name'] is String) {
+          name = msg.payload!['name'] as String;
+        }
+        _state = state.copyWith(
+          memberIds: {...state.memberIds, msg.userId},
+          memberNames: {...state.memberNames, msg.userId: name},
+        );
         _stateCtrl.add(_state!);
         break;
       case 'leave':
+        final newMembers = {...state.memberIds}..remove(msg.userId);
+        final newNames = {...state.memberNames}..remove(msg.userId);
         _state = state.copyWith(
-          memberIds: {...state.memberIds}..remove(msg.userId),
+          memberIds: newMembers,
+          memberNames: newNames,
         );
         _stateCtrl.add(_state!);
         break;

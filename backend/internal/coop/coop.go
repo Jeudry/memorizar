@@ -297,9 +297,14 @@ func (h *Hub) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 func (r *Room) add(m *Member) {
 	r.mu.Lock()
 	r.LastActivityAt = time.Now().UTC()
-	// Enviar mensaje "join" por cada miembro existente al nuevo integrante
+	// Enviar mensaje "join" por cada miembro existente al nuevo integrante, incluyendo su nombre en el payload
 	for _, existing := range r.members {
-		msg := Message{Type: "join", UserID: existing.UserID}
+		payload, _ := json.Marshal(map[string]string{"name": existing.DisplayName})
+		msg := Message{
+			Type:    "join",
+			UserID:  existing.UserID,
+			Payload: payload,
+		}
 		data, _ := json.Marshal(msg)
 		select {
 		case m.send <- data:
@@ -308,7 +313,13 @@ func (r *Room) add(m *Member) {
 	}
 	r.members[m.UserID] = m
 	r.mu.Unlock()
-	r.broadcast(Message{Type: "join", UserID: m.UserID})
+
+	newPayload, _ := json.Marshal(map[string]string{"name": m.DisplayName})
+	r.broadcast(Message{
+		Type:    "join",
+		UserID:  m.UserID,
+		Payload: newPayload,
+	})
 }
 
 func (h *Hub) RemoveMember(r *Room, m *Member) {

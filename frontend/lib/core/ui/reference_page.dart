@@ -86,7 +86,7 @@ class ReferencePage extends StatelessWidget {
                   await coop.joinRoom(
                     code: roomCode,
                     userId: store.currentUser!.id,
-                    name: store.currentUser!.displayName,
+                    name: store.currentUser!.effectiveName,
                   );
                   CoopService.active = coop;
                   CoopService.activeUserId = store.currentUser!.id;
