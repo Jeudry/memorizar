@@ -135,7 +135,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
           } else {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                _showInitialDeckPrompt(context);
+                _showDeckSelectorFromPrompt();
               }
             });
           }
@@ -552,84 +552,6 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     }
   }
 
-  void _showInitialDeckPrompt(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.8),
-      barrierDismissible: false,
-      builder: (ctx) {
-        return Center(
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 24),
-            child: Glass(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Icon(
-                    Icons.layers_outlined,
-                    color: RefColors.lime,
-                    size: 40,
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'CONFIGURACIÓN INICIAL',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: RefColors.lime,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Mazo de la Sala',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Para comenzar la partida cooperativa, debes asignar un mazo. Elige uno existente de tu colección o crea uno nuevo.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: RefColors.muted,
-                      fontSize: 12,
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Cta(
-                    'Elegir de mis mazos →',
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _showDeckSelectorFromPrompt();
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  GhostButton(
-                    'Crear nuevo mazo',
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      setState(() {
-                        _creatingDeckInline = true;
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   void _showDeckSelectorFromPrompt() {
     final store = AppScope.of(context);
     final coop = _coop;
@@ -658,7 +580,32 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+              ListTile(
+                onTap: () {
+                  Navigator.pop(ctx);
+                  setState(() {
+                    _creatingDeckInline = true;
+                  });
+                },
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: RefColors.lime.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.add, color: RefColors.lime),
+                ),
+                title: const Text(
+                  'Crear nuevo mazo desde cero',
+                  style: TextStyle(color: RefColors.lime, fontWeight: FontWeight.w900),
+                ),
+                subtitle: const Text(
+                  'Si prefieres no usar un mazo de tu colección',
+                  style: TextStyle(color: Colors.white60, fontSize: 11),
+                ),
+              ),
+              const Divider(color: Colors.white10),
               Flexible(
                 child: ListView.builder(
                   shrinkWrap: true,
