@@ -161,8 +161,9 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
         if (msg.type == 'deck' && mounted) {
           final deckId = msg.payload?['deckId'] as String?;
           final title = msg.payload?['deckName'] as String?;
+          final isBible = (msg.payload?['isBible'] as bool?) ?? false;
           final rawCards = msg.payload?['cards'] as List?;
-          debugPrint('[coop] Received deck message: deckId=$deckId, cards count=${rawCards?.length}');
+          debugPrint('[coop] Received deck message: deckId=$deckId, isBible=$isBible, cards count=${rawCards?.length}');
           if (deckId != null && deckId.isNotEmpty && title != null && rawCards != null) {
             final store = AppScope.of(context);
             // Siempre upsert el mazo para asegurar la actualización de las tarjetas
@@ -171,7 +172,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
               title: drift.Value(title),
               subtitle: drift.Value('Mazo cooperativo compartido'),
               icon: drift.Value('🎯'),
-              isBible: drift.Value(false),
+              isBible: drift.Value(isBible),
               createdAt: drift.Value(DateTime.now()),
             ));
             for (var i = 0; i < rawCards.length; i++) {
@@ -195,6 +196,31 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
             store.setActiveDeck(deckId);
             debugPrint('[coop] Deck processed and loaded into AppStore, active deck set to $deckId');
             _checkGuestCanStartGame(store);
+          }
+        } else if (msg.type == 'join' && mounted) {
+          final iAmHost = _currentUserId == _state?.hostId;
+          if (iAmHost && _state?.lobbyDeckId != null && _state!.lobbyDeckId!.isNotEmpty) {
+            final store = AppScope.of(context);
+            final selectedDeckId = _state!.lobbyDeckId!;
+            final d = store.decks.firstWhere((dk) => dk.id == selectedDeckId, orElse: () => store.activeDeck);
+            if (d.id == selectedDeckId && d.cards.isNotEmpty) {
+              final cardsList = d.cards.map((c) => {
+                'id': c.id,
+                'front': c.front,
+                'back': c.back,
+                'source': c.source,
+                'icon': c.icon,
+                'retention': c.retention,
+                'lapses': c.lapses,
+              }).toList();
+              debugPrint('[coop] Host re-broadcasting deck $selectedDeckId to newly joined member');
+              _coop!.broadcastLobbyDeck(
+                deckId: selectedDeckId,
+                deckName: d.title,
+                isBible: d.isBible,
+                cards: cardsList,
+              );
+            }
           }
         } else if (msg.type == 'countdown' && mounted) {
           final iAmHost = _currentUserId == _state?.hostId;
@@ -1397,7 +1423,12 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                             'retention': c.retention,
                             'lapses': c.lapses,
                           }).toList();
-                          _coop!.broadcastLobbyDeck(deckId: selectedDeckId, deckName: d.title, cards: cardsList);
+                          _coop!.broadcastLobbyDeck(
+                            deckId: selectedDeckId,
+                            deckName: d.title,
+                            isBible: d.isBible,
+                            cards: cardsList,
+                          );
                           
                           // Broadcast countdown so guests also start their local countdowns
                           debugPrint('[coop] Host broadcasting countdown');

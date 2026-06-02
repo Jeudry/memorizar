@@ -348,13 +348,19 @@ class CoopService {
     ));
   }
 
-  void broadcastLobbyDeck({required String deckId, required String deckName, List<dynamic>? cards}) {
+  void broadcastLobbyDeck({
+    required String deckId,
+    required String deckName,
+    bool isBible = false,
+    List<dynamic>? cards,
+  }) {
     send(CoopMessage(
       type: 'deck',
       userId: '',
       payload: {
         'deckId': deckId,
         'deckName': deckName,
+        'isBible': isBible,
         if (cards != null) 'cards': cards,
       },
     ));
