@@ -77,7 +77,7 @@ func (r *Repository) scanUser(scan func(...any) error) (*domain.User, error) {
 	var providersJSON, createdAt, updatedAt string
 	var emailVerified int
 	if err := scan(
-		&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL,
+		&u.ID, &u.Email, &u.DisplayName, &u.Username, &u.Age, &u.AvatarURL,
 		&providersJSON, &u.PasswordHash, &u.Locale, &emailVerified,
 		&createdAt, &updatedAt,
 	); err != nil {
@@ -90,7 +90,7 @@ func (r *Repository) scanUser(scan func(...any) error) (*domain.User, error) {
 	return &u, nil
 }
 
-const userCols = `id, email, display_name, avatar_url, providers_json,
+const userCols = `id, email, display_name, username, age, avatar_url, providers_json,
     password_hash, locale, email_verified, created_at, updated_at`
 
 func (r *Repository) FindUserByID(userID string) (*domain.User, error) {
@@ -104,6 +104,15 @@ func (r *Repository) FindUserByID(userID string) (*domain.User, error) {
 
 func (r *Repository) FindUserByEmail(email string) (*domain.User, error) {
 	row := r.db.QueryRow(`SELECT `+userCols+` FROM users WHERE email = ?`, strings.ToLower(email))
+	u, err := r.scanUser(row.Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return u, err
+}
+
+func (r *Repository) FindUserByUsername(username string) (*domain.User, error) {
+	row := r.db.QueryRow(`SELECT `+userCols+` FROM users WHERE LOWER(username) = ?`, strings.ToLower(strings.TrimSpace(username)))
 	u, err := r.scanUser(row.Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -153,17 +162,19 @@ func (r *Repository) SaveUser(u domain.User) error {
 	}
 	_, err := r.db.Exec(`
 		INSERT INTO users (`+userCols+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 		    email = excluded.email,
 		    display_name = excluded.display_name,
+		    username = excluded.username,
+		    age = excluded.age,
 		    avatar_url = excluded.avatar_url,
 		    providers_json = excluded.providers_json,
 		    password_hash = excluded.password_hash,
 		    locale = excluded.locale,
 		    email_verified = excluded.email_verified,
 		    updated_at = excluded.updated_at`,
-		u.ID, strings.ToLower(u.Email), u.DisplayName, u.AvatarURL,
+		u.ID, strings.ToLower(u.Email), u.DisplayName, u.Username, u.Age, u.AvatarURL,
 		encodeProviders(u.Providers), u.PasswordHash, u.Locale, emailVerified,
 		formatTime(u.CreatedAt), formatTime(u.UpdatedAt),
 	)

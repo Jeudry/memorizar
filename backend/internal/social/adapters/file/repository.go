@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/Jeudry/memorizar/backend/internal/social/domain"
@@ -101,6 +102,19 @@ func (r *Repository) FindUserByEmail(email string) (*domain.User, error) {
 	defer r.mu.RUnlock()
 	for _, user := range r.state.Users {
 		if user.Email == email {
+			copy := user
+			return &copy, nil
+		}
+	}
+	return nil, nil
+}
+
+func (r *Repository) FindUserByUsername(username string) (*domain.User, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	target := strings.ToLower(strings.TrimSpace(username))
+	for _, user := range r.state.Users {
+		if strings.ToLower(user.Username) == target {
 			copy := user
 			return &copy, nil
 		}

@@ -30,6 +30,9 @@ var (
 	ErrEmailInUse          = errors.New("email already in use")
 	ErrInvalidCredentials  = errors.New("invalid credentials")
 	ErrWeakPassword        = errors.New("password must be at least 8 characters")
+	ErrUsernameInUse       = errors.New("username already in use")
+	ErrInvalidUsername     = errors.New("username must be 3-15 chars, alphanumeric or underscores")
+	ErrInvalidAge          = errors.New("invalid age")
 )
 
 type Service struct {
@@ -1010,6 +1013,26 @@ func (s *Service) buildCommentViews(comments []domain.FeedComment, friendByID ma
 	return views
 }
 
+func validateUsername(username string) error {
+	username = strings.TrimSpace(username)
+	if len(username) < 3 || len(username) > 15 {
+		return ErrInvalidUsername
+	}
+	for _, r := range username {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_') {
+			return ErrInvalidUsername
+		}
+	}
+	return nil
+}
+
+func validateAge(age int) error {
+	if age <= 0 || age > 120 {
+		return ErrInvalidAge
+	}
+	return nil
+}
+
 // EmailRegisterInput / EmailLoginInput cubren el flujo email+password como
 // alternativa a los providers sociales. EmailVerified queda en false hasta
 // que el usuario confirme via link (a implementar con SMTP).
@@ -1017,6 +1040,8 @@ type EmailRegisterInput struct {
 	Email       string `json:"email"`
 	Password    string `json:"password"`
 	DisplayName string `json:"displayName"`
+	Username    string `json:"username"`
+	Age         int    `json:"age"`
 }
 
 type EmailLoginInput struct {
@@ -1032,9 +1057,20 @@ func (s *Service) RegisterEmail(input EmailRegisterInput) (*SocialLoginOutput, e
 	if len(input.Password) < 8 {
 		return nil, ErrWeakPassword
 	}
+	username := strings.TrimSpace(input.Username)
+	if err := validateUsername(username); err != nil {
+		return nil, err
+	}
+	if err := validateAge(input.Age); err != nil {
+		return nil, err
+	}
 	existing, _ := s.repo.FindUserByEmail(email)
 	if existing != nil {
 		return nil, ErrEmailInUse
+	}
+	existingUsername, _ := s.repo.FindUserByUsername(username)
+	if existingUsername != nil {
+		return nil, ErrUsernameInUse
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -1045,6 +1081,8 @@ func (s *Service) RegisterEmail(input EmailRegisterInput) (*SocialLoginOutput, e
 		ID:           newID("usr"),
 		Email:        email,
 		DisplayName:  fallbackDisplayName(input.DisplayName, email),
+		Username:     username,
+		Age:          input.Age,
 		Providers:    map[string]string{},
 		PasswordHash: string(hash),
 		CreatedAt:    now,
@@ -1085,6 +1123,8 @@ type UpdateProfileInput struct {
 	DisplayName *string `json:"displayName,omitempty"`
 	AvatarURL   *string `json:"avatarUrl,omitempty"`
 	Locale      *string `json:"locale,omitempty"`
+	Username    *string `json:"username,omitempty"`
+	Age         *int    `json:"age,omitempty"`
 }
 
 func (s *Service) UpdateProfile(userID string, input UpdateProfileInput) (*domain.User, error) {
@@ -1103,6 +1143,25 @@ func (s *Service) UpdateProfile(userID string, input UpdateProfileInput) (*domai
 		if loc == "es" || loc == "en" || loc == "pt" || loc == "" {
 			user.Locale = loc
 		}
+	}
+	if input.Username != nil {
+		username := strings.TrimSpace(*input.Username)
+		if err := validateUsername(username); err != nil {
+			return nil, err
+		}
+		if strings.ToLower(username) != strings.ToLower(user.Username) {
+			existing, _ := s.repo.FindUserByUsername(username)
+			if existing != nil {
+				return nil, ErrUsernameInUse
+			}
+		}
+		user.Username = username
+	}
+	if input.Age != nil {
+		if err := validateAge(*input.Age); err != nil {
+			return nil, err
+		}
+		user.Age = *input.Age
 	}
 	user.UpdatedAt = s.now().UTC()
 	if err := s.repo.SaveUser(*user); err != nil {
@@ -1151,14 +1210,23 @@ func (s *Service) seed() {
 	hash, _ := bcrypt.GenerateFromPassword([]byte("12345678"), bcrypt.DefaultCost)
 	if u1, _ := s.repo.FindUserByID(out1.User.ID); u1 != nil {
 		u1.PasswordHash = string(hash)
+		u1.Username = "jeudry"
+		u1.Age = 25
+		u1.DisplayName = "Jeudry"
 		_ = s.repo.SaveUser(*u1)
 	}
 	if u2, _ := s.repo.FindUserByID(out2.User.ID); u2 != nil {
 		u2.PasswordHash = string(hash)
+		u2.Username = "sara"
+		u2.Age = 23
+		u2.DisplayName = "Sara"
 		_ = s.repo.SaveUser(*u2)
 	}
 	if u3, _ := s.repo.FindUserByID(out3.User.ID); u3 != nil {
 		u3.PasswordHash = string(hash)
+		u3.Username = "luis"
+		u3.Age = 28
+		u3.DisplayName = "Luis"
 		_ = s.repo.SaveUser(*u3)
 	}
 	friendship1, _ := s.RequestFriend(out2.User.ID, out1.User.ID)

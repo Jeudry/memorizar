@@ -36,6 +36,8 @@ type User struct {
 	ID          string            `json:"id"`
 	Email       string            `json:"email"`
 	DisplayName string            `json:"displayName"`
+	Username    string            `json:"username"`
+	Age         int               `json:"age"`
 	AvatarURL   string            `json:"avatarUrl,omitempty"`
 	Providers   map[string]string `json:"providers"`
 	// PasswordHash es bcrypt-encoded. Se setea solo cuando el usuario se
