@@ -395,6 +395,13 @@ class CoopService {
     _sub = null;
   }
 
+  void updateLocalCardState({required String deckId, required int cardIndex, String? slug}) {
+    final state = _state;
+    if (state == null) return;
+    _state = state.copyWithCard(deckId: deckId, cardIndex: cardIndex, slug: slug);
+    _stateCtrl.add(_state!);
+  }
+
   void dispose() {
     disconnect();
     _stateCtrl.close();

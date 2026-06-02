@@ -703,6 +703,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
         timer.cancel();
         return;
       }
+      bool finished = false;
       setState(() {
         if (_countdownSeconds! > 1) {
           _countdownSeconds = _countdownSeconds! - 1;
@@ -711,9 +712,12 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
           debugPrint('[coop] Local countdown finished, triggering callback');
           _countdownSeconds = null;
           timer.cancel();
-          onFinished();
+          finished = true;
         }
       });
+      if (finished) {
+        onFinished();
+      }
     });
   }
 
@@ -766,7 +770,13 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
   void dispose() {
     _sub?.cancel();
     _msgSub?.cancel();
-    _coop?.dispose();
+    
+    final state = _state;
+    final gameStarted = state != null && state.currentDeckId != null;
+    if (!gameStarted || CoopService.active != _coop) {
+      _coop?.dispose();
+    }
+
     _joinCtrl.dispose();
     _deckTitleCtrl.dispose();
     _rawContentCtrl.dispose();
@@ -1389,6 +1399,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                           
                           _startLocalCountdown(() {
                             debugPrint('[coop] Host countdown finished. Broadcasting first card and navigating.');
+                            _coop!.updateLocalCardState(deckId: selectedDeckId, cardIndex: 0, slug: '00-solo-lectura');
                             _coop!.broadcastCard(deckId: selectedDeckId, cardIndex: 0, slug: '00-solo-lectura');
                             if (context.mounted) {
                               Navigator.pushNamed(context, AppRoutes.cooperativoJuego);
