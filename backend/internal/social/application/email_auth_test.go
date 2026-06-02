@@ -15,7 +15,7 @@ func newSvc() *application.Service {
 func TestRegisterEmail_HappyPath(t *testing.T) {
 	s := newSvc()
 	out, err := s.RegisterEmail(application.EmailRegisterInput{
-		Email: "test@dev.local", Password: "abcdefgh", DisplayName: "T",
+		Email: "test@dev.local", Password: "abcdefgh", DisplayName: "T", Username: "test_user", Age: 25,
 	})
 	if err != nil {
 		t.Fatalf("register: %v", err)
@@ -31,7 +31,7 @@ func TestRegisterEmail_HappyPath(t *testing.T) {
 func TestRegisterEmail_WeakPassword(t *testing.T) {
 	s := newSvc()
 	_, err := s.RegisterEmail(application.EmailRegisterInput{
-		Email: "x@dev.io", Password: "short", DisplayName: "X",
+		Email: "x@dev.io", Password: "short", DisplayName: "X", Username: "weak_pw_user", Age: 25,
 	})
 	if !errors.Is(err, application.ErrWeakPassword) {
 		t.Errorf("got %v", err)
@@ -41,7 +41,7 @@ func TestRegisterEmail_WeakPassword(t *testing.T) {
 func TestRegisterEmail_DuplicateEmail(t *testing.T) {
 	s := newSvc()
 	in := application.EmailRegisterInput{
-		Email: "dup@dev.io", Password: "abcdefgh", DisplayName: "D",
+		Email: "dup@dev.io", Password: "abcdefgh", DisplayName: "D", Username: "dup_user", Age: 25,
 	}
 	if _, err := s.RegisterEmail(in); err != nil {
 		t.Fatal(err)
@@ -55,7 +55,7 @@ func TestRegisterEmail_DuplicateEmail(t *testing.T) {
 func TestLoginEmail_HappyPath(t *testing.T) {
 	s := newSvc()
 	in := application.EmailRegisterInput{
-		Email: "login@dev.io", Password: "abcdefgh", DisplayName: "L",
+		Email: "login@dev.io", Password: "abcdefgh", DisplayName: "L", Username: "login_user", Age: 25,
 	}
 	if _, err := s.RegisterEmail(in); err != nil {
 		t.Fatal(err)
@@ -74,7 +74,7 @@ func TestLoginEmail_HappyPath(t *testing.T) {
 func TestLoginEmail_WrongPassword(t *testing.T) {
 	s := newSvc()
 	_, _ = s.RegisterEmail(application.EmailRegisterInput{
-		Email: "x@dev.io", Password: "abcdefgh", DisplayName: "X",
+		Email: "x@dev.io", Password: "abcdefgh", DisplayName: "X", Username: "wrong_pw_user", Age: 25,
 	})
 	_, err := s.LoginEmail(application.EmailLoginInput{Email: "x@dev.io", Password: "wrong-pwd-xx"})
 	if !errors.Is(err, application.ErrInvalidCredentials) {
@@ -85,7 +85,7 @@ func TestLoginEmail_WrongPassword(t *testing.T) {
 func TestPasswordResetFlow(t *testing.T) {
 	s := newSvc()
 	in := application.EmailRegisterInput{
-		Email: "reset@dev.io", Password: "originalpw", DisplayName: "R",
+		Email: "reset@dev.io", Password: "originalpw", DisplayName: "R", Username: "reset_user", Age: 25,
 	}
 	if _, err := s.RegisterEmail(in); err != nil {
 		t.Fatal(err)

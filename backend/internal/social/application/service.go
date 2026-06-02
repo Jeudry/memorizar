@@ -254,7 +254,7 @@ func (s *Service) RequestFriend(requesterID, addresseeID string) (*domain.Friend
 
 	// Simulación de correo electrónico robusta y visible en los logs
 	if requester != nil && addressee != nil {
-		log.Printf("\n========================================================================\n" +
+		log.Println("\n========================================================================\n" +
 			"[EMAIL SIMULATOR] ENVIADO A: " + addressee.Email + "\n" +
 			"ASUNTO: ¡" + requesterName + " quiere ser tu amigo en Memorizar! 👥\n" +
 			"CUERPO:\n" +
