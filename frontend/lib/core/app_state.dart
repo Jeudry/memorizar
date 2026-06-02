@@ -846,7 +846,7 @@ class AppStore extends ChangeNotifier {
     if (activeDeck.cards.isEmpty) return emptyCard;
     final deck = activeDeck;
     // Si es Biblia, hay más de un versículo, y el usuario configuró estudiar más de 1 a la vez, se combinan.
-    if (deck.isBible && deck.cards.length > 1 && _sessionDailyTarget > 1) {
+    if (false) {
       final count = _sessionDailyTarget.clamp(1, deck.cards.length);
       final subList = deck.cards.take(count).toList();
       final combinedFront = _collapseBibleReferences(subList.map((c) => c.front).toList());
@@ -1160,7 +1160,7 @@ class AppStore extends ChangeNotifier {
   /// Retorna `true` si todavía queda otra tarjeta dentro del target diario;
   /// `false` cuando la sesión ya completó su cuota y debe ir al review final.
   bool advanceToNextSessionCard({required bool correct}) {
-    final isCombinedBible = activeDeck.isBible && activeDeck.cards.length > 1 && _sessionDailyTarget > 1;
+    final isCombinedBible = false;
     answerCurrentCard(correct);
     if (isCombinedBible) {
       _sessionCardsCompleted = _sessionDailyTarget;
@@ -1607,7 +1607,7 @@ class AppStore extends ChangeNotifier {
     if (deckIndex < 0) return;
     final deck = activeDeck;
     final cards = [...deck.cards];
-    final isCombinedBible = deck.isBible && deck.cards.length > 1 && _sessionDailyTarget > 1;
+    final isCombinedBible = false;
     if (isCombinedBible) {
       for (var i = 0; i < cards.length; i++) {
         final card = cards[i];
