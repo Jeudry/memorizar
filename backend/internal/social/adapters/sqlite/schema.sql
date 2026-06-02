@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS users (
     id              TEXT PRIMARY KEY,
     email           TEXT NOT NULL DEFAULT '',
     display_name    TEXT NOT NULL DEFAULT '',
+    username        TEXT NOT NULL DEFAULT '',
+    age             INTEGER NOT NULL DEFAULT 0,
     avatar_url      TEXT NOT NULL DEFAULT '',
     providers_json  TEXT NOT NULL DEFAULT '{}',
     password_hash   TEXT NOT NULL DEFAULT '',
@@ -15,6 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username != '';
 
 CREATE TABLE IF NOT EXISTS sessions (
     token       TEXT PRIMARY KEY,

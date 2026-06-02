@@ -6,6 +6,7 @@ type Repository interface {
 	FindUserByProvider(provider domain.SocialProvider, providerUserID string) (*domain.User, error)
 	FindUserByID(userID string) (*domain.User, error)
 	FindUserByEmail(email string) (*domain.User, error)
+	FindUserByUsername(username string) (*domain.User, error)
 	ListUsers() ([]domain.User, error)
 	SaveUser(user domain.User) error
 

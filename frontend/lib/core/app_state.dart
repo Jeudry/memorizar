@@ -11,6 +11,7 @@ import 'api/memorizar_client.dart';
 import 'api/models.dart';
 import 'db/app_database.dart';
 import 'services/push_service.dart';
+import '../features/cooperativo/data/coop_service.dart';
 import 'package:drift/drift.dart' as drift;
 
 /// Visibility level for a memory deck. Defaults to [private] — going to
@@ -233,7 +234,7 @@ class AppStore extends ChangeNotifier {
       return loadDecksFromDatabase();
     }
 
-    _decks.clear();
+    final loadedDecks = <MemoryDeckData>[];
     for (final d in dbDecks) {
       final dbCards = await db!.getCardsForDeck(d.id);
       final cards = dbCards.map((c) => MemoryCardData(
@@ -246,7 +247,7 @@ class AppStore extends ChangeNotifier {
         lapses: c.lapses,
       )).toList();
 
-      _decks.add(MemoryDeckData(
+      loadedDecks.add(MemoryDeckData(
         id: d.id,
         title: d.title,
         subtitle: d.subtitle,
@@ -257,6 +258,8 @@ class AppStore extends ChangeNotifier {
       ));
     }
     
+    _decks.clear();
+    _decks.addAll(loadedDecks);
     if (_decks.isNotEmpty && _activeDeckId == null) {
       _activeDeckId = _decks.first.id;
     }
@@ -282,6 +285,7 @@ class AppStore extends ChangeNotifier {
   Timer? _inviteTimer;
   final List<Map<String, dynamic>> _pendingCoopInvites = [];
   List<Map<String, dynamic>> get pendingCoopInvites => List.unmodifiable(_pendingCoopInvites);
+  final Set<String> _notifiedFriendRequests = {};
 
   void clearPendingCoopInvite(String roomCode) {
     _pendingCoopInvites.removeWhere((i) => i['roomCode'] == roomCode);
@@ -292,19 +296,22 @@ class AppStore extends ChangeNotifier {
     _inviteTimer?.cancel();
     _inviteTimer = Timer.periodic(const Duration(seconds: 4), (timer) async {
       if (!isLoggedIn) return;
+      
+      // 1. Detección de invitaciones cooperativas pendientes
       try {
         final invites = await api.getPendingCoopInvites();
         if (invites.isNotEmpty) {
           bool updated = false;
           for (final invite in invites) {
-            if (invite is Map<String, dynamic>) {
-              final code = invite['roomCode'] as String? ?? '';
+            if (invite is Map) {
+              final inviteMap = Map<String, dynamic>.from(invite);
+              final code = inviteMap['roomCode'] as String? ?? '';
               final alreadyHas = _pendingCoopInvites.any((i) => i['roomCode'] == code);
               if (!alreadyHas && code.isNotEmpty) {
-                _pendingCoopInvites.add(invite);
+                _pendingCoopInvites.add(inviteMap);
                 updated = true;
                 
-                final hostName = invite['hostName'] as String? ?? 'Tu amigo';
+                final hostName = inviteMap['hostName'] as String? ?? 'Tu amigo';
                 unawaited(PushService.instance.showLocalNow(
                   id: code.hashCode,
                   title: '¡Invitación Cooperativa! 🎮',
@@ -316,6 +323,43 @@ class AppStore extends ChangeNotifier {
           if (updated) {
             notifyListeners();
           }
+        }
+      } catch (_) {}
+
+      // 2. Detección de solicitudes de amistad pendientes nuevas
+      try {
+        final friends = await api.listFriends();
+        final me = _currentUser?.id ?? '';
+        final pending = friends.pendingRequests.where((f) => f.addresseeId == me).toList();
+        
+        bool socialUpdated = false;
+        for (final req in pending) {
+          if (!_notifiedFriendRequests.contains(req.id)) {
+            _notifiedFriendRequests.add(req.id);
+            socialUpdated = true;
+            
+            // Buscar nombre del solicitante de forma asíncrona
+            unawaited(() async {
+              try {
+                final requester = await api.getUser(req.requesterId);
+                final name = requester.user.displayName.isNotEmpty ? requester.user.displayName : requester.user.email;
+                await PushService.instance.showLocalNow(
+                  id: req.id.hashCode,
+                  title: '¡Solicitud de Amistad! 👥',
+                  body: '$name quiere conectar contigo en Memorizar.',
+                );
+              } catch (_) {
+                await PushService.instance.showLocalNow(
+                  id: req.id.hashCode,
+                  title: '¡Solicitud de Amistad! 👥',
+                  body: 'Alguien quiere conectar contigo en Memorizar.',
+                );
+              }
+            }());
+          }
+        }
+        if (socialUpdated) {
+          unawaited(refreshPendingCount());
         }
       } catch (_) {}
     });
@@ -450,11 +494,15 @@ class AppStore extends ChangeNotifier {
     required String email,
     required String password,
     required String displayName,
+    required String username,
+    required int age,
   }) async {
     final result = await api.registerEmail(
       email: email,
       password: password,
       displayName: displayName,
+      username: username,
+      age: age,
     );
     _currentUser = result.user;
     _sessionToken = result.session.token;
@@ -500,12 +548,16 @@ class AppStore extends ChangeNotifier {
     String? displayName,
     String? avatarUrl,
     String? locale,
+    String? username,
+    int? age,
   }) async {
     if (!isLoggedIn) return;
     final updated = await api.updateProfile(
       displayName: displayName,
       avatarUrl: avatarUrl,
       locale: locale,
+      username: username,
+      age: age,
     );
     _currentUser = updated;
     if (_sessionToken != null) {
@@ -714,8 +766,8 @@ class AppStore extends ChangeNotifier {
       Map<String, dynamic>? snap;
       if (payload is String && payload.isNotEmpty) {
         snap = jsonDecode(payload) as Map<String, dynamic>;
-      } else if (payload is Map<String, dynamic>) {
-        snap = payload;
+      } else if (payload is Map) {
+        snap = Map<String, dynamic>.from(payload);
       }
       _latestRemoteSnapshot = snap;
       if (snap != null && autoApply) {
@@ -846,7 +898,7 @@ class AppStore extends ChangeNotifier {
     if (activeDeck.cards.isEmpty) return emptyCard;
     final deck = activeDeck;
     // Si es Biblia, hay más de un versículo, y el usuario configuró estudiar más de 1 a la vez, se combinan.
-    if (deck.isBible && deck.cards.length > 1 && _sessionDailyTarget > 1) {
+    if (false) {
       final count = _sessionDailyTarget.clamp(1, deck.cards.length);
       final subList = deck.cards.take(count).toList();
       final combinedFront = _collapseBibleReferences(subList.map((c) => c.front).toList());
@@ -1160,7 +1212,7 @@ class AppStore extends ChangeNotifier {
   /// Retorna `true` si todavía queda otra tarjeta dentro del target diario;
   /// `false` cuando la sesión ya completó su cuota y debe ir al review final.
   bool advanceToNextSessionCard({required bool correct}) {
-    final isCombinedBible = activeDeck.isBible && activeDeck.cards.length > 1 && _sessionDailyTarget > 1;
+    final isCombinedBible = false;
     answerCurrentCard(correct);
     if (isCombinedBible) {
       _sessionCardsCompleted = _sessionDailyTarget;
@@ -1178,6 +1230,13 @@ class AppStore extends ChangeNotifier {
     _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));
     notifyListeners();
     return true;
+  }
+
+  void setSessionCardsCompleted(int value) {
+    _sessionCardsCompleted = value;
+    final deckId = activeDeck.id;
+    _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));
+    notifyListeners();
   }
 
   void updateActiveDeck({String? title, String? icon}) {
@@ -1200,7 +1259,12 @@ class AppStore extends ChangeNotifier {
 
   void markExerciseStepCompleted(String slug) {
     final key = _exerciseStepKey(slug);
-    if (_completedExerciseSteps.add(key)) notifyListeners();
+    if (_completedExerciseSteps.add(key)) {
+      if (CoopService.active != null) {
+        CoopService.active!.reportScore(10);
+      }
+      notifyListeners();
+    }
   }
 
   void resetExerciseStepCompleted(String slug) {
@@ -1530,6 +1594,15 @@ class AppStore extends ChangeNotifier {
     return deck;
   }
 
+  void addOrUpdateCoopDeck(MemoryDeckData deck) {
+    _decks.removeWhere((d) => d.id == deck.id);
+    _decks.insert(0, deck);
+    notifyListeners();
+    if (enableDatabasePersistence && db != null) {
+      unawaited(_persistDeckToDatabase(deck));
+    }
+  }
+
   List<MemoryCardData> segmentContent(
     String content, {
     String icon = '🧠',
@@ -1607,7 +1680,7 @@ class AppStore extends ChangeNotifier {
     if (deckIndex < 0) return;
     final deck = activeDeck;
     final cards = [...deck.cards];
-    final isCombinedBible = deck.isBible && deck.cards.length > 1 && _sessionDailyTarget > 1;
+    final isCombinedBible = false;
     if (isCombinedBible) {
       for (var i = 0; i < cards.length; i++) {
         final card = cards[i];

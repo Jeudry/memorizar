@@ -42,8 +42,8 @@ func newSvcWithCapture() (*application.Service, *captureNotifier) {
 
 func TestNotifier_FriendRequestFires(t *testing.T) {
 	s, cap := newSvcWithCapture()
-	a, _ := s.RegisterEmail(application.EmailRegisterInput{Email: "a@x.io", Password: "abcdefgh", DisplayName: "A"})
-	b, _ := s.RegisterEmail(application.EmailRegisterInput{Email: "b@x.io", Password: "abcdefgh", DisplayName: "B"})
+	a, _ := s.RegisterEmail(application.EmailRegisterInput{Email: "a@x.io", Password: "abcdefgh", DisplayName: "A", Username: "user_a", Age: 25})
+	b, _ := s.RegisterEmail(application.EmailRegisterInput{Email: "b@x.io", Password: "abcdefgh", DisplayName: "B", Username: "user_b", Age: 25})
 
 	if _, err := s.RequestFriend(a.User.ID, b.User.ID); err != nil {
 		t.Fatalf("request friend: %v", err)
@@ -63,8 +63,8 @@ func TestNotifier_FriendRequestFires(t *testing.T) {
 
 func TestNotifier_FriendAcceptFires(t *testing.T) {
 	s, cap := newSvcWithCapture()
-	a, _ := s.RegisterEmail(application.EmailRegisterInput{Email: "a@x.io", Password: "abcdefgh", DisplayName: "A"})
-	b, _ := s.RegisterEmail(application.EmailRegisterInput{Email: "b@x.io", Password: "abcdefgh", DisplayName: "B"})
+	a, _ := s.RegisterEmail(application.EmailRegisterInput{Email: "a@x.io", Password: "abcdefgh", DisplayName: "A", Username: "user_a_accept", Age: 25})
+	b, _ := s.RegisterEmail(application.EmailRegisterInput{Email: "b@x.io", Password: "abcdefgh", DisplayName: "B", Username: "user_b_accept", Age: 25})
 
 	fr, err := s.RequestFriend(a.User.ID, b.User.ID)
 	if err != nil {
