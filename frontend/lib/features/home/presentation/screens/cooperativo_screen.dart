@@ -2666,6 +2666,7 @@ class _CoopTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final store = AppScope.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Row(
@@ -2673,13 +2674,29 @@ class _CoopTopBar extends StatelessWidget {
           RefBackButton(onTap: onBack),
           Expanded(
             child: Center(
-              child: RefChip(
-                center,
-                dense: true,
-                color: live
-                    ? RefColors.lime.withValues(alpha: .16)
-                    : RefColors.glassStrong,
-                textColor: live ? RefColors.lime : RefColors.ink,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  RefChip(
+                    center,
+                    dense: true,
+                    color: live
+                        ? RefColors.lime.withValues(alpha: .16)
+                        : RefColors.glassStrong,
+                    textColor: live ? RefColors.lime : RefColors.ink,
+                  ),
+                  if (live) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      store.activeDeck.title,
+                      style: const TextStyle(
+                        color: RefColors.pink,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
