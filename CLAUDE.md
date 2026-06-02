@@ -27,8 +27,11 @@ Memorizar/
 ## Build & Run
 
 ```bash
-# Frontend
-cd frontend && flutter run
+# Frontend (Desktop macOS)
+cd frontend && flutter run -d macos
+
+# Frontend (Web - SIEMPRE usar puerto 8081 para abrir en el navegador actual del usuario)
+cd frontend && flutter run -d web-server --web-port=8081
 
 # Generar código (Riverpod, Drift, Freezed)
 cd frontend && flutter pub run build_runner build --delete-conflicting-outputs
