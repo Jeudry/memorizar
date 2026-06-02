@@ -2124,21 +2124,20 @@ List<_SelectionEntry> _summarizeSelection(
 
 /// Tarjetas del paso actual en una sesión de Biblia.
 ///
-/// - En modo cooperativo cada paso es 1 tarjeta individual (no se
-///   combinan), preservando el contrato introducido en el fix
-///   `6574aa7 fix(coop): disable automatic bible card combining`.
-/// - En modo solo, si el mazo es bíblico y el target diario > 1,
-///   devuelve el slice de `target` tarjetas correspondiente al paso
-///   actual, calculado a partir de `sessionCardsCompleted * target`.
-///   Esto permite que un mazo con N tarjetas y target T genere
-///   `ceil(N / T)` pasos, cada uno mostrando T versículos juntos.
+/// - Si el mazo es bíblico, tiene más de 1 versículo y el target diario
+///   configurado por el usuario es > 1, devuelve el slice de `target`
+///   tarjetas correspondiente al paso actual, calculado a partir de
+///   `sessionCardsCompleted * target`. Así, un mazo con N tarjetas y
+///   target T genera `ceil(N / T)` pasos, cada uno mostrando T versículos
+///   juntos — que es lo que el usuario pidió explícitamente al
+///   configurar la sesión como "2 en 2", "3 en 3", etc.
 /// - En cualquier otro caso (no bíblico, target=1, mazo con 1 sola
 ///   tarjeta) devuelve la tarjeta activa como una lista de un solo
-///   elemento.
+///   elemento. Esto preserva el comportamiento por paso individual
+///   para decks no bíblicos o sesiones de 1-versículo.
 List<MemoryCardData> _currentStepCards(BuildContext context) {
   final store = AppScope.of(context);
   final deck = store.activeDeck;
-  if (CoopService.active != null) return [store.activeCard];
   if (deck.isBible && deck.cards.length > 1 && store.sessionDailyTarget > 1) {
     final target = store.sessionDailyTarget;
     final start = (store.sessionCardsCompleted * target).clamp(
