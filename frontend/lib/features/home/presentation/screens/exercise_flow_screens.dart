@@ -749,13 +749,28 @@ class _FlowStepHeader extends StatelessWidget {
                   },
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  'PASO $step/$totalSteps',
-                  style: const TextStyle(
-                    color: RefColors.muted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'PASO $step/$totalSteps',
+                      style: const TextStyle(
+                        color: RefColors.muted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Ítem ${(store.sessionCardsCompleted + 1).clamp(1, store.sessionDailyTarget)}/${store.sessionDailyTarget} · ${store.activeDeck.title}',
+                      style: const TextStyle(
+                        color: RefColors.pink,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(width: 8),
                 Expanded(

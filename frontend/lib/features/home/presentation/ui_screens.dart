@@ -1432,7 +1432,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
     final rounds = <_QuizRound>[];
     final store = AppScope.of(context);
-    final isCombinedBible = false;
+    final isCombinedBible = deck.isBible && deck.cards.length > 1 && store.sessionDailyTarget > 1;
     final List<MemoryCardData> sessionStudiedCards = isCombinedBible
         ? deck.cards.take(store.sessionDailyTarget).toList()
         : deck.cards.take(store.currentCardIndex + 1).toList();

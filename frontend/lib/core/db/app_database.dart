@@ -48,6 +48,14 @@ class AppDatabase extends _$AppDatabase {
   Future<void> deleteDeck(String deckId) =>
       (delete(decks)..where((d) => d.id.equals(deckId))).go();
 
+  /// Actualización parcial de la columna `isBible` (sin reescribir toda la
+  /// fila). Usado para reparar mazos bíblicos cuyo flag se perdió en
+  /// sincronizaciones cooperativas previas.
+  Future<void> updateDeckIsBible(String deckId, bool isBible) =>
+      (update(decks)..where((d) => d.id.equals(deckId))).write(DecksCompanion(
+        isBible: Value(isBible),
+      ));
+
   // Card queries
   Future<List<Card>> getCardsForDeck(String deckId) =>
       (select(cards)..where((c) => c.deckId.equals(deckId))).get();

@@ -351,7 +351,7 @@ class CoopService {
   void broadcastLobbyDeck({
     required String deckId,
     required String deckName,
-    bool isBible = false,
+    required bool isBible,
     List<dynamic>? cards,
   }) {
     send(CoopMessage(

@@ -131,6 +131,7 @@ class MemoryDeckData {
     String? title,
     String? subtitle,
     String? icon,
+    bool? isBible,
     DeckVisibility? visibility,
     bool? rightsAcknowledged,
   }) {
@@ -141,7 +142,7 @@ class MemoryDeckData {
       icon: icon ?? this.icon,
       cards: cards,
       createdAt: createdAt,
-      isBible: isBible,
+      isBible: isBible ?? this.isBible,
       visibility: visibility ?? this.visibility,
       rightsAcknowledged: rightsAcknowledged ?? this.rightsAcknowledged,
     );
@@ -247,13 +248,24 @@ class AppStore extends ChangeNotifier {
         lapses: c.lapses,
       )).toList();
 
+      // Reparación: un bug previo en la sincronización cooperativa
+      // (broadcastLobbyDeck sin isBible) persistía mazos bíblicos como
+      // isBible=false, rompiendo la combinación de versículos por ronda. Si un
+      // mazo guardado como no-bíblico tiene TODAS sus tarjetas con referencia
+      // tipo "Libro C:V", lo re-marcamos como bíblico (solo upgrade, nunca
+      // downgrade) y persistimos la corrección una vez.
+      final isBible = d.isBible || _looksLikeBibleDeck(cards);
+      if (isBible && !d.isBible && enableDatabasePersistence && db != null) {
+        unawaited(db!.updateDeckIsBible(d.id, true));
+      }
+
       loadedDecks.add(MemoryDeckData(
         id: d.id,
         title: d.title,
         subtitle: d.subtitle,
         icon: d.icon,
         createdAt: d.createdAt,
-        isBible: d.isBible,
+        isBible: isBible,
         cards: cards,
       ));
     }
@@ -897,8 +909,9 @@ class AppStore extends ChangeNotifier {
   MemoryCardData get activeCard {
     if (activeDeck.cards.isEmpty) return emptyCard;
     final deck = activeDeck;
+    final isCombinedBible = deck.isBible && deck.cards.length > 1 && _sessionDailyTarget > 1;
     // Si es Biblia, hay más de un versículo, y el usuario configuró estudiar más de 1 a la vez, se combinan.
-    if (false) {
+    if (isCombinedBible) {
       final count = _sessionDailyTarget.clamp(1, deck.cards.length);
       final subList = deck.cards.take(count).toList();
       final combinedFront = _collapseBibleReferences(subList.map((c) => c.front).toList());
@@ -1212,7 +1225,7 @@ class AppStore extends ChangeNotifier {
   /// Retorna `true` si todavía queda otra tarjeta dentro del target diario;
   /// `false` cuando la sesión ya completó su cuota y debe ir al review final.
   bool advanceToNextSessionCard({required bool correct}) {
-    final isCombinedBible = false;
+    final isCombinedBible = activeDeck.isBible && activeDeck.cards.length > 1 && _sessionDailyTarget > 1;
     answerCurrentCard(correct);
     if (isCombinedBible) {
       _sessionCardsCompleted = _sessionDailyTarget;
@@ -1594,12 +1607,31 @@ class AppStore extends ChangeNotifier {
     return deck;
   }
 
+  /// `true` si el mazo parece bíblico: tiene tarjetas y TODAS sus caras
+  /// frontales contienen una referencia tipo "Capítulo:Versículo" (ej.
+  /// "Filipenses 4:13", "1 Juan 2:1"). Se usa para reparar mazos cuyo flag
+  /// `isBible` se perdió en sincronizaciones cooperativas previas.
+  static final RegExp _bibleRefPattern = RegExp(r'\d{1,3}:\d{1,3}');
+  bool _looksLikeBibleDeck(List<MemoryCardData> cards) {
+    if (cards.isEmpty) return false;
+    return cards.every((c) => _bibleRefPattern.hasMatch(c.front));
+  }
+
   void addOrUpdateCoopDeck(MemoryDeckData deck) {
-    _decks.removeWhere((d) => d.id == deck.id);
-    _decks.insert(0, deck);
+    // Nunca degradar un mazo bíblico a no-bíblico por una sincronización: si ya
+    // teníamos el mazo marcado como Biblia (o sus tarjetas lo parecen),
+    // preservamos isBible=true aunque el payload de red llegue en false.
+    final existing = _decks.where((d) => d.id == deck.id).toList();
+    final shouldBeBible = deck.isBible ||
+        (existing.isNotEmpty && existing.first.isBible) ||
+        _looksLikeBibleDeck(deck.cards);
+    final normalized =
+        shouldBeBible && !deck.isBible ? deck.copyWith(isBible: true) : deck;
+    _decks.removeWhere((d) => d.id == normalized.id);
+    _decks.insert(0, normalized);
     notifyListeners();
     if (enableDatabasePersistence && db != null) {
-      unawaited(_persistDeckToDatabase(deck));
+      unawaited(_persistDeckToDatabase(normalized));
     }
   }
 
@@ -1680,9 +1712,10 @@ class AppStore extends ChangeNotifier {
     if (deckIndex < 0) return;
     final deck = activeDeck;
     final cards = [...deck.cards];
-    final isCombinedBible = false;
+    final isCombinedBible = deck.isBible && deck.cards.length > 1 && _sessionDailyTarget > 1;
     if (isCombinedBible) {
-      for (var i = 0; i < cards.length; i++) {
+      final limit = _sessionDailyTarget.clamp(1, cards.length);
+      for (var i = 0; i < limit; i++) {
         final card = cards[i];
         cards[i] = card.copyWith(
           retention: (card.retention + (correct ? 8 : -14)).clamp(18, 100),
@@ -1702,9 +1735,9 @@ class AppStore extends ChangeNotifier {
         isBible: deck.isBible,
       );
       if (correct) {
-        _correctAnswers += cards.length;
+        _correctAnswers += limit;
       } else {
-        _wrongAnswers += cards.length;
+        _wrongAnswers += limit;
       }
       _currentCardIndex = 0;
       notifyListeners();

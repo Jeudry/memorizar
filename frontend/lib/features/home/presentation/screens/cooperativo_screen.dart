@@ -349,7 +349,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
         };
       }).toList();
       if (_coop != null) {
-        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
+        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, isBible: false, cards: cardsList);
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -448,7 +448,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
         };
       }).toList();
       if (_coop != null) {
-        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
+        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, isBible: true, cards: cardsList);
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -566,7 +566,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
         };
       }).toList();
       if (_coop != null) {
-        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
+        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, isBible: false, cards: cardsList);
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -680,7 +680,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                           'retention': c.retention,
                           'lapses': c.lapses,
                         }).toList();
-                        coop.broadcastLobbyDeck(deckId: d.id, deckName: d.title, cards: cardsList);
+                        coop.broadcastLobbyDeck(deckId: d.id, deckName: d.title, isBible: d.isBible, cards: cardsList);
                         Navigator.pop(ctx);
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
@@ -757,12 +757,10 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     final canStart = !_countdownStarted || _guestCountdownFinished;
     debugPrint('[coop] _checkGuestCanStartGame: canStart=$canStart, countdownStarted=$_countdownStarted, guestCountdownFinished=$_guestCountdownFinished, pendingStartDeckId=$_pendingStartDeckId, pendingStartSlug=$_pendingStartSlug');
     if (canStart && _pendingStartDeckId != null && _pendingStartSlug != null) {
-      store.configureSession(
-        difficulty: _pendingStartDifficulty ?? 0,
-        dailyTarget: _pendingStartDailyTarget ?? 3,
-      );
       final deckId = _pendingStartDeckId!;
       final slug = _pendingStartSlug!;
+      final difficulty = _pendingStartDifficulty ?? 0;
+      final dailyTarget = _pendingStartDailyTarget ?? 3;
       
       _pendingStartDeckId = null;
       _pendingStartSlug = null;
@@ -772,11 +770,17 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
       _countdownStarted = false;
 
       debugPrint('[coop] Redirecting guest to flow, calling _navigateWhenDeckReady');
-      _navigateWhenDeckReady(store, deckId, slug);
+      _navigateWhenDeckReady(store, deckId, slug, difficulty, dailyTarget);
     }
   }
 
-  void _navigateWhenDeckReady(AppStore store, String deckId, String targetSlug) async {
+  void _navigateWhenDeckReady(
+    AppStore store,
+    String deckId,
+    String targetSlug,
+    int difficulty,
+    int dailyTarget,
+  ) async {
     debugPrint('[coop] _navigateWhenDeckReady: checking deck availability in store');
     int attempts = 0;
     while (attempts < 15) {
@@ -790,8 +794,12 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     }
     if (mounted) {
       store.setActiveDeck(deckId);
+      store.configureSession(
+        difficulty: difficulty,
+        dailyTarget: dailyTarget,
+      );
       final finalPath = '${AppRoutes.flow}/$targetSlug';
-      debugPrint('[coop] Guest navigating to route: $finalPath');
+      debugPrint('[coop] Guest navigating to route: $finalPath, dailyTarget=$dailyTarget');
       Navigator.pushNamed(context, finalPath);
     } else {
       debugPrint('[coop] Guest navigation skipped: context not mounted');
@@ -1324,7 +1332,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                       'lapses': c.lapses,
                     }).toList();
                     if (_coop != null) {
-                      _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
+                      _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, isBible: d.isBible, cards: cardsList);
                     }
                     setState(() {
                       _clearInlineDeckForm();
@@ -1363,7 +1371,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                       'lapses': c.lapses,
                     }).toList();
                     if (_coop != null) {
-                      _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
+                      _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, isBible: d.isBible, cards: cardsList);
                     }
                     setState(() {
                       _clearInlineDeckForm();
@@ -1409,6 +1417,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                           final target = state.sessionDailyTarget == 0 ? 3 : state.sessionDailyTarget;
                           final store = AppScope.of(context);
                           debugPrint('[coop] Host clicked start game. selectedDeckId=$selectedDeckId, target=$target');
+                          store.setActiveDeck(selectedDeckId);
                           store.configureSession(
                             difficulty: state.sessionDifficulty,
                             dailyTarget: target,
@@ -2666,6 +2675,7 @@ class _CoopTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final store = AppScope.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Row(
@@ -2673,13 +2683,29 @@ class _CoopTopBar extends StatelessWidget {
           RefBackButton(onTap: onBack),
           Expanded(
             child: Center(
-              child: RefChip(
-                center,
-                dense: true,
-                color: live
-                    ? RefColors.lime.withValues(alpha: .16)
-                    : RefColors.glassStrong,
-                textColor: live ? RefColors.lime : RefColors.ink,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  RefChip(
+                    center,
+                    dense: true,
+                    color: live
+                        ? RefColors.lime.withValues(alpha: .16)
+                        : RefColors.glassStrong,
+                    textColor: live ? RefColors.lime : RefColors.ink,
+                  ),
+                  if (live) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      store.activeDeck.title,
+                      style: const TextStyle(
+                        color: RefColors.pink,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
@@ -4033,7 +4059,7 @@ class _CoopSettingsCard extends StatelessWidget {
                             'retention': c.retention,
                             'lapses': c.lapses,
                           }).toList();
-                          coop.broadcastLobbyDeck(deckId: d.id, deckName: d.title, cards: cardsList);
+                          coop.broadcastLobbyDeck(deckId: d.id, deckName: d.title, isBible: d.isBible, cards: cardsList);
                           Navigator.pop(ctx);
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
