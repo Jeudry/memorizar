@@ -349,7 +349,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
         };
       }).toList();
       if (_coop != null) {
-        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
+        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, isBible: false, cards: cardsList);
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -448,7 +448,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
         };
       }).toList();
       if (_coop != null) {
-        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
+        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, isBible: true, cards: cardsList);
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -566,7 +566,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
         };
       }).toList();
       if (_coop != null) {
-        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
+        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, isBible: false, cards: cardsList);
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -680,7 +680,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                           'retention': c.retention,
                           'lapses': c.lapses,
                         }).toList();
-                        coop.broadcastLobbyDeck(deckId: d.id, deckName: d.title, cards: cardsList);
+                        coop.broadcastLobbyDeck(deckId: d.id, deckName: d.title, isBible: d.isBible, cards: cardsList);
                         Navigator.pop(ctx);
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
@@ -1332,7 +1332,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                       'lapses': c.lapses,
                     }).toList();
                     if (_coop != null) {
-                      _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
+                      _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, isBible: d.isBible, cards: cardsList);
                     }
                     setState(() {
                       _clearInlineDeckForm();
@@ -1371,7 +1371,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                       'lapses': c.lapses,
                     }).toList();
                     if (_coop != null) {
-                      _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
+                      _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, isBible: d.isBible, cards: cardsList);
                     }
                     setState(() {
                       _clearInlineDeckForm();
@@ -4059,7 +4059,7 @@ class _CoopSettingsCard extends StatelessWidget {
                             'retention': c.retention,
                             'lapses': c.lapses,
                           }).toList();
-                          coop.broadcastLobbyDeck(deckId: d.id, deckName: d.title, cards: cardsList);
+                          coop.broadcastLobbyDeck(deckId: d.id, deckName: d.title, isBible: d.isBible, cards: cardsList);
                           Navigator.pop(ctx);
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(

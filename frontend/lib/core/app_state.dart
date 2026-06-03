@@ -131,6 +131,7 @@ class MemoryDeckData {
     String? title,
     String? subtitle,
     String? icon,
+    bool? isBible,
     DeckVisibility? visibility,
     bool? rightsAcknowledged,
   }) {
@@ -141,7 +142,7 @@ class MemoryDeckData {
       icon: icon ?? this.icon,
       cards: cards,
       createdAt: createdAt,
-      isBible: isBible,
+      isBible: isBible ?? this.isBible,
       visibility: visibility ?? this.visibility,
       rightsAcknowledged: rightsAcknowledged ?? this.rightsAcknowledged,
     );
@@ -247,13 +248,24 @@ class AppStore extends ChangeNotifier {
         lapses: c.lapses,
       )).toList();
 
+      // Reparación: un bug previo en la sincronización cooperativa
+      // (broadcastLobbyDeck sin isBible) persistía mazos bíblicos como
+      // isBible=false, rompiendo la combinación de versículos por ronda. Si un
+      // mazo guardado como no-bíblico tiene TODAS sus tarjetas con referencia
+      // tipo "Libro C:V", lo re-marcamos como bíblico (solo upgrade, nunca
+      // downgrade) y persistimos la corrección una vez.
+      final isBible = d.isBible || _looksLikeBibleDeck(cards);
+      if (isBible && !d.isBible && enableDatabasePersistence && db != null) {
+        unawaited(db!.updateDeckIsBible(d.id, true));
+      }
+
       loadedDecks.add(MemoryDeckData(
         id: d.id,
         title: d.title,
         subtitle: d.subtitle,
         icon: d.icon,
         createdAt: d.createdAt,
-        isBible: d.isBible,
+        isBible: isBible,
         cards: cards,
       ));
     }
@@ -1595,12 +1607,31 @@ class AppStore extends ChangeNotifier {
     return deck;
   }
 
+  /// `true` si el mazo parece bíblico: tiene tarjetas y TODAS sus caras
+  /// frontales contienen una referencia tipo "Capítulo:Versículo" (ej.
+  /// "Filipenses 4:13", "1 Juan 2:1"). Se usa para reparar mazos cuyo flag
+  /// `isBible` se perdió en sincronizaciones cooperativas previas.
+  static final RegExp _bibleRefPattern = RegExp(r'\d{1,3}:\d{1,3}');
+  bool _looksLikeBibleDeck(List<MemoryCardData> cards) {
+    if (cards.isEmpty) return false;
+    return cards.every((c) => _bibleRefPattern.hasMatch(c.front));
+  }
+
   void addOrUpdateCoopDeck(MemoryDeckData deck) {
-    _decks.removeWhere((d) => d.id == deck.id);
-    _decks.insert(0, deck);
+    // Nunca degradar un mazo bíblico a no-bíblico por una sincronización: si ya
+    // teníamos el mazo marcado como Biblia (o sus tarjetas lo parecen),
+    // preservamos isBible=true aunque el payload de red llegue en false.
+    final existing = _decks.where((d) => d.id == deck.id).toList();
+    final shouldBeBible = deck.isBible ||
+        (existing.isNotEmpty && existing.first.isBible) ||
+        _looksLikeBibleDeck(deck.cards);
+    final normalized =
+        shouldBeBible && !deck.isBible ? deck.copyWith(isBible: true) : deck;
+    _decks.removeWhere((d) => d.id == normalized.id);
+    _decks.insert(0, normalized);
     notifyListeners();
     if (enableDatabasePersistence && db != null) {
-      unawaited(_persistDeckToDatabase(deck));
+      unawaited(_persistDeckToDatabase(normalized));
     }
   }
 
