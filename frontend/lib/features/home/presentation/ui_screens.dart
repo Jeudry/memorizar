@@ -491,6 +491,22 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     return DateTime.now().millisecondsSinceEpoch - ts < 700;
   }
 
+  bool _coopEverHadPeers = false;
+
+  void _closeCoopAndGoHome(String message) async {
+    await CoopService.active?.disconnect();
+    CoopService.active = null;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: RefColors.urgent,
+        ),
+      );
+      Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
+    }
+  }
+
   String? _fogCardId;
   bool _fogFinished = false;
   bool _fogShowHintTemp = false;
@@ -511,15 +527,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         // Si el host abandonó la partida, cancelar y volver al home
         final hostLeft = !s.memberIds.contains(s.hostId);
         if (hostLeft) {
-          CoopService.active?.disconnect();
-          CoopService.active = null;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('La partida cooperativa ha sido cancelada por el Host.'),
-              backgroundColor: RefColors.urgent,
-            ),
-          );
-          Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
+          _closeCoopAndGoHome('La partida cooperativa ha sido cancelada por el Host.');
+          return;
+        }
+
+        // Una vez vimos 2+ jugadores, si la sala baja a 1 se cierra para todos.
+        if (s.memberIds.length >= 2) _coopEverHadPeers = true;
+        if (_coopEverHadPeers && s.memberIds.length <= 1) {
+          _closeCoopAndGoHome('La sala se cerró: no quedan suficientes jugadores.');
           return;
         }
 
@@ -538,7 +553,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
       _coopMsgSub = coop.messages.listen((msg) {
         if (!mounted) return;
-        if (msg.type == 'coop_fail') {
+        if (msg.type == 'room_closed') {
+          if (msg.userId != CoopService.activeUserId) {
+            _closeCoopAndGoHome('El host cerró la sala.');
+          }
+          return;
+        } else if (msg.type == 'step_done') {
+          final key = msg.payload?['key'] as String?;
+          if (key != null && key.isNotEmpty && msg.userId != CoopService.activeUserId) {
+            AppScope.of(context).applyRemoteStepDone(key);
+          }
+          return;
+        } else if (msg.type == 'coop_fail') {
           final failedUserId = msg.payload?['userId'] as String? ?? msg.userId;
           if (failedUserId.isNotEmpty) {
             setState(() {

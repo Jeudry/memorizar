@@ -69,10 +69,6 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
 
   Future<void> _joinPublic(String code) async {
     final store = AppScope.of(context);
-    if (!store.isLoggedIn) {
-      Navigator.pushNamed(context, AppRoutes.login);
-      return;
-    }
     setState(() {
       _busy = true;
       _error = null;
@@ -80,11 +76,11 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     try {
       await _coop!.joinRoom(
         code: code,
-        userId: store.currentUser!.id,
-        name: store.currentUser!.effectiveName,
+        userId: store.effectiveUser.id,
+        name: store.effectiveUser.effectiveName,
       );
       CoopService.active = _coop;
-      CoopService.activeUserId = store.currentUser!.id;
+      CoopService.activeUserId = store.effectiveUser.id;
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -103,7 +99,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     if (!_initialized) {
       _initialized = true;
       final store = AppScope.of(context);
-      _currentUserId = store.currentUser?.id;
+      _currentUserId = store.effectiveUser.id;
       _coop = CoopService(client: store.api);
       _loadPublicRooms();
       _sub = _coop!.stateStream.listen((s) {
@@ -893,24 +889,20 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
 
   Future<void> _create() async {
     final store = AppScope.of(context);
-    if (!store.isLoggedIn) {
-      Navigator.pushNamed(context, AppRoutes.login);
-      return;
-    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       await _coop!.createRoom(
-        userId: store.currentUser!.id,
-        name: store.currentUser!.effectiveName,
+        userId: store.effectiveUser.id,
+        name: store.effectiveUser.effectiveName,
         isPublic: _isPublic,
         deckId: '',
         deckName: '',
       );
       CoopService.active = _coop;
-      CoopService.activeUserId = store.currentUser!.id;
+      CoopService.activeUserId = store.effectiveUser.id;
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -920,10 +912,6 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
 
   Future<void> _join() async {
     final store = AppScope.of(context);
-    if (!store.isLoggedIn) {
-      Navigator.pushNamed(context, AppRoutes.login);
-      return;
-    }
     final code = _joinCtrl.text.trim().toUpperCase();
     if (code.isEmpty) return;
     setState(() {
@@ -933,11 +921,11 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     try {
       await _coop!.joinRoom(
         code: code,
-        userId: store.currentUser!.id,
-        name: store.currentUser!.effectiveName,
+        userId: store.effectiveUser.id,
+        name: store.effectiveUser.effectiveName,
       );
       CoopService.active = _coop;
-      CoopService.activeUserId = store.currentUser!.id;
+      CoopService.activeUserId = store.effectiveUser.id;
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -1398,7 +1386,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                 },
               ),
               const SizedBox(height: 12),
-              if (state.hostId == AppScope.of(context).currentUser?.id) ...[
+              if (state.hostId == AppScope.of(context).effectiveUser.id) ...[
                 Cta(
                   'Iniciar partida →',
                   disabled: (state.lobbyDeckId == null || state.lobbyDeckId!.isEmpty) || (state.memberIds.length <= 1),
@@ -2778,7 +2766,7 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
   Widget build(BuildContext context) {
     final memberIds = widget.roomState.memberIds.toList();
     final hostId = widget.roomState.hostId;
-    final me = AppScope.of(context).currentUser?.id ?? '';
+    final me = AppScope.of(context).effectiveUser.id;
 
     return Glass(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
@@ -2966,7 +2954,7 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
                           await store.api.sendCoopInvite(
                             friendUserId: f.id,
                             roomCode: widget.roomState.code,
-                            hostName: store.currentUser?.effectiveName ?? 'Tu amigo',
+                            hostName: store.effectiveUser.effectiveName,
                           );
                         } catch (e) {
                           debugPrint('Error sending coop invite: $e');
@@ -3178,7 +3166,7 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
 
   void _showMemberProfile(String targetUserId) {
     final store = AppScope.of(context);
-    final me = store.currentUser?.id ?? '';
+    final me = store.effectiveUser.id;
     
     showDialog(
       context: context,
@@ -3765,7 +3753,7 @@ class _CoopSettingsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
-    final isHost = roomState.hostId == store.currentUser?.id;
+    final isHost = roomState.hostId == store.effectiveUser.id;
     final coop = CoopService.active;
     
     // Find the deck based on lobbyDeckId (no fallback to activeDeck)

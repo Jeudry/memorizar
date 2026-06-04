@@ -164,6 +164,7 @@ class CoopService {
       isPublic: isPublic,
       deckId: deckId,
       deckName: deckName,
+      hostId: userId,
     );
     final code = (res['code'] as String?) ?? '';
     final hostId = (res['hostId'] as String?) ?? userId;
@@ -331,6 +332,25 @@ class CoopService {
     send(CoopMessage(
       type: 'countdown',
       userId: '',
+    ));
+  }
+
+  /// Sincroniza la finalización de un paso del ejercicio a todos los miembros.
+  /// [stepKey] es la clave completa `deck:card:slug` para que el receptor marque
+  /// exactamente el mismo paso sin ambigüedad.
+  void broadcastStepDone(String stepKey) {
+    send(CoopMessage(
+      type: 'step_done',
+      userId: activeUserId ?? '',
+      payload: {'key': stepKey},
+    ));
+  }
+
+  /// El host cierra la sala: notifica a todos para que salgan de inmediato.
+  void broadcastRoomClosed() {
+    send(CoopMessage(
+      type: 'room_closed',
+      userId: activeUserId ?? '',
     ));
   }
 

@@ -433,6 +433,7 @@ class MemorizarClient {
     bool isPublic = true,
     String deckId = '',
     String deckName = '',
+    String? hostId,
   }) async {
     final r = await _http.post(
       _uri('/v1/coop/rooms'),
@@ -441,6 +442,7 @@ class MemorizarClient {
         'isPublic': isPublic,
         'deckId': deckId,
         'deckName': deckName,
+        if (hostId != null) 'hostId': hostId,
       }),
     );
     return _decode(r);

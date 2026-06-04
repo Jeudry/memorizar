@@ -69,9 +69,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/sync/progress", s.withAuth(s.handleSyncProgress))
 
 	// Cooperativo en tiempo real (websocket).
-	s.mux.HandleFunc("/v1/coop/rooms", s.withAuth(s.handleCoopCreateRoom))
-	s.mux.HandleFunc("/v1/coop/rooms/lookup", s.withAuth(s.handleCoopLookup))
-	s.mux.HandleFunc("/v1/coop/rooms/public", s.withAuth(s.handleCoopListPublicRooms))
+	s.mux.HandleFunc("/v1/coop/rooms", s.withOptionalAuth(s.handleCoopCreateRoom))
+	s.mux.HandleFunc("/v1/coop/rooms/lookup", s.withOptionalAuth(s.handleCoopLookup))
+	s.mux.HandleFunc("/v1/coop/rooms/public", s.withOptionalAuth(s.handleCoopListPublicRooms))
 	s.mux.HandleFunc("/v1/coop/invite", s.withAuth(s.handleCoopInvite))
 	s.mux.HandleFunc("/v1/coop/invites/pending", s.withAuth(s.handleCoopGetPendingInvites))
 	s.mux.HandleFunc("/v1/coop/ws", s.coop.HandleWebsocket)
@@ -82,6 +82,22 @@ func (s *Server) withAuth(next func(http.ResponseWriter, *http.Request, string))
 		token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 		if token == "" {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing bearer token"})
+			return
+		}
+		user, err := s.service.Authenticate(token)
+		if err != nil || user == nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid session"})
+			return
+		}
+		next(w, r, user.ID)
+	}
+}
+
+func (s *Server) withOptionalAuth(next func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		if token == "" {
+			next(w, r, "")
 			return
 		}
 		user, err := s.service.Authenticate(token)
@@ -729,6 +745,7 @@ func (s *Server) handleCoopCreateRoom(w http.ResponseWriter, r *http.Request, us
 		IsPublic bool   `json:"isPublic"`
 		DeckID   string `json:"deckId"`
 		DeckName string `json:"deckName"`
+		HostID   string `json:"hostId"`
 	}
 	input := CreateInput{
 		IsPublic: true, // Default to public
@@ -736,7 +753,14 @@ func (s *Server) handleCoopCreateRoom(w http.ResponseWriter, r *http.Request, us
 	if r.ContentLength > 0 {
 		_ = json.NewDecoder(r.Body).Decode(&input)
 	}
-	room := s.coop.CreateRoom(userID, input.IsPublic, input.DeckID, input.DeckName)
+	effectiveHostID := userID
+	if effectiveHostID == "" {
+		effectiveHostID = input.HostID
+	}
+	if effectiveHostID == "" {
+		effectiveHostID = "guest_temp"
+	}
+	room := s.coop.CreateRoom(effectiveHostID, input.IsPublic, input.DeckID, input.DeckName)
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"code":   room.Code,
 		"hostId": room.HostID,

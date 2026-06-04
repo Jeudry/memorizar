@@ -270,13 +270,38 @@ class AppStore extends ChangeNotifier {
 
   static const _kSessionTokenKey = 'memorizar.session.token';
   static const _kSessionUserKey = 'memorizar.session.user';
+  static const _kGuestUserKey = 'memorizar.session.guest_user';
 
   RemoteUser? _currentUser;
+  RemoteUser? _guestUser;
   String? _sessionToken;
 
   RemoteUser? get currentUser => _currentUser;
   String? get sessionToken => _sessionToken;
   bool get isLoggedIn => _sessionToken != null && _sessionToken!.isNotEmpty;
+  
+  RemoteUser get effectiveUser {
+    if (_currentUser != null) {
+      return _currentUser!;
+    }
+    if (_guestUser == null) {
+      final nowStr = DateTime.now().millisecondsSinceEpoch.toString();
+      final num = nowStr.substring(nowStr.length - 4);
+      _guestUser = RemoteUser(
+        id: 'guest_$nowStr',
+        email: 'guest_$nowStr@memorizar.local',
+        displayName: 'Invitado #$num',
+        username: 'guest_$nowStr',
+        emailVerified: false,
+      );
+      // Persist asynchronously
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setString(_kGuestUserKey, jsonEncode(_guestUser!.toJson()));
+      });
+    }
+    return _guestUser!;
+  }
+
   /// Modo invitado: el usuario decide no iniciar sesión todavía pero sigue
   /// usando la app. La diferencia con "no logueado" es semántica solamente —
   /// hoy ambos se comportan igual.
@@ -409,6 +434,12 @@ class AppStore extends ChangeNotifier {
       await loadDecksFromDatabase();
     }
     final prefs = await SharedPreferences.getInstance();
+    final guestUserJson = prefs.getString(_kGuestUserKey);
+    if (guestUserJson != null) {
+      try {
+        _guestUser = RemoteUser.fromJson(jsonDecode(guestUserJson) as Map<String, dynamic>);
+      } catch (_) {}
+    }
     final token = prefs.getString(_kSessionTokenKey);
     final userJson = prefs.getString(_kSessionUserKey);
     if (token == null || token.isEmpty || userJson == null) return;
@@ -1262,9 +1293,18 @@ class AppStore extends ChangeNotifier {
     if (_completedExerciseSteps.add(key)) {
       if (CoopService.active != null) {
         CoopService.active!.reportScore(10);
+        // Sincroniza el paso completado a todos los miembros para que el árbol
+        // de progreso sea idéntico en host e invitados.
+        CoopService.active!.broadcastStepDone(key);
       }
       notifyListeners();
     }
+  }
+
+  /// Marca un paso como completado a partir de un evento de red (otro jugador
+  /// lo terminó). No re-emite para evitar bucles.
+  void applyRemoteStepDone(String key) {
+    if (_completedExerciseSteps.add(key)) notifyListeners();
   }
 
   void resetExerciseStepCompleted(String slug) {
