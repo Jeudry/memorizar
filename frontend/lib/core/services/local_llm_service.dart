@@ -103,12 +103,23 @@ class LocalLlmService {
   }
 
   /// Comprueba si el modelo cuantizado ya está descargado y completo.
+  /// En web no hay filesystem: devuelve false sin lanzar.
   Future<bool> checkModelExists() async {
+    if (kIsWeb) return false;
     final modelFile = File(await _modelPath);
     final modelFileExists = await modelFile.exists();
     if (!modelFileExists) return false;
     final length = await modelFile.length();
     return length >= _minValidModelBytes;
+  }
+
+  /// La IA está disponible si ya hay un motor sano respondiendo (otra
+  /// instancia o proceso externo lo levantó — único camino en web) o si el
+  /// modelo está descargado y podemos arrancarlo nosotros.
+  Future<bool> isAvailable() async {
+    final engineAlreadyUp = await LlamaServerManager.instance.isHealthy();
+    if (engineAlreadyUp) return true;
+    return checkModelExists();
   }
 
   /// Descarga única del modelo Gemma 3 4B QAT Q4_0 (~2.4 GB).

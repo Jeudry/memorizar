@@ -288,7 +288,7 @@ class ExerciseFlowScreen extends StatelessWidget {
         return const PremiumScreen();
       }
       return FutureBuilder<bool>(
-        future: llmService.checkModelExists(),
+        future: llmService.isAvailable(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
@@ -297,8 +297,8 @@ class ExerciseFlowScreen extends StatelessWidget {
               ),
             );
           }
-          final exists = snapshot.data ?? false;
-          if (!exists) {
+          final available = snapshot.data ?? false;
+          if (!available) {
             return const PremiumScreen();
           }
           if (!llmService.isReady) {
