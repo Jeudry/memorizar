@@ -302,7 +302,11 @@ class LocalLlmService {
   }
 
   Map<String, dynamic> _decodeJsonObject(String content) {
-    final decoded = jsonDecode(content);
+    // La gramática de llama.cpp permite saltos de línea crudos dentro de
+    // strings JSON; jsonDecode los rechaza. Normalizarlos a espacios es
+    // inocuo fuera de strings y repara el JSON dentro de ellas.
+    final sanitized = content.replaceAll(RegExp(r'[\x00-\x1F]'), ' ');
+    final decoded = jsonDecode(sanitized);
     if (decoded is Map<String, dynamic>) return decoded;
     throw const FormatException('La IA local no devolvió un objeto JSON.');
   }
