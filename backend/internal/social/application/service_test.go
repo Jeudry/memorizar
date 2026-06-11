@@ -126,3 +126,83 @@ func TestProgressSnapshotRoundTrip(t *testing.T) {
 		t.Fatal("expected saved snapshot")
 	}
 }
+
+func TestCommunityPublishImportAndStats(t *testing.T) {
+	service := NewService(memory.NewRepository())
+
+	owner, _ := service.SocialLogin(SocialLoginInput{
+		Provider:       domain.ProviderGoogle,
+		ProviderUserID: "owner-google",
+		Email:          "owner@example.com",
+		DisplayName:    "Owner",
+	})
+	importer, _ := service.SocialLogin(SocialLoginInput{
+		Provider:       domain.ProviderApple,
+		ProviderUserID: "importer-apple",
+		Email:          "importer@example.com",
+		DisplayName:    "Importer",
+	})
+
+	share, err := service.ShareResource(owner.User.ID, ShareResourceInput{
+		Kind:        domain.ShareKindDeck,
+		DeckID:      "deck-1",
+		Title:       "Versículos de fe",
+		Summary:     "Mis favoritos",
+		PayloadJSON: `{"cards":[{"front":"a","back":"b"}]}`,
+		IsPublic:    true,
+	})
+	if err != nil {
+		t.Fatalf("share resource: %v", err)
+	}
+
+	// Republicar el mismo deck no debe duplicar la publicación.
+	republished, err := service.ShareResource(owner.User.ID, ShareResourceInput{
+		Kind:        domain.ShareKindDeck,
+		DeckID:      "deck-1",
+		Title:       "Versículos de fe v2",
+		Summary:     "Actualizado",
+		PayloadJSON: `{"cards":[{"front":"a","back":"b"},{"front":"c","back":"d"}]}`,
+		IsPublic:    true,
+	})
+	if err != nil {
+		t.Fatalf("republish: %v", err)
+	}
+	if republished.ID != share.ID {
+		t.Fatalf("expected republish to reuse share id %s, got %s", share.ID, republished.ID)
+	}
+
+	// Importaciones: idempotentes por usuario y el dueño no cuenta.
+	if err := service.RegisterCommunityImport(importer.User.ID, share.ID); err != nil {
+		t.Fatalf("register import: %v", err)
+	}
+	if err := service.RegisterCommunityImport(importer.User.ID, share.ID); err != nil {
+		t.Fatalf("repeat import: %v", err)
+	}
+	if err := service.RegisterCommunityImport(owner.User.ID, share.ID); err != nil {
+		t.Fatalf("owner import should be a no-op: %v", err)
+	}
+
+	mine, err := service.ListOwnedCommunityDecks(owner.User.ID)
+	if err != nil {
+		t.Fatalf("list owned: %v", err)
+	}
+	if len(mine) != 1 {
+		t.Fatalf("expected 1 owned community deck, got %d", len(mine))
+	}
+	if mine[0].Title != "Versículos de fe v2" {
+		t.Fatalf("expected updated title, got %q", mine[0].Title)
+	}
+	if mine[0].ImportCount != 1 {
+		t.Fatalf("expected 1 import, got %d", mine[0].ImportCount)
+	}
+
+	if _, err := service.ShareResource(owner.User.ID, ShareResourceInput{
+		Kind:        domain.ShareKindDeck,
+		DeckID:      "deck-2",
+		Title:       "   ",
+		PayloadJSON: `{"cards":[]}`,
+		IsPublic:    true,
+	}); err != ErrMissingTitle {
+		t.Fatalf("expected ErrMissingTitle for blank public title, got %v", err)
+	}
+}

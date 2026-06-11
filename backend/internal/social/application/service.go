@@ -26,6 +26,8 @@ var (
 	ErrFriendshipForbidden = errors.New("friendship does not belong to user")
 	ErrInvalidShareKind    = errors.New("invalid share kind")
 	ErrMissingPayload      = errors.New("missing payload")
+	ErrShareNotFound       = errors.New("share not found")
+	ErrMissingTitle        = errors.New("missing title")
 	ErrFeedEntryNotFound   = errors.New("feed entry not found")
 	ErrEmailInUse          = errors.New("email already in use")
 	ErrInvalidCredentials  = errors.New("invalid credentials")
@@ -415,6 +417,75 @@ func (s *Service) ListSuggestedPeople(userID string) ([]domain.User, error) {
 	return suggestions, nil
 }
 
+// CommunityDeck es un SharedResource público enriquecido con sus stats a
+// nivel comunidad (cuántos usuarios distintos lo importaron).
+type CommunityDeck struct {
+	domain.SharedResource
+	ImportCount int `json:"importCount"`
+}
+
+func (s *Service) attachImportCounts(resources []domain.SharedResource) ([]CommunityDeck, error) {
+	shareIDs := make([]string, 0, len(resources))
+	for _, resource := range resources {
+		shareIDs = append(shareIDs, resource.ID)
+	}
+	counts, err := s.repo.CountShareImports(shareIDs)
+	if err != nil {
+		return nil, err
+	}
+	enriched := make([]CommunityDeck, 0, len(resources))
+	for _, resource := range resources {
+		enriched = append(enriched, CommunityDeck{
+			SharedResource: resource,
+			ImportCount:    counts[resource.ID],
+		})
+	}
+	return enriched, nil
+}
+
+// RegisterCommunityImport registra que `userID` importó el deck comunitario
+// `shareID`. Idempotente por usuario; el dueño no puede inflar sus stats.
+func (s *Service) RegisterCommunityImport(userID, shareID string) error {
+	shareID = strings.TrimSpace(shareID)
+	if shareID == "" {
+		return ErrMissingPayload
+	}
+	share, err := s.FindShareByID(shareID)
+	if err != nil {
+		return err
+	}
+	if share == nil || !share.IsPublic {
+		return ErrShareNotFound
+	}
+	if share.OwnerUserID == userID {
+		return nil
+	}
+	return s.repo.SaveShareImport(domain.ShareImport{
+		ShareID:   shareID,
+		UserID:    userID,
+		CreatedAt: s.now().UTC(),
+	})
+}
+
+// ListOwnedCommunityDecks devuelve los decks que el usuario publicó a la
+// comunidad, con sus stats de importación, ordenados del más reciente.
+func (s *Service) ListOwnedCommunityDecks(userID string) ([]CommunityDeck, error) {
+	all, err := s.repo.ListSharedResourcesForUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	owned := make([]domain.SharedResource, 0, len(all))
+	for _, resource := range all {
+		if resource.OwnerUserID == userID && resource.Kind == domain.ShareKindDeck && resource.IsPublic {
+			owned = append(owned, resource)
+		}
+	}
+	sort.Slice(owned, func(i, j int) bool {
+		return owned[i].CreatedAt.After(owned[j].CreatedAt)
+	})
+	return s.attachImportCounts(owned)
+}
+
 // SearchCommunityDecks busca SharedResources públicos cuyo título o
 // summary coincidan con la query (case-insensitive). Excluye los del propio
 // usuario. Devuelve hasta 25.
@@ -701,18 +772,43 @@ func (s *Service) ShareResource(userID string, input ShareResourceInput) (*domai
 	if strings.TrimSpace(input.PayloadJSON) == "" {
 		return nil, ErrMissingPayload
 	}
+	if input.IsPublic && strings.TrimSpace(input.Title) == "" {
+		return nil, ErrMissingTitle
+	}
+
+	resourceID := newID("shr")
+	createdAt := s.now().UTC()
+	deckID := strings.TrimSpace(input.DeckID)
+	// Republicar el mismo deck actualiza la publicación existente en lugar
+	// de duplicarla en el catálogo comunitario.
+	if input.IsPublic && input.Kind == domain.ShareKindDeck && deckID != "" {
+		existing, err := s.repo.ListSharedResourcesForUser(userID)
+		if err != nil {
+			return nil, err
+		}
+		for _, prior := range existing {
+			isSamePublicDeck := prior.OwnerUserID == userID && prior.IsPublic &&
+				prior.Kind == domain.ShareKindDeck && prior.DeckID == deckID
+			if isSamePublicDeck {
+				resourceID = prior.ID
+				createdAt = prior.CreatedAt
+				break
+			}
+		}
+	}
+
 	resource := domain.SharedResource{
-		ID:           newID("shr"),
+		ID:           resourceID,
 		OwnerUserID:  userID,
 		TargetUserID: strings.TrimSpace(input.TargetUserID),
 		Kind:         input.Kind,
 		Title:        strings.TrimSpace(input.Title),
 		Summary:      strings.TrimSpace(input.Summary),
-		DeckID:       strings.TrimSpace(input.DeckID),
+		DeckID:       deckID,
 		PlanID:       strings.TrimSpace(input.PlanID),
 		PayloadJSON:  input.PayloadJSON,
 		IsPublic:     input.IsPublic,
-		CreatedAt:    s.now().UTC(),
+		CreatedAt:    createdAt,
 	}
 	if err := s.repo.SaveSharedResource(resource); err != nil {
 		return nil, err

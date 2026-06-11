@@ -108,6 +108,14 @@ type SharedResource struct {
 	CreatedAt    time.Time `json:"createdAt"`
 }
 
+// ShareImport registra que un usuario importó un deck comunitario a su
+// colección. Una fila por (share, usuario): re-importar no infla stats.
+type ShareImport struct {
+	ShareID   string    `json:"shareId"`
+	UserID    string    `json:"userId"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 type ProgressSnapshot struct {
 	ID          string    `json:"id"`
 	UserID      string    `json:"userId"`

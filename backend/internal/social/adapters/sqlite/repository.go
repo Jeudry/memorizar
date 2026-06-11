@@ -461,6 +461,45 @@ func (r *Repository) ListPublicSharedResourcesByUserIDs(userIDs []string) ([]dom
 	return out, nil
 }
 
+func (r *Repository) SaveShareImport(shareImport domain.ShareImport) error {
+	_, err := r.db.Exec(`
+		INSERT OR IGNORE INTO share_imports (share_id, user_id, created_at)
+		VALUES (?, ?, ?)`,
+		shareImport.ShareID, shareImport.UserID, formatTime(shareImport.CreatedAt),
+	)
+	return err
+}
+
+func (r *Repository) CountShareImports(shareIDs []string) (map[string]int, error) {
+	counts := map[string]int{}
+	if len(shareIDs) == 0 {
+		return counts, nil
+	}
+	placeholders := strings.Repeat("?,", len(shareIDs)-1) + "?"
+	args := make([]any, len(shareIDs))
+	for i, v := range shareIDs {
+		args[i] = v
+	}
+	rows, err := r.db.Query(`
+		SELECT share_id, COUNT(*)
+		FROM share_imports
+		WHERE share_id IN (`+placeholders+`)
+		GROUP BY share_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var shareID string
+		var count int
+		if err := rows.Scan(&shareID, &count); err != nil {
+			return nil, err
+		}
+		counts[shareID] = count
+	}
+	return counts, nil
+}
+
 // ─── Reactions & Comments ───────────────────────────────────────────────
 
 func (r *Repository) SaveReaction(x domain.FeedReaction) error {

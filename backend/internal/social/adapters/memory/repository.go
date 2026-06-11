@@ -15,6 +15,7 @@ type Repository struct {
 	achievements      map[string]domain.Achievement
 	activities        map[string]domain.Activity
 	sharedResources   map[string]domain.SharedResource
+	shareImports      map[string]map[string]domain.ShareImport
 	reactions         map[string]domain.FeedReaction
 	comments          map[string]domain.FeedComment
 	progressSnapshots map[string]domain.ProgressSnapshot
@@ -28,6 +29,7 @@ func NewRepository() *Repository {
 		achievements:      map[string]domain.Achievement{},
 		activities:        map[string]domain.Activity{},
 		sharedResources:   map[string]domain.SharedResource{},
+		shareImports:      map[string]map[string]domain.ShareImport{},
 		reactions:         map[string]domain.FeedReaction{},
 		comments:          map[string]domain.FeedComment{},
 		progressSnapshots: map[string]domain.ProgressSnapshot{},
@@ -229,6 +231,36 @@ func (r *Repository) ListSharedResourcesForUser(userID string) ([]domain.SharedR
 		}
 	}
 	return result, nil
+}
+
+func (r *Repository) SaveShareImport(shareImport domain.ShareImport) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.shareImports == nil {
+		r.shareImports = map[string]map[string]domain.ShareImport{}
+	}
+	byUser, ok := r.shareImports[shareImport.ShareID]
+	if !ok {
+		byUser = map[string]domain.ShareImport{}
+		r.shareImports[shareImport.ShareID] = byUser
+	}
+	if _, alreadyImported := byUser[shareImport.UserID]; alreadyImported {
+		return nil
+	}
+	byUser[shareImport.UserID] = shareImport
+	return nil
+}
+
+func (r *Repository) CountShareImports(shareIDs []string) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	counts := map[string]int{}
+	for _, shareID := range shareIDs {
+		if byUser, ok := r.shareImports[shareID]; ok {
+			counts[shareID] = len(byUser)
+		}
+	}
+	return counts, nil
 }
 
 func (r *Repository) ListPublicSharedResourcesByUserIDs(userIDs []string) ([]domain.SharedResource, error) {

@@ -54,6 +54,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/social/suggestions", s.withAuth(s.handleSuggestions))
 	s.mux.HandleFunc("/v1/social/search", s.withAuth(s.handleSearch))
 	s.mux.HandleFunc("/v1/community/decks", s.withAuth(s.handleCommunitySearch))
+	s.mux.HandleFunc("/v1/community/mine", s.withAuth(s.handleCommunityMine))
+	s.mux.HandleFunc("/v1/community/imports", s.withAuth(s.handleCommunityImport))
 	// Endpoint público (sin auth) para resolver deeplinks `memorizar://deck/ID`.
 	// Solo expone shares con IsPublic=true.
 	s.mux.HandleFunc("/v1/public/shares/", s.handlePublicShare)
@@ -358,6 +360,45 @@ func (s *Server) handleCommunitySearch(w http.ResponseWriter, r *http.Request, u
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"decks": decks})
+}
+
+// handleCommunityMine devuelve los decks que el usuario publicó a la
+// comunidad con sus stats (importaciones por usuarios distintos).
+func (s *Server) handleCommunityMine(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	decks, err := s.service.ListOwnedCommunityDecks(userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"decks": decks})
+}
+
+// handleCommunityImport registra que el usuario importó un deck comunitario.
+func (s *Server) handleCommunityImport(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		ShareID string `json:"shareId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	if err := s.service.RegisterCommunityImport(userID, body.ShareID); err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, application.ErrShareNotFound) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleFriendRequest(w http.ResponseWriter, r *http.Request, userID string) {

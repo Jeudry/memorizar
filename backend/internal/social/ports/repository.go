@@ -28,6 +28,9 @@ type Repository interface {
 	ListSharedResourcesForUser(userID string) ([]domain.SharedResource, error)
 	ListPublicSharedResourcesByUserIDs(userIDs []string) ([]domain.SharedResource, error)
 
+	SaveShareImport(shareImport domain.ShareImport) error
+	CountShareImports(shareIDs []string) (map[string]int, error)
+
 	SaveReaction(reaction domain.FeedReaction) error
 	ListReactionsByEntryIDs(entryIDs []string) ([]domain.FeedReaction, error)
 

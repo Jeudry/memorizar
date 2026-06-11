@@ -17,6 +17,7 @@ type state struct {
 	Achievements      map[string]domain.Achievement      `json:"achievements"`
 	Activities        map[string]domain.Activity         `json:"activities"`
 	SharedResources   map[string]domain.SharedResource   `json:"sharedResources"`
+	ShareImports      map[string]map[string]domain.ShareImport `json:"shareImports"`
 	Reactions         map[string]domain.FeedReaction     `json:"reactions"`
 	Comments          map[string]domain.FeedComment      `json:"comments"`
 	ProgressSnapshots map[string]domain.ProgressSnapshot `json:"progressSnapshots"`
@@ -38,6 +39,7 @@ func NewRepository(path string) (*Repository, error) {
 			Achievements:      map[string]domain.Achievement{},
 			Activities:        map[string]domain.Activity{},
 			SharedResources:   map[string]domain.SharedResource{},
+			ShareImports:      map[string]map[string]domain.ShareImport{},
 			Reactions:         map[string]domain.FeedReaction{},
 			Comments:          map[string]domain.FeedComment{},
 			ProgressSnapshots: map[string]domain.ProgressSnapshot{},
@@ -281,6 +283,37 @@ func (r *Repository) ListPublicSharedResourcesByUserIDs(userIDs []string) ([]dom
 		}
 	}
 	return result, nil
+}
+
+func (r *Repository) SaveShareImport(shareImport domain.ShareImport) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state.ShareImports == nil {
+		// Estados persistidos antes de esta versión no traen el mapa.
+		r.state.ShareImports = map[string]map[string]domain.ShareImport{}
+	}
+	byUser, ok := r.state.ShareImports[shareImport.ShareID]
+	if !ok {
+		byUser = map[string]domain.ShareImport{}
+		r.state.ShareImports[shareImport.ShareID] = byUser
+	}
+	if _, alreadyImported := byUser[shareImport.UserID]; alreadyImported {
+		return nil
+	}
+	byUser[shareImport.UserID] = shareImport
+	return r.persistLocked()
+}
+
+func (r *Repository) CountShareImports(shareIDs []string) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	counts := map[string]int{}
+	for _, shareID := range shareIDs {
+		if byUser, ok := r.state.ShareImports[shareID]; ok {
+			counts[shareID] = len(byUser)
+		}
+	}
+	return counts, nil
 }
 
 func (r *Repository) SaveReaction(reaction domain.FeedReaction) error {

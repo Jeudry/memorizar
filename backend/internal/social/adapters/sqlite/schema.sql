@@ -78,6 +78,14 @@ CREATE TABLE IF NOT EXISTS shared_resources (
 CREATE INDEX IF NOT EXISTS idx_shares_owner ON shared_resources(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_shares_target ON shared_resources(target_user_id);
 
+CREATE TABLE IF NOT EXISTS share_imports (
+    share_id    TEXT NOT NULL REFERENCES shared_resources(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL,
+    PRIMARY KEY (share_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_share_imports_share ON share_imports(share_id);
+
 CREATE TABLE IF NOT EXISTS feed_reactions (
     id          TEXT PRIMARY KEY,
     entry_id    TEXT NOT NULL,
