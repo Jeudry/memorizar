@@ -402,6 +402,26 @@ class MemorizarClient {
     return list.cast<Map<String, dynamic>>();
   }
 
+  /// Mis decks publicados a la comunidad, con stats (importCount).
+  Future<List<Map<String, dynamic>>> listMyCommunityDecks() async {
+    final r = await _http.get(_uri('/v1/community/mine'), headers: _headers);
+    final body = await _decode(r);
+    final list = (body['decks'] as List? ?? const []).cast<dynamic>();
+    return list.cast<Map<String, dynamic>>();
+  }
+
+  /// Registra que este usuario importó un deck comunitario (stats del autor).
+  Future<void> registerCommunityImport(String shareId) async {
+    final r = await _http.post(
+      _uri('/v1/community/imports'),
+      headers: _headers,
+      body: jsonEncode({'shareId': shareId}),
+    );
+    if (r.statusCode >= 400) {
+      throw Exception('No se pudo registrar la importación (${r.statusCode}).');
+    }
+  }
+
   // ─── Sync de progreso ───────────────────────────────────────────────────
 
   Future<Map<String, dynamic>?> getProgressSnapshot() async {

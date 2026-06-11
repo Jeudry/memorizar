@@ -10,16 +10,131 @@ class ComunidadScreen extends StatefulWidget {
 }
 
 class _ComunidadScreenState extends State<ComunidadScreen> {
+  static const int _exploreTab = 0;
+  static const int _myDecksTab = 1;
+
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
   List<Map<String, dynamic>>? _results;
   bool _searching = false;
+
+  int _tabIndex = _exploreTab;
+  List<Map<String, dynamic>>? _myDecks;
+  bool _loadingMine = false;
+  String? _mineError;
 
   @override
   void dispose() {
     _debounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  void _switchTab(int index) {
+    if (_tabIndex == index) return;
+    setState(() => _tabIndex = index);
+    if (index == _myDecksTab && _myDecks == null) {
+      _loadMyDecks();
+    }
+  }
+
+  Future<void> _loadMyDecks() async {
+    if (_loadingMine) return;
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) {
+      setState(() {
+        _mineError = 'Inicia sesión para ver tus decks publicados.';
+        _myDecks = const [];
+      });
+      return;
+    }
+    setState(() {
+      _loadingMine = true;
+      _mineError = null;
+    });
+    try {
+      final decks = await store.api.listMyCommunityDecks();
+      if (!mounted) return;
+      setState(() => _myDecks = decks);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _mineError = 'No se pudieron cargar tus decks publicados.');
+      debugPrint('Error cargando mis decks comunitarios: $e');
+    } finally {
+      if (mounted) setState(() => _loadingMine = false);
+    }
+  }
+
+  /// Selector de mazos locales para publicar a la comunidad. Al elegir uno
+  /// se abre el sheet de visibilidad/consentimiento que hace la publicación.
+  void _startPublishFlow() {
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inicia sesión para publicar en la comunidad.')),
+      );
+      return;
+    }
+    final candidates = store.decks.where((deck) => deck.cards.isNotEmpty).toList();
+    if (candidates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Crea un mazo con tarjetas antes de publicarlo.')),
+      );
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        margin: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: HtmlRefColors.glassBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: HtmlRefColors.glassBorder),
+        ),
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              '¿Qué mazo quieres publicar?',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final deck in candidates)
+                    ListTile(
+                      leading: GlyphIcon(deck.icon, size: 22),
+                      title: Text(
+                        deck.title,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                      ),
+                      subtitle: Text(
+                        '${deck.cards.length} tarjetas',
+                        style: const TextStyle(color: RefColors.muted, fontSize: 11),
+                      ),
+                      onTap: () async {
+                        Navigator.of(sheetCtx).pop();
+                        await showVisibilityConsentSheet(
+                          context,
+                          deckId: deck.id,
+                          deckTitle: deck.title,
+                          current: deck.visibility,
+                        );
+                        _loadMyDecks();
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _onSearchChanged(String v) {
@@ -72,6 +187,13 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
         icon: (payload['icon'] as String?) ?? '🌍',
         cards: cards,
       );
+      // Registrar la importación para las stats comunitarias del autor.
+      final shareId = (share['id'] as String?) ?? '';
+      if (shareId.isNotEmpty) {
+        unawaited(store.api.registerCommunityImport(shareId).catchError((e) {
+          debugPrint('No se pudo registrar import comunitario: $e');
+        }));
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Mazo importado a tu colección')),
@@ -145,6 +267,100 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
     );
   }
 
+  Widget _buildTabSwitcher() {
+    return Glass(
+      radius: 16,
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: [
+          Expanded(
+            child: _ComunidadTab(
+              label: 'Explorar',
+              icon: Icons.public_rounded,
+              selected: _tabIndex == _exploreTab,
+              onTap: () => _switchTab(_exploreTab),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: _ComunidadTab(
+              label: 'Mis decks',
+              icon: Icons.collections_bookmark_rounded,
+              selected: _tabIndex == _myDecksTab,
+              onTap: () => _switchTab(_myDecksTab),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMyDecksTab() {
+    if (_loadingMine) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 40),
+        child: Center(child: CircularProgressIndicator(color: RefColors.cyan)),
+      );
+    }
+    if (_mineError != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          children: [
+            Text(
+              _mineError!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: RefColors.muted, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            Cta('Reintentar', onTap: _loadMyDecks),
+          ],
+        ),
+      );
+    }
+    final mine = _myDecks ?? const [];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Cta('+ Publicar un mazo a la comunidad', onTap: _startPublishFlow),
+        const SizedBox(height: 14),
+        if (mine.isEmpty)
+          Glass(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 30),
+            child: Column(
+              children: const [
+                Icon(Icons.cloud_upload_outlined, color: RefColors.cyan, size: 42),
+                SizedBox(height: 12),
+                Text(
+                  'Aún no publicaste ningún mazo',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  'Comparte tus mazos con la comunidad y mira cuántas personas los importan.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: RefColors.muted, fontSize: 12, height: 1.4),
+                ),
+              ],
+            ),
+          )
+        else ...[
+          Text(
+            '${mine.length} ${mine.length == 1 ? 'MAZO PUBLICADO' : 'MAZOS PUBLICADOS'}',
+            style: const TextStyle(
+              color: RefColors.muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (final deck in mine) _MyCommunityDeckCard(share: deck),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
@@ -159,6 +375,11 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
             'Descubre mazos',
             'Creados por personas que aprenden como tú',
           ),
+          _buildTabSwitcher(),
+          const SizedBox(height: 12),
+          if (_tabIndex == _myDecksTab) ...[
+            _buildMyDecksTab(),
+          ] else ...[
           Glass(
             radius: 18,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -281,8 +502,192 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
               '${deck.retention}%',
               cyan: deck.isBible,
             ),
+          ],
         ],
       ),
+    );
+  }
+}
+
+/// Chip de pestaña del switcher Explorar / Mis decks.
+class _ComunidadTab extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ComunidadTab({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          gradient: selected ? RefColors.primary : null,
+          color: selected ? null : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: selected ? Colors.white : RefColors.muted,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                color: selected ? Colors.white : RefColors.muted,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Card de un deck publicado por mí, con sus stats comunitarias.
+class _MyCommunityDeckCard extends StatelessWidget {
+  final Map<String, dynamic> share;
+
+  const _MyCommunityDeckCard({required this.share});
+
+  int _cardCount() {
+    try {
+      final raw = (share['payloadJson'] as String?) ?? '';
+      if (raw.isEmpty) return 0;
+      final payload = jsonDecode(raw) as Map<String, dynamic>;
+      return (payload['cards'] as List? ?? const []).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  String _publishedAgo() {
+    final raw = (share['createdAt'] as String?) ?? '';
+    final created = DateTime.tryParse(raw);
+    if (created == null) return '';
+    final days = DateTime.now().toUtc().difference(created.toUtc()).inDays;
+    if (days <= 0) return 'publicado hoy';
+    if (days == 1) return 'publicado hace 1 día';
+    return 'publicado hace $days días';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = (share['title'] as String?) ?? 'Sin título';
+    final summary = (share['summary'] as String?) ?? '';
+    final importCount = (share['importCount'] as int?) ?? 0;
+    final cardCount = _cardCount();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Glass(
+        radius: 16,
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.public_rounded, color: RefColors.cyan, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                  ),
+                ),
+                RefChip(
+                  '🌍 PÚBLICO',
+                  dense: true,
+                  color: const Color(0x2200D4FF),
+                  textColor: RefColors.cyan,
+                ),
+              ],
+            ),
+            if (summary.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                summary,
+                style: const TextStyle(color: RefColors.muted, fontSize: 11),
+              ),
+            ],
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _MyDeckStat(
+                  icon: Icons.download_rounded,
+                  value: '$importCount',
+                  label: importCount == 1 ? 'importación' : 'importaciones',
+                ),
+                const SizedBox(width: 14),
+                if (cardCount > 0)
+                  _MyDeckStat(
+                    icon: Icons.style_rounded,
+                    value: '$cardCount',
+                    label: 'tarjetas',
+                  ),
+                const Spacer(),
+                Text(
+                  _publishedAgo(),
+                  style: const TextStyle(color: RefColors.dim, fontSize: 10),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MyDeckStat extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+
+  const _MyDeckStat({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: RefColors.sun),
+        const SizedBox(width: 4),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+            color: RefColors.sun,
+          ),
+        ),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: const TextStyle(color: RefColors.muted, fontSize: 10),
+        ),
+      ],
     );
   }
 }
