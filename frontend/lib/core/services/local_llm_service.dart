@@ -170,12 +170,22 @@ class LocalLlmService {
   }
 
   Future<void> _doInit() async {
+    statusNotifier.value = 'Inicializando IA local en el dispositivo…';
+
+    // Si otra instancia (u otro proceso) ya dejó el motor sano con el modelo
+    // cargado, reutilizarlo sin tocar disco.
+    final engineAlreadyUp = await LlamaServerManager.instance.isHealthy();
+    if (engineAlreadyUp) {
+      _initialized = true;
+      statusNotifier.value = 'IA lista offline.';
+      return;
+    }
+
     final exists = await checkModelExists();
     if (!exists) {
       throw StateError('El modelo de IA local no está descargado.');
     }
 
-    statusNotifier.value = 'Inicializando IA local en el dispositivo…';
     try {
       final modelPath = await _modelPath;
       await LlamaServerManager.instance.ensureRunning(
