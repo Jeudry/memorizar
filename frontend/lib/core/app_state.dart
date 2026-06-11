@@ -1714,6 +1714,48 @@ class AppStore extends ChangeNotifier {
     ];
   }
 
+  /// Registra el resultado de una tarjeta jugada en modo cooperativo sobre
+  /// el SRS local, con la misma curva de retención que el modo solitario.
+  void recordCoopAnswer({
+    required String deckId,
+    required String cardId,
+    required bool correct,
+  }) {
+    final deckIndex = _decks.indexWhere((deck) => deck.id == deckId);
+    if (deckIndex < 0) return;
+    final deck = _decks[deckIndex];
+    final cardIndex = deck.cards.indexWhere((card) => card.id == cardId);
+    if (cardIndex < 0) return;
+    final cards = [...deck.cards];
+    final card = cards[cardIndex];
+    cards[cardIndex] = card.copyWith(
+      retention: (card.retention + (correct ? 8 : -14)).clamp(18, 100),
+      lapses: card.lapses + (correct ? 0 : 1),
+    );
+    if (enableDatabasePersistence) {
+      unawaited(db!.updateCardRetention(
+        cards[cardIndex].id,
+        cards[cardIndex].retention,
+        cards[cardIndex].lapses,
+      ));
+    }
+    _decks[deckIndex] = MemoryDeckData(
+      id: deck.id,
+      title: deck.title,
+      subtitle: deck.subtitle,
+      icon: deck.icon,
+      cards: cards,
+      createdAt: deck.createdAt,
+      isBible: deck.isBible,
+    );
+    if (correct) {
+      _correctAnswers++;
+    } else {
+      _wrongAnswers++;
+    }
+    notifyListeners();
+  }
+
   void answerCurrentCard(bool correct) {
     if (_decks.isEmpty || activeDeck.cards.isEmpty) return;
     final deckIndex = _decks.indexWhere((deck) => deck.id == activeDeck.id);

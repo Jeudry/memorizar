@@ -97,6 +97,22 @@ class CoopRoomState {
       );
 }
 
+/// Resultado de una pregunta respondida por el usuario local durante la
+/// partida cooperativa. Alimenta el recap real de la pantalla de éxito.
+class CoopAnswerRecord {
+  final int cardIndex;
+  final String question;
+  final String correctAnswer;
+  final bool wasCorrect;
+
+  const CoopAnswerRecord({
+    required this.cardIndex,
+    required this.question,
+    required this.correctAnswer,
+    required this.wasCorrect,
+  });
+}
+
 class CoopMessage {
   final String type;
   final String userId;
@@ -149,9 +165,21 @@ class CoopService {
   final _stateCtrl = StreamController<CoopRoomState>.broadcast();
   final _messagesCtrl = StreamController<CoopMessage>.broadcast();
 
+  /// Bitácora local de respuestas de ESTA partida (solo el usuario local).
+  final List<CoopAnswerRecord> answerLog = [];
+
+  /// Pistas que el usuario local compartió en esta partida.
+  int hintsShared = 0;
+
   CoopRoomState? get state => _state;
   Stream<CoopRoomState> get stateStream => _stateCtrl.stream;
   Stream<CoopMessage> get messages => _messagesCtrl.stream;
+
+  /// Reinicia los acumuladores de partida (al conectar o al empezar ronda).
+  void resetSessionLog() {
+    answerLog.clear();
+    hintsShared = 0;
+  }
 
   Future<CoopRoomState> createRoom({
     required String userId,
@@ -222,6 +250,7 @@ class CoopService {
     bool isPublic = true,
   }) async {
     await disconnect();
+    resetSessionLog();
     final uri = client.coopWsUri(code: code, userId: userId, name: name);
     final channel = WebSocketChannel.connect(uri);
     _channel = channel;
@@ -315,6 +344,10 @@ class CoopService {
         _state = state.copyWith(sessionDifficulty: diff, sessionDailyTarget: target, sessionMaxPlayers: maxP);
         _stateCtrl.add(_state!);
         break;
+      case 'countdown':
+        // Nueva ronda en camino: limpiar la bitácora de la partida anterior.
+        resetSessionLog();
+        break;
     }
     _messagesCtrl.add(msg);
   }
@@ -329,9 +362,19 @@ class CoopService {
   }
 
   void broadcastCountdown() {
+    resetSessionLog();
     send(CoopMessage(
       type: 'countdown',
       userId: '',
+    ));
+  }
+
+  /// El host marca la partida como terminada: todos los miembros navegan a
+  /// la pantalla de resultados al recibirlo (el relay incluye al emisor).
+  void broadcastSessionEnd() {
+    send(CoopMessage(
+      type: 'session_end',
+      userId: activeUserId ?? '',
     ));
   }
 
