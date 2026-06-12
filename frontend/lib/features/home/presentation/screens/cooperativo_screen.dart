@@ -139,7 +139,9 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
 
         // Cuando el host empuja la primera tarjeta y el invitado todavía
         // está en el lobby, lo llevamos automáticamente al game screen.
-        final nowInGame = s.currentDeckId != null;
+        // En modo quiz la navegación la dispara el mensaje quiz_cards: los
+        // avances de tarjeta del juego no deben re-navegar al flow.
+        final nowInGame = s.currentDeckId != null && s.mode != 'quiz';
         final iAmHost = _currentUserId == s.hostId;
         debugPrint('[coop] stateStream.listen: nowInGame=$nowInGame, wasInGame=$wasInGame, iAmHost=$iAmHost, currentDeckId=${s.currentDeckId}');
         if (!iAmHost && nowInGame && !wasInGame) {
