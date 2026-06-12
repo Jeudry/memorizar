@@ -171,6 +171,10 @@ class CoopService {
   /// Pistas que el usuario local compartió en esta partida.
   int hintsShared = 0;
 
+  /// Preguntas del modo quiz transmitidas por el host (generadas con su IA
+  /// local). Vacío = cada cliente genera el set determinista compartido.
+  List<Map<String, dynamic>>? sharedQuizCards;
+
   CoopRoomState? get state => _state;
   Stream<CoopRoomState> get stateStream => _stateCtrl.stream;
   Stream<CoopMessage> get messages => _messagesCtrl.stream;
@@ -179,6 +183,7 @@ class CoopService {
   void resetSessionLog() {
     answerLog.clear();
     hintsShared = 0;
+    sharedQuizCards = null;
   }
 
   Future<CoopRoomState> createRoom({
@@ -348,6 +353,16 @@ class CoopService {
         // Nueva ronda en camino: limpiar la bitácora de la partida anterior.
         resetSessionLog();
         break;
+      case 'quiz_cards':
+        // El host arranca el modo quiz; con payload usa SUS preguntas (IA),
+        // sin payload cada cliente genera el set determinista compartido.
+        final rawCards = msg.payload?['cards'];
+        sharedQuizCards = rawCards is List
+            ? rawCards
+                .map((card) => Map<String, dynamic>.from(card as Map))
+                .toList()
+            : <Map<String, dynamic>>[];
+        break;
     }
     _messagesCtrl.add(msg);
   }
@@ -366,6 +381,16 @@ class CoopService {
     send(CoopMessage(
       type: 'countdown',
       userId: '',
+    ));
+  }
+
+  /// El host arranca el modo quiz. [cards] son las preguntas generadas con
+  /// su IA local; lista vacía = generar determinista en cada cliente.
+  void broadcastQuizCards(List<Map<String, dynamic>> cards) {
+    send(CoopMessage(
+      type: 'quiz_cards',
+      userId: activeUserId ?? '',
+      payload: {'cards': cards},
     ));
   }
 

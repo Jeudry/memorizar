@@ -235,9 +235,69 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
               _checkGuestCanStartGame(store);
             });
           }
+        } else if (msg.type == 'quiz_cards' && mounted) {
+          // El host arrancó el modo quiz; los guests entran directo (las
+          // preguntas ya quedaron en CoopService.sharedQuizCards).
+          final iAmHost = _currentUserId == _state?.hostId;
+          if (!iAmHost) {
+            debugPrint('[coop] Guest entering quiz mode');
+            Navigator.pushNamed(context, AppRoutes.cooperativoJuego);
+          }
         }
       });
     }
+  }
+
+  /// Arranca el modo quiz como host: genera las preguntas con la IA local
+  /// (una por tarjeta del objetivo) mostrando progreso; si la IA no está
+  /// disponible transmite lista vacía y cada cliente usa el set determinista
+  /// compartido. Al final navega a la pantalla de juego.
+  Future<void> _startQuizMode(MemoryDeckData deck, int target) async {
+    final llm = LocalLlmService.instance;
+    final cardCount = math.min(target, deck.cards.length);
+    var quizCards = <Map<String, dynamic>>[];
+
+    final aiAvailable = await llm.isAvailable();
+    if (aiAvailable && mounted) {
+      final progress = ValueNotifier<String>('Despertando la IA local…');
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _QuizGenerationDialog(progress: progress),
+      );
+      try {
+        await llm.initLlm();
+        for (var i = 0; i < cardCount; i++) {
+          final card = deck.cards[i];
+          progress.value =
+              'Generando pregunta ${i + 1} de $cardCount con Gemma 3…';
+          final set = await llm.generateQuizRoundSet(
+            reference: card.front,
+            verseText: card.back,
+            advanced: false,
+          );
+          final mc = set.multipleChoice;
+          final options = <String>[mc.correct, ...mc.distractors]..shuffle();
+          quizCards.add({
+            'question': mc.question,
+            'options': options,
+            'correct': options.indexOf(mc.correct),
+            'sourceCardId': card.id,
+          });
+        }
+      } catch (e) {
+        debugPrint('[coop] Generación IA falló, usando set determinista: $e');
+        quizCards = [];
+      } finally {
+        if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
+
+    if (!mounted) return;
+    _coop!.broadcastQuizCards(quizCards);
+    // El relay también entrega el mensaje al host: su CoopService guarda las
+    // cards y la pantalla de juego las leerá igual que los guests.
+    Navigator.pushNamed(context, AppRoutes.cooperativoJuego);
   }
 
   String _deckCreationTab = 'manual'; // 'manual' | 'biblia' | 'texto'
@@ -1417,7 +1477,12 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                             isBible: d.isBible,
                             cards: cardsList,
                           );
-                          
+
+                          if (state.mode == 'quiz') {
+                            await _startQuizMode(d, target);
+                            return;
+                          }
+
                           // Broadcast countdown so guests also start their local countdowns
                           debugPrint('[coop] Host broadcasting countdown');
                           _coop!.broadcastCountdown();
@@ -2060,6 +2125,57 @@ class _CoopCard {
   });
 }
 
+/// Diálogo de progreso mientras la IA local del host genera las preguntas
+/// del modo quiz cooperativo.
+class _QuizGenerationDialog extends StatelessWidget {
+  final ValueNotifier<String> progress;
+  const _QuizGenerationDialog({required this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF0F0C1B),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 42,
+              height: 42,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation<Color>(RefColors.pink),
+              ),
+            ),
+            const SizedBox(height: 18),
+            ValueListenableBuilder<String>(
+              valueListenable: progress,
+              builder: (context, status, _) => Text(
+                status,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  height: 1.4,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Las mismas preguntas llegarán a todos los jugadores',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: RefColors.muted, fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class CooperativoGameScreen extends StatefulWidget {
   const CooperativoGameScreen({super.key});
 
@@ -2255,7 +2371,23 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
 
   List<_CoopCard> _getGameCards(BuildContext context) {
     if (_dynamicCards != null) return _dynamicCards!;
-    
+
+    // Preguntas transmitidas por el host (modo quiz con IA local): idénticas
+    // para todos los jugadores.
+    final shared = _coop?.sharedQuizCards;
+    if (shared != null && shared.isNotEmpty) {
+      _dynamicCards = [
+        for (final card in shared)
+          _CoopCard(
+            question: (card['question'] as String?) ?? '',
+            options: List<String>.from(card['options'] as List? ?? const []),
+            correct: (card['correct'] as int?) ?? 0,
+            sourceCardId: (card['sourceCardId'] as String?) ?? '',
+          ),
+      ];
+      return _dynamicCards!;
+    }
+
     final store = AppScope.of(context);
     final deck = store.decks.firstWhere(
       (d) => d.id == _state?.currentDeckId,
@@ -3871,6 +4003,9 @@ class _CoopSettingsCard extends StatelessWidget {
     if (roomState.mode == 'libre') {
       modeDesc = 'Cualquiera responde · 8s cooldown si fallas';
       modeLabel = 'Estudio Libre';
+    } else if (roomState.mode == 'quiz') {
+      modeDesc = 'Preguntas generadas por la IA local del host';
+      modeLabel = 'Quiz Rápido (IA)';
     }
 
     final totalCards = deck?.cards.length ?? 0;
@@ -4043,6 +4178,16 @@ class _CoopSettingsCard extends StatelessWidget {
                 trailing: roomState.mode == 'libre' ? const Icon(Icons.check_circle, color: RefColors.cyan) : null,
                 onTap: () {
                   coop.broadcastMode('libre');
+                  Navigator.pop(ctx);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.psychology_rounded, color: RefColors.pink),
+                title: const Text('Quiz Rápido (IA)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                subtitle: const Text('Preguntas de opción múltiple generadas por la IA local del host', style: TextStyle(color: RefColors.muted, fontSize: 11)),
+                trailing: roomState.mode == 'quiz' ? const Icon(Icons.check_circle, color: RefColors.pink) : null,
+                onTap: () {
+                  coop.broadcastMode('quiz');
                   Navigator.pop(ctx);
                 },
               ),
