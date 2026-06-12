@@ -68,8 +68,8 @@ class PushService {
     if (_timezoneReady) return;
     tzdata.initializeTimeZones();
     try {
-      final localName = await FlutterTimezone.getLocalTimezone();
-      tz.setLocalLocation(tz.getLocation(localName));
+      final localTimezone = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(localTimezone.identifier));
     } catch (e) {
       // Sin nombre IANA detectable (raro): tz.local queda en UTC.
       debugPrint('[PushService] No se pudo detectar la zona horaria: $e');
@@ -111,6 +111,8 @@ class PushService {
       firstFire,
       _reminderDetails,
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
       matchDateTimeComponents: DateTimeComponents.time,
     );
     debugPrint('[PushService] Recordatorio diario programado a las $hour:00');
