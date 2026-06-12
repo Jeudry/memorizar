@@ -29,13 +29,34 @@ class Cards extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [Decks, Cards])
+/// Actividad agregada por día local (clave 'YYYY-MM-DD'). Alimenta la racha
+/// real y los filtros de período de la pantalla de estadísticas.
+class DailyActivity extends Table {
+  TextColumn get day => text()();
+  IntColumn get correct => integer().withDefault(const Constant(0))();
+  IntColumn get wrong => integer().withDefault(const Constant(0))();
+  IntColumn get cardsReviewed => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {day};
+}
+
+@DriftDatabase(tables: [Decks, Cards, DailyActivity])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(impl.connect());
   AppDatabase.memory() : super(impl.connect(inMemory: true));
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            await m.createTable(dailyActivity);
+          }
+        },
+      );
 
   // Deck queries
   Future<List<Deck>> getAllDecks() => select(decks).get();
@@ -61,9 +82,33 @@ class AppDatabase extends _$AppDatabase {
         lapses: Value(lapses),
       ));
 
+  // Daily activity queries
+  Future<void> recordDailyActivity({
+    required String day,
+    int correctDelta = 0,
+    int wrongDelta = 0,
+    int reviewedDelta = 0,
+  }) {
+    return customStatement(
+      'INSERT INTO daily_activity (day, correct, wrong, cards_reviewed) '
+      'VALUES (?, ?, ?, ?) '
+      'ON CONFLICT(day) DO UPDATE SET '
+      'correct = correct + excluded.correct, '
+      'wrong = wrong + excluded.wrong, '
+      'cards_reviewed = cards_reviewed + excluded.cards_reviewed',
+      [day, correctDelta, wrongDelta, reviewedDelta],
+    );
+  }
+
+  Future<List<DailyActivityData>> getAllDailyActivity() =>
+      (select(dailyActivity)
+            ..orderBy([(t) => OrderingTerm.desc(t.day)]))
+          .get();
+
   Future<void> clearAll() async {
     await delete(cards).go();
     await delete(decks).go();
+    await delete(dailyActivity).go();
   }
 }
 

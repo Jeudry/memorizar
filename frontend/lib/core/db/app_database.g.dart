@@ -897,16 +897,332 @@ class CardsCompanion extends UpdateCompanion<Card> {
   }
 }
 
+class $DailyActivityTable extends DailyActivity
+    with TableInfo<$DailyActivityTable, DailyActivityData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DailyActivityTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _dayMeta = const VerificationMeta('day');
+  @override
+  late final GeneratedColumn<String> day = GeneratedColumn<String>(
+    'day',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _correctMeta = const VerificationMeta(
+    'correct',
+  );
+  @override
+  late final GeneratedColumn<int> correct = GeneratedColumn<int>(
+    'correct',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _wrongMeta = const VerificationMeta('wrong');
+  @override
+  late final GeneratedColumn<int> wrong = GeneratedColumn<int>(
+    'wrong',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _cardsReviewedMeta = const VerificationMeta(
+    'cardsReviewed',
+  );
+  @override
+  late final GeneratedColumn<int> cardsReviewed = GeneratedColumn<int>(
+    'cards_reviewed',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [day, correct, wrong, cardsReviewed];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'daily_activity';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DailyActivityData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('day')) {
+      context.handle(
+        _dayMeta,
+        day.isAcceptableOrUnknown(data['day']!, _dayMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_dayMeta);
+    }
+    if (data.containsKey('correct')) {
+      context.handle(
+        _correctMeta,
+        correct.isAcceptableOrUnknown(data['correct']!, _correctMeta),
+      );
+    }
+    if (data.containsKey('wrong')) {
+      context.handle(
+        _wrongMeta,
+        wrong.isAcceptableOrUnknown(data['wrong']!, _wrongMeta),
+      );
+    }
+    if (data.containsKey('cards_reviewed')) {
+      context.handle(
+        _cardsReviewedMeta,
+        cardsReviewed.isAcceptableOrUnknown(
+          data['cards_reviewed']!,
+          _cardsReviewedMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {day};
+  @override
+  DailyActivityData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DailyActivityData(
+      day: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}day'],
+      )!,
+      correct: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}correct'],
+      )!,
+      wrong: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}wrong'],
+      )!,
+      cardsReviewed: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cards_reviewed'],
+      )!,
+    );
+  }
+
+  @override
+  $DailyActivityTable createAlias(String alias) {
+    return $DailyActivityTable(attachedDatabase, alias);
+  }
+}
+
+class DailyActivityData extends DataClass
+    implements Insertable<DailyActivityData> {
+  final String day;
+  final int correct;
+  final int wrong;
+  final int cardsReviewed;
+  const DailyActivityData({
+    required this.day,
+    required this.correct,
+    required this.wrong,
+    required this.cardsReviewed,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['day'] = Variable<String>(day);
+    map['correct'] = Variable<int>(correct);
+    map['wrong'] = Variable<int>(wrong);
+    map['cards_reviewed'] = Variable<int>(cardsReviewed);
+    return map;
+  }
+
+  DailyActivityCompanion toCompanion(bool nullToAbsent) {
+    return DailyActivityCompanion(
+      day: Value(day),
+      correct: Value(correct),
+      wrong: Value(wrong),
+      cardsReviewed: Value(cardsReviewed),
+    );
+  }
+
+  factory DailyActivityData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DailyActivityData(
+      day: serializer.fromJson<String>(json['day']),
+      correct: serializer.fromJson<int>(json['correct']),
+      wrong: serializer.fromJson<int>(json['wrong']),
+      cardsReviewed: serializer.fromJson<int>(json['cardsReviewed']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'day': serializer.toJson<String>(day),
+      'correct': serializer.toJson<int>(correct),
+      'wrong': serializer.toJson<int>(wrong),
+      'cardsReviewed': serializer.toJson<int>(cardsReviewed),
+    };
+  }
+
+  DailyActivityData copyWith({
+    String? day,
+    int? correct,
+    int? wrong,
+    int? cardsReviewed,
+  }) => DailyActivityData(
+    day: day ?? this.day,
+    correct: correct ?? this.correct,
+    wrong: wrong ?? this.wrong,
+    cardsReviewed: cardsReviewed ?? this.cardsReviewed,
+  );
+  DailyActivityData copyWithCompanion(DailyActivityCompanion data) {
+    return DailyActivityData(
+      day: data.day.present ? data.day.value : this.day,
+      correct: data.correct.present ? data.correct.value : this.correct,
+      wrong: data.wrong.present ? data.wrong.value : this.wrong,
+      cardsReviewed: data.cardsReviewed.present
+          ? data.cardsReviewed.value
+          : this.cardsReviewed,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DailyActivityData(')
+          ..write('day: $day, ')
+          ..write('correct: $correct, ')
+          ..write('wrong: $wrong, ')
+          ..write('cardsReviewed: $cardsReviewed')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(day, correct, wrong, cardsReviewed);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DailyActivityData &&
+          other.day == this.day &&
+          other.correct == this.correct &&
+          other.wrong == this.wrong &&
+          other.cardsReviewed == this.cardsReviewed);
+}
+
+class DailyActivityCompanion extends UpdateCompanion<DailyActivityData> {
+  final Value<String> day;
+  final Value<int> correct;
+  final Value<int> wrong;
+  final Value<int> cardsReviewed;
+  final Value<int> rowid;
+  const DailyActivityCompanion({
+    this.day = const Value.absent(),
+    this.correct = const Value.absent(),
+    this.wrong = const Value.absent(),
+    this.cardsReviewed = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  DailyActivityCompanion.insert({
+    required String day,
+    this.correct = const Value.absent(),
+    this.wrong = const Value.absent(),
+    this.cardsReviewed = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : day = Value(day);
+  static Insertable<DailyActivityData> custom({
+    Expression<String>? day,
+    Expression<int>? correct,
+    Expression<int>? wrong,
+    Expression<int>? cardsReviewed,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (day != null) 'day': day,
+      if (correct != null) 'correct': correct,
+      if (wrong != null) 'wrong': wrong,
+      if (cardsReviewed != null) 'cards_reviewed': cardsReviewed,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  DailyActivityCompanion copyWith({
+    Value<String>? day,
+    Value<int>? correct,
+    Value<int>? wrong,
+    Value<int>? cardsReviewed,
+    Value<int>? rowid,
+  }) {
+    return DailyActivityCompanion(
+      day: day ?? this.day,
+      correct: correct ?? this.correct,
+      wrong: wrong ?? this.wrong,
+      cardsReviewed: cardsReviewed ?? this.cardsReviewed,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (day.present) {
+      map['day'] = Variable<String>(day.value);
+    }
+    if (correct.present) {
+      map['correct'] = Variable<int>(correct.value);
+    }
+    if (wrong.present) {
+      map['wrong'] = Variable<int>(wrong.value);
+    }
+    if (cardsReviewed.present) {
+      map['cards_reviewed'] = Variable<int>(cardsReviewed.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DailyActivityCompanion(')
+          ..write('day: $day, ')
+          ..write('correct: $correct, ')
+          ..write('wrong: $wrong, ')
+          ..write('cardsReviewed: $cardsReviewed, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final $DecksTable decks = $DecksTable(this);
   late final $CardsTable cards = $CardsTable(this);
+  late final $DailyActivityTable dailyActivity = $DailyActivityTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
-  List<DatabaseSchemaEntity> get allSchemaEntities => [decks, cards];
+  List<DatabaseSchemaEntity> get allSchemaEntities => [
+    decks,
+    cards,
+    dailyActivity,
+  ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
     WritePropagation(
@@ -1601,6 +1917,193 @@ typedef $$CardsTableProcessedTableManager =
       Card,
       PrefetchHooks Function({bool deckId})
     >;
+typedef $$DailyActivityTableCreateCompanionBuilder =
+    DailyActivityCompanion Function({
+      required String day,
+      Value<int> correct,
+      Value<int> wrong,
+      Value<int> cardsReviewed,
+      Value<int> rowid,
+    });
+typedef $$DailyActivityTableUpdateCompanionBuilder =
+    DailyActivityCompanion Function({
+      Value<String> day,
+      Value<int> correct,
+      Value<int> wrong,
+      Value<int> cardsReviewed,
+      Value<int> rowid,
+    });
+
+class $$DailyActivityTableFilterComposer
+    extends Composer<_$AppDatabase, $DailyActivityTable> {
+  $$DailyActivityTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get day => $composableBuilder(
+    column: $table.day,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get correct => $composableBuilder(
+    column: $table.correct,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get wrong => $composableBuilder(
+    column: $table.wrong,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get cardsReviewed => $composableBuilder(
+    column: $table.cardsReviewed,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$DailyActivityTableOrderingComposer
+    extends Composer<_$AppDatabase, $DailyActivityTable> {
+  $$DailyActivityTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get day => $composableBuilder(
+    column: $table.day,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get correct => $composableBuilder(
+    column: $table.correct,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get wrong => $composableBuilder(
+    column: $table.wrong,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get cardsReviewed => $composableBuilder(
+    column: $table.cardsReviewed,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$DailyActivityTableAnnotationComposer
+    extends Composer<_$AppDatabase, $DailyActivityTable> {
+  $$DailyActivityTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get day =>
+      $composableBuilder(column: $table.day, builder: (column) => column);
+
+  GeneratedColumn<int> get correct =>
+      $composableBuilder(column: $table.correct, builder: (column) => column);
+
+  GeneratedColumn<int> get wrong =>
+      $composableBuilder(column: $table.wrong, builder: (column) => column);
+
+  GeneratedColumn<int> get cardsReviewed => $composableBuilder(
+    column: $table.cardsReviewed,
+    builder: (column) => column,
+  );
+}
+
+class $$DailyActivityTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $DailyActivityTable,
+          DailyActivityData,
+          $$DailyActivityTableFilterComposer,
+          $$DailyActivityTableOrderingComposer,
+          $$DailyActivityTableAnnotationComposer,
+          $$DailyActivityTableCreateCompanionBuilder,
+          $$DailyActivityTableUpdateCompanionBuilder,
+          (
+            DailyActivityData,
+            BaseReferences<
+              _$AppDatabase,
+              $DailyActivityTable,
+              DailyActivityData
+            >,
+          ),
+          DailyActivityData,
+          PrefetchHooks Function()
+        > {
+  $$DailyActivityTableTableManager(_$AppDatabase db, $DailyActivityTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DailyActivityTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DailyActivityTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DailyActivityTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> day = const Value.absent(),
+                Value<int> correct = const Value.absent(),
+                Value<int> wrong = const Value.absent(),
+                Value<int> cardsReviewed = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DailyActivityCompanion(
+                day: day,
+                correct: correct,
+                wrong: wrong,
+                cardsReviewed: cardsReviewed,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String day,
+                Value<int> correct = const Value.absent(),
+                Value<int> wrong = const Value.absent(),
+                Value<int> cardsReviewed = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DailyActivityCompanion.insert(
+                day: day,
+                correct: correct,
+                wrong: wrong,
+                cardsReviewed: cardsReviewed,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DailyActivityTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $DailyActivityTable,
+      DailyActivityData,
+      $$DailyActivityTableFilterComposer,
+      $$DailyActivityTableOrderingComposer,
+      $$DailyActivityTableAnnotationComposer,
+      $$DailyActivityTableCreateCompanionBuilder,
+      $$DailyActivityTableUpdateCompanionBuilder,
+      (
+        DailyActivityData,
+        BaseReferences<_$AppDatabase, $DailyActivityTable, DailyActivityData>,
+      ),
+      DailyActivityData,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -1609,4 +2112,6 @@ class $AppDatabaseManager {
       $$DecksTableTableManager(_db, _db.decks);
   $$CardsTableTableManager get cards =>
       $$CardsTableTableManager(_db, _db.cards);
+  $$DailyActivityTableTableManager get dailyActivity =>
+      $$DailyActivityTableTableManager(_db, _db.dailyActivity);
 }

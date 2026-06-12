@@ -189,8 +189,70 @@ class AppStore extends ChangeNotifier {
   final AppDatabase? db;
   final bool enableDatabasePersistence;
 
+  /// Historial de actividad diaria (día 'YYYY-MM-DD' → totales), ordenado
+  /// del más reciente. Fuente de la racha real y de los filtros de Stats.
+  List<DailyActivityData> _dailyActivity = [];
+  List<DailyActivityData> get dailyActivity =>
+      List.unmodifiable(_dailyActivity);
+
+  static String _dayKey(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+  Future<void> _loadDailyActivity() async {
+    if (db == null) return;
+    _dailyActivity = await db!.getAllDailyActivity();
+  }
+
+  /// Registra una respuesta en la actividad de HOY (memoria + Drift).
+  void _recordAnswerActivity({required bool correct, int count = 1}) {
+    final today = _dayKey(DateTime.now());
+    final index = _dailyActivity.indexWhere((entry) => entry.day == today);
+    if (index >= 0) {
+      final current = _dailyActivity[index];
+      _dailyActivity[index] = current.copyWith(
+        correct: current.correct + (correct ? count : 0),
+        wrong: current.wrong + (correct ? 0 : count),
+        cardsReviewed: current.cardsReviewed + count,
+      );
+    } else {
+      _dailyActivity.insert(
+        0,
+        DailyActivityData(
+          day: today,
+          correct: correct ? count : 0,
+          wrong: correct ? 0 : count,
+          cardsReviewed: count,
+        ),
+      );
+    }
+    if (enableDatabasePersistence) {
+      unawaited(db!.recordDailyActivity(
+        day: today,
+        correctDelta: correct ? count : 0,
+        wrongDelta: correct ? 0 : count,
+        reviewedDelta: count,
+      ));
+    }
+  }
+
+  /// Suma de actividad de los últimos [days] días (incluyendo hoy).
+  ({int correct, int wrong, int reviewed}) activityInLastDays(int days) {
+    final cutoff = _dayKey(DateTime.now().subtract(Duration(days: days - 1)));
+    var correct = 0;
+    var wrong = 0;
+    var reviewed = 0;
+    for (final entry in _dailyActivity) {
+      if (entry.day.compareTo(cutoff) < 0) break;
+      correct += entry.correct;
+      wrong += entry.wrong;
+      reviewed += entry.cardsReviewed;
+    }
+    return (correct: correct, wrong: wrong, reviewed: reviewed);
+  }
+
   Future<void> loadDecksFromDatabase() async {
     if (db == null) return;
+    await _loadDailyActivity();
     final dbDecks = await db!.getAllDecks();
     if (dbDecks.isEmpty) {
       // Pre-cargar mazo de demostración de Filipenses 4
@@ -970,7 +1032,25 @@ class AppStore extends ChangeNotifier {
   }
 
   int get completedCards => _correctAnswers + _wrongAnswers;
-  int get streakDays => _decks.isEmpty ? 0 : 1;
+
+  /// Racha real: días consecutivos con actividad registrada, contando hacia
+  /// atrás desde hoy (o desde ayer, para no romper la racha antes de
+  /// practicar hoy).
+  int get streakDays {
+    if (_dailyActivity.isEmpty) return 0;
+    final activeDays = _dailyActivity.map((entry) => entry.day).toSet();
+    var cursor = DateTime.now();
+    if (!activeDays.contains(_dayKey(cursor))) {
+      cursor = cursor.subtract(const Duration(days: 1));
+      if (!activeDays.contains(_dayKey(cursor))) return 0;
+    }
+    var streak = 0;
+    while (activeDays.contains(_dayKey(cursor))) {
+      streak++;
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+    return streak;
+  }
   int get totalCards =>
       _decks.fold(0, (total, deck) => total + deck.cards.length);
   int get averageRetention {
@@ -1753,6 +1833,7 @@ class AppStore extends ChangeNotifier {
     } else {
       _wrongAnswers++;
     }
+    _recordAnswerActivity(correct: correct);
     notifyListeners();
   }
 
@@ -1788,6 +1869,7 @@ class AppStore extends ChangeNotifier {
       } else {
         _wrongAnswers += cards.length;
       }
+      _recordAnswerActivity(correct: correct, count: cards.length);
       _currentCardIndex = 0;
       notifyListeners();
       return;
@@ -1814,6 +1896,7 @@ class AppStore extends ChangeNotifier {
     } else {
       _wrongAnswers++;
     }
+    _recordAnswerActivity(correct: correct);
     _currentCardIndex = (_currentCardIndex + 1) % cards.length;
     notifyListeners();
   }
