@@ -1066,6 +1066,15 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 8),
+                  if (CoopService.lastRoomCode != null && _state == null) ...[
+                    GhostButton(
+                      '↻ Reconectar a la sala ${CoopService.lastRoomCode}',
+                      onTap: _busy
+                          ? null
+                          : () => _joinPublic(CoopService.lastRoomCode!),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,
@@ -2195,6 +2204,8 @@ class CooperativoGameScreen extends StatefulWidget {
 }
 
 class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
+  static const int _questionSeconds = 30;
+
   CoopService? _coop;
   CoopRoomState? _state;
   StreamSubscription<CoopRoomState>? _sub;
@@ -2205,6 +2216,8 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
   bool _answered = false; // ya contestó esta tarjeta
   String? _lastResult; // 'correct' | 'wrong'
   List<_CoopCard>? _dynamicCards;
+  Timer? _questionTimer;
+  int _secondsLeft = _questionSeconds;
 
   @override
   void initState() {
@@ -2212,6 +2225,7 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
     _coop = CoopService.active;
     _state = _coop?.state;
     
+    _startQuestionTimer();
     _sub = _coop?.stateStream.listen((s) {
       if (!mounted) return;
       final movedCard = s.currentCardIndex != _state?.currentCardIndex;
@@ -2223,6 +2237,7 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
           _lastResult = null;
           _answeredUsers.clear();
           _activeHint = null;
+          _startQuestionTimer();
         }
       });
     });
@@ -2269,9 +2284,57 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
 
   @override
   void dispose() {
+    _questionTimer?.cancel();
     _sub?.cancel();
     _msgSub?.cancel();
     super.dispose();
+  }
+
+  /// Cuenta regresiva por pregunta: al agotarse, la pregunta se da por
+  /// fallada automáticamente para que una persona ausente no congele la
+  /// partida del grupo.
+  void _startQuestionTimer() {
+    _questionTimer?.cancel();
+    _secondsLeft = _questionSeconds;
+    _questionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || _answered) {
+        timer.cancel();
+        return;
+      }
+      if (_secondsLeft <= 1) {
+        timer.cancel();
+        _confirmTimeout();
+        return;
+      }
+      setState(() => _secondsLeft--);
+    });
+  }
+
+  void _confirmTimeout() {
+    if (_answered) return;
+    setState(() {
+      _answered = true;
+      _lastResult = 'wrong';
+      _answeredUsers.add(CoopService.activeUserId ?? '');
+    });
+    _coop?.reportScore(0);
+    final gameCards = _getGameCards(context);
+    if (gameCards.isNotEmpty && _state != null) {
+      final cardIndex = _state!.currentCardIndex % gameCards.length;
+      final currentCard = gameCards[cardIndex];
+      _coop?.answerLog.add(CoopAnswerRecord(
+        cardIndex: cardIndex,
+        question: currentCard.question,
+        correctAnswer: currentCard.options[currentCard.correct],
+        wasCorrect: false,
+      ));
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('⏰ Se acabó el tiempo para esta pregunta.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   bool get _isHost {
@@ -2700,7 +2763,9 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _CoopTopBar(
-            center: 'EN JUEGO · ${state.currentCardIndex + 1}/${gameCards.length}',
+            center: _answered
+                ? 'EN JUEGO · ${state.currentCardIndex + 1}/${gameCards.length}'
+                : 'EN JUEGO · ${state.currentCardIndex + 1}/${gameCards.length} · ⏱ ${_secondsLeft}s',
             live: true,
           ),
           const SizedBox(height: 8),

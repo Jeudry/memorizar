@@ -159,6 +159,11 @@ class CoopService {
   /// para que la pantalla de juego sepa cuál fila del scoreboard es "yo".
   static String? activeUserId;
 
+  /// Último código de sala al que se conectó esta sesión de app. Permite
+  /// ofrecer "Reconectar" en el lobby tras una caída de conexión (la sala
+  /// con partida activa sobrevive 5 min vacía en el backend).
+  static String? lastRoomCode;
+
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _sub;
   CoopRoomState? _state;
@@ -256,6 +261,7 @@ class CoopService {
   }) async {
     await disconnect();
     resetSessionLog();
+    lastRoomCode = code;
     final uri = client.coopWsUri(code: code, userId: userId, name: name);
     final channel = WebSocketChannel.connect(uri);
     _channel = channel;
