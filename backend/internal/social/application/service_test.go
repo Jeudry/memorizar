@@ -206,3 +206,60 @@ func TestCommunityPublishImportAndStats(t *testing.T) {
 		t.Fatalf("expected ErrMissingTitle for blank public title, got %v", err)
 	}
 }
+
+func TestCommunityOverviewAggregatesRealData(t *testing.T) {
+	service := NewService(memory.NewRepository())
+
+	owner, _ := service.SocialLogin(SocialLoginInput{
+		Provider:       domain.ProviderGoogle,
+		ProviderUserID: "ov-owner",
+		Email:          "ov-owner@example.com",
+		DisplayName:    "Creadora",
+	})
+	importer, _ := service.SocialLogin(SocialLoginInput{
+		Provider:       domain.ProviderApple,
+		ProviderUserID: "ov-importer",
+		Email:          "ov-importer@example.com",
+		DisplayName:    "Lectora",
+	})
+
+	bible, _ := service.ShareResource(owner.User.ID, ShareResourceInput{
+		Kind: domain.ShareKindDeck, DeckID: "d1", Title: "Salmos",
+		PayloadJSON: `{"icon":"✝️","cards":[{"front":"a","back":"b"}]}`, IsPublic: true,
+	})
+	_, _ = service.ShareResource(owner.User.ID, ShareResourceInput{
+		Kind: domain.ShareKindDeck, DeckID: "d2", Title: "Inglés",
+		PayloadJSON: `{"icon":"🌍","cards":[{"front":"a","back":"b"}]}`, IsPublic: true,
+	})
+
+	if err := service.RegisterCommunityImport(importer.User.ID, bible.ID); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+
+	overview, err := service.CommunityOverview(importer.User.ID)
+	if err != nil {
+		t.Fatalf("overview: %v", err)
+	}
+	if overview.TotalDecks != 2 {
+		t.Fatalf("expected 2 public decks, got %d", overview.TotalDecks)
+	}
+	if len(overview.Featured) == 0 || overview.Featured[0].ID != bible.ID {
+		t.Fatalf("expected the imported deck first in featured, got %+v", overview.Featured)
+	}
+	if overview.Popular[0].ImportCount != 1 {
+		t.Fatalf("expected popular leader with 1 import, got %d", overview.Popular[0].ImportCount)
+	}
+	if len(overview.Creators) != 1 || overview.Creators[0].DisplayName != "Creadora" ||
+		overview.Creators[0].DeckCount != 2 || overview.Creators[0].ImportCount != 1 {
+		t.Fatalf("unexpected creators: %+v", overview.Creators)
+	}
+	foundBibleIcon := false
+	for _, category := range overview.Categories {
+		if category.Icon == "✝️" && category.Count == 1 {
+			foundBibleIcon = true
+		}
+	}
+	if !foundBibleIcon {
+		t.Fatalf("expected real category count for ✝️, got %+v", overview.Categories)
+	}
+}

@@ -471,19 +471,28 @@ func (r *Repository) SaveShareImport(shareImport domain.ShareImport) error {
 }
 
 func (r *Repository) CountShareImports(shareIDs []string) (map[string]int, error) {
+	return r.countShareImportsWhere(shareIDs, "", nil)
+}
+
+func (r *Repository) CountShareImportsSince(shareIDs []string, since time.Time) (map[string]int, error) {
+	return r.countShareImportsWhere(shareIDs, " AND created_at >= ?", []any{formatTime(since)})
+}
+
+func (r *Repository) countShareImportsWhere(shareIDs []string, extraWhere string, extraArgs []any) (map[string]int, error) {
 	counts := map[string]int{}
 	if len(shareIDs) == 0 {
 		return counts, nil
 	}
 	placeholders := strings.Repeat("?,", len(shareIDs)-1) + "?"
-	args := make([]any, len(shareIDs))
-	for i, v := range shareIDs {
-		args[i] = v
+	args := make([]any, 0, len(shareIDs)+len(extraArgs))
+	for _, v := range shareIDs {
+		args = append(args, v)
 	}
+	args = append(args, extraArgs...)
 	rows, err := r.db.Query(`
 		SELECT share_id, COUNT(*)
 		FROM share_imports
-		WHERE share_id IN (`+placeholders+`)
+		WHERE share_id IN (`+placeholders+`)`+extraWhere+`
 		GROUP BY share_id`, args...)
 	if err != nil {
 		return nil, err

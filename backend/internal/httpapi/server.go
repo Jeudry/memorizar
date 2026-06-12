@@ -55,6 +55,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/social/search", s.withAuth(s.handleSearch))
 	s.mux.HandleFunc("/v1/community/decks", s.withAuth(s.handleCommunitySearch))
 	s.mux.HandleFunc("/v1/community/mine", s.withAuth(s.handleCommunityMine))
+	s.mux.HandleFunc("/v1/community/overview", s.withAuth(s.handleCommunityOverview))
 	s.mux.HandleFunc("/v1/community/imports", s.withAuth(s.handleCommunityImport))
 	// Endpoint público (sin auth) para resolver deeplinks `memorizar://deck/ID`.
 	// Solo expone shares con IsPublic=true.
@@ -375,6 +376,20 @@ func (s *Server) handleCommunityMine(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"decks": decks})
+}
+
+// handleCommunityOverview alimenta la portada de Comunidad con datos reales.
+func (s *Server) handleCommunityOverview(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	overview, err := s.service.CommunityOverview(userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, overview)
 }
 
 // handleCommunityImport registra que el usuario importó un deck comunitario.

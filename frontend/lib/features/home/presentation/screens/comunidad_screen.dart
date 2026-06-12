@@ -23,11 +23,55 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
   bool _loadingMine = false;
   String? _mineError;
 
+  Map<String, dynamic>? _overview;
+  bool _loadingOverview = false;
+  String? _overviewError;
+
+  /// Nombres conocidos para los iconos de categoría; el conteo es real
+  /// (viene del catálogo), solo la etiqueta es cosmética.
+  static const Map<String, String> _categoryLabels = {
+    '✝️': 'Biblia',
+    '🌍': 'Idiomas',
+    '🧠': 'Medicina',
+    '🧪': 'Ciencias',
+    '📜': 'Historia',
+    '🎨': 'Arte',
+    '💻': 'Tech',
+    '📚': 'Estudio',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadOverview());
+  }
+
   @override
   void dispose() {
     _debounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadOverview() async {
+    if (_loadingOverview || !mounted) return;
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) return;
+    setState(() {
+      _loadingOverview = true;
+      _overviewError = null;
+    });
+    try {
+      final overview = await store.api.getCommunityOverview();
+      if (!mounted) return;
+      setState(() => _overview = overview);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _overviewError = 'No se pudo cargar la comunidad.');
+      debugPrint('Error cargando overview comunitario: $e');
+    } finally {
+      if (mounted) setState(() => _loadingOverview = false);
+    }
   }
 
   void _switchTab(int index) {
@@ -364,7 +408,6 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
-    final decks = store.decks;
     return ReferencePage(
       active: AppRoutes.comunidad,
       child: Column(
@@ -444,68 +487,206 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
                 ),
           ],
           const SizedBox(height: 12),
-          GridView.count(
-            crossAxisCount: 4,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 6,
-            mainAxisSpacing: 6,
-            childAspectRatio: 1.45,
-            children: const [
-              _CategoryTile('🧠', 'Medicina', '184'),
-              _CategoryTile('🌍', 'Idiomas', '412'),
-              _CategoryTile('🧪', 'Ciencias', '256'),
-              _CategoryTile('📜', 'Historia', '130'),
-              _CategoryTile('✝️', 'Biblia', '89'),
-              _CategoryTile('🎨', 'Arte', '76'),
-              _CategoryTile('💻', 'Tech', '208'),
-              _CategoryTile('⋯', 'Más', 'Todos'),
-            ],
-          ),
-          const SizedBox(height: 6),
-          const SectionHead('Destacado esta semana', action: 'Ver todo'),
-          SizedBox(
-            height: 130,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                for (final deck in decks.take(3))
-                  _FeaturedDeck(
-                    deck.icon,
-                    deck.title,
-                    '${deck.cards.length} tarjetas · ${deck.retention}% retención',
-                    '★ ${(4 + deck.retention / 100).toStringAsFixed(1)}',
-                    LinearGradient(
-                      colors: [
-                        RefColors.pink.withValues(alpha: .22),
-                        RefColors.violet.withValues(alpha: .22),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    onTap: () {
-                      store.setActiveDeck(deck.id);
-                      Navigator.pushNamed(context, AppRoutes.iniciar);
-                    },
-                  ),
-              ],
-            ),
-          ),
-          const SectionHead('Populares', action: 'Filtrar'),
-          _DeckGrid(decks: decks),
-          const SectionHead('Creadores a seguir', action: 'Ver todos'),
-          for (final deck in decks.take(2))
-            _Creator(
-              deck.title.characters.first.toUpperCase(),
-              '${deck.title} · local',
-              '${deck.cards.length} tarjetas disponibles',
-              '${deck.retention}%',
-              cyan: deck.isBible,
-            ),
+          ..._buildExploreSections(store),
           ],
         ],
       ),
     );
+  }
+
+  /// Portada del tab Explorar con datos reales del catálogo comunitario.
+  List<Widget> _buildExploreSections(AppStore store) {
+    if (!store.isLoggedIn) {
+      return [
+        Glass(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 28),
+          child: Column(
+            children: [
+              const Icon(Icons.public_rounded, color: RefColors.cyan, size: 40),
+              const SizedBox(height: 12),
+              const Text(
+                'Inicia sesión para explorar la comunidad',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Los mazos publicados, los más importados y sus creadores aparecen aquí con datos reales.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: RefColors.muted, fontSize: 12, height: 1.4),
+              ),
+              const SizedBox(height: 14),
+              Cta(
+                'Iniciar sesión',
+                onTap: () => Navigator.pushNamed(context, AppRoutes.login),
+              ),
+            ],
+          ),
+        ),
+      ];
+    }
+    if (_loadingOverview && _overview == null) {
+      return const [
+        Padding(
+          padding: EdgeInsets.symmetric(vertical: 40),
+          child: Center(child: CircularProgressIndicator(color: RefColors.cyan)),
+        ),
+      ];
+    }
+    if (_overviewError != null && _overview == null) {
+      return [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: Column(
+            children: [
+              Text(
+                _overviewError!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: RefColors.muted, fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              Cta('Reintentar', onTap: _loadOverview),
+            ],
+          ),
+        ),
+      ];
+    }
+    final overview = _overview;
+    if (overview == null) return const [];
+
+    final categories =
+        (overview['categories'] as List? ?? const []).cast<Map<String, dynamic>>();
+    final featured =
+        (overview['featured'] as List? ?? const []).cast<Map<String, dynamic>>();
+    final popular =
+        (overview['popular'] as List? ?? const []).cast<Map<String, dynamic>>();
+    final creators =
+        (overview['creators'] as List? ?? const []).cast<Map<String, dynamic>>();
+    final totalDecks = (overview['totalDecks'] as int?) ?? 0;
+
+    if (totalDecks == 0) {
+      return [
+        Glass(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 28),
+          child: Column(
+            children: const [
+              Icon(Icons.auto_awesome_rounded, color: RefColors.sun, size: 40),
+              SizedBox(height: 12),
+              Text(
+                'La comunidad está naciendo',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+              ),
+              SizedBox(height: 6),
+              Text(
+                'Todavía no hay mazos publicados. Sé la primera persona en compartir uno desde "Mis decks".',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: RefColors.muted, fontSize: 12, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+      ];
+    }
+
+    return [
+      if (categories.isNotEmpty) ...[
+        GridView.count(
+          crossAxisCount: 4,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisSpacing: 6,
+          mainAxisSpacing: 6,
+          childAspectRatio: 1.45,
+          children: [
+            for (final category in categories)
+              _CategoryTile(
+                (category['icon'] as String?) ?? '🌍',
+                _categoryLabels[(category['icon'] as String?) ?? ''] ?? 'Otros',
+                '${(category['count'] as int?) ?? 0}',
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+      ],
+      if (featured.isNotEmpty) ...[
+        const SectionHead('Destacado esta semana'),
+        SizedBox(
+          height: 130,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              for (final share in featured)
+                _FeaturedDeck(
+                  _shareIcon(share),
+                  (share['title'] as String?) ?? 'Sin título',
+                  'por ${_shareOwnerLabel(share, creators)} · ${(share['importCount'] as int?) ?? 0} importaciones',
+                  '📥 ${(share['importCount'] as int?) ?? 0}',
+                  LinearGradient(
+                    colors: [
+                      RefColors.pink.withValues(alpha: .22),
+                      RefColors.violet.withValues(alpha: .22),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  onTap: () => _import(share),
+                ),
+            ],
+          ),
+        ),
+      ],
+      if (popular.isNotEmpty) ...[
+        const SectionHead('Populares'),
+        for (final share in popular)
+          _CommunityHit(
+            share: share,
+            onImport: () => _import(share),
+            onReport: () => _showReportDialog(
+              context,
+              (share['title'] as String?) ?? 'Sin título',
+            ),
+          ),
+      ],
+      if (creators.isNotEmpty) ...[
+        const SectionHead('Creadores a seguir'),
+        for (final creator in creators)
+          _Creator(
+            ((creator['displayName'] as String?) ?? '?')
+                .characters
+                .first
+                .toUpperCase(),
+            (creator['displayName'] as String?) ?? 'Creador',
+            '${(creator['deckCount'] as int?) ?? 0} ${((creator['deckCount'] as int?) ?? 0) == 1 ? 'mazo publicado' : 'mazos publicados'}',
+            '${(creator['importCount'] as int?) ?? 0} 📥',
+            cyan: true,
+          ),
+      ],
+    ];
+  }
+
+  String _shareIcon(Map<String, dynamic> share) {
+    try {
+      final raw = (share['payloadJson'] as String?) ?? '';
+      if (raw.isEmpty) return '🌍';
+      final payload = jsonDecode(raw) as Map<String, dynamic>;
+      final icon = (payload['icon'] as String?)?.trim() ?? '';
+      return icon.isEmpty ? '🌍' : icon;
+    } catch (_) {
+      return '🌍';
+    }
+  }
+
+  String _shareOwnerLabel(
+    Map<String, dynamic> share,
+    List<Map<String, dynamic>> creators,
+  ) {
+    final ownerId = (share['ownerUserId'] as String?) ?? '';
+    for (final creator in creators) {
+      if (creator['userId'] == ownerId) {
+        return (creator['displayName'] as String?) ?? 'creador';
+      }
+    }
+    return 'creador';
   }
 }
 
@@ -850,26 +1031,6 @@ class _Creator extends StatelessWidget {
   }
 }
 
-class _DeckThumb extends StatelessWidget {
-  final String glyph;
-
-  const _DeckThumb(this.glyph);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: HtmlRefColors.glassStrong,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: HtmlRefColors.glassBorder),
-      ),
-      alignment: Alignment.center,
-      child: GlyphIcon(glyph, size: 24),
-    );
-  }
-}
 
 class _CategoryTile extends StatelessWidget {
   final String emoji;
@@ -981,88 +1142,3 @@ class _FeaturedDeck extends StatelessWidget {
     );
   }
 }
-
-class _DeckGrid extends StatelessWidget {
-  final List<MemoryDeckData> decks;
-
-  const _DeckGrid({required this.decks});
-
-  @override
-  Widget build(BuildContext context) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: decks.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 1.55,
-      ),
-      itemBuilder: (context, index) {
-        final deck = decks[index];
-        return GestureDetector(
-          onTap: () {
-            AppScope.of(context).setActiveDeck(deck.id);
-            Navigator.pushNamed(context, AppRoutes.iniciar);
-          },
-          // Long-press abre el menú de visibilidad / reportar para que el
-          // usuario pueda compartir el mazo o, si lo ve en comunidad, marcarlo.
-          onLongPress: () => _showDeckActionsSheet(context, deck),
-          child: Glass(
-            radius: 16,
-            padding: const EdgeInsets.all(8),
-            color: const Color(0x10FFFFFF),
-            border: Border.all(color: const Color(0x24FFFFFF)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    _DeckThumb(deck.icon),
-                    const Spacer(),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.star_rounded,
-                          size: 11,
-                          color: RefColors.sun,
-                        ),
-                        const SizedBox(width: 1),
-                        Text(
-                          (4 + deck.retention / 100).toStringAsFixed(1),
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: RefColors.sun,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  deck.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    height: 1.12,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '${deck.cards.length} tarjetas',
-                  style: const TextStyle(fontSize: 10, color: RefColors.muted),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-

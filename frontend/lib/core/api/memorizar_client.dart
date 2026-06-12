@@ -402,6 +402,13 @@ class MemorizarClient {
     return list.cast<Map<String, dynamic>>();
   }
 
+  /// Portada de Comunidad: destacados, populares, creadores y categorías
+  /// reales del catálogo público.
+  Future<Map<String, dynamic>> getCommunityOverview() async {
+    final r = await _http.get(_uri('/v1/community/overview'), headers: _headers);
+    return _decode(r);
+  }
+
   /// Mis decks publicados a la comunidad, con stats (importCount).
   Future<List<Map<String, dynamic>>> listMyCommunityDecks() async {
     final r = await _http.get(_uri('/v1/community/mine'), headers: _headers);

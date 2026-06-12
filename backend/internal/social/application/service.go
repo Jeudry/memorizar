@@ -486,6 +486,186 @@ func (s *Service) ListOwnedCommunityDecks(userID string) ([]CommunityDeck, error
 	return s.attachImportCounts(owned)
 }
 
+// CommunityCreatorStat resume a un autor del catálogo comunitario.
+type CommunityCreatorStat struct {
+	UserID      string `json:"userId"`
+	DisplayName string `json:"displayName"`
+	DeckCount   int    `json:"deckCount"`
+	ImportCount int    `json:"importCount"`
+}
+
+// CommunityCategoryStat agrupa los decks públicos por su icono (la señal de
+// categoría real que viaja en el payload del deck).
+type CommunityCategoryStat struct {
+	Icon  string `json:"icon"`
+	Count int    `json:"count"`
+}
+
+// CommunityOverview alimenta la portada de la pestaña Comunidad con datos
+// reales del catálogo en lugar de números decorativos.
+type CommunityOverview struct {
+	Featured   []CommunityDeck         `json:"featured"`
+	Popular    []CommunityDeck         `json:"popular"`
+	Creators   []CommunityCreatorStat  `json:"creators"`
+	Categories []CommunityCategoryStat `json:"categories"`
+	TotalDecks int                     `json:"totalDecks"`
+}
+
+const featuredWindowDays = 7
+
+func (s *Service) listAllPublicDecks() ([]domain.SharedResource, error) {
+	users, err := s.repo.ListUsers()
+	if err != nil {
+		return nil, err
+	}
+	allUserIDs := make([]string, 0, len(users))
+	for _, u := range users {
+		allUserIDs = append(allUserIDs, u.ID)
+	}
+	resources, err := s.repo.ListPublicSharedResourcesByUserIDs(allUserIDs)
+	if err != nil {
+		return nil, err
+	}
+	decks := make([]domain.SharedResource, 0, len(resources))
+	for _, resource := range resources {
+		if resource.Kind == domain.ShareKindDeck && resource.IsPublic {
+			decks = append(decks, resource)
+		}
+	}
+	return decks, nil
+}
+
+func deckIcon(resource domain.SharedResource) string {
+	var payload struct {
+		Icon string `json:"icon"`
+	}
+	if err := json.Unmarshal([]byte(resource.PayloadJSON), &payload); err == nil {
+		icon := strings.TrimSpace(payload.Icon)
+		if icon != "" {
+			return icon
+		}
+	}
+	return "🌍"
+}
+
+// CommunityOverview arma destacados (importaciones de los últimos 7 días),
+// populares (importaciones totales), creadores top y categorías por icono.
+func (s *Service) CommunityOverview(userID string) (*CommunityOverview, error) {
+	decks, err := s.listAllPublicDecks()
+	if err != nil {
+		return nil, err
+	}
+
+	shareIDs := make([]string, 0, len(decks))
+	for _, deck := range decks {
+		shareIDs = append(shareIDs, deck.ID)
+	}
+	totalCounts, err := s.repo.CountShareImports(shareIDs)
+	if err != nil {
+		return nil, err
+	}
+	since := s.now().UTC().AddDate(0, 0, -featuredWindowDays)
+	recentCounts, err := s.repo.CountShareImportsSince(shareIDs, since)
+	if err != nil {
+		return nil, err
+	}
+
+	enrich := func(resource domain.SharedResource) CommunityDeck {
+		return CommunityDeck{SharedResource: resource, ImportCount: totalCounts[resource.ID]}
+	}
+
+	featuredSource := append([]domain.SharedResource{}, decks...)
+	sort.SliceStable(featuredSource, func(i, j int) bool {
+		ri, rj := recentCounts[featuredSource[i].ID], recentCounts[featuredSource[j].ID]
+		if ri != rj {
+			return ri > rj
+		}
+		return featuredSource[i].CreatedAt.After(featuredSource[j].CreatedAt)
+	})
+	featured := make([]CommunityDeck, 0, 3)
+	for _, resource := range featuredSource {
+		if len(featured) == 3 {
+			break
+		}
+		featured = append(featured, enrich(resource))
+	}
+
+	popularSource := append([]domain.SharedResource{}, decks...)
+	sort.SliceStable(popularSource, func(i, j int) bool {
+		ti, tj := totalCounts[popularSource[i].ID], totalCounts[popularSource[j].ID]
+		if ti != tj {
+			return ti > tj
+		}
+		return popularSource[i].CreatedAt.After(popularSource[j].CreatedAt)
+	})
+	popular := make([]CommunityDeck, 0, 6)
+	for _, resource := range popularSource {
+		if len(popular) == 6 {
+			break
+		}
+		popular = append(popular, enrich(resource))
+	}
+
+	type creatorAgg struct {
+		deckCount   int
+		importCount int
+	}
+	byOwner := map[string]*creatorAgg{}
+	for _, deck := range decks {
+		agg, ok := byOwner[deck.OwnerUserID]
+		if !ok {
+			agg = &creatorAgg{}
+			byOwner[deck.OwnerUserID] = agg
+		}
+		agg.deckCount++
+		agg.importCount += totalCounts[deck.ID]
+	}
+	creators := make([]CommunityCreatorStat, 0, len(byOwner))
+	for ownerID, agg := range byOwner {
+		creators = append(creators, CommunityCreatorStat{
+			UserID:      ownerID,
+			DisplayName: s.userDisplay(ownerID),
+			DeckCount:   agg.deckCount,
+			ImportCount: agg.importCount,
+		})
+	}
+	sort.SliceStable(creators, func(i, j int) bool {
+		if creators[i].ImportCount != creators[j].ImportCount {
+			return creators[i].ImportCount > creators[j].ImportCount
+		}
+		return creators[i].DeckCount > creators[j].DeckCount
+	})
+	if len(creators) > 3 {
+		creators = creators[:3]
+	}
+
+	categoryCounts := map[string]int{}
+	for _, deck := range decks {
+		categoryCounts[deckIcon(deck)]++
+	}
+	categories := make([]CommunityCategoryStat, 0, len(categoryCounts))
+	for icon, count := range categoryCounts {
+		categories = append(categories, CommunityCategoryStat{Icon: icon, Count: count})
+	}
+	sort.SliceStable(categories, func(i, j int) bool {
+		if categories[i].Count != categories[j].Count {
+			return categories[i].Count > categories[j].Count
+		}
+		return categories[i].Icon < categories[j].Icon
+	})
+	if len(categories) > 8 {
+		categories = categories[:8]
+	}
+
+	return &CommunityOverview{
+		Featured:   featured,
+		Popular:    popular,
+		Creators:   creators,
+		Categories: categories,
+		TotalDecks: len(decks),
+	}, nil
+}
+
 // SearchCommunityDecks busca SharedResources públicos cuyo título o
 // summary coincidan con la query (case-insensitive). Excluye los del propio
 // usuario. Devuelve hasta 25.

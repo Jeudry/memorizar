@@ -1,6 +1,10 @@
 package ports
 
-import "github.com/Jeudry/memorizar/backend/internal/social/domain"
+import (
+	"time"
+
+	"github.com/Jeudry/memorizar/backend/internal/social/domain"
+)
 
 type Repository interface {
 	FindUserByProvider(provider domain.SocialProvider, providerUserID string) (*domain.User, error)
@@ -30,6 +34,7 @@ type Repository interface {
 
 	SaveShareImport(shareImport domain.ShareImport) error
 	CountShareImports(shareIDs []string) (map[string]int, error)
+	CountShareImportsSince(shareIDs []string, since time.Time) (map[string]int, error)
 
 	SaveReaction(reaction domain.FeedReaction) error
 	ListReactionsByEntryIDs(entryIDs []string) ([]domain.FeedReaction, error)

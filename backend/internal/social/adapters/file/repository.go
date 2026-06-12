@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Jeudry/memorizar/backend/internal/social/domain"
 )
@@ -311,6 +312,28 @@ func (r *Repository) CountShareImports(shareIDs []string) (map[string]int, error
 	for _, shareID := range shareIDs {
 		if byUser, ok := r.state.ShareImports[shareID]; ok {
 			counts[shareID] = len(byUser)
+		}
+	}
+	return counts, nil
+}
+
+func (r *Repository) CountShareImportsSince(shareIDs []string, since time.Time) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	counts := map[string]int{}
+	for _, shareID := range shareIDs {
+		byUser, ok := r.state.ShareImports[shareID]
+		if !ok {
+			continue
+		}
+		recent := 0
+		for _, shareImport := range byUser {
+			if !shareImport.CreatedAt.Before(since) {
+				recent++
+			}
+		}
+		if recent > 0 {
+			counts[shareID] = recent
 		}
 	}
 	return counts, nil
