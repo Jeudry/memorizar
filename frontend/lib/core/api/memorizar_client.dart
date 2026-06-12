@@ -334,6 +334,19 @@ class MemorizarClient {
     await _decode(r);
   }
 
+  /// Reacciona con un emoji a una entrada del feed de amigos.
+  Future<void> reactToFeedEntry({
+    required String entryId,
+    required String emoji,
+  }) async {
+    final r = await _http.post(
+      _uri('/v1/social/feed/reactions'),
+      headers: _headers,
+      body: jsonEncode({'entryId': entryId, 'emoji': emoji}),
+    );
+    await _decode(r);
+  }
+
   Future<void> recordAchievement({
     required String code,
     required String title,

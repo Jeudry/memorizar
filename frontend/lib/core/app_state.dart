@@ -1034,6 +1034,43 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  static const List<int> _streakMilestones = [3, 7, 14, 30, 100];
+
+  /// Registra logros reales en el backend al terminar una sesión: la sesión
+  /// completada siempre, y el hito de racha la primera vez que se alcanza.
+  /// Best-effort: sin sesión o sin red no interrumpe el flujo.
+  Future<void> _recordSessionAchievements() async {
+    if (!isLoggedIn) return;
+    try {
+      await api.recordAchievement(
+        code: 'session_completed',
+        title: 'Sesión completada',
+        description:
+            'Completó una sesión de $_sessionDailyTarget ${_sessionDailyTarget == 1 ? 'tarjeta' : 'tarjetas'} en "${activeDeck.title}"',
+        deckName: activeDeck.title,
+        emoji: '🎯',
+      );
+
+      final streak = streakDays;
+      if (_streakMilestones.contains(streak)) {
+        final prefs = await SharedPreferences.getInstance();
+        const milestoneKey = 'memorizar.achievements.lastStreakMilestone';
+        final lastRecorded = prefs.getInt(milestoneKey) ?? 0;
+        if (streak > lastRecorded) {
+          await api.recordAchievement(
+            code: 'streak_$streak',
+            title: 'Racha de $streak días',
+            description: 'Practicó $streak días seguidos',
+            emoji: '🔥',
+          );
+          await prefs.setInt(milestoneKey, streak);
+        }
+      }
+    } catch (e) {
+      debugPrint('No se pudieron registrar logros: $e');
+    }
+  }
+
   /// Sincroniza el estado premium persistido en el backend. Se llama al
   /// iniciar sesión; sin sesión es no-op (el preview local de invitado se
   /// pierde al reinstalar, a propósito).
@@ -1374,6 +1411,7 @@ class AppStore extends ChangeNotifier {
       _sessionCardsCompleted += 1;
     }
     if (sessionFinished) {
+      unawaited(_recordSessionAchievements());
       notifyListeners();
       return false;
     }
