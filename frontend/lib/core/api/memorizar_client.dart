@@ -415,6 +415,21 @@ class MemorizarClient {
     return list.cast<Map<String, dynamic>>();
   }
 
+  /// Registra el token de push del dispositivo (FCM/APNs) en el backend.
+  Future<void> registerPushToken({
+    required String token,
+    required String platform,
+  }) async {
+    final r = await _http.post(
+      _uri('/v1/push/register-token'),
+      headers: _headers,
+      body: jsonEncode({'token': token, 'platform': platform}),
+    );
+    if (r.statusCode >= 400) {
+      throw Exception('No se pudo registrar el token push (${r.statusCode}).');
+    }
+  }
+
   /// Activa el trial premium del usuario en el backend.
   Future<Map<String, dynamic>> activatePremiumTrial() async {
     final r = await _http.post(_uri('/v1/premium/trial'), headers: _headers);

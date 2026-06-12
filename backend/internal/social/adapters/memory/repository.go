@@ -20,6 +20,7 @@ type Repository struct {
 	deckReports       map[string]domain.DeckReport
 	analyticsEvents   []domain.AnalyticsEvent
 	premiumSubs       map[string]domain.PremiumSubscription
+	pushTokens        map[string]domain.PushToken
 	reactions         map[string]domain.FeedReaction
 	comments          map[string]domain.FeedComment
 	progressSnapshots map[string]domain.ProgressSnapshot
@@ -288,6 +289,16 @@ func (r *Repository) CountShareImportsSince(shareIDs []string, since time.Time) 
 		}
 	}
 	return counts, nil
+}
+
+func (r *Repository) SavePushToken(token domain.PushToken) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.pushTokens == nil {
+		r.pushTokens = map[string]domain.PushToken{}
+	}
+	r.pushTokens[token.UserID+"|"+token.Token] = token
+	return nil
 }
 
 func (r *Repository) SavePremiumSubscription(subscription domain.PremiumSubscription) error {

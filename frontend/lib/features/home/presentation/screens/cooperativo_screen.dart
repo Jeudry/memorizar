@@ -102,6 +102,15 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
       _currentUserId = store.effectiveUser.id;
       _coop = CoopService(client: store.api);
       _loadPublicRooms();
+
+      // Deeplink memorizar://coop/{code}: unirse automáticamente a la sala.
+      final pendingCode = store.pendingCoopJoinCode;
+      if (pendingCode != null && pendingCode.isNotEmpty) {
+        store.pendingCoopJoinCode = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _joinPublic(pendingCode);
+        });
+      }
       _sub = _coop!.stateStream.listen((s) {
         if (!mounted) return;
         final wasInGame = _state?.currentDeckId != null;

@@ -189,6 +189,10 @@ class AppStore extends ChangeNotifier {
   final AppDatabase? db;
   final bool enableDatabasePersistence;
 
+  /// Código de sala pendiente de un deeplink memorizar://coop/{code}.
+  /// El lobby cooperativo lo consume en su init y se une automáticamente.
+  String? pendingCoopJoinCode;
+
   /// Historial de actividad diaria (día 'YYYY-MM-DD' → totales), ordenado
   /// del más reciente. Fuente de la racha real y de los filtros de Stats.
   List<DailyActivityData> _dailyActivity = [];

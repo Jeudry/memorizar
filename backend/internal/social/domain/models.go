@@ -108,6 +108,16 @@ type SharedResource struct {
 	CreatedAt    time.Time `json:"createdAt"`
 }
 
+// PushToken es el token FCM/APNs de un dispositivo del usuario. Se persiste
+// aunque el envío remoto aún no esté configurado (LogNotifier) para que el
+// switch a FCM no requiera re-registrar dispositivos.
+type PushToken struct {
+	UserID    string    `json:"userId"`
+	Token     string    `json:"token"`
+	Platform  string    `json:"platform"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 // PremiumSubscription es el estado premium de un usuario, persistido del
 // lado servidor para sobrevivir reinstalaciones. Sin pasarela de pago aún:
 // el único plan activable hoy es el trial.

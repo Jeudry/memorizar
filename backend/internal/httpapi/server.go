@@ -62,6 +62,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/analytics/summary", s.withAuth(s.handleAnalyticsSummary))
 	s.mux.HandleFunc("/v1/premium/trial", s.withAuth(s.handlePremiumTrial))
 	s.mux.HandleFunc("/v1/premium/status", s.withAuth(s.handlePremiumStatus))
+	s.mux.HandleFunc("/v1/push/register-token", s.withAuth(s.handlePushRegisterToken))
 	s.mux.HandleFunc("/v1/community/imports", s.withAuth(s.handleCommunityImport))
 	// Endpoint público (sin auth) para resolver deeplinks `memorizar://deck/ID`.
 	// Solo expone shares con IsPublic=true.
@@ -396,6 +397,27 @@ func (s *Server) handleCommunityOverview(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	writeJSON(w, http.StatusOK, overview)
+}
+
+// handlePushRegisterToken persiste el token FCM/APNs del dispositivo.
+func (s *Server) handlePushRegisterToken(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		Token    string `json:"token"`
+		Platform string `json:"platform"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	if err := s.service.RegisterPushToken(userID, body.Token, body.Platform); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handlePremiumTrial activa el trial premium del usuario autenticado.

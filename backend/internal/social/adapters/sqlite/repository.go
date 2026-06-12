@@ -566,6 +566,17 @@ func (r *Repository) ListDeckReports() ([]domain.DeckReport, error) {
 	return out, nil
 }
 
+// ─── Push tokens ─────────────────────────────────────────────────────────
+
+func (r *Repository) SavePushToken(token domain.PushToken) error {
+	_, err := r.db.Exec(`
+		INSERT OR REPLACE INTO push_tokens (user_id, token, platform, updated_at)
+		VALUES (?, ?, ?, ?)`,
+		token.UserID, token.Token, token.Platform, formatTime(token.UpdatedAt),
+	)
+	return err
+}
+
 // ─── Premium ─────────────────────────────────────────────────────────────
 
 func (r *Repository) SavePremiumSubscription(subscription domain.PremiumSubscription) error {

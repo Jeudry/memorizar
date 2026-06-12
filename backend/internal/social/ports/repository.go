@@ -46,6 +46,8 @@ type Repository interface {
 	SavePremiumSubscription(subscription domain.PremiumSubscription) error
 	FindPremiumSubscription(userID string) (*domain.PremiumSubscription, error)
 
+	SavePushToken(token domain.PushToken) error
+
 	SaveReaction(reaction domain.FeedReaction) error
 	ListReactionsByEntryIDs(entryIDs []string) ([]domain.FeedReaction, error)
 

@@ -490,6 +490,20 @@ func (s *Service) ListOwnedCommunityDecks(userID string) ([]CommunityDeck, error
 	return s.attachImportCounts(owned)
 }
 
+// RegisterPushToken persiste el token de push del dispositivo del usuario.
+func (s *Service) RegisterPushToken(userID, token, platform string) error {
+	token = strings.TrimSpace(token)
+	if token == "" || len(token) > 512 {
+		return ErrMissingPayload
+	}
+	return s.repo.SavePushToken(domain.PushToken{
+		UserID:    userID,
+		Token:     token,
+		Platform:  strings.TrimSpace(platform),
+		UpdatedAt: s.now().UTC(),
+	})
+}
+
 // PremiumStatus es lo que la app consulta al iniciar sesión.
 type PremiumStatus struct {
 	Active    bool       `json:"active"`

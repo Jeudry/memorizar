@@ -114,6 +114,14 @@ CREATE TABLE IF NOT EXISTS premium_subscriptions (
     expires_at    TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS push_tokens (
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token       TEXT NOT NULL,
+    platform    TEXT NOT NULL DEFAULT '',
+    updated_at  TEXT NOT NULL,
+    PRIMARY KEY (user_id, token)
+);
+
 CREATE TABLE IF NOT EXISTS feed_reactions (
     id          TEXT PRIMARY KEY,
     entry_id    TEXT NOT NULL,

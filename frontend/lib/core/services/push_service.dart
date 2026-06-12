@@ -89,9 +89,10 @@ class PushService {
     );
   }
 
-  /// TODO: cuando Firebase esté configurado, reemplazar por:
-  ///   final token = await FirebaseMessaging.instance.getToken();
-  ///   POST /v1/push/register-token  { token, deviceId, platform }
+  /// TODO: cuando Firebase esté configurado (requiere proyecto FCM externo),
+  /// reemplazar por `FirebaseMessaging.instance.getToken()`. El resto del
+  /// pipeline YA existe: `MemorizarClient.registerPushToken` y el endpoint
+  /// `POST /v1/push/register-token` persisten el token en el backend.
   Future<String?> getDeviceToken() async {
     if (kDebugMode) {
       debugPrint('[PushService] Firebase no configurado todavía — '
