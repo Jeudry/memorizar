@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:timezone/data/latest.dart' as tzdata;
+import 'package:timezone/timezone.dart' as tz;
 
 /// Servicio de notificaciones push.
 ///
@@ -26,6 +29,9 @@ class PushService {
   final FlutterLocalNotificationsPlugin _local =
       FlutterLocalNotificationsPlugin();
   bool _initialized = false;
+  bool _timezoneReady = false;
+
+  static const int _dailyReminderId = 7001;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -58,10 +64,65 @@ class PushService {
     return granted ?? true;
   }
 
-  /// Programa un recordatorio diario simple. En esta sesión no estamos
-  /// agendando notificaciones programadas — solo deja preparado el flujo
-  /// de show inmediato. Para schedule real hay que sumar
-  /// `flutter_local_notifications` con timezone + zoned schedule.
+  Future<void> _ensureTimezone() async {
+    if (_timezoneReady) return;
+    tzdata.initializeTimeZones();
+    try {
+      final localName = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(localName));
+    } catch (e) {
+      // Sin nombre IANA detectable (raro): tz.local queda en UTC.
+      debugPrint('[PushService] No se pudo detectar la zona horaria: $e');
+    }
+    _timezoneReady = true;
+  }
+
+  static const NotificationDetails _reminderDetails = NotificationDetails(
+    iOS: DarwinNotificationDetails(),
+    macOS: DarwinNotificationDetails(),
+    android: AndroidNotificationDetails(
+      'memorizar_reminders',
+      'Recordatorios',
+      channelDescription:
+          'Recordatorios para mantener tu racha de memorización.',
+      importance: Importance.high,
+      priority: Priority.high,
+    ),
+  );
+
+  /// Programa el recordatorio diario de repaso a la [hour] local. Reemplaza
+  /// cualquier programación previa.
+  Future<void> scheduleDailyReminder({required int hour}) async {
+    await initialize();
+    await requestPermissions();
+    await _ensureTimezone();
+
+    final now = tz.TZDateTime.now(tz.local);
+    var firstFire =
+        tz.TZDateTime(tz.local, now.year, now.month, now.day, hour);
+    if (!firstFire.isAfter(now)) {
+      firstFire = firstFire.add(const Duration(days: 1));
+    }
+
+    await _local.zonedSchedule(
+      _dailyReminderId,
+      'Hora de repasar 🔥',
+      'Tus tarjetas te esperan. Un repaso corto mantiene tu racha viva.',
+      firstFire,
+      _reminderDetails,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      matchDateTimeComponents: DateTimeComponents.time,
+    );
+    debugPrint('[PushService] Recordatorio diario programado a las $hour:00');
+  }
+
+  /// Cancela el recordatorio diario.
+  Future<void> cancelDailyReminder() async {
+    await initialize();
+    await _local.cancel(_dailyReminderId);
+  }
+
+  /// Muestra una notificación local inmediata.
   Future<void> showLocalNow({
     required int id,
     required String title,

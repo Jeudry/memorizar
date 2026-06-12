@@ -757,7 +757,12 @@ class AppStore extends ChangeNotifier {
     _bigFont = prefs.getBool(_kBigFontKey) ?? false;
     _reminderEnabled = prefs.getBool(_kReminderEnabledKey) ?? false;
     _reminderHour = prefs.getInt(_kReminderHourKey) ?? 20;
-    
+    // Re-programar al arrancar mantiene el recordatorio vigente aunque el
+    // sistema lo haya purgado (reinicios, actualizaciones de la app).
+    if (_reminderEnabled) {
+      unawaited(PushService.instance.scheduleDailyReminder(hour: _reminderHour));
+    }
+
     notifyListeners();
   }
 
@@ -800,6 +805,11 @@ class AppStore extends ChangeNotifier {
     _reminderEnabled = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kReminderEnabledKey, value);
+    if (value) {
+      unawaited(PushService.instance.scheduleDailyReminder(hour: _reminderHour));
+    } else {
+      unawaited(PushService.instance.cancelDailyReminder());
+    }
     notifyListeners();
   }
 
@@ -807,6 +817,9 @@ class AppStore extends ChangeNotifier {
     _reminderHour = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_kReminderHourKey, value);
+    if (_reminderEnabled) {
+      unawaited(PushService.instance.scheduleDailyReminder(hour: value));
+    }
     notifyListeners();
   }
 
