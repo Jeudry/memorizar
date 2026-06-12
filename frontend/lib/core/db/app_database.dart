@@ -24,6 +24,13 @@ class Cards extends Table {
   TextColumn get icon => text()();
   IntColumn get retention => integer().withDefault(const Constant(82))();
   IntColumn get lapses => integer().withDefault(const Constant(0))();
+  // Estado SM-2: factor de facilidad, intervalo actual en días, repasos
+  // consecutivos correctos y próxima fecha de repaso (null = nunca repasada,
+  // siempre due).
+  RealColumn get easeFactor => real().withDefault(const Constant(2.5))();
+  IntColumn get intervalDays => integer().withDefault(const Constant(0))();
+  IntColumn get repetitions => integer().withDefault(const Constant(0))();
+  DateTimeColumn get nextReviewAt => dateTime().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -47,13 +54,19 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.memory() : super(impl.connect(inMemory: true));
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onUpgrade: (m, from, to) async {
           if (from < 2) {
             await m.createTable(dailyActivity);
+          }
+          if (from < 3) {
+            await m.addColumn(cards, cards.easeFactor);
+            await m.addColumn(cards, cards.intervalDays);
+            await m.addColumn(cards, cards.repetitions);
+            await m.addColumn(cards, cards.nextReviewAt);
           }
         },
       );
@@ -80,6 +93,24 @@ class AppDatabase extends _$AppDatabase {
       (update(cards)..where((c) => c.id.equals(cardId))).write(CardsCompanion(
         retention: Value(retention),
         lapses: Value(lapses),
+      ));
+
+  Future<void> updateCardSrs(
+    String cardId, {
+    required int retention,
+    required int lapses,
+    required double easeFactor,
+    required int intervalDays,
+    required int repetitions,
+    required DateTime? nextReviewAt,
+  }) =>
+      (update(cards)..where((c) => c.id.equals(cardId))).write(CardsCompanion(
+        retention: Value(retention),
+        lapses: Value(lapses),
+        easeFactor: Value(easeFactor),
+        intervalDays: Value(intervalDays),
+        repetitions: Value(repetitions),
+        nextReviewAt: Value(nextReviewAt),
       ));
 
   // Daily activity queries

@@ -11,6 +11,7 @@ import 'api/memorizar_client.dart';
 import 'api/models.dart';
 import 'db/app_database.dart';
 import 'services/push_service.dart';
+import 'srs/sm2.dart';
 import '../features/cooperativo/data/coop_service.dart';
 import 'package:drift/drift.dart' as drift;
 
@@ -60,6 +61,10 @@ class MemoryCardData {
   final String icon;
   final int retention;
   final int lapses;
+  final double easeFactor;
+  final int intervalDays;
+  final int repetitions;
+  final DateTime? nextReviewAt;
 
   const MemoryCardData({
     required this.id,
@@ -69,7 +74,22 @@ class MemoryCardData {
     required this.icon,
     this.retention = 82,
     this.lapses = 0,
+    this.easeFactor = Sm2State.defaultEaseFactor,
+    this.intervalDays = 0,
+    this.repetitions = 0,
+    this.nextReviewAt,
   });
+
+  /// Estado SM-2 de la tarjeta para alimentar el algoritmo.
+  Sm2State get srsState => Sm2State(
+        easeFactor: easeFactor,
+        intervalDays: intervalDays,
+        repetitions: repetitions,
+        nextReviewAt: nextReviewAt,
+      );
+
+  /// Due = nunca repasada o con la fecha de repaso vencida.
+  bool get isDueForReview => isDue(srsState);
 
   MemoryCardData copyWith({
     String? id,
@@ -79,6 +99,10 @@ class MemoryCardData {
     String? icon,
     int? retention,
     int? lapses,
+    double? easeFactor,
+    int? intervalDays,
+    int? repetitions,
+    DateTime? nextReviewAt,
   }) {
     return MemoryCardData(
       id: id ?? this.id,
@@ -88,6 +112,10 @@ class MemoryCardData {
       icon: icon ?? this.icon,
       retention: retention ?? this.retention,
       lapses: lapses ?? this.lapses,
+      easeFactor: easeFactor ?? this.easeFactor,
+      intervalDays: intervalDays ?? this.intervalDays,
+      repetitions: repetitions ?? this.repetitions,
+      nextReviewAt: nextReviewAt ?? this.nextReviewAt,
     );
   }
 }
@@ -311,6 +339,10 @@ class AppStore extends ChangeNotifier {
         icon: c.icon,
         retention: c.retention,
         lapses: c.lapses,
+        easeFactor: c.easeFactor,
+        intervalDays: c.intervalDays,
+        repetitions: c.repetitions,
+        nextReviewAt: c.nextReviewAt,
       )).toList();
 
       loadedDecks.add(MemoryDeckData(
@@ -1169,15 +1201,25 @@ class AppStore extends ChangeNotifier {
     return null;
   }
 
+  /// Tarjetas vencidas según SM-2 (nextReviewAt en el pasado o nunca
+  /// repasadas), las más débiles primero. Limitadas a 5 para la sesión de
+  /// rescate rápida.
   List<MemoryCardData> get dueCards {
     final cards = [
       for (final deck in _decks)
         for (final card in deck.cards)
-          if (card.retention < 60) card,
+          if (card.isDueForReview) card,
     ];
     cards.sort((a, b) => a.retention.compareTo(b.retention));
     return cards.take(5).toList();
   }
+
+  /// Total de tarjetas con repaso vencido hoy (sin límite).
+  int get dueTodayCount => _decks.fold(
+        0,
+        (total, deck) =>
+            total + deck.cards.where((card) => card.isDueForReview).length,
+      );
 
   /// Catálogo de versiones empacadas localmente. Cada entrada apunta a su
   /// asset JSON. Versiones bajo licencia (RV1960, NBLA, etc.) se cargarán
@@ -1902,8 +1944,34 @@ class AppStore extends ChangeNotifier {
     ];
   }
 
+  /// Aplica un repaso a la tarjeta: SM-2 (intervalos reales) + la señal
+  /// visual de retención existente, y persiste todo el estado SRS.
+  MemoryCardData _applySrsAnswer(MemoryCardData card, {required bool correct}) {
+    final next = applySm2(card.srsState, correct: correct);
+    final updated = card.copyWith(
+      retention: (card.retention + (correct ? 8 : -14)).clamp(18, 100),
+      lapses: card.lapses + (correct ? 0 : 1),
+      easeFactor: next.easeFactor,
+      intervalDays: next.intervalDays,
+      repetitions: next.repetitions,
+      nextReviewAt: next.nextReviewAt,
+    );
+    if (enableDatabasePersistence) {
+      unawaited(db!.updateCardSrs(
+        updated.id,
+        retention: updated.retention,
+        lapses: updated.lapses,
+        easeFactor: updated.easeFactor,
+        intervalDays: updated.intervalDays,
+        repetitions: updated.repetitions,
+        nextReviewAt: updated.nextReviewAt,
+      ));
+    }
+    return updated;
+  }
+
   /// Registra el resultado de una tarjeta jugada en modo cooperativo sobre
-  /// el SRS local, con la misma curva de retención que el modo solitario.
+  /// el SRS local, con la misma curva que el modo solitario.
   void recordCoopAnswer({
     required String deckId,
     required String cardId,
@@ -1915,18 +1983,7 @@ class AppStore extends ChangeNotifier {
     final cardIndex = deck.cards.indexWhere((card) => card.id == cardId);
     if (cardIndex < 0) return;
     final cards = [...deck.cards];
-    final card = cards[cardIndex];
-    cards[cardIndex] = card.copyWith(
-      retention: (card.retention + (correct ? 8 : -14)).clamp(18, 100),
-      lapses: card.lapses + (correct ? 0 : 1),
-    );
-    if (enableDatabasePersistence) {
-      unawaited(db!.updateCardRetention(
-        cards[cardIndex].id,
-        cards[cardIndex].retention,
-        cards[cardIndex].lapses,
-      ));
-    }
+    cards[cardIndex] = _applySrsAnswer(cards[cardIndex], correct: correct);
     _decks[deckIndex] = MemoryDeckData(
       id: deck.id,
       title: deck.title,
@@ -1954,14 +2011,7 @@ class AppStore extends ChangeNotifier {
     final isCombinedBible = false;
     if (isCombinedBible) {
       for (var i = 0; i < cards.length; i++) {
-        final card = cards[i];
-        cards[i] = card.copyWith(
-          retention: (card.retention + (correct ? 8 : -14)).clamp(18, 100),
-          lapses: card.lapses + (correct ? 0 : 1),
-        );
-        if (enableDatabasePersistence) {
-          unawaited(db!.updateCardRetention(cards[i].id, cards[i].retention, cards[i].lapses));
-        }
+        cards[i] = _applySrsAnswer(cards[i], correct: correct);
       }
       _decks[deckIndex] = MemoryDeckData(
         id: deck.id,
@@ -1982,14 +2032,8 @@ class AppStore extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    final card = cards[_currentCardIndex];
-    cards[_currentCardIndex] = card.copyWith(
-      retention: (card.retention + (correct ? 8 : -14)).clamp(18, 100),
-      lapses: card.lapses + (correct ? 0 : 1),
-    );
-    if (enableDatabasePersistence) {
-      unawaited(db!.updateCardRetention(cards[_currentCardIndex].id, cards[_currentCardIndex].retention, cards[_currentCardIndex].lapses));
-    }
+    cards[_currentCardIndex] =
+        _applySrsAnswer(cards[_currentCardIndex], correct: correct);
     _decks[deckIndex] = MemoryDeckData(
       id: deck.id,
       title: deck.title,
