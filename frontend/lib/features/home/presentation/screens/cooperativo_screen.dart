@@ -4870,17 +4870,33 @@ class _CoopGameChatState extends State<_CoopGameChat> {
 class _CoopCelebrateCard extends StatelessWidget {
   const _CoopCelebrateCard();
 
+  /// Resumen real de la partida: jugadores de la sala y aciertos del
+  /// scoreboard. Sin números fingidos.
+  String _buildSummary() {
+    final coop = CoopService.active;
+    final state = coop?.state;
+    if (state == null) return 'Sesión cooperativa completada';
+    final playerCount = state.memberIds.length;
+    final totalCorrect = state.scores.values
+        .fold<int>(0, (sum, score) => sum + score ~/ 10);
+    final parts = <String>[
+      '$playerCount ${playerCount == 1 ? 'jugador' : 'jugadores'}',
+      '$totalCorrect ${totalCorrect == 1 ? 'acierto' : 'aciertos'} del equipo',
+    ];
+    return parts.join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
-    return const Glass(
-      padding: EdgeInsets.fromLTRB(22, 24, 22, 22),
+    return Glass(
+      padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
       gradient: RefColors.success,
-      border: Border(),
+      border: const Border(),
       child: Column(
         children: [
-          Text('🎉', style: TextStyle(fontSize: 52)),
-          SizedBox(height: 6),
-          Text(
+          const Text('🎉', style: TextStyle(fontSize: 52)),
+          const SizedBox(height: 6),
+          const Text(
             '¡Lo lograron juntos!',
             textAlign: TextAlign.center,
             style: TextStyle(
@@ -4890,10 +4906,10 @@ class _CoopCelebrateCard extends StatelessWidget {
               fontWeight: FontWeight.w900,
             ),
           ),
-          SizedBox(height: 6),
+          const SizedBox(height: 6),
           Text(
-            '20 tarjetas · 12 min · 85% aciertos',
-            style: TextStyle(
+            _buildSummary(),
+            style: const TextStyle(
               color: RefColors.successInk,
               fontSize: 14,
               fontWeight: FontWeight.w800,
