@@ -417,6 +417,47 @@ class MemorizarClient {
     return list.cast<Map<String, dynamic>>();
   }
 
+  /// Archiva una denuncia de mazo en la cola de moderación del backend.
+  Future<Map<String, dynamic>> fileDeckReport({
+    required String deckId,
+    required String deckTitle,
+    required String reason,
+    String note = '',
+  }) async {
+    final r = await _http.post(
+      _uri('/v1/community/reports'),
+      headers: _headers,
+      body: jsonEncode({
+        'deckId': deckId,
+        'deckTitle': deckTitle,
+        'reason': reason,
+        'note': note,
+      }),
+    );
+    return _decode(r);
+  }
+
+  /// Cola de moderación persistida en el backend.
+  Future<List<Map<String, dynamic>>> listDeckReports() async {
+    final r = await _http.get(_uri('/v1/community/reports'), headers: _headers);
+    final body = await _decode(r);
+    final list = (body['reports'] as List? ?? const []).cast<dynamic>();
+    return list.cast<Map<String, dynamic>>();
+  }
+
+  /// Cierra un reporte con su resolución: kept | hidden | removed.
+  Future<Map<String, dynamic>> resolveDeckReport({
+    required String reportId,
+    required String resolution,
+  }) async {
+    final r = await _http.post(
+      _uri('/v1/community/reports/resolve'),
+      headers: _headers,
+      body: jsonEncode({'reportId': reportId, 'resolution': resolution}),
+    );
+    return _decode(r);
+  }
+
   /// Registra que este usuario importó un deck comunitario (stats del autor).
   Future<void> registerCommunityImport(String shareId) async {
     final r = await _http.post(

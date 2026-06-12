@@ -28,6 +28,9 @@ var (
 	ErrMissingPayload      = errors.New("missing payload")
 	ErrShareNotFound       = errors.New("share not found")
 	ErrMissingTitle        = errors.New("missing title")
+	ErrInvalidReportReason     = errors.New("invalid report reason")
+	ErrInvalidReportResolution = errors.New("invalid report resolution")
+	ErrReportNotFound          = errors.New("report not found")
 	ErrFeedEntryNotFound   = errors.New("feed entry not found")
 	ErrEmailInUse          = errors.New("email already in use")
 	ErrInvalidCredentials  = errors.New("invalid credentials")
@@ -484,6 +487,88 @@ func (s *Service) ListOwnedCommunityDecks(userID string) ([]CommunityDeck, error
 		return owned[i].CreatedAt.After(owned[j].CreatedAt)
 	})
 	return s.attachImportCounts(owned)
+}
+
+// FileDeckReportInput es la denuncia que envía la app.
+type FileDeckReportInput struct {
+	DeckID    string `json:"deckId"`
+	DeckTitle string `json:"deckTitle"`
+	Reason    string `json:"reason"`
+	Note      string `json:"note"`
+}
+
+var validReportReasons = map[string]struct{}{
+	"copyright": {}, "hate": {}, "sexual": {}, "minor_risk": {},
+	"spam": {}, "impersonation": {}, "inaccurate": {}, "other": {},
+}
+
+var validReportResolutions = map[string]domain.DeckReportStatus{
+	"kept":    domain.ReportStatusResolvedKept,
+	"hidden":  domain.ReportStatusResolvedHidden,
+	"removed": domain.ReportStatusResolvedRemoved,
+}
+
+// FileDeckReport persiste una denuncia en la cola de moderación.
+func (s *Service) FileDeckReport(reporterID string, input FileDeckReportInput) (*domain.DeckReport, error) {
+	reason := strings.TrimSpace(strings.ToLower(input.Reason))
+	if _, ok := validReportReasons[reason]; !ok {
+		return nil, ErrInvalidReportReason
+	}
+	if strings.TrimSpace(input.DeckID) == "" {
+		return nil, ErrMissingPayload
+	}
+	report := domain.DeckReport{
+		ID:         newID("rep"),
+		DeckID:     strings.TrimSpace(input.DeckID),
+		DeckTitle:  strings.TrimSpace(input.DeckTitle),
+		ReporterID: reporterID,
+		Reason:     reason,
+		Note:       strings.TrimSpace(input.Note),
+		Status:     domain.ReportStatusPending,
+		CreatedAt:  s.now().UTC(),
+	}
+	if err := s.repo.SaveDeckReport(report); err != nil {
+		return nil, err
+	}
+	return &report, nil
+}
+
+// ListDeckReports devuelve la cola completa, pendientes primero y luego por
+// fecha descendente. La autorización por rol de moderador queda pendiente.
+func (s *Service) ListDeckReports() ([]domain.DeckReport, error) {
+	reports, err := s.repo.ListDeckReports()
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(reports, func(i, j int) bool {
+		iPending := reports[i].Status == domain.ReportStatusPending
+		jPending := reports[j].Status == domain.ReportStatusPending
+		if iPending != jPending {
+			return iPending
+		}
+		return reports[i].CreatedAt.After(reports[j].CreatedAt)
+	})
+	return reports, nil
+}
+
+// ResolveDeckReport marca un reporte como mantenido/oculto/eliminado.
+func (s *Service) ResolveDeckReport(reportID, resolution string) (*domain.DeckReport, error) {
+	status, ok := validReportResolutions[strings.TrimSpace(strings.ToLower(resolution))]
+	if !ok {
+		return nil, ErrInvalidReportResolution
+	}
+	report, err := s.repo.FindDeckReportByID(strings.TrimSpace(reportID))
+	if err != nil {
+		return nil, err
+	}
+	if report == nil {
+		return nil, ErrReportNotFound
+	}
+	report.Status = status
+	if err := s.repo.SaveDeckReport(*report); err != nil {
+		return nil, err
+	}
+	return report, nil
 }
 
 // CommunityCreatorStat resume a un autor del catálogo comunitario.

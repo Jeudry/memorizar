@@ -250,66 +250,6 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
     }
   }
 
-  void _showReportDialog(BuildContext context, String deckTitle) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: RefColors.glassStrong,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: RefColors.border),
-          ),
-          title: Row(
-            children: const [
-              Icon(Icons.copyright_rounded, color: RefColors.urgent),
-              SizedBox(width: 8),
-              Text(
-                'Reportar Copyright',
-                style: TextStyle(color: RefColors.ink, fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-            ],
-          ),
-          content: Text(
-            '¿Deseas reportar el mazo "$deckTitle" por infracción de propiedad intelectual o derechos de autor (DMCA)?',
-            style: const TextStyle(color: RefColors.ink, fontSize: 13, height: 1.4),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar', style: TextStyle(color: RefColors.muted, fontWeight: FontWeight.bold)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: RefColors.urgent.withValues(alpha: .15),
-                foregroundColor: RefColors.urgent,
-                elevation: 0,
-                side: const BorderSide(color: RefColors.urgent),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    backgroundColor: RefColors.glassStrong,
-                    shape: RoundedRectangleBorder(
-                      side: const BorderSide(color: RefColors.lime),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    content: const Text(
-                      'Reporte registrado exitosamente. Revisaremos el contenido en un plazo máximo de 24 horas.',
-                      style: TextStyle(color: RefColors.lime, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                );
-              },
-              child: const Text('Reportar', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ],
-        );
-      },
-    );
-  }
 
   Widget _buildTabSwitcher() {
     return Glass(
@@ -483,7 +423,11 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
                 _CommunityHit(
                   share: r,
                   onImport: () => _import(r),
-                  onReport: () => _showReportDialog(context, r['title'] as String? ?? 'Sin título'),
+                  onReport: () => showReportDeckSheet(
+                    context,
+                    deckId: (r['id'] as String?) ?? '',
+                    deckTitle: r['title'] as String? ?? 'Sin título',
+                  ),
                 ),
           ],
           const SizedBox(height: 12),
@@ -641,9 +585,10 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
           _CommunityHit(
             share: share,
             onImport: () => _import(share),
-            onReport: () => _showReportDialog(
+            onReport: () => showReportDeckSheet(
               context,
-              (share['title'] as String?) ?? 'Sin título',
+              deckId: (share['id'] as String?) ?? '',
+              deckTitle: (share['title'] as String?) ?? 'Sin título',
             ),
           ),
       ],

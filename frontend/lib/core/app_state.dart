@@ -1474,6 +1474,21 @@ class AppStore extends ChangeNotifier {
       createdAt: DateTime.now(),
     );
     _deckReports.insert(0, report);
+    // Persistir en la cola de moderación del backend (best-effort: la copia
+    // local mantiene la UX si no hay sesión o falla la red).
+    if (isLoggedIn) {
+      unawaited(api
+          .fileDeckReport(
+            deckId: deckId,
+            deckTitle: deckTitle,
+            reason: reason.serverKey,
+            note: note,
+          )
+          .catchError((e) {
+        debugPrint('No se pudo persistir el reporte en backend: $e');
+        return <String, dynamic>{};
+      }));
+    }
     // Auto-bajar visibilidad mientras se revisa.
     final index = _decks.indexWhere((d) => d.id == deckId);
     if (index >= 0 && _decks[index].visibility == DeckVisibility.public) {

@@ -19,6 +19,7 @@ type state struct {
 	Activities        map[string]domain.Activity         `json:"activities"`
 	SharedResources   map[string]domain.SharedResource   `json:"sharedResources"`
 	ShareImports      map[string]map[string]domain.ShareImport `json:"shareImports"`
+	DeckReports       map[string]domain.DeckReport       `json:"deckReports"`
 	Reactions         map[string]domain.FeedReaction     `json:"reactions"`
 	Comments          map[string]domain.FeedComment      `json:"comments"`
 	ProgressSnapshots map[string]domain.ProgressSnapshot `json:"progressSnapshots"`
@@ -41,6 +42,7 @@ func NewRepository(path string) (*Repository, error) {
 			Activities:        map[string]domain.Activity{},
 			SharedResources:   map[string]domain.SharedResource{},
 			ShareImports:      map[string]map[string]domain.ShareImport{},
+			DeckReports:       map[string]domain.DeckReport{},
 			Reactions:         map[string]domain.FeedReaction{},
 			Comments:          map[string]domain.FeedComment{},
 			ProgressSnapshots: map[string]domain.ProgressSnapshot{},
@@ -337,6 +339,37 @@ func (r *Repository) CountShareImportsSince(shareIDs []string, since time.Time) 
 		}
 	}
 	return counts, nil
+}
+
+func (r *Repository) SaveDeckReport(report domain.DeckReport) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state.DeckReports == nil {
+		// Estados persistidos antes de esta versión no traen el mapa.
+		r.state.DeckReports = map[string]domain.DeckReport{}
+	}
+	r.state.DeckReports[report.ID] = report
+	return r.persistLocked()
+}
+
+func (r *Repository) FindDeckReportByID(reportID string) (*domain.DeckReport, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if report, ok := r.state.DeckReports[reportID]; ok {
+		copy := report
+		return &copy, nil
+	}
+	return nil, nil
+}
+
+func (r *Repository) ListDeckReports() ([]domain.DeckReport, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]domain.DeckReport, 0, len(r.state.DeckReports))
+	for _, report := range r.state.DeckReports {
+		out = append(out, report)
+	}
+	return out, nil
 }
 
 func (r *Repository) SaveReaction(reaction domain.FeedReaction) error {

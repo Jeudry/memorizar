@@ -17,6 +17,7 @@ type Repository struct {
 	activities        map[string]domain.Activity
 	sharedResources   map[string]domain.SharedResource
 	shareImports      map[string]map[string]domain.ShareImport
+	deckReports       map[string]domain.DeckReport
 	reactions         map[string]domain.FeedReaction
 	comments          map[string]domain.FeedComment
 	progressSnapshots map[string]domain.ProgressSnapshot
@@ -31,6 +32,7 @@ func NewRepository() *Repository {
 		activities:        map[string]domain.Activity{},
 		sharedResources:   map[string]domain.SharedResource{},
 		shareImports:      map[string]map[string]domain.ShareImport{},
+		deckReports:       map[string]domain.DeckReport{},
 		reactions:         map[string]domain.FeedReaction{},
 		comments:          map[string]domain.FeedComment{},
 		progressSnapshots: map[string]domain.ProgressSnapshot{},
@@ -284,6 +286,33 @@ func (r *Repository) CountShareImportsSince(shareIDs []string, since time.Time) 
 		}
 	}
 	return counts, nil
+}
+
+func (r *Repository) SaveDeckReport(report domain.DeckReport) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.deckReports[report.ID] = report
+	return nil
+}
+
+func (r *Repository) FindDeckReportByID(reportID string) (*domain.DeckReport, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if report, ok := r.deckReports[reportID]; ok {
+		copy := report
+		return &copy, nil
+	}
+	return nil, nil
+}
+
+func (r *Repository) ListDeckReports() ([]domain.DeckReport, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]domain.DeckReport, 0, len(r.deckReports))
+	for _, report := range r.deckReports {
+		out = append(out, report)
+	}
+	return out, nil
 }
 
 func (r *Repository) ListPublicSharedResourcesByUserIDs(userIDs []string) ([]domain.SharedResource, error) {

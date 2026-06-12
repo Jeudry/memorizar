@@ -6,21 +6,79 @@ import '../../../core/theme/ref_colors.dart';
 import '../../../core/ui/widgets.dart';
 import '../data/report_models.dart';
 
-/// Cola interna para revisar reportes pendientes. En Fase 1 vive solo en
-/// memoria del store; en Fase 3 esta misma pantalla apuntará al backend con
-/// permisos de moderador.
-class ModerationQueueScreen extends StatelessWidget {
+/// Cola de moderación. Con sesión iniciada lee y resuelve los reportes
+/// persistidos en el backend; sin sesión cae a la copia local del store.
+/// La autorización por rol de moderador queda pendiente.
+class ModerationQueueScreen extends StatefulWidget {
   const ModerationQueueScreen({super.key});
+
+  @override
+  State<ModerationQueueScreen> createState() => _ModerationQueueScreenState();
+}
+
+class _ModerationQueueScreenState extends State<ModerationQueueScreen> {
+  List<DeckReport>? _remoteReports;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    if (_loading || !mounted) return;
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) return;
+    setState(() => _loading = true);
+    try {
+      final raw = await store.api.listDeckReports();
+      if (!mounted) return;
+      setState(() =>
+          _remoteReports = raw.map(DeckReport.fromApi).toList());
+    } catch (e) {
+      debugPrint('Cola de moderación: fallback local ($e)');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _resolve(
+    AppStore store,
+    DeckReport report,
+    ReportStatus status,
+  ) async {
+    if (_remoteReports != null) {
+      try {
+        await store.api.resolveDeckReport(
+          reportId: report.id,
+          resolution: status.resolutionKey,
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo resolver el reporte.')),
+        );
+        return;
+      }
+    }
+    store.resolveDeckReport(report.id, status);
+    if (!mounted) return;
+    setState(() {
+      _remoteReports = _remoteReports
+          ?.map((r) => r.id == report.id ? r.copyWith(status: status) : r)
+          .toList();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
-    final pending = store.deckReports
-        .where((r) => r.status == ReportStatus.pending)
-        .toList();
-    final history = store.deckReports
-        .where((r) => r.status != ReportStatus.pending)
-        .toList();
+    final reports = _remoteReports ?? store.deckReports;
+    final pending =
+        reports.where((r) => r.status == ReportStatus.pending).toList();
+    final history =
+        reports.where((r) => r.status != ReportStatus.pending).toList();
     return ReferencePage(
       showBottomNav: false,
       active: AppRoutes.home,
@@ -28,7 +86,14 @@ class ModerationQueueScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const RefTopBar(title: 'Moderación'),
-          if (pending.isEmpty && history.isEmpty)
+          if (_loading && _remoteReports == null)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 40),
+              child: Center(
+                child: CircularProgressIndicator(color: RefColors.cyan),
+              ),
+            )
+          else if (pending.isEmpty && history.isEmpty)
             Glass(
               padding: const EdgeInsets.symmetric(
                 horizontal: 18,
@@ -66,12 +131,20 @@ class ModerationQueueScreen extends StatelessWidget {
             if (pending.isNotEmpty) ...[
               const SectionHead('Pendientes'),
               for (final r in pending)
-                _ReportRow(report: r, store: store, isPending: true),
+                _ReportRow(
+                  report: r,
+                  isPending: true,
+                  onResolve: (status) => _resolve(store, r, status),
+                ),
             ],
             if (history.isNotEmpty) ...[
               const SectionHead('Resueltos'),
               for (final r in history)
-                _ReportRow(report: r, store: store, isPending: false),
+                _ReportRow(
+                  report: r,
+                  isPending: false,
+                  onResolve: (status) => _resolve(store, r, status),
+                ),
             ],
           ],
         ],
@@ -82,12 +155,12 @@ class ModerationQueueScreen extends StatelessWidget {
 
 class _ReportRow extends StatelessWidget {
   final DeckReport report;
-  final AppStore store;
   final bool isPending;
+  final ValueChanged<ReportStatus> onResolve;
   const _ReportRow({
     required this.report,
-    required this.store,
     required this.isPending,
+    required this.onResolve,
   });
 
   Color _statusColor() {
@@ -189,30 +262,21 @@ class _ReportRow extends StatelessWidget {
                 Expanded(
                   child: GhostButton(
                     'Mantener',
-                    onTap: () => store.resolveDeckReport(
-                      report.id,
-                      ReportStatus.resolvedKept,
-                    ),
+                    onTap: () => onResolve(ReportStatus.resolvedKept),
                   ),
                 ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: GhostButton(
                     'Ocultar',
-                    onTap: () => store.resolveDeckReport(
-                      report.id,
-                      ReportStatus.resolvedHidden,
-                    ),
+                    onTap: () => onResolve(ReportStatus.resolvedHidden),
                   ),
                 ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: GhostButton(
                     'Eliminar',
-                    onTap: () => store.resolveDeckReport(
-                      report.id,
-                      ReportStatus.resolvedRemoved,
-                    ),
+                    onTap: () => onResolve(ReportStatus.resolvedRemoved),
                   ),
                 ),
               ],

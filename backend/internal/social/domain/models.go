@@ -108,6 +108,28 @@ type SharedResource struct {
 	CreatedAt    time.Time `json:"createdAt"`
 }
 
+// DeckReportStatus es el estado de un reporte en la cola de moderación.
+type DeckReportStatus string
+
+const (
+	ReportStatusPending         DeckReportStatus = "pending"
+	ReportStatusResolvedKept    DeckReportStatus = "resolved_kept"
+	ReportStatusResolvedHidden  DeckReportStatus = "resolved_hidden"
+	ReportStatusResolvedRemoved DeckReportStatus = "resolved_removed"
+)
+
+// DeckReport es la denuncia de un usuario sobre un mazo comunitario.
+type DeckReport struct {
+	ID         string           `json:"id"`
+	DeckID     string           `json:"deckId"`
+	DeckTitle  string           `json:"deckTitle"`
+	ReporterID string           `json:"reporterId"`
+	Reason     string           `json:"reason"`
+	Note       string           `json:"note"`
+	Status     DeckReportStatus `json:"status"`
+	CreatedAt  time.Time        `json:"createdAt"`
+}
+
 // ShareImport registra que un usuario importó un deck comunitario a su
 // colección. Una fila por (share, usuario): re-importar no infla stats.
 type ShareImport struct {

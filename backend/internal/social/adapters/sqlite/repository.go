@@ -509,6 +509,63 @@ func (r *Repository) countShareImportsWhere(shareIDs []string, extraWhere string
 	return counts, nil
 }
 
+// ─── Deck reports (moderación) ───────────────────────────────────────────
+
+func (r *Repository) SaveDeckReport(report domain.DeckReport) error {
+	_, err := r.db.Exec(`
+		INSERT OR REPLACE INTO deck_reports
+		    (id, deck_id, deck_title, reporter_id, reason, note, status, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		report.ID, report.DeckID, report.DeckTitle, report.ReporterID,
+		report.Reason, report.Note, string(report.Status), formatTime(report.CreatedAt),
+	)
+	return err
+}
+
+func (r *Repository) scanDeckReport(scan func(...any) error) (*domain.DeckReport, error) {
+	var report domain.DeckReport
+	var status, ts string
+	if err := scan(
+		&report.ID, &report.DeckID, &report.DeckTitle, &report.ReporterID,
+		&report.Reason, &report.Note, &status, &ts,
+	); err != nil {
+		return nil, err
+	}
+	report.Status = domain.DeckReportStatus(status)
+	report.CreatedAt = parseTime(ts)
+	return &report, nil
+}
+
+func (r *Repository) FindDeckReportByID(reportID string) (*domain.DeckReport, error) {
+	row := r.db.QueryRow(`
+		SELECT id, deck_id, deck_title, reporter_id, reason, note, status, created_at
+		FROM deck_reports WHERE id = ?`, reportID)
+	report, err := r.scanDeckReport(row.Scan)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return report, err
+}
+
+func (r *Repository) ListDeckReports() ([]domain.DeckReport, error) {
+	rows, err := r.db.Query(`
+		SELECT id, deck_id, deck_title, reporter_id, reason, note, status, created_at
+		FROM deck_reports ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.DeckReport{}
+	for rows.Next() {
+		report, err := r.scanDeckReport(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *report)
+	}
+	return out, nil
+}
+
 // ─── Reactions & Comments ───────────────────────────────────────────────
 
 func (r *Repository) SaveReaction(x domain.FeedReaction) error {

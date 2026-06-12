@@ -56,6 +56,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/community/decks", s.withAuth(s.handleCommunitySearch))
 	s.mux.HandleFunc("/v1/community/mine", s.withAuth(s.handleCommunityMine))
 	s.mux.HandleFunc("/v1/community/overview", s.withAuth(s.handleCommunityOverview))
+	s.mux.HandleFunc("/v1/community/reports", s.withAuth(s.handleCommunityReports))
+	s.mux.HandleFunc("/v1/community/reports/resolve", s.withAuth(s.handleCommunityReportResolve))
 	s.mux.HandleFunc("/v1/community/imports", s.withAuth(s.handleCommunityImport))
 	// Endpoint público (sin auth) para resolver deeplinks `memorizar://deck/ID`.
 	// Solo expone shares con IsPublic=true.
@@ -390,6 +392,59 @@ func (s *Server) handleCommunityOverview(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	writeJSON(w, http.StatusOK, overview)
+}
+
+// handleCommunityReports archiva (POST) y lista (GET) denuncias de mazos.
+func (s *Server) handleCommunityReports(w http.ResponseWriter, r *http.Request, userID string) {
+	switch r.Method {
+	case http.MethodGet:
+		reports, err := s.service.ListDeckReports()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"reports": reports})
+	case http.MethodPost:
+		var body application.FileDeckReportInput
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+			return
+		}
+		report, err := s.service.FileDeckReport(userID, body)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusCreated, report)
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+	}
+}
+
+// handleCommunityReportResolve cierra un reporte con su resolución.
+func (s *Server) handleCommunityReportResolve(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		ReportID   string `json:"reportId"`
+		Resolution string `json:"resolution"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	report, err := s.service.ResolveDeckReport(body.ReportID, body.Resolution)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, application.ErrReportNotFound) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
 }
 
 // handleCommunityImport registra que el usuario importó un deck comunitario.

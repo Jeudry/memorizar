@@ -56,7 +56,24 @@ enum ReportReason {
 }
 
 /// Estado de un reporte tal como lo ve la cola de moderación.
-enum ReportStatus { pending, resolvedKept, resolvedHidden, resolvedRemoved }
+enum ReportStatus {
+  pending('pending', resolutionKey: ''),
+  resolvedKept('resolved_kept', resolutionKey: 'kept'),
+  resolvedHidden('resolved_hidden', resolutionKey: 'hidden'),
+  resolvedRemoved('resolved_removed', resolutionKey: 'removed');
+
+  /// Clave persistida por el backend para este estado.
+  final String serverKey;
+
+  /// Valor que espera el endpoint de resolución (vacío para pending).
+  final String resolutionKey;
+
+  const ReportStatus(this.serverKey, {required this.resolutionKey});
+
+  static ReportStatus fromServerKey(String key) => ReportStatus.values
+      .firstWhere((status) => status.serverKey == key,
+          orElse: () => ReportStatus.pending);
+}
 
 class DeckReport {
   final String id;
@@ -88,5 +105,22 @@ class DeckReport {
         note: note,
         createdAt: createdAt,
         status: status ?? this.status,
+      );
+
+  /// Mapea el JSON del backend (/v1/community/reports) al modelo local.
+  factory DeckReport.fromApi(Map<String, dynamic> json) => DeckReport(
+        id: (json['id'] as String?) ?? '',
+        deckId: (json['deckId'] as String?) ?? '',
+        deckTitle: (json['deckTitle'] as String?) ?? 'Sin título',
+        reporterId: (json['reporterId'] as String?) ?? '',
+        reason: ReportReason.values.firstWhere(
+          (reason) => reason.serverKey == json['reason'],
+          orElse: () => ReportReason.other,
+        ),
+        note: (json['note'] as String?) ?? '',
+        createdAt:
+            DateTime.tryParse((json['createdAt'] as String?) ?? '') ??
+                DateTime.now(),
+        status: ReportStatus.fromServerKey((json['status'] as String?) ?? ''),
       );
 }

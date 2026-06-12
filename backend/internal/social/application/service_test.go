@@ -263,3 +263,45 @@ func TestCommunityOverviewAggregatesRealData(t *testing.T) {
 		t.Fatalf("expected real category count for ✝️, got %+v", overview.Categories)
 	}
 }
+
+func TestDeckReportLifecycle(t *testing.T) {
+	service := NewService(memory.NewRepository())
+	reporter, _ := service.SocialLogin(SocialLoginInput{
+		Provider:       domain.ProviderGoogle,
+		ProviderUserID: "rep-user",
+		Email:          "rep@example.com",
+		DisplayName:    "Reporter",
+	})
+
+	report, err := service.FileDeckReport(reporter.User.ID, FileDeckReportInput{
+		DeckID:    "deck-x",
+		DeckTitle: "Mazo dudoso",
+		Reason:    "copyright",
+		Note:      "Usa la NVI completa",
+	})
+	if err != nil {
+		t.Fatalf("file report: %v", err)
+	}
+	if report.Status != domain.ReportStatusPending {
+		t.Fatalf("expected pending, got %s", report.Status)
+	}
+
+	if _, err := service.FileDeckReport(reporter.User.ID, FileDeckReportInput{
+		DeckID: "deck-x", Reason: "nonsense",
+	}); err != ErrInvalidReportReason {
+		t.Fatalf("expected ErrInvalidReportReason, got %v", err)
+	}
+
+	resolved, err := service.ResolveDeckReport(report.ID, "hidden")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if resolved.Status != domain.ReportStatusResolvedHidden {
+		t.Fatalf("expected resolved_hidden, got %s", resolved.Status)
+	}
+
+	reports, err := service.ListDeckReports()
+	if err != nil || len(reports) != 1 {
+		t.Fatalf("expected 1 report, got %d (%v)", len(reports), err)
+	}
+}
