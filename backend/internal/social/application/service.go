@@ -489,6 +489,55 @@ func (s *Service) ListOwnedCommunityDecks(userID string) ([]CommunityDeck, error
 	return s.attachImportCounts(owned)
 }
 
+// AnalyticsEventInput es un evento del batch que manda la app.
+type AnalyticsEventInput struct {
+	Event string         `json:"event"`
+	Props map[string]any `json:"props,omitempty"`
+}
+
+const maxAnalyticsBatch = 100
+
+// RecordAnalyticsEvents persiste un batch de eventos de producto. Acepta
+// invitados (userID vacío) y descarta silenciosamente eventos sin nombre.
+func (s *Service) RecordAnalyticsEvents(userID string, batch []AnalyticsEventInput) error {
+	if len(batch) == 0 {
+		return nil
+	}
+	if len(batch) > maxAnalyticsBatch {
+		batch = batch[:maxAnalyticsBatch]
+	}
+	events := make([]domain.AnalyticsEvent, 0, len(batch))
+	now := s.now().UTC()
+	for _, input := range batch {
+		name := strings.TrimSpace(input.Event)
+		if name == "" || len(name) > 120 {
+			continue
+		}
+		propsJSON := ""
+		if len(input.Props) > 0 {
+			if encoded, err := json.Marshal(input.Props); err == nil {
+				propsJSON = string(encoded)
+			}
+		}
+		events = append(events, domain.AnalyticsEvent{
+			ID:        newID("evt"),
+			UserID:    userID,
+			Event:     name,
+			PropsJSON: propsJSON,
+			CreatedAt: now,
+		})
+	}
+	if len(events) == 0 {
+		return nil
+	}
+	return s.repo.SaveAnalyticsEvents(events)
+}
+
+// AnalyticsSummary devuelve el conteo total por nombre de evento.
+func (s *Service) AnalyticsSummary() (map[string]int, error) {
+	return s.repo.CountAnalyticsEventsByName()
+}
+
 // FileDeckReportInput es la denuncia que envía la app.
 type FileDeckReportInput struct {
 	DeckID    string `json:"deckId"`

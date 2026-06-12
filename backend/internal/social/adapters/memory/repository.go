@@ -18,6 +18,7 @@ type Repository struct {
 	sharedResources   map[string]domain.SharedResource
 	shareImports      map[string]map[string]domain.ShareImport
 	deckReports       map[string]domain.DeckReport
+	analyticsEvents   []domain.AnalyticsEvent
 	reactions         map[string]domain.FeedReaction
 	comments          map[string]domain.FeedComment
 	progressSnapshots map[string]domain.ProgressSnapshot
@@ -284,6 +285,23 @@ func (r *Repository) CountShareImportsSince(shareIDs []string, since time.Time) 
 		if recent > 0 {
 			counts[shareID] = recent
 		}
+	}
+	return counts, nil
+}
+
+func (r *Repository) SaveAnalyticsEvents(events []domain.AnalyticsEvent) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.analyticsEvents = append(r.analyticsEvents, events...)
+	return nil
+}
+
+func (r *Repository) CountAnalyticsEventsByName() (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	counts := map[string]int{}
+	for _, event := range r.analyticsEvents {
+		counts[event.Event]++
 	}
 	return counts, nil
 }

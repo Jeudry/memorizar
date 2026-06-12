@@ -108,6 +108,16 @@ type SharedResource struct {
 	CreatedAt    time.Time `json:"createdAt"`
 }
 
+// AnalyticsEvent es un evento de producto registrado por la app. UserID
+// queda vacío para invitados.
+type AnalyticsEvent struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"userId,omitempty"`
+	Event     string    `json:"event"`
+	PropsJSON string    `json:"propsJson,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 // DeckReportStatus es el estado de un reporte en la cola de moderación.
 type DeckReportStatus string
 

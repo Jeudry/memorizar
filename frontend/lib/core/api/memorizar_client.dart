@@ -402,6 +402,20 @@ class MemorizarClient {
     return list.cast<Map<String, dynamic>>();
   }
 
+  /// Envía un batch de eventos de producto al backend de analytics propio.
+  /// Funciona también sin sesión (eventos de invitado).
+  Future<void> sendAnalyticsEvents(List<Map<String, dynamic>> events) async {
+    if (events.isEmpty) return;
+    final r = await _http.post(
+      _uri('/v1/analytics/events'),
+      headers: _headers,
+      body: jsonEncode({'events': events}),
+    );
+    if (r.statusCode >= 400) {
+      throw Exception('No se pudo enviar analytics (${r.statusCode}).');
+    }
+  }
+
   /// Portada de Comunidad: destacados, populares, creadores y categorías
   /// reales del catálogo público.
   Future<Map<String, dynamic>> getCommunityOverview() async {

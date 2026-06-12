@@ -98,6 +98,15 @@ CREATE TABLE IF NOT EXISTS deck_reports (
 );
 CREATE INDEX IF NOT EXISTS idx_deck_reports_status ON deck_reports(status);
 
+CREATE TABLE IF NOT EXISTS analytics_events (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL DEFAULT '',
+    event       TEXT NOT NULL,
+    props_json  TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_analytics_event ON analytics_events(event);
+
 CREATE TABLE IF NOT EXISTS feed_reactions (
     id          TEXT PRIMARY KEY,
     entry_id    TEXT NOT NULL,

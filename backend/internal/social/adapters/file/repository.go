@@ -20,6 +20,7 @@ type state struct {
 	SharedResources   map[string]domain.SharedResource   `json:"sharedResources"`
 	ShareImports      map[string]map[string]domain.ShareImport `json:"shareImports"`
 	DeckReports       map[string]domain.DeckReport       `json:"deckReports"`
+	AnalyticsEvents   []domain.AnalyticsEvent            `json:"analyticsEvents"`
 	Reactions         map[string]domain.FeedReaction     `json:"reactions"`
 	Comments          map[string]domain.FeedComment      `json:"comments"`
 	ProgressSnapshots map[string]domain.ProgressSnapshot `json:"progressSnapshots"`
@@ -337,6 +338,23 @@ func (r *Repository) CountShareImportsSince(shareIDs []string, since time.Time) 
 		if recent > 0 {
 			counts[shareID] = recent
 		}
+	}
+	return counts, nil
+}
+
+func (r *Repository) SaveAnalyticsEvents(events []domain.AnalyticsEvent) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.state.AnalyticsEvents = append(r.state.AnalyticsEvents, events...)
+	return r.persistLocked()
+}
+
+func (r *Repository) CountAnalyticsEventsByName() (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	counts := map[string]int{}
+	for _, event := range r.state.AnalyticsEvents {
+		counts[event.Event]++
 	}
 	return counts, nil
 }

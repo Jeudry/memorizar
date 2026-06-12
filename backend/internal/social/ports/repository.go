@@ -40,6 +40,9 @@ type Repository interface {
 	FindDeckReportByID(reportID string) (*domain.DeckReport, error)
 	ListDeckReports() ([]domain.DeckReport, error)
 
+	SaveAnalyticsEvents(events []domain.AnalyticsEvent) error
+	CountAnalyticsEventsByName() (map[string]int, error)
+
 	SaveReaction(reaction domain.FeedReaction) error
 	ListReactionsByEntryIDs(entryIDs []string) ([]domain.FeedReaction, error)
 

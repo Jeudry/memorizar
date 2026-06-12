@@ -566,6 +566,50 @@ func (r *Repository) ListDeckReports() ([]domain.DeckReport, error) {
 	return out, nil
 }
 
+// ─── Analytics ────────────────────────────────────────────────────────────
+
+func (r *Repository) SaveAnalyticsEvents(events []domain.AnalyticsEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	stmt, err := tx.Prepare(`
+		INSERT OR IGNORE INTO analytics_events (id, user_id, event, props_json, created_at)
+		VALUES (?, ?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for _, event := range events {
+		if _, err := stmt.Exec(event.ID, event.UserID, event.Event, event.PropsJSON, formatTime(event.CreatedAt)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) CountAnalyticsEventsByName() (map[string]int, error) {
+	rows, err := r.db.Query(`SELECT event, COUNT(*) FROM analytics_events GROUP BY event`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := map[string]int{}
+	for rows.Next() {
+		var event string
+		var count int
+		if err := rows.Scan(&event, &count); err != nil {
+			return nil, err
+		}
+		counts[event] = count
+	}
+	return counts, nil
+}
+
 // ─── Reactions & Comments ───────────────────────────────────────────────
 
 func (r *Repository) SaveReaction(x domain.FeedReaction) error {

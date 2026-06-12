@@ -58,6 +58,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/community/overview", s.withAuth(s.handleCommunityOverview))
 	s.mux.HandleFunc("/v1/community/reports", s.withAuth(s.handleCommunityReports))
 	s.mux.HandleFunc("/v1/community/reports/resolve", s.withAuth(s.handleCommunityReportResolve))
+	s.mux.HandleFunc("/v1/analytics/events", s.withOptionalAuth(s.handleAnalyticsEvents))
+	s.mux.HandleFunc("/v1/analytics/summary", s.withAuth(s.handleAnalyticsSummary))
 	s.mux.HandleFunc("/v1/community/imports", s.withAuth(s.handleCommunityImport))
 	// Endpoint público (sin auth) para resolver deeplinks `memorizar://deck/ID`.
 	// Solo expone shares con IsPublic=true.
@@ -392,6 +394,41 @@ func (s *Server) handleCommunityOverview(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	writeJSON(w, http.StatusOK, overview)
+}
+
+// handleAnalyticsEvents recibe batches de eventos de producto (también de
+// invitados) y los persiste.
+func (s *Server) handleAnalyticsEvents(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		Events []application.AnalyticsEventInput `json:"events"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	if err := s.service.RecordAnalyticsEvents(userID, body.Events); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleAnalyticsSummary expone conteos por evento para inspección rápida.
+func (s *Server) handleAnalyticsSummary(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	summary, err := s.service.AnalyticsSummary()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"events": summary})
 }
 
 // handleCommunityReports archiva (POST) y lista (GET) denuncias de mazos.
