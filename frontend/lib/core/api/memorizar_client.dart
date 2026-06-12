@@ -402,6 +402,18 @@ class MemorizarClient {
     return list.cast<Map<String, dynamic>>();
   }
 
+  /// Activa el trial premium del usuario en el backend.
+  Future<Map<String, dynamic>> activatePremiumTrial() async {
+    final r = await _http.post(_uri('/v1/premium/trial'), headers: _headers);
+    return _decode(r);
+  }
+
+  /// Estado premium vigente del usuario (persistido server-side).
+  Future<Map<String, dynamic>> getPremiumStatus() async {
+    final r = await _http.get(_uri('/v1/premium/status'), headers: _headers);
+    return _decode(r);
+  }
+
   /// Envía un batch de eventos de producto al backend de analytics propio.
   /// Funciona también sin sesión (eventos de invitado).
   Future<void> sendAnalyticsEvents(List<Map<String, dynamic>> events) async {

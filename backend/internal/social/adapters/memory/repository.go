@@ -19,6 +19,7 @@ type Repository struct {
 	shareImports      map[string]map[string]domain.ShareImport
 	deckReports       map[string]domain.DeckReport
 	analyticsEvents   []domain.AnalyticsEvent
+	premiumSubs       map[string]domain.PremiumSubscription
 	reactions         map[string]domain.FeedReaction
 	comments          map[string]domain.FeedComment
 	progressSnapshots map[string]domain.ProgressSnapshot
@@ -287,6 +288,26 @@ func (r *Repository) CountShareImportsSince(shareIDs []string, since time.Time) 
 		}
 	}
 	return counts, nil
+}
+
+func (r *Repository) SavePremiumSubscription(subscription domain.PremiumSubscription) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.premiumSubs == nil {
+		r.premiumSubs = map[string]domain.PremiumSubscription{}
+	}
+	r.premiumSubs[subscription.UserID] = subscription
+	return nil
+}
+
+func (r *Repository) FindPremiumSubscription(userID string) (*domain.PremiumSubscription, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if subscription, ok := r.premiumSubs[userID]; ok {
+		copy := subscription
+		return &copy, nil
+	}
+	return nil, nil
 }
 
 func (r *Repository) SaveAnalyticsEvents(events []domain.AnalyticsEvent) error {

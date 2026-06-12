@@ -21,6 +21,7 @@ type state struct {
 	ShareImports      map[string]map[string]domain.ShareImport `json:"shareImports"`
 	DeckReports       map[string]domain.DeckReport       `json:"deckReports"`
 	AnalyticsEvents   []domain.AnalyticsEvent            `json:"analyticsEvents"`
+	PremiumSubs       map[string]domain.PremiumSubscription `json:"premiumSubs"`
 	Reactions         map[string]domain.FeedReaction     `json:"reactions"`
 	Comments          map[string]domain.FeedComment      `json:"comments"`
 	ProgressSnapshots map[string]domain.ProgressSnapshot `json:"progressSnapshots"`
@@ -340,6 +341,26 @@ func (r *Repository) CountShareImportsSince(shareIDs []string, since time.Time) 
 		}
 	}
 	return counts, nil
+}
+
+func (r *Repository) SavePremiumSubscription(subscription domain.PremiumSubscription) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state.PremiumSubs == nil {
+		r.state.PremiumSubs = map[string]domain.PremiumSubscription{}
+	}
+	r.state.PremiumSubs[subscription.UserID] = subscription
+	return r.persistLocked()
+}
+
+func (r *Repository) FindPremiumSubscription(userID string) (*domain.PremiumSubscription, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if subscription, ok := r.state.PremiumSubs[userID]; ok {
+		copy := subscription
+		return &copy, nil
+	}
+	return nil, nil
 }
 
 func (r *Repository) SaveAnalyticsEvents(events []domain.AnalyticsEvent) error {

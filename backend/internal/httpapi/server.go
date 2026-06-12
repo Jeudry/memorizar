@@ -60,6 +60,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/community/reports/resolve", s.withAuth(s.handleCommunityReportResolve))
 	s.mux.HandleFunc("/v1/analytics/events", s.withOptionalAuth(s.handleAnalyticsEvents))
 	s.mux.HandleFunc("/v1/analytics/summary", s.withAuth(s.handleAnalyticsSummary))
+	s.mux.HandleFunc("/v1/premium/trial", s.withAuth(s.handlePremiumTrial))
+	s.mux.HandleFunc("/v1/premium/status", s.withAuth(s.handlePremiumStatus))
 	s.mux.HandleFunc("/v1/community/imports", s.withAuth(s.handleCommunityImport))
 	// Endpoint público (sin auth) para resolver deeplinks `memorizar://deck/ID`.
 	// Solo expone shares con IsPublic=true.
@@ -394,6 +396,38 @@ func (s *Server) handleCommunityOverview(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	writeJSON(w, http.StatusOK, overview)
+}
+
+// handlePremiumTrial activa el trial premium del usuario autenticado.
+func (s *Server) handlePremiumTrial(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	subscription, err := s.service.ActivatePremiumTrial(userID)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, application.ErrTrialAlreadyUsed) {
+			status = http.StatusConflict
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusCreated, subscription)
+}
+
+// handlePremiumStatus devuelve el estado premium vigente.
+func (s *Server) handlePremiumStatus(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	status, err := s.service.PremiumStatusFor(userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
 }
 
 // handleAnalyticsEvents recibe batches de eventos de producto (también de

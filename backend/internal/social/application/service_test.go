@@ -305,3 +305,37 @@ func TestDeckReportLifecycle(t *testing.T) {
 		t.Fatalf("expected 1 report, got %d (%v)", len(reports), err)
 	}
 }
+
+func TestPremiumTrialLifecycle(t *testing.T) {
+	service := NewService(memory.NewRepository())
+	user, _ := service.SocialLogin(SocialLoginInput{
+		Provider:       domain.ProviderGoogle,
+		ProviderUserID: "prem-user",
+		Email:          "prem@example.com",
+		DisplayName:    "Prem",
+	})
+
+	status, _ := service.PremiumStatusFor(user.User.ID)
+	if status.Active {
+		t.Fatal("expected inactive before trial")
+	}
+
+	sub, err := service.ActivatePremiumTrial(user.User.ID)
+	if err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+	if sub.Plan != "trial" {
+		t.Fatalf("expected trial plan, got %s", sub.Plan)
+	}
+
+	// Reactivar con trial vigente es idempotente (misma expiración).
+	again, err := service.ActivatePremiumTrial(user.User.ID)
+	if err != nil || !again.ExpiresAt.Equal(sub.ExpiresAt) {
+		t.Fatalf("expected idempotent reactivation, got %v / %v", again, err)
+	}
+
+	status, _ = service.PremiumStatusFor(user.User.ID)
+	if !status.Active || status.Plan != "trial" {
+		t.Fatalf("expected active trial status, got %+v", status)
+	}
+}

@@ -31,6 +31,7 @@ var (
 	ErrInvalidReportReason     = errors.New("invalid report reason")
 	ErrInvalidReportResolution = errors.New("invalid report resolution")
 	ErrReportNotFound          = errors.New("report not found")
+	ErrTrialAlreadyUsed        = errors.New("trial already used")
 	ErrFeedEntryNotFound   = errors.New("feed entry not found")
 	ErrEmailInUse          = errors.New("email already in use")
 	ErrInvalidCredentials  = errors.New("invalid credentials")
@@ -487,6 +488,54 @@ func (s *Service) ListOwnedCommunityDecks(userID string) ([]CommunityDeck, error
 		return owned[i].CreatedAt.After(owned[j].CreatedAt)
 	})
 	return s.attachImportCounts(owned)
+}
+
+// PremiumStatus es lo que la app consulta al iniciar sesión.
+type PremiumStatus struct {
+	Active    bool       `json:"active"`
+	Plan      string     `json:"plan,omitempty"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+}
+
+const premiumTrialDays = 14
+
+// ActivatePremiumTrial activa (o devuelve, si sigue vigente) el trial del
+// usuario. Idempotente: reactivar con un trial vivo no extiende la fecha.
+func (s *Service) ActivatePremiumTrial(userID string) (*domain.PremiumSubscription, error) {
+	existing, err := s.repo.FindPremiumSubscription(userID)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now().UTC()
+	if existing != nil && existing.ExpiresAt.After(now) {
+		return existing, nil
+	}
+	if existing != nil && existing.Plan == "trial" {
+		return nil, ErrTrialAlreadyUsed
+	}
+	subscription := domain.PremiumSubscription{
+		UserID:      userID,
+		Plan:        "trial",
+		ActivatedAt: now,
+		ExpiresAt:   now.AddDate(0, 0, premiumTrialDays),
+	}
+	if err := s.repo.SavePremiumSubscription(subscription); err != nil {
+		return nil, err
+	}
+	return &subscription, nil
+}
+
+// PremiumStatusFor devuelve el estado premium vigente del usuario.
+func (s *Service) PremiumStatusFor(userID string) (*PremiumStatus, error) {
+	subscription, err := s.repo.FindPremiumSubscription(userID)
+	if err != nil {
+		return nil, err
+	}
+	if subscription == nil || !subscription.ExpiresAt.After(s.now().UTC()) {
+		return &PremiumStatus{Active: false}, nil
+	}
+	expires := subscription.ExpiresAt
+	return &PremiumStatus{Active: true, Plan: subscription.Plan, ExpiresAt: &expires}, nil
 }
 
 // AnalyticsEventInput es un evento del batch que manda la app.

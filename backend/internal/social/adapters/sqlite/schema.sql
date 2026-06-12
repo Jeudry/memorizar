@@ -107,6 +107,13 @@ CREATE TABLE IF NOT EXISTS analytics_events (
 );
 CREATE INDEX IF NOT EXISTS idx_analytics_event ON analytics_events(event);
 
+CREATE TABLE IF NOT EXISTS premium_subscriptions (
+    user_id       TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    plan          TEXT NOT NULL,
+    activated_at  TEXT NOT NULL,
+    expires_at    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS feed_reactions (
     id          TEXT PRIMARY KEY,
     entry_id    TEXT NOT NULL,

@@ -566,6 +566,36 @@ func (r *Repository) ListDeckReports() ([]domain.DeckReport, error) {
 	return out, nil
 }
 
+// ─── Premium ─────────────────────────────────────────────────────────────
+
+func (r *Repository) SavePremiumSubscription(subscription domain.PremiumSubscription) error {
+	_, err := r.db.Exec(`
+		INSERT OR REPLACE INTO premium_subscriptions (user_id, plan, activated_at, expires_at)
+		VALUES (?, ?, ?, ?)`,
+		subscription.UserID, subscription.Plan,
+		formatTime(subscription.ActivatedAt), formatTime(subscription.ExpiresAt),
+	)
+	return err
+}
+
+func (r *Repository) FindPremiumSubscription(userID string) (*domain.PremiumSubscription, error) {
+	row := r.db.QueryRow(`
+		SELECT user_id, plan, activated_at, expires_at
+		FROM premium_subscriptions WHERE user_id = ?`, userID)
+	var subscription domain.PremiumSubscription
+	var activatedAt, expiresAt string
+	err := row.Scan(&subscription.UserID, &subscription.Plan, &activatedAt, &expiresAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	subscription.ActivatedAt = parseTime(activatedAt)
+	subscription.ExpiresAt = parseTime(expiresAt)
+	return &subscription, nil
+}
+
 // ─── Analytics ────────────────────────────────────────────────────────────
 
 func (r *Repository) SaveAnalyticsEvents(events []domain.AnalyticsEvent) error {

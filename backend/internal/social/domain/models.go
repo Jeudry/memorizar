@@ -108,6 +108,16 @@ type SharedResource struct {
 	CreatedAt    time.Time `json:"createdAt"`
 }
 
+// PremiumSubscription es el estado premium de un usuario, persistido del
+// lado servidor para sobrevivir reinstalaciones. Sin pasarela de pago aún:
+// el único plan activable hoy es el trial.
+type PremiumSubscription struct {
+	UserID      string    `json:"userId"`
+	Plan        string    `json:"plan"`
+	ActivatedAt time.Time `json:"activatedAt"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+}
+
 // AnalyticsEvent es un evento de producto registrado por la app. UserID
 // queda vacío para invitados.
 type AnalyticsEvent struct {

@@ -571,6 +571,7 @@ class AppStore extends ChangeNotifier {
     unawaited(checkAndApplyPendingReferrer());
     // Bajar snapshot remoto en background (best-effort, no bloquea login).
     unawaited(pullProgressSnapshot());
+    unawaited(refreshPremiumStatus());
     unawaited(refreshPendingCount());
   }
 
@@ -605,6 +606,7 @@ class AppStore extends ChangeNotifier {
     _startInviteTimer();
     unawaited(checkAndApplyPendingReferrer());
     unawaited(pullProgressSnapshot());
+    unawaited(refreshPremiumStatus());
     unawaited(refreshPendingCount());
   }
 
@@ -621,6 +623,7 @@ class AppStore extends ChangeNotifier {
     _startInviteTimer();
     unawaited(checkAndApplyPendingReferrer());
     unawaited(pullProgressSnapshot());
+    unawaited(refreshPremiumStatus());
     unawaited(refreshPendingCount());
   }
 
@@ -1029,6 +1032,46 @@ class AppStore extends ChangeNotifier {
     _isPremium = value;
     _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
     notifyListeners();
+  }
+
+  /// Sincroniza el estado premium persistido en el backend. Se llama al
+  /// iniciar sesión; sin sesión es no-op (el preview local de invitado se
+  /// pierde al reinstalar, a propósito).
+  Future<void> refreshPremiumStatus() async {
+    if (!isLoggedIn) return;
+    try {
+      final status = await api.getPremiumStatus();
+      final active = (status['active'] as bool?) ?? false;
+      if (_isPremium != active) {
+        _isPremium = active;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('No se pudo refrescar el estado premium: $e');
+    }
+  }
+
+  /// Activa el trial premium real (server-side). Devuelve un mensaje de
+  /// error amigable, o null si quedó activo.
+  Future<String?> activatePremiumTrial() async {
+    if (!isLoggedIn) {
+      // Invitado: preview local explícito, sin persistencia.
+      setPremiumPreview(true);
+      return null;
+    }
+    try {
+      await api.activatePremiumTrial();
+      _isPremium = true;
+      notifyListeners();
+      return null;
+    } catch (e) {
+      final message = e.toString();
+      if (message.contains('trial already used')) {
+        return 'Tu período de prueba ya fue utilizado.';
+      }
+      debugPrint('Error activando trial premium: $e');
+      return 'No se pudo activar la prueba premium. Inténtalo de nuevo.';
+    }
   }
 
   int get completedCards => _correctAnswers + _wrongAnswers;
