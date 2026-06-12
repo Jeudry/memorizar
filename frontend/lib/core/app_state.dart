@@ -332,7 +332,15 @@ class AppStore extends ChangeNotifier {
 
   static const _kSessionTokenKey = 'memorizar.session.token';
   static const _kSessionUserKey = 'memorizar.session.user';
-  static const _kGuestUserKey = 'memorizar.session.guest_user';
+
+  /// Identificador de instancia derivado del mismo dart-define que aísla la
+  /// base de datos. Las SharedPreferences son por bundle (compartidas entre
+  /// instancias), así que el usuario invitado debe claver por instancia: si
+  /// no, dos ventanas comparten guest id y el hub coop las pisa entre sí.
+  static const String _instanceId =
+      String.fromEnvironment('DB_NAME', defaultValue: 'memorizar.sqlite');
+  static const _kGuestUserKey =
+      'memorizar.session.guest_user.$_instanceId';
 
   RemoteUser? _currentUser;
   RemoteUser? _guestUser;
