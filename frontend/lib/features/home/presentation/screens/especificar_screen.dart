@@ -692,30 +692,17 @@ class _PageHead extends StatelessWidget {
 
 class _ToolChip extends StatelessWidget {
   final String text;
-  final bool primary;
 
-  const _ToolChip(this.text, {this.primary = false});
+  const _ToolChip(this.text);
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       decoration: BoxDecoration(
-        gradient: primary ? RefColors.primary : null,
-        color: primary ? null : HtmlRefColors.glassStrong,
+        color: HtmlRefColors.glassStrong,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: primary ? Colors.transparent : HtmlRefColors.glassBorder,
-        ),
-        boxShadow: primary
-            ? [
-                BoxShadow(
-                  color: RefColors.pink.withValues(alpha: .3),
-                  blurRadius: 14,
-                  offset: const Offset(0, 6),
-                ),
-              ]
-            : null,
+        border: Border.all(color: HtmlRefColors.glassBorder),
       ),
       child: Center(
         child: Text(

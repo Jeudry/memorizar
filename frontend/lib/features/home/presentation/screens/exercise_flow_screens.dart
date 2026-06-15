@@ -9,14 +9,12 @@ class _FlowStepHeader extends StatelessWidget {
   final String title;
   final int progress;
   final int totalSteps;
-  final String? difficulty;
 
   const _FlowStepHeader({
     required this.step,
     required this.title,
     required this.progress,
     this.totalSteps = 12,
-    this.difficulty,
   });
 
   @override

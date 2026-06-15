@@ -1814,7 +1814,6 @@ class _ActivityFeed extends StatefulWidget {
 class _ActivityFeedState extends State<_ActivityFeed> {
   List<FeedEntry>? _entries;
   bool _loading = false;
-  bool _attempted = false;
 
   @override
   void initState() {
@@ -1828,7 +1827,6 @@ class _ActivityFeedState extends State<_ActivityFeed> {
     if (_loading) return;
     setState(() {
       _loading = true;
-      _attempted = true;
     });
     try {
       final feed = await store.api.feed();

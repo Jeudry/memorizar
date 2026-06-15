@@ -642,7 +642,6 @@ class _BibleCategory {
 // the app and to stay distinct from the pink/violet selection state.
 const _catTeal = Color(0xFF14B8A6);
 const _catAmber = Color(0xFFFB923C);
-const _catSkyBlue = Color(0xFF60A5FA);
 const _catIndigo = Color(0xFF818CF8);
 
 const _oldTestamentCategories = <_BibleCategory>[
@@ -855,49 +854,6 @@ class _TestamentTabButton extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _CategoryLabel extends StatelessWidget {
-  final String text;
-  final Color? accent;
-
-  const _CategoryLabel(this.text, {this.accent});
-
-  @override
-  Widget build(BuildContext context) {
-    final color = accent ?? RefColors.dim;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: color.withValues(alpha: .6),
-                  blurRadius: 6,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            text,
-            style: TextStyle(
-              color: accent ?? RefColors.dim,
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.5,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1430,88 +1386,6 @@ class _BibleVersionDropdown extends StatelessWidget {
 /// (si soy dueño) o reportar (siempre disponible). En Fase 1 todos los mazos
 /// son del usuario, así que mostramos ambas; cuando llegue auth real
 /// filtraremos por owner.
-void _showDeckActionsSheet(BuildContext context, MemoryDeckData deck) {
-  showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: Colors.transparent,
-    builder: (sheetCtx) {
-      return Container(
-        margin: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: HtmlRefColors.glassBg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: HtmlRefColors.glassBorder),
-        ),
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-              child: Row(
-                children: [
-                  GlyphIcon(deck.icon, size: 22),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      deck.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                  _VisibilityBadge(visibility: deck.visibility),
-                ],
-              ),
-            ),
-            _DeckActionRow(
-              icon: Icons.visibility_outlined,
-              label: 'Cambiar visibilidad',
-              subtitle: 'Privado, amigos o comunidad',
-              onTap: () {
-                Navigator.of(sheetCtx).pop();
-                showVisibilityConsentSheet(
-                  context,
-                  deckId: deck.id,
-                  deckTitle: deck.title,
-                  current: deck.visibility,
-                );
-              },
-            ),
-            _DeckActionRow(
-              icon: Icons.share_outlined,
-              label: 'Compartir con amigo',
-              subtitle: 'Enviar este mazo a un amigo de tu lista',
-              accent: RefColors.lime,
-              onTap: () {
-                Navigator.of(sheetCtx).pop();
-                showShareDeckSheet(context, deck: deck);
-              },
-            ),
-            _DeckActionRow(
-              icon: Icons.flag_outlined,
-              label: 'Reportar',
-              subtitle: 'Avisar a moderación si viola las normas',
-              accent: RefColors.urgent,
-              onTap: () {
-                Navigator.of(sheetCtx).pop();
-                showReportDeckSheet(
-                  context,
-                  deckId: deck.id,
-                  deckTitle: deck.title,
-                );
-              },
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
-
 /// Bottom sheet para compartir un mazo con un amigo. Si no hay sesión, manda
 /// al login. Lista a tus amigos aceptados; al elegir uno, hace POST a
 /// `/v1/social/shares`.
@@ -1724,131 +1598,6 @@ class _ShareFriendRow extends StatelessWidget {
                 color: RefColors.lime,
                 size: 18,
               ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _VisibilityBadge extends StatelessWidget {
-  final DeckVisibility visibility;
-  const _VisibilityBadge({required this.visibility});
-
-  @override
-  Widget build(BuildContext context) {
-    final (icon, label, color) = switch (visibility) {
-      DeckVisibility.private => (
-        Icons.lock_outline_rounded,
-        'Privado',
-        RefColors.muted,
-      ),
-      DeckVisibility.friends => (
-        Icons.people_outline_rounded,
-        'Amigos',
-        RefColors.cyan,
-      ),
-      DeckVisibility.public => (
-        Icons.public_rounded,
-        'Público',
-        RefColors.lime,
-      ),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: .15),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: .55)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 12),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-              letterSpacing: .4,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DeckActionRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String subtitle;
-  final Color accent;
-  final VoidCallback onTap;
-  const _DeckActionRow({
-    required this.icon,
-    required this.label,
-    required this.subtitle,
-    required this.onTap,
-    this.accent = RefColors.cyan,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        margin: const EdgeInsets.symmetric(vertical: 3),
-        decoration: BoxDecoration(
-          color: HtmlRefColors.glassSoft,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: HtmlRefColors.glassBorder),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: .18),
-                borderRadius: BorderRadius.circular(11),
-                border: Border.all(color: accent.withValues(alpha: .45)),
-              ),
-              child: Icon(icon, color: accent, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      color: RefColors.muted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: RefColors.muted,
-              size: 22,
-            ),
           ],
         ),
       ),
@@ -2459,7 +2208,6 @@ List<String> _completionTargetsFor(String text, {required int level}) {
 List<String> _completionOptions(
   String text,
   String target, {
-  int offset = 0,
   int seed = 0,
   List<String>? aiPool,
 }) {
@@ -2509,11 +2257,6 @@ List<String> _completionOptions(
   return options;
 }
 
-String _firstLetterAnswer(String text, {required int level}) {
-  final words = _firstLetterTargets(text, level: level);
-  return words.map((word) => word.substring(0, 1)).join('');
-}
-
 (List<String>, List<int>) _firstLetterTargetsWithPositions(String text, {required int level}) {
   final words = _studyWords(text);
   if (words.isEmpty) return ([], []);
@@ -2541,70 +2284,9 @@ String _firstLetterAnswer(String text, {required int level}) {
   return (targets, positions);
 }
 
-List<String> _firstLetterTargets(String text, {required int level}) {
-  return _firstLetterTargetsWithPositions(text, level: level).$1;
-}
-
-int _editDistance(String a, String b) {
-  if (a == b) return 0;
-  if (a.isEmpty) return b.length;
-  if (b.isEmpty) return a.length;
-  final m = a.length;
-  final n = b.length;
-  var prev = List<int>.generate(n + 1, (i) => i);
-  var curr = List<int>.filled(n + 1, 0);
-  for (var i = 1; i <= m; i++) {
-    curr[0] = i;
-    for (var j = 1; j <= n; j++) {
-      final cost = a.codeUnitAt(i - 1) == b.codeUnitAt(j - 1) ? 0 : 1;
-      final del = prev[j] + 1;
-      final ins = curr[j - 1] + 1;
-      final sub = prev[j - 1] + cost;
-      curr[j] = del < ins ? (del < sub ? del : sub) : (ins < sub ? ins : sub);
-    }
-    final tmp = prev;
-    prev = curr;
-    curr = tmp;
-  }
-  return prev[n];
-}
-
-String _normalizeForVoice(String s) {
-  const accents = {
-    'á': 'a',
-    'é': 'e',
-    'í': 'i',
-    'ó': 'o',
-    'ú': 'u',
-    'ü': 'u',
-    'ñ': 'n',
-  };
-  var t = s.toLowerCase();
-  for (final e in accents.entries) {
-    t = t.replaceAll(e.key, e.value);
-  }
-  return t.replaceAll(RegExp(r'[^a-z]'), '');
-}
-
 /// Match leniency for voice input. Ignores case + accents and tolerates a small
 /// number of Levenshtein edits scaled by word length so STT misreads of one
 /// vowel/consonant don't fail short words like "creo" vs "crio".
-bool _voiceMatch(String spoken, String target) {
-  final a = _normalizeForVoice(spoken);
-  final b = _normalizeForVoice(target);
-  if (a.isEmpty || b.isEmpty) return a == b;
-  if (a == b) return true;
-  // Substring match for short STT garbage (e.g. "el creo" vs "creo").
-  if (b.length >= 3 && (a.contains(b) || b.contains(a))) return true;
-  final maxLen = math.max(a.length, b.length);
-  final dist = _editDistance(a, b);
-  // Allow ~33% edits, minimum 1.
-  final allowed = (maxLen * 0.34).floor().clamp(1, 4);
-  // For very short targets (≤3), only 1 edit allowed.
-  if (b.length <= 3) return dist <= 1;
-  return dist <= allowed;
-}
-
 bool _sameAnswer(String a, String b) {
   String normalize(String value) {
     const accents = {
@@ -2624,23 +2306,6 @@ bool _sameAnswer(String a, String b) {
   }
 
   return normalize(a) == normalize(b);
-}
-
-bool _similarEnoughForVoice(String spoken, String expected) {
-  final s = _normalizeSpeechText(spoken);
-  final e = _normalizeSpeechText(expected);
-  if (s == e) return true;
-  if (s.contains(e) || e.contains(s)) return true;
-  final maxLen = s.length > e.length ? s.length : e.length;
-  if (maxLen <= 1) return s == e;
-  int distance = 0;
-  final minLength = s.length < e.length ? s.length : e.length;
-  for (var i = 0; i < minLength; i++) {
-    if (s[i] != e[i]) distance++;
-  }
-  distance += (maxLen - minLength);
-  final similarity = 1 - (distance / maxLen);
-  return similarity >= 0.5;
 }
 
 String _normalizeSpeechText(String value) {
@@ -2719,23 +2384,6 @@ int _levenshtein(String a, String b) {
     }
   }
   return previous[b.length];
-}
-
-List<String> _studyBlocks(BuildContext context) {
-  final words = _studyWords(_cardStudyText(context));
-  final blocks = <String>[];
-  final size = words.length > 18 ? 3 : 2;
-  for (var i = 0; i < words.length; i += size) {
-    blocks.add(words.skip(i).take(size).join(' '));
-  }
-  return blocks;
-}
-
-String _maskedStudyLine(BuildContext context, {required int visibleWords}) {
-  final words = _studyWords(_cardStudyText(context));
-  return [
-    for (var i = 0; i < words.length; i++) i < visibleWords ? words[i] : '____',
-  ].join(' ');
 }
 
 class _VerseItem extends StatelessWidget {
@@ -3086,54 +2734,6 @@ class _ThemesBrowse extends StatelessWidget {
         // const SizedBox(height: 12),
         // const _PlansEntry(),
       ],
-    );
-  }
-}
-
-class _PlansEntry extends StatelessWidget {
-  const _PlansEntry();
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: () => Navigator.pushNamed(context, AppRoutes.home),
-      child: Glass(
-        radius: 14,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        color: RefColors.cyan.withValues(alpha: .14),
-        child: Row(
-          children: const [
-            Text('📅', style: TextStyle(fontSize: 20)),
-            SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Planes de lectura',
-                    style: TextStyle(
-                      color: RefColors.ink,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'Avanza día a día por temas guiados',
-                    style: TextStyle(
-                      color: RefColors.muted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right_rounded, color: RefColors.muted),
-          ],
-        ),
-      ),
     );
   }
 }

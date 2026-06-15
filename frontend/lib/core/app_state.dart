@@ -1175,23 +1175,7 @@ class AppStore extends ChangeNotifier {
 
   MemoryCardData get activeCard {
     if (activeDeck.cards.isEmpty) return emptyCard;
-    final deck = activeDeck;
-    // Si es Biblia, hay más de un versículo, y el usuario configuró estudiar más de 1 a la vez, se combinan.
-    if (false) {
-      final count = _sessionDailyTarget.clamp(1, deck.cards.length);
-      final subList = deck.cards.take(count).toList();
-      final combinedFront = _collapseBibleReferences(subList.map((c) => c.front).toList());
-      final combinedBack = subList.map((c) => c.back.trim()).join(' ');
-      return MemoryCardData(
-        id: 'combined-${deck.id}-$count',
-        front: combinedFront,
-        back: combinedBack,
-        source: subList.first.source,
-        icon: subList.first.icon,
-        retention: subList.first.retention,
-      );
-    }
-    // De lo contrario (target = 1 o no es Biblia), estudiamos de a 1 por 1.
+    // (feature "biblia combinada" deshabilitada) Estudiamos de a 1 por 1.
     return activeDeck.cards[_currentCardIndex.clamp(
       0,
       activeDeck.cards.length - 1,
@@ -1614,13 +1598,9 @@ class AppStore extends ChangeNotifier {
   /// Retorna `true` si todavía queda otra tarjeta dentro del target diario;
   /// `false` cuando la sesión ya completó su cuota y debe ir al review final.
   bool advanceToNextSessionCard({required bool correct}) {
-    final isCombinedBible = false;
     answerCurrentCard(correct);
-    if (isCombinedBible) {
-      _sessionCardsCompleted = _sessionDailyTarget;
-    } else {
-      _sessionCardsCompleted += 1;
-    }
+    // (feature "biblia combinada" deshabilitada)
+    _sessionCardsCompleted += 1;
     if (sessionFinished) {
       unawaited(_recordSessionAchievements());
       notifyListeners();
@@ -2171,30 +2151,7 @@ class AppStore extends ChangeNotifier {
     if (deckIndex < 0) return;
     final deck = activeDeck;
     final cards = [...deck.cards];
-    final isCombinedBible = false;
-    if (isCombinedBible) {
-      for (var i = 0; i < cards.length; i++) {
-        cards[i] = _applySrsAnswer(cards[i], correct: correct);
-      }
-      _decks[deckIndex] = MemoryDeckData(
-        id: deck.id,
-        title: deck.title,
-        subtitle: deck.subtitle,
-        icon: deck.icon,
-        cards: cards,
-        createdAt: deck.createdAt,
-        isBible: deck.isBible,
-      );
-      if (correct) {
-        _correctAnswers += cards.length;
-      } else {
-        _wrongAnswers += cards.length;
-      }
-      _recordAnswerActivity(correct: correct, count: cards.length);
-      _currentCardIndex = 0;
-      notifyListeners();
-      return;
-    }
+    // (feature "biblia combinada" deshabilitada)
     cards[_currentCardIndex] =
         _applySrsAnswer(cards[_currentCardIndex], correct: correct);
     _decks[deckIndex] = MemoryDeckData(

@@ -166,12 +166,10 @@ class _LabeledField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final IconData icon;
-  final bool obscure;
   const _LabeledField({
     required this.controller,
     required this.hint,
     required this.icon,
-    this.obscure = false,
   });
 
   @override
@@ -190,7 +188,7 @@ class _LabeledField extends StatelessWidget {
           Expanded(
             child: TextField(
               controller: controller,
-              obscureText: obscure,
+              obscureText: false,
               autocorrect: false,
               style: const TextStyle(fontSize: 13, color: RefColors.ink),
               decoration: InputDecoration(

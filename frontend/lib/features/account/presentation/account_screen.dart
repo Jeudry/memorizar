@@ -414,7 +414,7 @@ class _AvatarPreview extends StatelessWidget {
         image: DecorationImage(
           image: NetworkImage(url),
           fit: BoxFit.cover,
-          onError: (_, __) {},
+          onError: (_, _) {},
         ),
       ),
     );
