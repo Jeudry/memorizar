@@ -477,6 +477,14 @@ class MemorizarClient {
     return list.cast<Map<String, dynamic>>();
   }
 
+  /// Mazos comunitarios a los que el usuario les dio "me gusta", con stats.
+  Future<List<Map<String, dynamic>>> listLikedCommunityDecks() async {
+    final r = await _http.get(_uri('/v1/community/liked'), headers: _headers);
+    final body = await _decode(r);
+    final list = (body['decks'] as List? ?? const []).cast<dynamic>();
+    return list.cast<Map<String, dynamic>>();
+  }
+
   /// Alterna seguir/dejar de seguir a un creador. Devuelve
   /// {following, followerCount} con el estado resultante.
   Future<Map<String, dynamic>> toggleFollow(String creatorId) async {

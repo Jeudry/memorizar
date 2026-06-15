@@ -1,19 +1,22 @@
 import 'package:drift/drift.dart';
-// ignore: deprecated_member_use
-import 'package:drift/web.dart';
+import 'package:drift/wasm.dart';
 
-/// Web es plataforma secundaria (la app vive en desktop/móvil). `WebDatabase`
-/// está deprecado pero sigue funcional ("bugfix-only"). La migración a
-/// `package:drift/wasm.dart` (`WasmDatabase`) requiere servir los binarios
-/// `sqlite3.wasm` + `drift_worker.js` en `web/` y validarse en un runtime web
-/// real (IndexedDB) — pendiente hasta tener ese entorno. Por eso silenciamos
-/// la deprecación aquí en lugar de migrar a ciegas y arriesgar romper web.
+/// Conexión web con `WasmDatabase` (reemplaza al deprecado `WebDatabase`).
+///
+/// Sirve `sqlite3.wasm` y `drift_worker.js` desde `web/` (copiados/compilados
+/// desde el paquete drift — ver `web/drift_worker.dart`). En runtime drift
+/// elige el mejor backend de almacenamiento disponible (OPFS → IndexedDB →
+/// memoria) y persiste ahí. Web sigue siendo plataforma secundaria; la app
+/// vive en desktop/móvil, pero ya sin la API deprecada.
 QueryExecutor connect({bool inMemory = false}) {
-  if (inMemory) {
-    // ignore: deprecated_member_use
-    return WebDatabase('memorizar_in_memory', logStatements: false);
-  }
-  // ignore: deprecated_member_use
-  return WebDatabase('memorizar', logStatements: false);
+  // `LazyDatabase` mantiene la firma síncrona: la apertura real de
+  // WasmDatabase (asíncrona, hace probing del storage) ocurre al primer uso.
+  return LazyDatabase(() async {
+    final result = await WasmDatabase.open(
+      databaseName: inMemory ? 'memorizar_in_memory' : 'memorizar',
+      sqlite3Uri: Uri.parse('sqlite3.wasm'),
+      driftWorkerUri: Uri.parse('drift_worker.js'),
+    );
+    return result.resolvedExecutor;
+  });
 }
-

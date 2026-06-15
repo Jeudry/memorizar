@@ -554,6 +554,19 @@ func (s *Service) ToggleDeckLike(userID, shareID string) (bool, int, error) {
 		if err := s.repo.SaveDeckLike(shareID, userID, s.now().UTC()); err != nil {
 			return false, 0, err
 		}
+		// Notifica al dueño del deck (no a quien da like, ni si es su propio deck).
+		if share.OwnerUserID != userID {
+			s.notifySafe(notify.Notification{
+				Type:   notify.EventDeckLiked,
+				UserID: share.OwnerUserID,
+				Title:  s.userDisplay(userID) + " le dio me gusta a tu mazo ❤️",
+				Body:   share.Title,
+				Data: map[string]string{
+					"shareId":  shareID,
+					"deeplink": "memorizar://comunidad",
+				},
+			})
+		}
 	}
 	counts, err := s.repo.CountDeckLikes([]string{shareID})
 	if err != nil {
@@ -603,6 +616,29 @@ func (s *Service) ListOwnedCommunityDecks(userID string) ([]CommunityDeck, error
 		return owned[i].CreatedAt.After(owned[j].CreatedAt)
 	})
 	return s.attachCommunityStats(userID, owned)
+}
+
+// ListLikedCommunityDecks devuelve los decks públicos que el usuario marcó
+// con "me gusta", con sus stats. Ignora los que dejaron de ser públicos.
+func (s *Service) ListLikedCommunityDecks(userID string) ([]CommunityDeck, error) {
+	likedIDs, err := s.repo.ListLikedShareIDsByUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	liked := make([]domain.SharedResource, 0, len(likedIDs))
+	for _, id := range likedIDs {
+		share, err := s.repo.FindSharedResource(id)
+		if err != nil {
+			return nil, err
+		}
+		if share != nil && share.IsPublic && share.Kind == domain.ShareKindDeck {
+			liked = append(liked, *share)
+		}
+	}
+	sort.Slice(liked, func(i, j int) bool {
+		return liked[i].CreatedAt.After(liked[j].CreatedAt)
+	})
+	return s.attachCommunityStats(userID, liked)
 }
 
 // RegisterPushToken persiste el token de push del dispositivo del usuario.
@@ -841,6 +877,17 @@ func (s *Service) ToggleFollow(followerID, creatorID string) (bool, int, error) 
 		if err := s.repo.SaveFollow(followerID, creatorID, s.now().UTC()); err != nil {
 			return false, 0, err
 		}
+		// Notifica al creador que tiene un nuevo seguidor.
+		s.notifySafe(notify.Notification{
+			Type:   notify.EventFollowed,
+			UserID: creatorID,
+			Title:  s.userDisplay(followerID) + " empezó a seguirte 👤",
+			Body:   "Tienes un nuevo seguidor en la comunidad.",
+			Data: map[string]string{
+				"followerId": followerID,
+				"deeplink":   "memorizar://comunidad",
+			},
+		})
 	}
 	counts, err := s.repo.CountFollowers([]string{creatorID})
 	if err != nil {

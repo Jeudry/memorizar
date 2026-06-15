@@ -25,6 +25,7 @@ import '../../../core/app_state.dart';
 import '../../../core/import/csv_import.dart';
 import 'screens/coop_recap_share.dart';
 import 'screens/practice_choose_word_screen.dart';
+import 'screens/deck_csv_export.dart';
 import 'exercise_logic.dart';
 import '../../../core/services/local_llm_service.dart';
 import '../../../core/services/ai_quiz_models.dart';

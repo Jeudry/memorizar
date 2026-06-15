@@ -328,3 +328,40 @@ func TestSearchCommunityDecks_CarriesLikeStats(t *testing.T) {
 		t.Fatal("expected LikedByMe=true for the searcher who liked it")
 	}
 }
+
+func TestListLikedCommunityDecks(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	owner := makeUser(t, s, "o2@dev.io", "o2_u", "Owner2")
+	liker := makeUser(t, s, "l2@dev.io", "l2_u", "Liker2")
+	share := publishDeck(t, s, owner, "deck-x", "Liked deck", `{"icon":"📚"}`)
+
+	liked, err := s.ListLikedCommunityDecks(liker)
+	if err != nil {
+		t.Fatalf("list (empty): %v", err)
+	}
+	if len(liked) != 0 {
+		t.Fatalf("expected 0 liked decks, got %d", len(liked))
+	}
+
+	if _, _, err := s.ToggleDeckLike(liker, share); err != nil {
+		t.Fatalf("like: %v", err)
+	}
+	liked, err = s.ListLikedCommunityDecks(liker)
+	if err != nil {
+		t.Fatalf("list (after like): %v", err)
+	}
+	if len(liked) != 1 || liked[0].Title != "Liked deck" {
+		t.Fatalf("expected 1 deck 'Liked deck', got %+v", liked)
+	}
+	if !liked[0].LikedByMe || liked[0].LikeCount != 1 {
+		t.Errorf("expected LikedByMe + LikeCount=1, got %+v", liked[0])
+	}
+
+	if _, _, err := s.ToggleDeckLike(liker, share); err != nil {
+		t.Fatalf("unlike: %v", err)
+	}
+	liked, _ = s.ListLikedCommunityDecks(liker)
+	if len(liked) != 0 {
+		t.Fatalf("after unlike expected 0, got %d", len(liked))
+	}
+}
