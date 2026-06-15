@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frontend/core/app_state.dart';
-import 'package:frontend/core/db/app_database.dart';
 
 void main() {
   test('segmentContent creates one card per pasted line', () {

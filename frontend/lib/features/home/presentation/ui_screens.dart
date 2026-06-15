@@ -1,7 +1,7 @@
 /// Punto de entrada de pantallas. Se descompone en `part` files
 /// dentro de `screens/` para mantener navegación legible sin perder
 /// visibilidad de los muchos widgets privados compartidos.
-library memorizar_screens;
+library;
 
 import 'dart:async';
 import 'dart:convert';
@@ -15,8 +15,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:speech_to_text/speech_recognition_result.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
@@ -45,9 +43,7 @@ import '../../moderation/presentation/moderation_queue_screen.dart';
 import '../../moderation/presentation/report_dialog.dart';
 import '../../settings/presentation/settings_screen.dart';
 import 'glyph_icon.dart';
-import 'home_screen.dart';
 import '../../plans/presentation/plans_screen.dart';
-import '../../missions/presentation/missions_panel.dart';
 
 // Imports for the extracted shared building blocks.
 import '../../../core/router/app_routes.dart';
@@ -512,7 +508,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
   String? _fogCardId;
   bool _fogFinished = false;
-  bool _fogShowHintTemp = false;
+  final bool _fogShowHintTemp = false;
   StreamSubscription<CoopRoomState>? _coopStateSub;
   StreamSubscription<CoopMessage>? _coopMsgSub;
   final Set<String> _failedUserIds = {};
@@ -2880,9 +2876,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 20),
                     decoration: BoxDecoration(
                       color: answered && round.isStatementTrue == true
-                          ? RefColors.lime.withOpacity(0.12)
+                          ? RefColors.lime.withValues(alpha: 0.12)
                           : round.selectedIdx == 0
-                          ? (round.correct ? RefColors.lime.withOpacity(0.12) : RefColors.urgent.withOpacity(0.12))
+                          ? (round.correct ? RefColors.lime.withValues(alpha: 0.12) : RefColors.urgent.withValues(alpha: 0.12))
                           : RefColors.glassStrong,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
@@ -2924,9 +2920,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 20),
                     decoration: BoxDecoration(
                       color: answered && round.isStatementTrue == false
-                          ? RefColors.lime.withOpacity(0.12)
+                          ? RefColors.lime.withValues(alpha: 0.12)
                           : round.selectedIdx == 1
-                          ? (round.correct ? RefColors.lime.withOpacity(0.12) : RefColors.urgent.withOpacity(0.12))
+                          ? (round.correct ? RefColors.lime.withValues(alpha: 0.12) : RefColors.urgent.withValues(alpha: 0.12))
                           : RefColors.glassStrong,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
@@ -2976,9 +2972,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
                           decoration: BoxDecoration(
                             color: _matchingCompletedLeft.contains(leftItem)
-                                ? RefColors.lime.withOpacity(0.12)
+                                ? RefColors.lime.withValues(alpha: 0.12)
                                 : _matchingSelectedLeft == leftItem
-                                ? RefColors.pink.withOpacity(0.12)
+                                ? RefColors.pink.withValues(alpha: 0.12)
                                 : RefColors.glassStrong,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
@@ -3026,9 +3022,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
                           decoration: BoxDecoration(
                             color: _matchingCompletedRight.contains(rightItem)
-                                ? RefColors.lime.withOpacity(0.12)
+                                ? RefColors.lime.withValues(alpha: 0.12)
                                 : _matchingSelectedRight == rightItem
-                                ? RefColors.pink.withOpacity(0.12)
+                                ? RefColors.pink.withValues(alpha: 0.12)
                                 : RefColors.glassStrong,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
@@ -4389,9 +4385,9 @@ class _RealPairingReviewState extends State<_RealPairingReview> {
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
           decoration: BoxDecoration(
             color: active
-                ? RefColors.pink.withOpacity(0.08)
+                ? RefColors.pink.withValues(alpha: 0.08)
                 : completed
-                ? RefColors.lime.withOpacity(0.06)
+                ? RefColors.lime.withValues(alpha: 0.06)
                 : RefColors.glassSoft,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
@@ -4482,9 +4478,9 @@ class _RealPairingReviewState extends State<_RealPairingReview> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   decoration: BoxDecoration(
-                    color: RefColors.lime.withOpacity(0.12),
+                    color: RefColors.lime.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(99),
-                    border: Border.all(color: RefColors.lime.withOpacity(0.3)),
+                    border: Border.all(color: RefColors.lime.withValues(alpha: 0.3)),
                   ),
                   child: const Text(
                     'Mini-repaso',
@@ -4580,7 +4576,7 @@ class _RealPairingReviewState extends State<_RealPairingReview> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      color: RefColors.pink.withOpacity(0.12),
+                      color: RefColors.pink.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
@@ -4634,9 +4630,9 @@ class _RealPairingReviewState extends State<_RealPairingReview> {
                                 padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
                                 decoration: BoxDecoration(
                                   color: _matched.contains(card.id)
-                                      ? RefColors.lime.withOpacity(0.12)
+                                      ? RefColors.lime.withValues(alpha: 0.12)
                                       : _frontId == card.id
-                                      ? RefColors.pink.withOpacity(0.12)
+                                      ? RefColors.pink.withValues(alpha: 0.12)
                                       : RefColors.glassStrong,
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
@@ -4698,9 +4694,9 @@ class _RealPairingReviewState extends State<_RealPairingReview> {
                                 padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
                                 decoration: BoxDecoration(
                                   color: _matched.contains(card.id)
-                                      ? RefColors.lime.withOpacity(0.12)
+                                      ? RefColors.lime.withValues(alpha: 0.12)
                                       : _backId == card.id
-                                      ? RefColors.pink.withOpacity(0.12)
+                                      ? RefColors.pink.withValues(alpha: 0.12)
                                       : RefColors.glassStrong,
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
@@ -4930,9 +4926,9 @@ class _RealPairingReviewState extends State<_RealPairingReview> {
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
                             color: _e3Completed && _e3Options[i] == _e3CorrectText
-                                ? RefColors.lime.withOpacity(0.12)
+                                ? RefColors.lime.withValues(alpha: 0.12)
                                 : _e3SelectedIdx == i
-                                ? (_e3Options[i] == _e3CorrectText ? RefColors.lime.withOpacity(0.12) : RefColors.urgent.withOpacity(0.12))
+                                ? (_e3Options[i] == _e3CorrectText ? RefColors.lime.withValues(alpha: 0.12) : RefColors.urgent.withValues(alpha: 0.12))
                                 : RefColors.glassSoft,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
@@ -5070,9 +5066,9 @@ class _RealFinalReview extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   decoration: BoxDecoration(
-                    color: RefColors.lime.withOpacity(0.12),
+                    color: RefColors.lime.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(99),
-                    border: Border.all(color: RefColors.lime.withOpacity(0.3)),
+                    border: Border.all(color: RefColors.lime.withValues(alpha: 0.3)),
                   ),
                   child: const Text(
                     'FIN DE SESIÓN',
@@ -5094,7 +5090,7 @@ class _RealFinalReview extends StatelessWidget {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  const Color(0xFF5DF07E).withOpacity(0.9),
+                  const Color(0xFF5DF07E).withValues(alpha: 0.9),
                   const Color(0xFF38CD6E),
                 ],
                 begin: Alignment.topLeft,
@@ -5103,7 +5099,7 @@ class _RealFinalReview extends StatelessWidget {
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF38CD6E).withOpacity(0.4),
+                  color: const Color(0xFF38CD6E).withValues(alpha: 0.4),
                   blurRadius: 16,
                   offset: const Offset(0, 8),
                 ),
@@ -5133,7 +5129,7 @@ class _RealFinalReview extends StatelessWidget {
             child: Row(
               children: [
                 // Circle percent indicator
-                Container(
+                SizedBox(
                   width: 90,
                   height: 90,
                   child: Stack(
@@ -5145,7 +5141,7 @@ class _RealFinalReview extends StatelessWidget {
                         child: CircularProgressIndicator(
                           value: retention / 100,
                           strokeWidth: 9,
-                          backgroundColor: RefColors.border.withOpacity(0.1),
+                          backgroundColor: RefColors.border.withValues(alpha: 0.1),
                           color: RefColors.lime,
                           strokeCap: StrokeCap.round,
                         ),
@@ -5333,9 +5329,9 @@ class _RealFinalReview extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: RefColors.lime.withOpacity(0.12),
+                      color: RefColors.lime.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: RefColors.lime.withOpacity(0.3)),
+                      border: Border.all(color: RefColors.lime.withValues(alpha: 0.3)),
                     ),
                     child: const Text(
                       '✓ 100%',

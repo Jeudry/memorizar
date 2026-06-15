@@ -85,7 +85,7 @@ class CoopRoomState {
         memberNames: memberNames,
         currentDeckId: deckId,
         currentCardIndex: cardIndex,
-        currentSlug: slug ?? this.currentSlug,
+        currentSlug: slug ?? currentSlug,
         scores: scores,
         lobbyDeckId: lobbyDeckId,
         lobbyDeckName: lobbyDeckName,
@@ -437,7 +437,7 @@ class CoopService {
       payload: {
         'deckId': deckId,
         'cardIndex': cardIndex,
-        if (slug != null) 'slug': slug,
+        'slug': ?slug,
       },
     ));
   }
@@ -455,7 +455,7 @@ class CoopService {
         'deckId': deckId,
         'deckName': deckName,
         'isBible': isBible,
-        if (cards != null) 'cards': cards,
+        'cards': ?cards,
       },
     ));
   }

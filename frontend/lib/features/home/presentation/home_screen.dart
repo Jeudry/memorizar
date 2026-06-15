@@ -5,7 +5,6 @@ import '../../../core/app_state.dart';
 import '../../../core/theme.dart';
 import 'glyph_icon.dart';
 import '../../../core/ui/main_tab_shell.dart';
-import '../../plans/presentation/plans_screen.dart';
 import '../../missions/presentation/missions_panel.dart';
 import 'ui_screens.dart';
 import '../../cooperativo/data/coop_service.dart';
@@ -994,7 +993,7 @@ class _HeroSection extends StatelessWidget {
                 colors: [
                   Colors.white,
                   Colors.white,
-                  Colors.white.withOpacity(0.28),
+                  Colors.white.withValues(alpha: 0.28),
                   Colors.transparent,
                 ],
                 stops: const [0.0, 0.45, 0.88, 1.0],
@@ -1853,7 +1852,7 @@ class _ActivityFeedState extends State<_ActivityFeed> {
         child: Column(
           children: [
             for (final raw in _entries!.take(5).toList().asMap().entries) ...[
-              _RemoteFeedRow(entry: raw.value as FeedEntry),
+              _RemoteFeedRow(entry: raw.value),
               if (raw.key != 4 && raw.key < _entries!.length - 1)
                 const Divider(color: AppColors.glassBorder, height: 20),
             ],

@@ -564,7 +564,7 @@ class MemorizarClient {
         'isPublic': isPublic,
         'deckId': deckId,
         'deckName': deckName,
-        if (hostId != null) 'hostId': hostId,
+        'hostId': ?hostId,
       }),
     );
     return _decode(r);
