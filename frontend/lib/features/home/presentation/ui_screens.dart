@@ -308,49 +308,6 @@ class ExerciseFlowScreen extends StatelessWidget {
       );
     }
     return _RealExerciseFlowScreen(data: data);
-    // ignore: dead_code
-    if (data.slug == '01-escuchar') return const _ListenFlowScreen();
-    if (data.slug == '02-lectura-frag') {
-      return const _FragmentedReadingFlowScreen();
-    }
-    if (data.slug == '03-leer-voz') return const _ReadAloudFlowScreen();
-    if (data.slug == '04-escuchar-voz') {
-      return const _ListenOwnVoiceFlowScreen();
-    }
-    if (data.slug == '05-bloques') return const _BlocksFlowScreen();
-    if (data.slug == '06-completar-n1') return const _CompleteN1FlowScreen();
-    if (data.slug == '07-primera-letra-n1') {
-      return const _FirstLetterFlowScreen(level: 1);
-    }
-    if (data.slug == '08-voz-guiada') return const _GuidedVoiceFlowScreen();
-    if (data.slug == '09-quiz') return const _QuizFlowScreen();
-    if (data.slug == '10-completar-n2') return const _CompleteN2FlowScreen();
-    if (data.slug == '11-primera-letra-n2') {
-      return const _FirstLetterFlowScreen(level: 2);
-    }
-    if (data.slug == '12-voz-final') return const _FinalVoiceFlowScreen();
-    if (data.slug == 'mini-review') return const _MiniReviewFlowScreen();
-    if (data.slug == 'final-review') return const _FinalReviewFlowScreen();
-
-    return ReferencePage(
-      showBottomNav: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _ExerciseTopBar(center: data.title),
-          _PageHead(data.title, data.subtitle),
-          const _QuestionCard(
-            ctx: 'ANATOMÍA · SISTEMA MUSCULAR',
-            turn: '2/4',
-            question: 'Bíceps braquial: principal flexor del codo.',
-            options: [
-              ('A', 'Lo recuerdo con seguridad', true),
-              ('B', 'Necesito una pista más', false),
-            ],
-          ),
-        ],
-      ),
-    );
   }
 }
 
