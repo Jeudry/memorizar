@@ -11,6 +11,7 @@ class RemoteUser {
   final String locale;
   final bool emailVerified;
   final bool isOnline;
+  final bool isModerator;
 
   const RemoteUser({
     required this.id,
@@ -22,6 +23,7 @@ class RemoteUser {
     this.locale = '',
     this.emailVerified = false,
     this.isOnline = false,
+    this.isModerator = false,
   });
 
   factory RemoteUser.fromJson(Map<String, dynamic> json) => RemoteUser(
@@ -34,6 +36,7 @@ class RemoteUser {
         locale: (json['locale'] as String?) ?? '',
         emailVerified: (json['emailVerified'] as bool?) ?? false,
         isOnline: (json['isOnline'] as bool?) ?? false,
+        isModerator: (json['isModerator'] as bool?) ?? false,
       );
 
   Map<String, dynamic> toJson() => {
@@ -46,6 +49,7 @@ class RemoteUser {
         'locale': locale,
         'emailVerified': emailVerified,
         'isOnline': isOnline,
+        'isModerator': isModerator,
       };
 
   String get effectiveName {

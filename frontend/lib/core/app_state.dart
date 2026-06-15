@@ -11,6 +11,7 @@ import 'api/memorizar_client.dart';
 import 'api/models.dart';
 import 'db/app_database.dart';
 import 'services/push_service.dart';
+import 'services/secure_store.dart';
 import 'srs/sm2.dart';
 import '../features/cooperativo/data/coop_service.dart';
 import 'package:drift/drift.dart' as drift;
@@ -385,6 +386,10 @@ class AppStore extends ChangeNotifier {
   RemoteUser? get currentUser => _currentUser;
   String? get sessionToken => _sessionToken;
   bool get isLoggedIn => _sessionToken != null && _sessionToken!.isNotEmpty;
+
+  /// Solo los moderadores ven la cola de moderación. El backend es la fuente
+  /// de verdad (gate 403); este flag decide si se ofrece la UI.
+  bool get isModerator => _currentUser?.isModerator ?? false;
   
   RemoteUser get effectiveUser {
     if (_currentUser != null) {
@@ -546,8 +551,23 @@ class AppStore extends ChangeNotifier {
         _guestUser = RemoteUser.fromJson(jsonDecode(guestUserJson) as Map<String, dynamic>);
       } catch (_) {}
     }
-    final token = prefs.getString(_kSessionTokenKey);
-    final userJson = prefs.getString(_kSessionUserKey);
+    // Secreto de sesión: vive en almacenamiento cifrado. Si todavía está en
+    // SharedPreferences (versiones previas), se migra una sola vez y se borra
+    // el rastro en texto plano.
+    var token = await SecureStore.instance.read(_kSessionTokenKey);
+    var userJson = await SecureStore.instance.read(_kSessionUserKey);
+    if (token == null || token.isEmpty || userJson == null) {
+      final legacyToken = prefs.getString(_kSessionTokenKey);
+      final legacyUser = prefs.getString(_kSessionUserKey);
+      if (legacyToken != null && legacyToken.isNotEmpty && legacyUser != null) {
+        token = legacyToken;
+        userJson = legacyUser;
+        await SecureStore.instance.write(_kSessionTokenKey, legacyToken);
+        await SecureStore.instance.write(_kSessionUserKey, legacyUser);
+        await prefs.remove(_kSessionTokenKey);
+        await prefs.remove(_kSessionUserKey);
+      }
+    }
     if (token == null || token.isEmpty || userJson == null) return;
     try {
       _sessionToken = token;
@@ -558,8 +578,8 @@ class AppStore extends ChangeNotifier {
       _startInviteTimer();
       unawaited(checkAndApplyPendingReferrer());
     } catch (_) {
-      await prefs.remove(_kSessionTokenKey);
-      await prefs.remove(_kSessionUserKey);
+      await SecureStore.instance.delete(_kSessionTokenKey);
+      await SecureStore.instance.delete(_kSessionUserKey);
     }
   }
 
@@ -577,12 +597,15 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> _persistSession(String token, RemoteUser user) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kSessionTokenKey, token);
-    await prefs.setString(_kSessionUserKey, jsonEncode(user.toJson()));
+    await SecureStore.instance.write(_kSessionTokenKey, token);
+    await SecureStore.instance
+        .write(_kSessionUserKey, jsonEncode(user.toJson()));
   }
 
   Future<void> _clearPersistedSession() async {
+    await SecureStore.instance.delete(_kSessionTokenKey);
+    await SecureStore.instance.delete(_kSessionUserKey);
+    // Limpia también cualquier rastro legado en texto plano.
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kSessionTokenKey);
     await prefs.remove(_kSessionUserKey);

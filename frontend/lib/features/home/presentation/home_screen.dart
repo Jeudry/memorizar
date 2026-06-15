@@ -541,15 +541,16 @@ void _showAccountMenu(BuildContext context) {
                   Navigator.pushNamed(context, '/legal');
                 },
               ),
-              _AccountMenuRow(
-                icon: Icons.shield_outlined,
-                label: 'Moderación',
-                subtitle: 'Cola de reportes recibidos',
-                onTap: () {
-                  Navigator.of(sheetCtx).pop();
-                  Navigator.pushNamed(context, '/moderation');
-                },
-              ),
+              if (store.isModerator)
+                _AccountMenuRow(
+                  icon: Icons.shield_outlined,
+                  label: 'Moderación',
+                  subtitle: 'Cola de reportes recibidos',
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    Navigator.pushNamed(context, '/moderation');
+                  },
+                ),
             ],
           ),
         ),

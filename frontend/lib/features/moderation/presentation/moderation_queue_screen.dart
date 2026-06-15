@@ -6,9 +6,9 @@ import '../../../core/theme/ref_colors.dart';
 import '../../../core/ui/widgets.dart';
 import '../data/report_models.dart';
 
-/// Cola de moderación. Con sesión iniciada lee y resuelve los reportes
-/// persistidos en el backend; sin sesión cae a la copia local del store.
-/// La autorización por rol de moderador queda pendiente.
+/// Cola de moderación. Solo accesible para usuarios con rol de moderador
+/// (gate server-side 403 + chequeo de UI). Lee y resuelve los reportes
+/// persistidos en el backend.
 class ModerationQueueScreen extends StatefulWidget {
   const ModerationQueueScreen({super.key});
 
@@ -29,7 +29,7 @@ class _ModerationQueueScreenState extends State<ModerationQueueScreen> {
   Future<void> _load() async {
     if (_loading || !mounted) return;
     final store = AppScope.of(context);
-    if (!store.isLoggedIn) return;
+    if (!store.isLoggedIn || !store.isModerator) return;
     setState(() => _loading = true);
     try {
       final raw = await store.api.listDeckReports();
@@ -74,6 +74,39 @@ class _ModerationQueueScreenState extends State<ModerationQueueScreen> {
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
+    if (!store.isModerator) {
+      return ReferencePage(
+        showBottomNav: false,
+        active: AppRoutes.home,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const RefTopBar(title: 'Moderación'),
+            const SizedBox(height: 60),
+            const Icon(Icons.shield_outlined, size: 56, color: RefColors.muted),
+            const SizedBox(height: 16),
+            const Text(
+              'Acceso restringido',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: RefColors.ink,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                'Solo los moderadores pueden revisar la cola de reportes.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: RefColors.muted, fontSize: 14),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     final reports = _remoteReports ?? store.deckReports;
     final pending =
         reports.where((r) => r.status == ReportStatus.pending).toList();
