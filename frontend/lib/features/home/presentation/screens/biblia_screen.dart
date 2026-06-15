@@ -1960,19 +1960,11 @@ String _cardSourceText(BuildContext context) {
 }
 
 
-List<String> _studyWords(String text) {
-  final cleaned = text
-      .replaceAll(RegExp(r'[“”"]'), '')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-  if (cleaned.isEmpty) return const ['Jehová', 'es', 'mi', 'pastor'];
-  return cleaned.split(' ');
-}
+// Lógica pura movida a exercise_logic.dart; estos wrappers mantienen los
+// nombres privados que usan las pantallas (cero cambios en call sites).
+List<String> _studyWords(String text) => studyWords(text);
 
-String _firstWords(String text, int count) {
-  final words = _studyWords(text);
-  return words.take(count).join(' ');
-}
+String _firstWords(String text, int count) => firstWords(text, count);
 
 int _flowStepNumber(String slug) {
   final match = RegExp(r'^(\d+)').firstMatch(slug);
@@ -2145,117 +2137,19 @@ List<String> _orderedBlocks(String text) {
   return blocks;
 }
 
-String _targetWord(String text, {required int level}) {
-  final words = _studyWords(text)
-      .where(
-        (word) =>
-            word.replaceAll(RegExp(r'[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]'), '').length > 3,
-      )
-      .toList();
-  if (words.isEmpty) return _studyWords(text).first;
-  final offset = switch (level) {
-    1 => 0,
-    2 => words.length ~/ 2,
-    _ => words.length - 1,
-  };
-  return words[offset.clamp(0, words.length - 1)];
-}
+String _targetWord(String text, {required int level}) =>
+    targetWord(text, level: level);
 
-List<String> _completionTargetsFor(String text, {required int level}) {
-  final words = _studyWords(text);
-  if (words.isEmpty) return [];
-  // N3: hide ALL words (including very short ones like "el", "y", "la").
-  if (level >= 3) {
-    return [...words];
-  }
-  final candidateIndexes = <int>[];
-  for (var i = 0; i < words.length; i++) {
-    final clean = words[i].replaceAll(RegExp(r'[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]'), '');
-    if (clean.length > 2) candidateIndexes.add(i);
-  }
-  final sourceIndexes = candidateIndexes.isEmpty
-      ? List<int>.generate(words.length, (i) => i)
-      : candidateIndexes;
-  if (sourceIndexes.isEmpty) return [];
-  final targetCount = switch (level) {
-    1 => 3,
-    2 => (sourceIndexes.length * 0.65).round(),
-    _ => sourceIndexes.length,
-  }.clamp(1, sourceIndexes.length).toInt();
-  final rng = math.Random();
-  final pickPool = List<int>.from(sourceIndexes);
-  pickPool.shuffle(rng);
-  final picked = <int>{};
-  for (final idx in pickPool) {
-    final word = words[idx];
-    final alreadyPicked = picked.any(
-      (existing) => _sameAnswer(words[existing], word),
-    );
-    if (alreadyPicked) continue;
-    picked.add(idx);
-    if (picked.length >= targetCount) break;
-  }
-  // Return targets in text order, not shuffle order.
-  // To ensure visual alignment when there are duplicate words in the text,
-  // we map each picked index to the first occurrence index of that word.
-  final ordered = picked.map((idx) {
-    final word = words[idx];
-    return words.indexWhere((w) => _sameAnswer(w, word));
-  }).toList()..sort();
-  return ordered.map((i) => words[i]).toList();
-}
+List<String> _completionTargetsFor(String text, {required int level}) =>
+    completionTargets(text, level: level);
 
 List<String> _completionOptions(
   String text,
   String target, {
   int seed = 0,
   List<String>? aiPool,
-}) {
-  final cleanRegex = RegExp(r'[^\wÁÉÍÓÚÜÑáéíóúüñ]');
-  final cleanTarget = target.replaceAll(cleanRegex, '');
-  final rng = math.Random(
-    seed == 0 ? DateTime.now().microsecondsSinceEpoch : seed,
-  );
-
-  // Pool de palabras del propio versículo (fallback y relleno).
-  final versePool = <String>[];
-  for (final word in _studyWords(text)) {
-    final clean = word.replaceAll(cleanRegex, '');
-    if (clean.length > 3 &&
-        !_sameAnswer(clean, cleanTarget) &&
-        !versePool.any((p) => _sameAnswer(p, clean))) {
-      versePool.add(clean);
-    }
-  }
-
-  final distractors = <String>[];
-  // Preferimos los distractores tramposos de la IA (niveles 1-3).
-  if (aiPool != null && aiPool.isNotEmpty) {
-    final cleaned = <String>[];
-    for (final word in aiPool) {
-      final clean = word.replaceAll(cleanRegex, '');
-      if (clean.length > 2 &&
-          !_sameAnswer(clean, cleanTarget) &&
-          !cleaned.any((p) => _sameAnswer(p, clean))) {
-        cleaned.add(clean);
-      }
-    }
-    cleaned.shuffle(rng);
-    distractors.addAll(cleaned.take(4));
-  }
-  // Relleno con palabras del versículo si la IA no alcanzó 4.
-  if (distractors.length < 4) {
-    final pad = [...versePool]..shuffle(rng);
-    for (final word in pad) {
-      if (distractors.length >= 4) break;
-      if (!distractors.any((d) => _sameAnswer(d, word))) distractors.add(word);
-    }
-  }
-
-  final options = <String>[cleanTarget, ...distractors.take(4)];
-  options.shuffle(rng);
-  return options;
-}
+}) =>
+    completionOptions(text, target, seed: seed, aiPool: aiPool);
 
 (List<String>, List<int>) _firstLetterTargetsWithPositions(String text, {required int level}) {
   final words = _studyWords(text);
@@ -2287,26 +2181,7 @@ List<String> _completionOptions(
 /// Match leniency for voice input. Ignores case + accents and tolerates a small
 /// number of Levenshtein edits scaled by word length so STT misreads of one
 /// vowel/consonant don't fail short words like "creo" vs "crio".
-bool _sameAnswer(String a, String b) {
-  String normalize(String value) {
-    const accents = {
-      'á': 'a',
-      'é': 'e',
-      'í': 'i',
-      'ó': 'o',
-      'ú': 'u',
-      'ü': 'u',
-      'ñ': 'n',
-    };
-    var text = value.toLowerCase();
-    for (final entry in accents.entries) {
-      text = text.replaceAll(entry.key, entry.value);
-    }
-    return text.replaceAll(RegExp(r'[^a-z]'), '');
-  }
-
-  return normalize(a) == normalize(b);
-}
+bool _sameAnswer(String a, String b) => sameAnswer(a, b);
 
 String _normalizeSpeechText(String value) {
   const accents = {

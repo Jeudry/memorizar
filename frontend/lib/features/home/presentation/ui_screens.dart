@@ -25,6 +25,7 @@ import '../../../core/app_state.dart';
 import '../../../core/import/csv_import.dart';
 import 'screens/coop_recap_share.dart';
 import 'screens/practice_choose_word_screen.dart';
+import 'exercise_logic.dart';
 import '../../../core/services/local_llm_service.dart';
 import '../../../core/services/ai_quiz_models.dart';
 import '../../account/presentation/account_screen.dart';
@@ -518,10 +519,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   /// La clave incluye la tarjeta para que el override sea per-tarjeta.
   final Set<String> _omitOverride = {};
 
-  /// Un paso usa micrófono (recitación) → al omitirlo se reemplaza por
-  /// selección múltiple; el resto se reemplaza por lectura.
-  bool _isMicSlug(String slug) =>
-      slug.contains('voz') || slug.contains('niebla');
+  bool _isMicSlug(String slug) => isMicSlug(slug);
   String? _letterCardId;
   int _letterLevel = 1;
   List<String> _letterTargets = [];
