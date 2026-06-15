@@ -64,7 +64,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   Future<void> _selectBirthDate(BuildContext context) async {
     final now = DateTime.now();
     final firstDate = DateTime(now.year - 120);
-    final lastDate = DateTime(now.year - 1);
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedBirthDate ?? DateTime(now.year - 18),

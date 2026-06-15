@@ -207,42 +207,24 @@ class _CompleteStatsCard extends StatelessWidget {
 class _WordChip extends StatelessWidget {
   final String label;
   final bool active;
-  final bool correct;
 
-  const _WordChip(this.label, {this.active = false, this.correct = false});
+  const _WordChip(this.label, {this.active = false});
 
   @override
   Widget build(BuildContext context) {
-    final accent = correct
-        ? RefColors.lime
-        : active
-        ? RefColors.cyan
-        : RefColors.border;
+    final accent = active ? RefColors.cyan : RefColors.border;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: (active || correct)
+        color: active
             ? accent.withValues(alpha: .14)
             : RefColors.glassStrong,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: accent.withValues(alpha: .55)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (correct) ...[
-            const Icon(
-              Icons.check_circle_rounded,
-              size: 15,
-              color: RefColors.lime,
-            ),
-            const SizedBox(width: 6),
-          ],
-          Text(
-            label,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
-          ),
-        ],
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
       ),
     );
   }
@@ -541,7 +523,7 @@ class _KeyCap extends StatelessWidget {
   }
 }
 
-enum _ListeningColorMode { blue, pink }
+enum _ListeningColorMode { blue }
 
 class _VoiceRecitationPracticeCard extends StatefulWidget {
   final String targetText;

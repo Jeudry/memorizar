@@ -356,7 +356,7 @@ class _AccountScreenState extends State<AccountScreen> {
               AppStrings.t(context, 'account.signOut'),
               onTap: () async {
                 await store.logout();
-                if (!mounted) return;
+                if (!context.mounted) return;
                 Navigator.pushNamedAndRemoveUntil(
                   context,
                   AppRoutes.home,
@@ -414,7 +414,7 @@ class _AvatarPreview extends StatelessWidget {
         image: DecorationImage(
           image: NetworkImage(url),
           fit: BoxFit.cover,
-          onError: (_, __) {},
+          onError: (_, _) {},
         ),
       ),
     );

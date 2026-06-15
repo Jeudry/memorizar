@@ -22,8 +22,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:file_selector/file_selector.dart';
 import '../../../core/api/models.dart';
 import '../../../core/app_state.dart';
-import '../../../core/db/app_database.dart';
-import 'package:drift/drift.dart' as drift;
 import '../../../core/import/csv_import.dart';
 import 'screens/coop_recap_share.dart';
 import 'screens/practice_choose_word_screen.dart';
@@ -458,10 +456,12 @@ class _QuizRound {
   final bool? isStatementTrue;
 
   // Matching extra fields
-  final List<(String, String)>? matchingPairs;
+  // (nunca se pasa por constructor en el flujo actual; siempre null)
+  final List<(String, String)>? matchingPairs = null;
 
   // Open question extra fields
   final String? openQuestionPrompt;
+  // Se asigna en runtime (round.openQuestionResponse = val), no por constructor.
   String? openQuestionResponse;
 
   int? selectedIdx;
@@ -472,9 +472,7 @@ class _QuizRound {
     required this.options,
     this.trueFalseStatement,
     this.isStatementTrue,
-    this.matchingPairs,
     this.openQuestionPrompt,
-    this.openQuestionResponse,
   });
 
   bool get answered => selectedIdx != null;
@@ -991,7 +989,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     (answer) => answer != null && answer.trim().isNotEmpty,
   );
 
-  bool _hasLetterInput() => _letterAnswers.any((answer) => answer != null);
 
   bool _quizCorrect(MemoryCardData card, MemoryDeckData deck) {
     if (_quizCardId != card.id || _quizRounds.isEmpty) return false;
@@ -1154,12 +1151,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       _selectedBlockPosition = null;
       _checked = true;
     });
-  }
-
-  void _selectBlockDestination(int targetIndex) {
-    final selectedPosition = _selectedBlockPosition;
-    if (selectedPosition == null) return;
-    _moveBlock(selectedPosition, targetIndex);
   }
 
   void _toggleSelectedBlock(int index) {
@@ -1899,6 +1890,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           final shouldPop = await _showExitConfirmationDialog(context);
           if (shouldPop && context.mounted) {
             await CoopService.active?.disconnect();
+            if (!context.mounted) return;
             CoopService.active = null;
             Navigator.pop(context);
           }
@@ -1924,6 +1916,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   final shouldPop = await _showExitConfirmationDialog(context);
                   if (shouldPop && context.mounted) {
                     await CoopService.active?.disconnect();
+                    if (!context.mounted) return;
                     CoopService.active = null;
                     Navigator.pop(context);
                   }
@@ -2511,7 +2504,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       _ensureBlockOrder(card.id, blocks);
       final selectingDestination = _selectedBlockPosition != null;
       final hasInteracted = _checked || selectingDestination;
-      final correctCount = hasInteracted ? _correctBlockCount() : 0;
       final allCorrect = _blocksAreCorrect();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2776,7 +2768,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       final level = _letterLevelForSlug(slug);
       final isHarder = level >= 2;
       _ensureLetterState(card.id, card.back, level);
-      final hasInput = _hasLetterInput();
       final complete = _letterComplete();
       final remainingAttempts = (3 - _letterMistakes).clamp(0, 3);
       return Column(
@@ -4593,11 +4584,6 @@ class _RealPairingReviewState extends State<_RealPairingReview> {
   Widget _buildTab(int index, String stepLabel, String label) {
     final active = _currentTab == index;
     final completed = (index == 0 && _e1Completed) || (index == 1 && _e2Completed) || (index == 2 && _e3Completed);
-    final accent = active
-        ? RefColors.pink
-        : completed
-        ? RefColors.lime
-        : RefColors.border;
     return Expanded(
       child: GestureDetector(
         onTap: () {
@@ -5636,7 +5622,6 @@ class _CustomReorderableDelayedDragStartListener extends ReorderableDragStartLis
     required super.child,
     required super.index,
     super.key,
-    super.enabled,
   });
 
   @override

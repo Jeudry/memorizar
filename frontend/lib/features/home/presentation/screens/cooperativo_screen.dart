@@ -28,7 +28,6 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
 
   int _detailPage = 1;
   final int _detailLimit = 4;
-  int _detailTotal = 0;
   int _detailTotalPages = 0;
   List<dynamic> _detailedRooms = [];
   bool _loadingDetailedRooms = false;
@@ -311,29 +310,11 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     Navigator.pushNamed(context, AppRoutes.cooperativoJuego);
   }
 
-  final String _deckCreationTab = 'manual'; // 'manual' | 'biblia' | 'texto'
   final _rawContentCtrl = TextEditingController();
   final _bibleSearchCtrl = TextEditingController();
-  final List<BibleVerseData> _bibleSearchResults = [];
-  final List<BibleVerseData> _inlineSelectedVerses = [];
 
   final _deckTitleCtrl = TextEditingController();
   final List<(TextEditingController, TextEditingController)> _cardCtrls = [];
-
-  void _addEmptyCardRow() {
-    setState(() {
-      _cardCtrls.add((TextEditingController(), TextEditingController()));
-    });
-  }
-
-  void _removeCardRow(int index) {
-    if (_cardCtrls.length <= 1) return;
-    setState(() {
-      final pair = _cardCtrls.removeAt(index);
-      pair.$1.dispose();
-      pair.$2.dispose();
-    });
-  }
 
   void _clearInlineDeckForm() {
     _deckTitleCtrl.clear();
@@ -344,335 +325,6 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     _cardCtrls.clear();
     _creatingDeckInline = false;
     _selectedCreationType = null;
-  }
-
-  Future<void> _saveDeckInline(AppStore store, CoopRoomState roomState) async {
-    final title = _deckTitleCtrl.text.trim();
-    if (title.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, ingresa un título para el mazo.')),
-      );
-      return;
-    }
-
-    final validCards = _cardCtrls.where((c) => c.$1.text.trim().isNotEmpty && c.$2.text.trim().isNotEmpty).toList();
-    if (validCards.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, ingresa al menos 1 tarjeta completa (Frente y Dorso).')),
-      );
-      return;
-    }
-
-    setState(() => _busy = true);
-
-    try {
-      final deckId = 'dk_${DateTime.now().millisecondsSinceEpoch}';
-      
-      // Inserción en Drift
-      final companion = DecksCompanion(
-        id: drift.Value(deckId),
-        title: drift.Value(title),
-        subtitle: drift.Value('${validCards.length} tarjetas creadas en sala'),
-        icon: drift.Value('✨'),
-        isBible: drift.Value(false),
-        createdAt: drift.Value(DateTime.now()),
-      );
-      await store.db!.upsertDeck(companion);
-
-      for (var i = 0; i < validCards.length; i++) {
-        final front = validCards[i].$1.text.trim();
-        final back = validCards[i].$2.text.trim();
-        final cardId = 'cd_${deckId}_$i';
-
-        await store.db!.upsertCard(CardsCompanion(
-          id: drift.Value(cardId),
-          deckId: drift.Value(deckId),
-          front: drift.Value(front),
-          back: drift.Value(back),
-          source: drift.Value('coop_room'),
-          icon: drift.Value('🎯'),
-          retention: drift.Value(100),
-          lapses: drift.Value(0),
-        ));
-      }
-
-      // Recargar mazos locales
-      await store.loadDecksFromDatabase();
-      store.setActiveDeck(deckId);
-
-      // Sincronizar por websocket la sala
-      final cardsList = validCards.asMap().entries.map((entry) {
-        final i = entry.key;
-        final front = entry.value.$1.text.trim();
-        final back = entry.value.$2.text.trim();
-        return {
-          'id': 'cd_${deckId}_$i',
-          'front': front,
-          'back': back,
-          'source': 'coop_room',
-          'icon': '🎯',
-          'retention': 100,
-          'lapses': 0,
-        };
-      }).toList();
-      if (_coop != null) {
-        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF0F0C1B),
-          content: Row(
-            children: [
-              const Icon(Icons.check_circle_outline, color: RefColors.lime),
-              const SizedBox(width: 8),
-              Text(
-                '¡Mazo "$title" creado y asignado a la sala! 🎉',
-                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-              ),
-            ],
-          ),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-
-      _clearInlineDeckForm();
-      if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const CooperativoConfigScreen(),
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al guardar el mazo: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _saveBibleDeckInline(AppStore store, CoopRoomState roomState) async {
-    if (_inlineSelectedVerses.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, selecciona al menos un versículo de la Biblia.')),
-      );
-      return;
-    }
-
-    setState(() => _busy = true);
-
-    try {
-      final deckId = 'dk_bible_${DateTime.now().millisecondsSinceEpoch}';
-      final first = _inlineSelectedVerses.first;
-      final title = '${first.book} ${first.chapter} (Coop)';
-      
-      // Inserción en Drift
-      final companion = DecksCompanion(
-        id: drift.Value(deckId),
-        title: drift.Value(title),
-        subtitle: drift.Value('${_inlineSelectedVerses.length} versículos seleccionados'),
-        icon: drift.Value('✝️'),
-        isBible: drift.Value(true),
-        createdAt: drift.Value(DateTime.now()),
-      );
-      await store.db!.upsertDeck(companion);
-
-      for (var i = 0; i < _inlineSelectedVerses.length; i++) {
-        final verse = _inlineSelectedVerses[i];
-        final cardId = 'cd_${deckId}_$i';
-
-        await store.db!.upsertCard(CardsCompanion(
-          id: drift.Value(cardId),
-          deckId: drift.Value(deckId),
-          front: drift.Value(verse.ref),
-          back: drift.Value(verse.text),
-          source: drift.Value(store.bibleVersion.toUpperCase()),
-          icon: drift.Value('✝️'),
-          retention: drift.Value(74),
-          lapses: drift.Value(0),
-        ));
-      }
-
-      // Recargar mazos locales
-      await store.loadDecksFromDatabase();
-      store.setActiveDeck(deckId);
-
-      // Sincronizar por websocket la sala
-      final cardsList = _inlineSelectedVerses.asMap().entries.map((entry) {
-        final i = entry.key;
-        final verse = entry.value;
-        return {
-          'id': 'cd_${deckId}_$i',
-          'front': verse.ref,
-          'back': verse.text,
-          'source': store.bibleVersion.toUpperCase(),
-          'icon': '✝️',
-          'retention': 74,
-          'lapses': 0,
-        };
-      }).toList();
-      if (_coop != null) {
-        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF0F0C1B),
-          content: Row(
-            children: [
-              const Icon(Icons.check_circle_outline, color: RefColors.lime),
-              const SizedBox(width: 8),
-              Text(
-                '¡Mazo Bíblico "$title" creado y asignado a la sala! 🎉',
-                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-              ),
-            ],
-          ),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-
-      setState(() {
-        _inlineSelectedVerses.clear();
-        _bibleSearchResults.clear();
-        _bibleSearchCtrl.clear();
-        _creatingDeckInline = false;
-      });
-      if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const CooperativoConfigScreen(),
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al guardar el mazo: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _saveRawContentDeckInline(AppStore store, CoopRoomState roomState) async {
-    final title = _deckTitleCtrl.text.trim();
-    final text = _rawContentCtrl.text.trim();
-    if (title.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, ingresa un título para el mazo.')),
-      );
-      return;
-    }
-    if (text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, ingresa o pega el contenido de texto.')),
-      );
-      return;
-    }
-
-    setState(() => _busy = true);
-
-    try {
-      final cards = store.segmentContent(text, icon: '🧠', title: title);
-      if (cards.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No pudimos extraer ninguna tarjeta de este contenido.')),
-        );
-        return;
-      }
-
-      final deckId = 'dk_raw_${DateTime.now().millisecondsSinceEpoch}';
-      
-      // Inserción en Drift
-      final companion = DecksCompanion(
-        id: drift.Value(deckId),
-        title: drift.Value(title),
-        subtitle: drift.Value('${cards.length} tarjetas segmentadas'),
-        icon: drift.Value('🧠'),
-        isBible: drift.Value(false),
-        createdAt: drift.Value(DateTime.now()),
-      );
-      await store.db!.upsertDeck(companion);
-
-      for (var i = 0; i < cards.length; i++) {
-        final card = cards[i];
-        final cardId = 'cd_${deckId}_$i';
-
-        await store.db!.upsertCard(CardsCompanion(
-          id: drift.Value(cardId),
-          deckId: drift.Value(deckId),
-          front: drift.Value(card.front),
-          back: drift.Value(card.back),
-          source: drift.Value('coop_segmented'),
-          icon: drift.Value('🧠'),
-          retention: drift.Value(100),
-          lapses: drift.Value(0),
-        ));
-      }
-
-      // Recargar mazos locales
-      await store.loadDecksFromDatabase();
-      store.setActiveDeck(deckId);
-
-      // Sincronizar por websocket la sala
-      final cardsList = cards.asMap().entries.map((entry) {
-        final i = entry.key;
-        final card = entry.value;
-        return {
-          'id': 'cd_${deckId}_$i',
-          'front': card.front,
-          'back': card.back,
-          'source': 'coop_segmented',
-          'icon': '🧠',
-          'retention': 100,
-          'lapses': 0,
-        };
-      }).toList();
-      if (_coop != null) {
-        _coop!.broadcastLobbyDeck(deckId: deckId, deckName: title, cards: cardsList);
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF0F0C1B),
-          content: Row(
-            children: [
-              const Icon(Icons.check_circle_outline, color: RefColors.lime),
-              const SizedBox(width: 8),
-              Text(
-                '¡Mazo segmentado "$title" creado y asignado a la sala! 🎉',
-                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-              ),
-            ],
-          ),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-
-      setState(() {
-        _rawContentCtrl.clear();
-        _deckTitleCtrl.clear();
-        _creatingDeckInline = false;
-      });
-      if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const CooperativoConfigScreen(),
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al guardar el mazo: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
   }
 
   void _showDeckSelectorFromPrompt() {
@@ -1595,7 +1247,6 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                 );
                 setModalState(() {
                   _detailedRooms = res['rooms'] as List? ?? [];
-                  _detailTotal = res['total'] ?? 0;
                   _detailTotalPages = res['totalPages'] ?? 0;
                 });
               } catch (e) {
@@ -2102,34 +1753,6 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
 /// reemplaza por un fetch real al deck compartido del usuario o un
 /// catálogo de "preguntas trivia" del backend. Por ahora cabe en memoria
 /// y permite probar el sync end-to-end.
-const List<_CoopCard> _kCoopCards = [
-  _CoopCard(
-    question: '¿Cuál es la función principal de los pulmones?',
-    options: [
-      'Filtrar impurezas del aire',
-      'Intercambio de gases con la sangre',
-      'Producir mucosidad protectora',
-      'Regular la temperatura corporal',
-    ],
-    correct: 1,
-  ),
-  _CoopCard(
-    question: '¿En qué libro inicia el Nuevo Testamento?',
-    options: ['Mateo', 'Marcos', 'Génesis', 'Hechos'],
-    correct: 0,
-  ),
-  _CoopCard(
-    question: '¿Cuántos discípulos tuvo Jesús?',
-    options: ['7', '12', '10', '24'],
-    correct: 1,
-  ),
-  _CoopCard(
-    question: '¿Quién escribió la mayor parte de los Salmos?',
-    options: ['Salomón', 'Moisés', 'David', 'Pablo'],
-    correct: 2,
-  ),
-];
-
 class _CoopCard {
   final String question;
   final List<String> options;
@@ -2997,7 +2620,6 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
   final _textController = TextEditingController();
   List<RemoteUser> _myFriends = [];
   List<Friendship> _pendingRequests = [];
-  bool _loadingFriends = false;
 
   @override
   void initState() {
@@ -3021,7 +2643,6 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
   Future<void> _fetchFriends() async {
     final store = AppScope.of(context);
     if (!store.isLoggedIn) return;
-    setState(() => _loadingFriends = true);
     try {
       final res = await store.api.listFriends();
       if (mounted) {
@@ -3031,9 +2652,6 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
         });
       }
     } catch (_) {}
-    finally {
-      if (mounted) setState(() => _loadingFriends = false);
-    }
   }
 
   @override
@@ -3529,9 +3147,7 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
                     final isPending = _pendingRequests.any((f) =>
                         (f.requesterId == me && f.addresseeId == user.id) ||
                         (f.requesterId == user.id && f.addresseeId == me));
-                    
-                    bool requesting = false;
-                    
+
                     return Glass(
                       padding: const EdgeInsets.all(24),
                       gradient: LinearGradient(
@@ -3840,12 +3456,8 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
                             )
                           else
                             Cta(
-                              requesting ? 'Enviando...' : 'Agregar como amigo ＋',
-                              disabled: requesting,
+                              'Agregar como amigo ＋',
                               onTap: () async {
-                                setModalState(() {
-                                  requesting = true;
-                                });
                                 try {
                                   await store.api.requestFriend(user.id);
                                   await _fetchFriends();
@@ -3872,9 +3484,6 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
                                     ),
                                   );
                                 } catch (e) {
-                                  setModalState(() {
-                                    requesting = false;
-                                  });
                                   if (!context.mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
@@ -3917,7 +3526,6 @@ class _CoopParticipant extends StatelessWidget {
   final bool host;
   final bool ready;
   final bool empty;
-  final bool loading;
   final Gradient gradient;
 
   const _CoopParticipant(
@@ -3927,7 +3535,6 @@ class _CoopParticipant extends StatelessWidget {
     this.host = false,
     this.ready = false,
     this.empty = false,
-    this.loading = false,
     this.gradient = RefColors.cool,
   });
 
@@ -4010,8 +3617,8 @@ class _CoopParticipant extends StatelessWidget {
             status,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: loading ? RefColors.sun : RefColors.muted,
+            style: const TextStyle(
+              color: RefColors.muted,
               fontSize: 10,
               fontWeight: FontWeight.w700,
             ),

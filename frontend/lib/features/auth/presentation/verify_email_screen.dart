@@ -53,8 +53,10 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     });
     try {
       await AppScope.of(context).api.confirmEmailVerify(t);
+      if (!mounted) return;
       // Refrescar perfil para que el flag emailVerified se actualice.
       final me = await AppScope.of(context).api.me();
+      if (!mounted) return;
       AppScope.of(context).overwriteCurrentUser(me);
       setState(() => _ok = '¡Correo verificado!');
     } catch (e) {
@@ -166,12 +168,10 @@ class _LabeledField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final IconData icon;
-  final bool obscure;
   const _LabeledField({
     required this.controller,
     required this.hint,
     required this.icon,
-    this.obscure = false,
   });
 
   @override
@@ -190,7 +190,7 @@ class _LabeledField extends StatelessWidget {
           Expanded(
             child: TextField(
               controller: controller,
-              obscureText: obscure,
+              obscureText: false,
               autocorrect: false,
               style: const TextStyle(fontSize: 13, color: RefColors.ink),
               decoration: InputDecoration(

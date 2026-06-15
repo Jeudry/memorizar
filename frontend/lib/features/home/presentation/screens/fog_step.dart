@@ -37,11 +37,9 @@ class _FogStepState extends State<_FogStep>
   Timer? _autoStopTimer;
 
   late AnimationController _pulse;
-  late List<String> _allWords;
   String _recognized = '';
   double _score = 0;
   bool _finalizing = false;
-  bool _roundSuccess = false;
   int _attemptsLeft = 3;
   final Set<int> _revealedWordIndices = {};
   int _hintsUsed = 0;
@@ -54,7 +52,6 @@ class _FogStepState extends State<_FogStep>
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     );
-    _allWords = _studyWords(widget.targetText);
     if (widget.finished) {
       _isCheckingModel = false;
       _isModelInitializing = false;
@@ -72,11 +69,9 @@ class _FogStepState extends State<_FogStep>
   void didUpdateWidget(_FogStep oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.targetText != widget.targetText) {
-      _allWords = _studyWords(widget.targetText);
       _score = 0;
       _recognized = '';
       _attemptsLeft = 3;
-      _roundSuccess = false;
       _revealedWordIndices.clear();
       _hintsUsed = 0;
       if (widget.finished) {
@@ -315,12 +310,10 @@ class _FogStepState extends State<_FogStep>
       _score = score;
       _recognized = text;
       if (passed) {
-        _roundSuccess = true;
         _status = '¡Excelente recitación!';
         HapticFeedback.mediumImpact();
         widget.onRoundCompleted();
       } else {
-        _roundSuccess = false;
         _attemptsLeft = (_attemptsLeft - 1).clamp(0, 3);
         _status = 'Similitud muy baja (${(score * 100).round()}%). Lee de nuevo con claridad.';
       }

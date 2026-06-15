@@ -57,11 +57,13 @@ class _AmigosScreenState extends State<AmigosScreen> {
     final store = AppScope.of(context);
     try {
       await store.api.requestFriend(to.id);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Invitación enviada a ${to.displayName}')),
       );
       await _refresh();
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('No pude enviar la invitación: $e')),
       );
@@ -74,6 +76,7 @@ class _AmigosScreenState extends State<AmigosScreen> {
       await store.api.acceptFriend(f.id);
       await _refresh();
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('No pude aceptar: $e')),
       );
@@ -803,256 +806,6 @@ class _SearchHitRow extends StatelessWidget {
   }
 }
 
-class _PendingInvite extends StatelessWidget {
-  const _PendingInvite();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Glass(
-        radius: 18,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        color: const Color(0x18FFB400),
-        border: Border.all(color: const Color(0x4DFFB400)),
-        child: Row(
-          children: [
-            const _FriendAvatar('N', gradient: RefColors.primary, size: 36),
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Nora te invita a ser amiga',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
-                  ),
-                  Text(
-                    'Os conocéis por Sofía',
-                    style: TextStyle(fontSize: 10, color: RefColors.muted),
-                  ),
-                ],
-              ),
-            ),
-            const _MiniButton('Aceptar', primary: true),
-            const SizedBox(width: 6),
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: HtmlRefColors.glassSoft,
-                shape: BoxShape.circle,
-                border: Border.all(color: HtmlRefColors.glassBorder),
-              ),
-              child: const Icon(Icons.close_rounded, size: 16),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FriendCard extends StatelessWidget {
-  final String initial;
-  final String name;
-  final String status;
-  final List<String> badges;
-  final String primaryAction;
-  final Gradient gradient;
-  final bool online;
-  final bool live;
-
-  const _FriendCard({
-    required this.initial,
-    required this.name,
-    required this.status,
-    required this.badges,
-    required this.primaryAction,
-    required this.gradient,
-    this.online = false,
-    this.live = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Glass(
-        radius: 18,
-        padding: const EdgeInsets.all(14),
-        color: const Color(0x12FFFFFF),
-        border: Border.all(color: const Color(0x2EFFFFFF)),
-        child: Row(
-          children: [
-            _FriendAvatar(
-              initial,
-              gradient: gradient,
-              size: 46,
-              online: online,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    status,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: live ? RefColors.lime : RefColors.muted,
-                      fontWeight: live ? FontWeight.w900 : FontWeight.w600,
-                    ),
-                  ),
-                  if (badges.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 4,
-                      runSpacing: 4,
-                      children: [
-                        for (final badge in badges) _FriendBadge(badge),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                _MiniButton(primaryAction, primary: true),
-                const SizedBox(height: 5),
-                const _MiniButton('Mensaje'),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FriendAvatar extends StatelessWidget {
-  final String initial;
-  final Gradient gradient;
-  final double size;
-  final bool online;
-
-  const _FriendAvatar(
-    this.initial, {
-    required this.gradient,
-    this.size = 46,
-    this.online = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            gradient: gradient,
-            borderRadius: BorderRadius.circular(size * .32),
-            border: Border.all(color: HtmlRefColors.glassBorder),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            initial,
-            style: TextStyle(
-              fontSize: size * .34,
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ),
-        if (online)
-          Positioned(
-            right: -2,
-            bottom: -2,
-            child: Container(
-              width: 13,
-              height: 13,
-              decoration: BoxDecoration(
-                color: RefColors.lime,
-                shape: BoxShape.circle,
-                border: Border.all(color: RefColors.bg, width: 2),
-                boxShadow: const [
-                  BoxShadow(color: RefColors.lime, blurRadius: 7),
-                ],
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _MiniButton extends StatelessWidget {
-  final String text;
-  final bool primary;
-
-  const _MiniButton(this.text, {this.primary = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 86,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        gradient: primary ? RefColors.limeGrad : null,
-        color: primary ? null : HtmlRefColors.glassSoft,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: primary ? Colors.transparent : HtmlRefColors.glassBorder,
-        ),
-      ),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          fontSize: 11,
-          color: primary ? RefColors.successInk : RefColors.ink,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
-}
-
-class _FriendBadge extends StatelessWidget {
-  final String text;
-
-  const _FriendBadge(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: HtmlRefColors.glassSoft,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: HtmlRefColors.glassBorder),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
-      ),
-    );
-  }
-}
-
 class AddFriendModal extends StatefulWidget {
   const AddFriendModal({super.key});
 
@@ -1068,7 +821,6 @@ class _AddFriendModalState extends State<AddFriendModal> {
   String? _message;
 
   List<RemoteUser> _myFriends = [];
-  bool _loadingFriends = false;
 
   @override
   void initState() {
@@ -1079,7 +831,6 @@ class _AddFriendModalState extends State<AddFriendModal> {
   Future<void> _fetchMyFriends() async {
     final store = AppScope.of(context);
     if (!store.isLoggedIn) return;
-    setState(() => _loadingFriends = true);
     try {
       final res = await store.api.listFriends();
       if (mounted) {
@@ -1088,9 +839,6 @@ class _AddFriendModalState extends State<AddFriendModal> {
         });
       }
     } catch (_) {}
-    finally {
-      if (mounted) setState(() => _loadingFriends = false);
-    }
   }
 
   @override
