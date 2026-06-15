@@ -1296,6 +1296,27 @@ func (s *Service) ListSharedResources(userID string) ([]domain.SharedResource, e
 	return result, nil
 }
 
+// UnpublishSharedResource despublica/elimina un recurso compartido. Solo su
+// dueño puede hacerlo; despublicar lo saca del catálogo comunitario y de las
+// bandejas 1:1.
+func (s *Service) UnpublishSharedResource(userID, shareID string) error {
+	shareID = strings.TrimSpace(shareID)
+	if shareID == "" {
+		return ErrShareNotFound
+	}
+	existing, err := s.repo.FindSharedResource(shareID)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return ErrShareNotFound
+	}
+	if existing.OwnerUserID != userID {
+		return ErrShareNotFound
+	}
+	return s.repo.DeleteSharedResource(shareID)
+}
+
 func (s *Service) SaveProgressSnapshot(userID string, input ProgressSyncInput) (*domain.ProgressSnapshot, error) {
 	if strings.TrimSpace(input.PayloadJSON) == "" {
 		return nil, ErrMissingPayload

@@ -431,6 +431,27 @@ func (r *Repository) ListSharedResourcesForUser(userID string) ([]domain.SharedR
 	return out, nil
 }
 
+func (r *Repository) FindSharedResource(id string) (*domain.SharedResource, error) {
+	row := r.db.QueryRow(`
+		SELECT id, owner_user_id, target_user_id, kind, title, summary,
+		       deck_id, plan_id, payload_json, is_public, created_at
+		FROM shared_resources
+		WHERE id = ?`, id)
+	s, err := r.scanShare(row.Scan)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return s, nil
+}
+
+func (r *Repository) DeleteSharedResource(id string) error {
+	_, err := r.db.Exec(`DELETE FROM shared_resources WHERE id = ?`, id)
+	return err
+}
+
 func (r *Repository) ListPublicSharedResourcesByUserIDs(userIDs []string) ([]domain.SharedResource, error) {
 	if len(userIDs) == 0 {
 		return []domain.SharedResource{}, nil

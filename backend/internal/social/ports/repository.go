@@ -31,6 +31,8 @@ type Repository interface {
 	SaveSharedResource(resource domain.SharedResource) error
 	ListSharedResourcesForUser(userID string) ([]domain.SharedResource, error)
 	ListPublicSharedResourcesByUserIDs(userIDs []string) ([]domain.SharedResource, error)
+	FindSharedResource(id string) (*domain.SharedResource, error)
+	DeleteSharedResource(id string) error
 
 	SaveShareImport(shareImport domain.ShareImport) error
 	CountShareImports(shareIDs []string) (map[string]int, error)

@@ -273,6 +273,23 @@ func (r *Repository) ListSharedResourcesForUser(userID string) ([]domain.SharedR
 	return result, nil
 }
 
+func (r *Repository) FindSharedResource(id string) (*domain.SharedResource, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	resource, ok := r.state.SharedResources[id]
+	if !ok {
+		return nil, nil
+	}
+	return &resource, nil
+}
+
+func (r *Repository) DeleteSharedResource(id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.state.SharedResources, id)
+	return r.persistLocked()
+}
+
 func (r *Repository) ListPublicSharedResourcesByUserIDs(userIDs []string) ([]domain.SharedResource, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

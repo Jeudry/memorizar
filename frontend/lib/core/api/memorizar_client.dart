@@ -471,6 +471,18 @@ class MemorizarClient {
     return list.cast<Map<String, dynamic>>();
   }
 
+  /// Despublica un mazo propio de la comunidad (lo borra del catálogo).
+  /// Solo el dueño puede; el backend devuelve 404 en caso contrario.
+  Future<void> unpublishCommunityDeck(String shareId) async {
+    final r = await _http.delete(
+      _uri('/v1/social/shares?id=${Uri.encodeQueryComponent(shareId)}'),
+      headers: _headers,
+    );
+    if (r.statusCode >= 400) {
+      throw Exception('No se pudo despublicar el mazo (${r.statusCode}).');
+    }
+  }
+
   /// Archiva una denuncia de mazo en la cola de moderación del backend.
   Future<Map<String, dynamic>> fileDeckReport({
     required String deckId,

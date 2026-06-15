@@ -109,6 +109,54 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
     }
   }
 
+  /// Despublica un mazo propio: confirma, llama al backend y recarga la lista.
+  Future<void> _unpublishDeck(Map<String, dynamic> share) async {
+    final shareId = (share['id'] as String?) ?? '';
+    final title = (share['title'] as String?) ?? 'este mazo';
+    if (shareId.isEmpty) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1430),
+        title: const Text('¿Despublicar mazo?',
+            style: TextStyle(color: RefColors.ink, fontWeight: FontWeight.w800)),
+        content: Text(
+          '"$title" dejará de aparecer en la comunidad. Quienes ya lo importaron lo conservan.',
+          style: const TextStyle(color: RefColors.muted, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar',
+                style: TextStyle(color: RefColors.muted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Despublicar',
+                style: TextStyle(color: RefColors.pink, fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    final store = AppScope.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await store.api.unpublishCommunityDeck(shareId);
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Mazo despublicado de la comunidad.')),
+      );
+      await _loadMyDecks();
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('No se pudo despublicar el mazo.')),
+      );
+      debugPrint('Error despublicando mazo: $e');
+    }
+  }
+
   /// Selector de mazos locales para publicar a la comunidad. Al elegir uno
   /// se abre el sheet de visibilidad/consentimiento que hace la publicación.
   void _startPublishFlow() {
@@ -339,7 +387,11 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          for (final deck in mine) _MyCommunityDeckCard(share: deck),
+          for (final deck in mine)
+            _MyCommunityDeckCard(
+              share: deck,
+              onUnpublish: () => _unpublishDeck(deck),
+            ),
         ],
       ],
     );
@@ -688,8 +740,9 @@ class _ComunidadTab extends StatelessWidget {
 /// Card de un deck publicado por mí, con sus stats comunitarias.
 class _MyCommunityDeckCard extends StatelessWidget {
   final Map<String, dynamic> share;
+  final VoidCallback onUnpublish;
 
-  const _MyCommunityDeckCard({required this.share});
+  const _MyCommunityDeckCard({required this.share, required this.onUnpublish});
 
   int _cardCount() {
     try {
@@ -775,6 +828,28 @@ class _MyCommunityDeckCard extends StatelessWidget {
                   style: const TextStyle(color: RefColors.dim, fontSize: 10),
                 ),
               ],
+            ),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: onUnpublish,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                icon: const Icon(Icons.cloud_off_rounded,
+                    size: 15, color: RefColors.pink),
+                label: const Text(
+                  'Despublicar',
+                  style: TextStyle(
+                    color: RefColors.pink,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
             ),
           ],
         ),

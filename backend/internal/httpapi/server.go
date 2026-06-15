@@ -772,6 +772,18 @@ func (s *Server) handleShares(w http.ResponseWriter, r *http.Request, userID str
 			return
 		}
 		writeJSON(w, http.StatusCreated, share)
+	case http.MethodDelete:
+		// Despublicar: ?id=shr_xxx. Solo el dueño puede.
+		shareID := strings.TrimSpace(r.URL.Query().Get("id"))
+		if err := s.service.UnpublishSharedResource(userID, shareID); err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, application.ErrShareNotFound) {
+				status = http.StatusNotFound
+			}
+			writeJSON(w, status, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"unpublished": shareID})
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 	}

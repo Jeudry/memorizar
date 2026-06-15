@@ -239,6 +239,23 @@ func (r *Repository) ListSharedResourcesForUser(userID string) ([]domain.SharedR
 	return result, nil
 }
 
+func (r *Repository) FindSharedResource(id string) (*domain.SharedResource, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	resource, ok := r.sharedResources[id]
+	if !ok {
+		return nil, nil
+	}
+	return &resource, nil
+}
+
+func (r *Repository) DeleteSharedResource(id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.sharedResources, id)
+	return nil
+}
+
 func (r *Repository) SaveShareImport(shareImport domain.ShareImport) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
