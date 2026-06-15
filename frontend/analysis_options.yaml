@@ -14,6 +14,7 @@ analyzer:
     - test/exercise_templates_provider_test.dart
     - test/ui_capture_test.dart
     - scratch/**
+    - brain/**
     - lib/features/practice/**
     - lib/features/cards/**
     - lib/features/home/data/**

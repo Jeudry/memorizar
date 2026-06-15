@@ -44,6 +44,16 @@
 				<string>com.googleusercontent.apps.106168748090-7a0q71bdnaq64g7q79o9eipr34dv8phs</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>com.memorizar.frontend.deeplink</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>memorizar</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

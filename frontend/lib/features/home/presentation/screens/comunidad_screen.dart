@@ -10,16 +10,225 @@ class ComunidadScreen extends StatefulWidget {
 }
 
 class _ComunidadScreenState extends State<ComunidadScreen> {
+  static const int _exploreTab = 0;
+  static const int _myDecksTab = 1;
+
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
   List<Map<String, dynamic>>? _results;
   bool _searching = false;
+  /// Categoría (emoji) activa para filtrar la búsqueda; vacío = todas.
+  String _activeCategory = '';
+
+  int _tabIndex = _exploreTab;
+  List<Map<String, dynamic>>? _myDecks;
+  bool _loadingMine = false;
+  String? _mineError;
+
+  Map<String, dynamic>? _overview;
+  bool _loadingOverview = false;
+  String? _overviewError;
+
+  /// Nombres conocidos para los iconos de categoría; el conteo es real
+  /// (viene del catálogo), solo la etiqueta es cosmética.
+  static const Map<String, String> _categoryLabels = {
+    '✝️': 'Biblia',
+    '🌍': 'Idiomas',
+    '🧠': 'Medicina',
+    '🧪': 'Ciencias',
+    '📜': 'Historia',
+    '🎨': 'Arte',
+    '💻': 'Tech',
+    '📚': 'Estudio',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadOverview());
+  }
 
   @override
   void dispose() {
     _debounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadOverview() async {
+    if (_loadingOverview || !mounted) return;
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) return;
+    setState(() {
+      _loadingOverview = true;
+      _overviewError = null;
+    });
+    try {
+      final overview = await store.api.getCommunityOverview();
+      if (!mounted) return;
+      setState(() => _overview = overview);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _overviewError = 'No se pudo cargar la comunidad.');
+      debugPrint('Error cargando overview comunitario: $e');
+    } finally {
+      if (mounted) setState(() => _loadingOverview = false);
+    }
+  }
+
+  void _switchTab(int index) {
+    if (_tabIndex == index) return;
+    setState(() => _tabIndex = index);
+    if (index == _myDecksTab && _myDecks == null) {
+      _loadMyDecks();
+    }
+  }
+
+  Future<void> _loadMyDecks() async {
+    if (_loadingMine) return;
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) {
+      setState(() {
+        _mineError = 'Inicia sesión para ver tus decks publicados.';
+        _myDecks = const [];
+      });
+      return;
+    }
+    setState(() {
+      _loadingMine = true;
+      _mineError = null;
+    });
+    try {
+      final decks = await store.api.listMyCommunityDecks();
+      if (!mounted) return;
+      setState(() => _myDecks = decks);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _mineError = 'No se pudieron cargar tus decks publicados.');
+      debugPrint('Error cargando mis decks comunitarios: $e');
+    } finally {
+      if (mounted) setState(() => _loadingMine = false);
+    }
+  }
+
+  /// Despublica un mazo propio: confirma, llama al backend y recarga la lista.
+  Future<void> _unpublishDeck(Map<String, dynamic> share) async {
+    final shareId = (share['id'] as String?) ?? '';
+    final title = (share['title'] as String?) ?? 'este mazo';
+    if (shareId.isEmpty) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1430),
+        title: const Text('¿Despublicar mazo?',
+            style: TextStyle(color: RefColors.ink, fontWeight: FontWeight.w800)),
+        content: Text(
+          '"$title" dejará de aparecer en la comunidad. Quienes ya lo importaron lo conservan.',
+          style: const TextStyle(color: RefColors.muted, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar',
+                style: TextStyle(color: RefColors.muted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Despublicar',
+                style: TextStyle(color: RefColors.pink, fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    final store = AppScope.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await store.api.unpublishCommunityDeck(shareId);
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Mazo despublicado de la comunidad.')),
+      );
+      await _loadMyDecks();
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('No se pudo despublicar el mazo.')),
+      );
+      debugPrint('Error despublicando mazo: $e');
+    }
+  }
+
+  /// Selector de mazos locales para publicar a la comunidad. Al elegir uno
+  /// se abre el sheet de visibilidad/consentimiento que hace la publicación.
+  void _startPublishFlow() {
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inicia sesión para publicar en la comunidad.')),
+      );
+      return;
+    }
+    final candidates = store.decks.where((deck) => deck.cards.isNotEmpty).toList();
+    if (candidates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Crea un mazo con tarjetas antes de publicarlo.')),
+      );
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        margin: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: HtmlRefColors.glassBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: HtmlRefColors.glassBorder),
+        ),
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              '¿Qué mazo quieres publicar?',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final deck in candidates)
+                    ListTile(
+                      leading: GlyphIcon(deck.icon, size: 22),
+                      title: Text(
+                        deck.title,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                      ),
+                      subtitle: Text(
+                        '${deck.cards.length} tarjetas',
+                        style: const TextStyle(color: RefColors.muted, fontSize: 11),
+                      ),
+                      onTap: () async {
+                        Navigator.of(sheetCtx).pop();
+                        await showVisibilityConsentSheet(
+                          context,
+                          deckId: deck.id,
+                          deckTitle: deck.title,
+                          current: deck.visibility,
+                        );
+                        _loadMyDecks();
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _onSearchChanged(String v) {
@@ -41,7 +250,8 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
     }
     setState(() => _searching = true);
     try {
-      final results = await store.api.searchCommunityDecks(q);
+      final results =
+          await store.api.searchCommunityDecks(q, category: _activeCategory);
       if (!mounted) return;
       setState(() => _results = results);
     } catch (_) {
@@ -49,6 +259,16 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
     } finally {
       if (mounted) setState(() => _searching = false);
     }
+  }
+
+  /// Tap en una categoría de la portada: filtra la búsqueda por ese emoji y
+  /// salta a la pestaña Explorar. Volver a tocar la categoría activa la quita.
+  void _selectCategory(String icon) {
+    setState(() {
+      _activeCategory = _activeCategory == icon ? '' : icon;
+      _tabIndex = _exploreTab;
+    });
+    _runSearch(_searchCtrl.text.trim());
   }
 
   Future<void> _import(Map<String, dynamic> share) async {
@@ -72,6 +292,13 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
         icon: (payload['icon'] as String?) ?? '🌍',
         cards: cards,
       );
+      // Registrar la importación para las stats comunitarias del autor.
+      final shareId = (share['id'] as String?) ?? '';
+      if (shareId.isNotEmpty) {
+        unawaited(store.api.registerCommunityImport(shareId).catchError((e) {
+          debugPrint('No se pudo registrar import comunitario: $e');
+        }));
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Mazo importado a tu colección')),
@@ -84,71 +311,108 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
     }
   }
 
-  void _showReportDialog(BuildContext context, String deckTitle) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: RefColors.glassStrong,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: RefColors.border),
-          ),
-          title: Row(
-            children: const [
-              Icon(Icons.copyright_rounded, color: RefColors.urgent),
-              SizedBox(width: 8),
-              Text(
-                'Reportar Copyright',
-                style: TextStyle(color: RefColors.ink, fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-            ],
-          ),
-          content: Text(
-            '¿Deseas reportar el mazo "$deckTitle" por infracción de propiedad intelectual o derechos de autor (DMCA)?',
-            style: const TextStyle(color: RefColors.ink, fontSize: 13, height: 1.4),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar', style: TextStyle(color: RefColors.muted, fontWeight: FontWeight.bold)),
+
+  Widget _buildTabSwitcher() {
+    return Glass(
+      radius: 16,
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: [
+          Expanded(
+            child: _ComunidadTab(
+              label: 'Explorar',
+              icon: Icons.public_rounded,
+              selected: _tabIndex == _exploreTab,
+              onTap: () => _switchTab(_exploreTab),
             ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: RefColors.urgent.withValues(alpha: .15),
-                foregroundColor: RefColors.urgent,
-                elevation: 0,
-                side: const BorderSide(color: RefColors.urgent),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    backgroundColor: RefColors.glassStrong,
-                    shape: RoundedRectangleBorder(
-                      side: const BorderSide(color: RefColors.lime),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    content: const Text(
-                      'Reporte registrado exitosamente. Revisaremos el contenido en un plazo máximo de 24 horas.',
-                      style: TextStyle(color: RefColors.lime, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                );
-              },
-              child: const Text('Reportar', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: _ComunidadTab(
+              label: 'Mis decks',
+              icon: Icons.collections_bookmark_rounded,
+              selected: _tabIndex == _myDecksTab,
+              onTap: () => _switchTab(_myDecksTab),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMyDecksTab() {
+    if (_loadingMine) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 40),
+        child: Center(child: CircularProgressIndicator(color: RefColors.cyan)),
+      );
+    }
+    if (_mineError != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          children: [
+            Text(
+              _mineError!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: RefColors.muted, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            Cta('Reintentar', onTap: _loadMyDecks),
           ],
-        );
-      },
+        ),
+      );
+    }
+    final mine = _myDecks ?? const [];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Cta('+ Publicar un mazo a la comunidad', onTap: _startPublishFlow),
+        const SizedBox(height: 14),
+        if (mine.isEmpty)
+          Glass(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 30),
+            child: Column(
+              children: const [
+                Icon(Icons.cloud_upload_outlined, color: RefColors.cyan, size: 42),
+                SizedBox(height: 12),
+                Text(
+                  'Aún no publicaste ningún mazo',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  'Comparte tus mazos con la comunidad y mira cuántas personas los importan.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: RefColors.muted, fontSize: 12, height: 1.4),
+                ),
+              ],
+            ),
+          )
+        else ...[
+          Text(
+            '${mine.length} ${mine.length == 1 ? 'MAZO PUBLICADO' : 'MAZOS PUBLICADOS'}',
+            style: const TextStyle(
+              color: RefColors.muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (final deck in mine)
+            _MyCommunityDeckCard(
+              share: deck,
+              onUnpublish: () => _unpublishDeck(deck),
+            ),
+        ],
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
-    final decks = store.decks;
     return ReferencePage(
       active: AppRoutes.comunidad,
       child: Column(
@@ -159,6 +423,11 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
             'Descubre mazos',
             'Creados por personas que aprenden como tú',
           ),
+          _buildTabSwitcher(),
+          const SizedBox(height: 12),
+          if (_tabIndex == _myDecksTab) ...[
+            _buildMyDecksTab(),
+          ] else ...[
           Glass(
             radius: 18,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -204,6 +473,20 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
               ],
             ),
           ),
+          if (_activeCategory.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: GestureDetector(
+                onTap: () => _selectCategory(_activeCategory),
+                child: RefChip(
+                  '$_activeCategory ${_categoryLabels[_activeCategory] ?? 'Categoría'}  ✕',
+                  color: const Color(0x2200D4FF),
+                  textColor: RefColors.cyan,
+                ),
+              ),
+            ),
+          ],
           if (_results != null) ...[
             const SizedBox(height: 12),
             if (_results!.isEmpty)
@@ -219,79 +502,433 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
                 _CommunityHit(
                   share: r,
                   onImport: () => _import(r),
-                  onReport: () => _showReportDialog(context, r['title'] as String? ?? 'Sin título'),
+                  onReport: () => showReportDeckSheet(
+                    context,
+                    deckId: (r['id'] as String?) ?? '',
+                    deckTitle: r['title'] as String? ?? 'Sin título',
+                  ),
                 ),
           ],
           const SizedBox(height: 12),
-          GridView.count(
-            crossAxisCount: 4,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 6,
-            mainAxisSpacing: 6,
-            childAspectRatio: 1.45,
-            children: const [
-              _CategoryTile('🧠', 'Medicina', '184'),
-              _CategoryTile('🌍', 'Idiomas', '412'),
-              _CategoryTile('🧪', 'Ciencias', '256'),
-              _CategoryTile('📜', 'Historia', '130'),
-              _CategoryTile('✝️', 'Biblia', '89'),
-              _CategoryTile('🎨', 'Arte', '76'),
-              _CategoryTile('💻', 'Tech', '208'),
-              _CategoryTile('⋯', 'Más', 'Todos'),
+          ..._buildExploreSections(store),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Portada del tab Explorar con datos reales del catálogo comunitario.
+  List<Widget> _buildExploreSections(AppStore store) {
+    if (!store.isLoggedIn) {
+      return [
+        Glass(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 28),
+          child: Column(
+            children: [
+              const Icon(Icons.public_rounded, color: RefColors.cyan, size: 40),
+              const SizedBox(height: 12),
+              const Text(
+                'Inicia sesión para explorar la comunidad',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Los mazos publicados, los más importados y sus creadores aparecen aquí con datos reales.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: RefColors.muted, fontSize: 12, height: 1.4),
+              ),
+              const SizedBox(height: 14),
+              Cta(
+                'Iniciar sesión',
+                onTap: () => Navigator.pushNamed(context, AppRoutes.login),
+              ),
             ],
           ),
-          const SizedBox(height: 6),
-          const SectionHead('Destacado esta semana', action: 'Ver todo'),
-          SizedBox(
-            height: 130,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                for (final deck in decks.take(3))
-                  _FeaturedDeck(
-                    deck.icon,
-                    deck.title,
-                    '${deck.cards.length} tarjetas · ${deck.retention}% retención',
-                    '★ ${(4 + deck.retention / 100).toStringAsFixed(1)}',
-                    LinearGradient(
-                      colors: [
-                        RefColors.pink.withValues(alpha: .22),
-                        RefColors.violet.withValues(alpha: .22),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    onTap: () {
-                      store.setActiveDeck(deck.id);
-                      Navigator.pushNamed(context, AppRoutes.iniciar);
-                    },
+        ),
+      ];
+    }
+    if (_loadingOverview && _overview == null) {
+      return const [
+        Padding(
+          padding: EdgeInsets.symmetric(vertical: 40),
+          child: Center(child: CircularProgressIndicator(color: RefColors.cyan)),
+        ),
+      ];
+    }
+    if (_overviewError != null && _overview == null) {
+      return [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: Column(
+            children: [
+              Text(
+                _overviewError!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: RefColors.muted, fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              Cta('Reintentar', onTap: _loadOverview),
+            ],
+          ),
+        ),
+      ];
+    }
+    final overview = _overview;
+    if (overview == null) return const [];
+
+    final categories =
+        (overview['categories'] as List? ?? const []).cast<Map<String, dynamic>>();
+    final featured =
+        (overview['featured'] as List? ?? const []).cast<Map<String, dynamic>>();
+    final popular =
+        (overview['popular'] as List? ?? const []).cast<Map<String, dynamic>>();
+    final creators =
+        (overview['creators'] as List? ?? const []).cast<Map<String, dynamic>>();
+    final totalDecks = (overview['totalDecks'] as int?) ?? 0;
+
+    if (totalDecks == 0) {
+      return [
+        Glass(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 28),
+          child: Column(
+            children: const [
+              Icon(Icons.auto_awesome_rounded, color: RefColors.sun, size: 40),
+              SizedBox(height: 12),
+              Text(
+                'La comunidad está naciendo',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+              ),
+              SizedBox(height: 6),
+              Text(
+                'Todavía no hay mazos publicados. Sé la primera persona en compartir uno desde "Mis decks".',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: RefColors.muted, fontSize: 12, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+      ];
+    }
+
+    return [
+      if (categories.isNotEmpty) ...[
+        GridView.count(
+          crossAxisCount: 4,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisSpacing: 6,
+          mainAxisSpacing: 6,
+          childAspectRatio: 1.45,
+          children: [
+            for (final category in categories)
+              _CategoryTile(
+                (category['icon'] as String?) ?? '🌍',
+                _categoryLabels[(category['icon'] as String?) ?? ''] ?? 'Otros',
+                '${(category['count'] as int?) ?? 0}',
+                onTap: () => _selectCategory((category['icon'] as String?) ?? ''),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+      ],
+      if (featured.isNotEmpty) ...[
+        const SectionHead('Destacado esta semana'),
+        SizedBox(
+          height: 130,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              for (final share in featured)
+                _FeaturedDeck(
+                  _shareIcon(share),
+                  (share['title'] as String?) ?? 'Sin título',
+                  'por ${_shareOwnerLabel(share, creators)} · ${(share['importCount'] as int?) ?? 0} importaciones',
+                  '📥 ${(share['importCount'] as int?) ?? 0}',
+                  LinearGradient(
+                    colors: [
+                      RefColors.pink.withValues(alpha: .22),
+                      RefColors.violet.withValues(alpha: .22),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-              ],
+                  onTap: () => _import(share),
+                ),
+            ],
+          ),
+        ),
+      ],
+      if (popular.isNotEmpty) ...[
+        const SectionHead('Populares'),
+        for (final share in popular)
+          _CommunityHit(
+            share: share,
+            onImport: () => _import(share),
+            onReport: () => showReportDeckSheet(
+              context,
+              deckId: (share['id'] as String?) ?? '',
+              deckTitle: (share['title'] as String?) ?? 'Sin título',
             ),
           ),
-          const SectionHead('Populares', action: 'Filtrar'),
-          _DeckGrid(decks: decks),
-          const SectionHead('Creadores a seguir', action: 'Ver todos'),
-          for (final deck in decks.take(2))
-            _Creator(
-              deck.title.characters.first.toUpperCase(),
-              '${deck.title} · local',
-              '${deck.cards.length} tarjetas disponibles',
-              '${deck.retention}%',
-              cyan: deck.isBible,
+      ],
+      if (creators.isNotEmpty) ...[
+        const SectionHead('Creadores a seguir'),
+        for (final creator in creators)
+          _Creator(
+            ((creator['displayName'] as String?) ?? '?')
+                .characters
+                .first
+                .toUpperCase(),
+            (creator['displayName'] as String?) ?? 'Creador',
+            '${(creator['deckCount'] as int?) ?? 0} ${((creator['deckCount'] as int?) ?? 0) == 1 ? 'mazo publicado' : 'mazos publicados'}',
+            '${(creator['importCount'] as int?) ?? 0} 📥',
+            cyan: true,
+            creatorId: (creator['userId'] as String?) ?? '',
+            following: (creator['followedByMe'] as bool?) ?? false,
+            followerCount: (creator['followerCount'] as int?) ?? 0,
+          ),
+      ],
+    ];
+  }
+
+  String _shareIcon(Map<String, dynamic> share) {
+    try {
+      final raw = (share['payloadJson'] as String?) ?? '';
+      if (raw.isEmpty) return '🌍';
+      final payload = jsonDecode(raw) as Map<String, dynamic>;
+      final icon = (payload['icon'] as String?)?.trim() ?? '';
+      return icon.isEmpty ? '🌍' : icon;
+    } catch (_) {
+      return '🌍';
+    }
+  }
+
+  String _shareOwnerLabel(
+    Map<String, dynamic> share,
+    List<Map<String, dynamic>> creators,
+  ) {
+    final ownerId = (share['ownerUserId'] as String?) ?? '';
+    for (final creator in creators) {
+      if (creator['userId'] == ownerId) {
+        return (creator['displayName'] as String?) ?? 'creador';
+      }
+    }
+    return 'creador';
+  }
+}
+
+/// Chip de pestaña del switcher Explorar / Mis decks.
+class _ComunidadTab extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ComunidadTab({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          gradient: selected ? RefColors.primary : null,
+          color: selected ? null : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: selected ? Colors.white : RefColors.muted,
             ),
-        ],
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                color: selected ? Colors.white : RefColors.muted,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _CommunityHit extends StatelessWidget {
+/// Card de un deck publicado por mí, con sus stats comunitarias.
+class _MyCommunityDeckCard extends StatelessWidget {
+  final Map<String, dynamic> share;
+  final VoidCallback onUnpublish;
+
+  const _MyCommunityDeckCard({required this.share, required this.onUnpublish});
+
+  int _cardCount() {
+    try {
+      final raw = (share['payloadJson'] as String?) ?? '';
+      if (raw.isEmpty) return 0;
+      final payload = jsonDecode(raw) as Map<String, dynamic>;
+      return (payload['cards'] as List? ?? const []).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  String _publishedAgo() {
+    final raw = (share['createdAt'] as String?) ?? '';
+    final created = DateTime.tryParse(raw);
+    if (created == null) return '';
+    final days = DateTime.now().toUtc().difference(created.toUtc()).inDays;
+    if (days <= 0) return 'publicado hoy';
+    if (days == 1) return 'publicado hace 1 día';
+    return 'publicado hace $days días';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = (share['title'] as String?) ?? 'Sin título';
+    final summary = (share['summary'] as String?) ?? '';
+    final importCount = (share['importCount'] as int?) ?? 0;
+    final cardCount = _cardCount();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Glass(
+        radius: 16,
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.public_rounded, color: RefColors.cyan, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                  ),
+                ),
+                RefChip(
+                  '🌍 PÚBLICO',
+                  dense: true,
+                  color: const Color(0x2200D4FF),
+                  textColor: RefColors.cyan,
+                ),
+              ],
+            ),
+            if (summary.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                summary,
+                style: const TextStyle(color: RefColors.muted, fontSize: 11),
+              ),
+            ],
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _MyDeckStat(
+                  icon: Icons.download_rounded,
+                  value: '$importCount',
+                  label: importCount == 1 ? 'importación' : 'importaciones',
+                ),
+                const SizedBox(width: 14),
+                if (cardCount > 0)
+                  _MyDeckStat(
+                    icon: Icons.style_rounded,
+                    value: '$cardCount',
+                    label: 'tarjetas',
+                  ),
+                const Spacer(),
+                Text(
+                  _publishedAgo(),
+                  style: const TextStyle(color: RefColors.dim, fontSize: 10),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: onUnpublish,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                icon: const Icon(Icons.cloud_off_rounded,
+                    size: 15, color: RefColors.pink),
+                label: const Text(
+                  'Despublicar',
+                  style: TextStyle(
+                    color: RefColors.pink,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MyDeckStat extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+
+  const _MyDeckStat({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: RefColors.sun),
+        const SizedBox(width: 4),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+            color: RefColors.sun,
+          ),
+        ),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: const TextStyle(color: RefColors.muted, fontSize: 10),
+        ),
+      ],
+    );
+  }
+}
+
+class _CommunityHit extends StatefulWidget {
   final Map<String, dynamic> share;
   final VoidCallback onImport;
   final VoidCallback onReport;
-  
+
   const _CommunityHit({
     required this.share,
     required this.onImport,
@@ -299,7 +936,57 @@ class _CommunityHit extends StatelessWidget {
   });
 
   @override
+  State<_CommunityHit> createState() => _CommunityHitState();
+}
+
+class _CommunityHitState extends State<_CommunityHit> {
+  late bool _liked = (widget.share['likedByMe'] as bool?) ?? false;
+  late int _likeCount = (widget.share['likeCount'] as int?) ?? 0;
+  bool _likeBusy = false;
+
+  Future<void> _toggleLike() async {
+    if (_likeBusy) return;
+    final shareId = (widget.share['id'] as String?) ?? '';
+    if (shareId.isEmpty) return;
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inicia sesión para dar me gusta.')),
+      );
+      return;
+    }
+    // Optimista: refleja el cambio y revierte si el backend falla.
+    final prevLiked = _liked;
+    final prevCount = _likeCount;
+    setState(() {
+      _likeBusy = true;
+      _liked = !prevLiked;
+      _likeCount = prevCount + (_liked ? 1 : -1);
+    });
+    try {
+      final res = await store.api.toggleDeckLike(shareId);
+      if (!mounted) return;
+      setState(() {
+        _liked = (res['liked'] as bool?) ?? _liked;
+        _likeCount = (res['likeCount'] as int?) ?? _likeCount;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _liked = prevLiked;
+        _likeCount = prevCount;
+      });
+      debugPrint('Error toggling like: $e');
+    } finally {
+      if (mounted) setState(() => _likeBusy = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final share = widget.share;
+    final onReport = widget.onReport;
+    final onImport = widget.onImport;
     final title = (share['title'] as String?) ?? 'Sin título';
     final summary = (share['summary'] as String?) ?? '';
     return Container(
@@ -334,6 +1021,45 @@ class _CommunityHit extends StatelessWidget {
                     ),
                   ),
               ],
+            ),
+          ),
+          GestureDetector(
+            onTap: _toggleLike,
+            child: Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+              decoration: BoxDecoration(
+                color: _liked
+                    ? RefColors.pink.withValues(alpha: .18)
+                    : HtmlRefColors.glassSoft,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: _liked
+                      ? RefColors.pink.withValues(alpha: .55)
+                      : HtmlRefColors.glassBorder,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                    color: _liked ? RefColors.pink : RefColors.muted,
+                    size: 15,
+                  ),
+                  if (_likeCount > 0) ...[
+                    const SizedBox(width: 4),
+                    Text(
+                      '$_likeCount',
+                      style: TextStyle(
+                        color: _liked ? RefColors.pink : RefColors.muted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
           GestureDetector(
@@ -378,12 +1104,15 @@ class _CommunityHit extends StatelessWidget {
   }
 }
 
-class _Creator extends StatelessWidget {
+class _Creator extends StatefulWidget {
   final String initial;
   final String title;
   final String subtitle;
   final String stats;
   final bool cyan;
+  final String creatorId;
+  final bool following;
+  final int followerCount;
 
   const _Creator(
     this.initial,
@@ -391,10 +1120,60 @@ class _Creator extends StatelessWidget {
     this.subtitle,
     this.stats, {
     this.cyan = false,
+    this.creatorId = '',
+    this.following = false,
+    this.followerCount = 0,
   });
 
   @override
+  State<_Creator> createState() => _CreatorState();
+}
+
+class _CreatorState extends State<_Creator> {
+  late bool _following = widget.following;
+  late int _followerCount = widget.followerCount;
+  bool _busy = false;
+
+  Future<void> _toggleFollow() async {
+    if (_busy || widget.creatorId.isEmpty) return;
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inicia sesión para seguir creadores.')),
+      );
+      return;
+    }
+    final prevFollowing = _following;
+    final prevCount = _followerCount;
+    setState(() {
+      _busy = true;
+      _following = !prevFollowing;
+      _followerCount = prevCount + (_following ? 1 : -1);
+    });
+    try {
+      final res = await store.api.toggleFollow(widget.creatorId);
+      if (!mounted) return;
+      setState(() {
+        _following = (res['following'] as bool?) ?? _following;
+        _followerCount = (res['followerCount'] as int?) ?? _followerCount;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _following = prevFollowing;
+        _followerCount = prevCount;
+      });
+      debugPrint('Error toggling follow: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final subtitle = _followerCount > 0
+        ? '${widget.subtitle} · $_followerCount ${_followerCount == 1 ? 'seguidor' : 'seguidores'}'
+        : widget.subtitle;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Glass(
@@ -403,10 +1182,10 @@ class _Creator extends StatelessWidget {
         child: Row(
           children: [
             Fav(
-              initial,
-              gradient: cyan ? RefColors.cool : RefColors.primary,
+              widget.initial,
+              gradient: widget.cyan ? RefColors.cool : RefColors.primary,
               size: 42,
-              online: cyan,
+              online: widget.cyan,
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -414,7 +1193,7 @@ class _Creator extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    title,
+                    widget.title,
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 13,
@@ -430,14 +1209,39 @@ class _Creator extends StatelessWidget {
                 ],
               ),
             ),
-            Text(
-              stats,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: RefColors.muted,
+            if (widget.creatorId.isNotEmpty)
+              GestureDetector(
+                onTap: _toggleFollow,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    gradient: _following ? null : RefColors.primary,
+                    color: _following ? RefColors.glassStrong : null,
+                    borderRadius: BorderRadius.circular(10),
+                    border: _following
+                        ? Border.all(color: RefColors.border)
+                        : null,
+                  ),
+                  child: Text(
+                    _following ? 'Siguiendo' : '+ Seguir',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      color: _following ? RefColors.muted : Colors.white,
+                    ),
+                  ),
+                ),
+              )
+            else
+              Text(
+                widget.stats,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: RefColors.muted,
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -445,37 +1249,20 @@ class _Creator extends StatelessWidget {
   }
 }
 
-class _DeckThumb extends StatelessWidget {
-  final String glyph;
-
-  const _DeckThumb(this.glyph);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: HtmlRefColors.glassStrong,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: HtmlRefColors.glassBorder),
-      ),
-      alignment: Alignment.center,
-      child: GlyphIcon(glyph, size: 24),
-    );
-  }
-}
 
 class _CategoryTile extends StatelessWidget {
   final String emoji;
   final String title;
   final String count;
+  final VoidCallback? onTap;
 
-  const _CategoryTile(this.emoji, this.title, this.count);
+  const _CategoryTile(this.emoji, this.title, this.count, {this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Glass(
+    return GestureDetector(
+      onTap: onTap,
+      child: Glass(
       radius: 14,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
       color: const Color(0x10FFFFFF),
@@ -497,6 +1284,7 @@ class _CategoryTile extends StatelessWidget {
             style: const TextStyle(fontSize: 8.5, color: RefColors.muted),
           ),
         ],
+      ),
       ),
     );
   }
@@ -576,88 +1364,3 @@ class _FeaturedDeck extends StatelessWidget {
     );
   }
 }
-
-class _DeckGrid extends StatelessWidget {
-  final List<MemoryDeckData> decks;
-
-  const _DeckGrid({required this.decks});
-
-  @override
-  Widget build(BuildContext context) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: decks.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 1.55,
-      ),
-      itemBuilder: (context, index) {
-        final deck = decks[index];
-        return GestureDetector(
-          onTap: () {
-            AppScope.of(context).setActiveDeck(deck.id);
-            Navigator.pushNamed(context, AppRoutes.iniciar);
-          },
-          // Long-press abre el menú de visibilidad / reportar para que el
-          // usuario pueda compartir el mazo o, si lo ve en comunidad, marcarlo.
-          onLongPress: () => _showDeckActionsSheet(context, deck),
-          child: Glass(
-            radius: 16,
-            padding: const EdgeInsets.all(8),
-            color: const Color(0x10FFFFFF),
-            border: Border.all(color: const Color(0x24FFFFFF)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    _DeckThumb(deck.icon),
-                    const Spacer(),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.star_rounded,
-                          size: 11,
-                          color: RefColors.sun,
-                        ),
-                        const SizedBox(width: 1),
-                        Text(
-                          (4 + deck.retention / 100).toStringAsFixed(1),
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: RefColors.sun,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  deck.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    height: 1.12,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '${deck.cards.length} tarjetas',
-                  style: const TextStyle(fontSize: 10, color: RefColors.muted),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-

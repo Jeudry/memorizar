@@ -1,0 +1,18 @@
+# Datos locales y artefactos — no van a la imagen.
+data/
+*.db
+*.db-shm
+*.db-wal
+tmp/
+bin/
+*.log
+
+# Git / editor
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Docs no necesarios en build
+docs/
+README.md

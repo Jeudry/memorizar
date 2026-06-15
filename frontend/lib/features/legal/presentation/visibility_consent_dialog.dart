@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/app_state.dart';
@@ -43,24 +45,82 @@ class _VisibilitySheet extends StatefulWidget {
 class _VisibilitySheetState extends State<_VisibilitySheet> {
   late DeckVisibility _selected = widget.initial;
   bool _rightsAck = false;
+  bool _saving = false;
 
   bool get _needsAck => _selected != DeckVisibility.private;
-  bool get _canSave => !_needsAck || _rightsAck;
+  bool get _canSave => (!_needsAck || _rightsAck) && !_saving;
 
-  void _save() {
-    final ok = AppScope.of(context).setDeckVisibility(
-      widget.deckId,
-      visibility: _selected,
-      rightsAcknowledged: _rightsAck || _selected == DeckVisibility.private,
+  /// Publica el mazo en el catálogo comunitario del backend. Sin esto, el
+  /// flag local de visibilidad no haría visible el mazo a nadie.
+  Future<void> _publishToCommunity(AppStore store) async {
+    final deck = store.decks.firstWhere(
+      (d) => d.id == widget.deckId,
+      orElse: () => throw StateError('Mazo no encontrado.'),
     );
-    if (!ok) return;
-    Navigator.of(context).pop();
-    final label = switch (_selected) {
-      DeckVisibility.private => 'Mazo ahora privado',
-      DeckVisibility.friends => 'Mazo compartido con tus amigos',
-      DeckVisibility.public => 'Mazo público en la comunidad',
-    };
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(label)));
+    if (deck.cards.isEmpty) {
+      throw StateError('El mazo no tiene tarjetas; agrega al menos una antes de publicarlo.');
+    }
+    final payload = jsonEncode({
+      'title': deck.title,
+      'icon': deck.icon,
+      'cards': [
+        for (final card in deck.cards)
+          {
+            'id': card.id,
+            'front': card.front,
+            'back': card.back,
+            'source': card.source,
+            'icon': card.icon,
+          },
+      ],
+    });
+    await store.api.shareDeck(
+      deckId: deck.id,
+      title: deck.title.trim(),
+      summary: '${deck.cards.length} tarjetas',
+      payloadJson: payload,
+      isPublic: true,
+    );
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    final store = AppScope.of(context);
+
+    if (_selected == DeckVisibility.public && !store.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inicia sesión para publicar en la comunidad.')),
+      );
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      if (_selected == DeckVisibility.public) {
+        await _publishToCommunity(store);
+      }
+      if (!mounted) return;
+      final ok = store.setDeckVisibility(
+        widget.deckId,
+        visibility: _selected,
+        rightsAcknowledged: _rightsAck || _selected == DeckVisibility.private,
+      );
+      if (!ok) return;
+      Navigator.of(context).pop();
+      final label = switch (_selected) {
+        DeckVisibility.private => 'Mazo ahora privado',
+        DeckVisibility.friends => 'Mazo compartido con tus amigos',
+        DeckVisibility.public => 'Mazo publicado en la comunidad 🌍',
+      };
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(label)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo publicar: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -206,7 +266,7 @@ class _VisibilitySheetState extends State<_VisibilitySheet> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Cta(
-                    'Guardar',
+                    _saving ? 'Publicando…' : 'Guardar',
                     onTap: _canSave ? _save : null,
                     disabled: !_canSave,
                   ),

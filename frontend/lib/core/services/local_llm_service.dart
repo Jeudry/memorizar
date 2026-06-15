@@ -1,72 +1,165 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// Servicio local offline para la inferencia de Inteligencia Artificial (Gemma 2 2B INT4).
-/// Se encarga de descargar opcionalmente el modelo cuantizado de HuggingFace/Google (~1.4 GB)
-/// y ejecutar cuestionarios y respuestas de forma 100% privada, rápida y sin internet.
+import 'ai_quiz_models.dart';
+import 'flutter_gemma_backend.dart';
+import 'llama_server_manager.dart';
+
+/// Servicio local offline de inferencia de IA (Gemma 3 4B IT, cuantizado QAT
+/// Q4_0 en formato GGUF). Descarga el modelo una sola vez y ejecuta toda la
+/// generación de preguntas 100% en el dispositivo vía llama.cpp (Metal/GPU),
+/// sin internet y sin datos precocinados: cada set de preguntas sale del
+/// modelo en el momento.
 class LocalLlmService {
   LocalLlmService._privateConstructor();
   static final LocalLlmService instance = LocalLlmService._privateConstructor();
 
-  // URL del modelo Gemma 2 2B IT cuantizado en formato móvil (jardpound public ungated mirror)
-  static const String _modelUrl = 'https://huggingface.co/jardpound/gemma-2b-it-gpu-int4/resolve/main/gemma-2b-it-gpu-int4.bin';
-  static const String _modelFileName = 'gemma-2b-it-gpu-int4.bin';
+  // Espejo público (sin gate de licencia) del GGUF QAT oficial de Google.
+  static const String _modelUrl =
+      'https://huggingface.co/ggml-org/gemma-3-4b-it-qat-GGUF/resolve/main/gemma-3-4b-it-qat-Q4_0.gguf';
+  static const String _modelFileName = 'gemma-3-4b-it-qat-Q4_0.gguf';
+  static const String _legacyModelFileName = 'gemma-2b-it-gpu-int4.bin';
+  static const int _minValidModelBytes = 2000 * 1024 * 1024;
+  static const Duration _generationTimeout = Duration(minutes: 3);
+  static const double _quizTemperature = 1.0;
+  static const int _quizMaxTokens = 900;
+  static const int _evaluationMaxTokens = 300;
+
+  static const Map<String, dynamic> _quizRoundSetSchema = {
+    'type': 'object',
+    'properties': {
+      'trueFalse': {
+        'type': 'object',
+        'properties': {
+          'statement': {'type': 'string'},
+          'isTrue': {'type': 'boolean'},
+        },
+        'required': ['statement', 'isTrue'],
+      },
+      'multipleChoice': {
+        'type': 'object',
+        'properties': {
+          'question': {'type': 'string'},
+          'correct': {'type': 'string'},
+          'distractors': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'minItems': 3,
+            'maxItems': 3,
+          },
+        },
+        'required': ['question', 'correct', 'distractors'],
+      },
+      'openQuestion': {
+        'type': 'object',
+        'properties': {
+          'question': {'type': 'string'},
+        },
+        'required': ['question'],
+      },
+    },
+    'required': ['trueFalse', 'multipleChoice', 'openQuestion'],
+  };
+
+  static const Map<String, dynamic> _openAnswerEvaluationSchema = {
+    'type': 'object',
+    'properties': {
+      'isCorrect': {'type': 'boolean'},
+      'feedback': {'type': 'string'},
+    },
+    'required': ['isCorrect', 'feedback'],
+  };
+
+  final Dio _dio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 5),
+    receiveTimeout: _generationTimeout,
+  ));
+  final math.Random _seedRandom = math.Random();
 
   bool _initialized = false;
+  Future<void>? _initInFlight;
   final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0.0);
   final ValueNotifier<String> statusNotifier = ValueNotifier<String>('');
 
   bool get isReady => _initialized;
 
-  /// Obtiene la ruta del directorio local donde se almacena el modelo LLM.
+  /// En móvil la inferencia corre on-device vía flutter_gemma (no hay
+  /// llama-server). El resto de plataformas usan el motor llama.cpp.
+  bool get _useMobileBackend =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
   Future<Directory> get _llmDirectory async {
     final docDir = await getApplicationSupportDirectory();
     final llmDir = Directory('${docDir.path}/local_llm');
-    if (!await llmDir.exists()) {
+    final llmDirExists = await llmDir.exists();
+    if (!llmDirExists) {
       await llmDir.create(recursive: true);
     }
     return llmDir;
   }
 
-  /// Comprueba si el modelo local cuantizado ya está guardado en el dispositivo.
-  Future<bool> checkModelExists() async {
+  Future<String> get _modelPath async {
     final dir = await _llmDirectory;
-    final modelFile = File('${dir.path}/$_modelFileName');
-    return await modelFile.exists();
+    return '${dir.path}/$_modelFileName';
   }
 
-  /// Descarga dinámica del modelo cuantizado de Gemma 2 2B (INT4).
-  /// Esta acción es 100% controlada por el usuario y opcional.
-  Future<void> downloadModel() async {
-    final dir = await _llmDirectory;
-    final savePath = '${dir.path}/$_modelFileName';
-    final modelFile = File(savePath);
+  /// Comprueba si el modelo cuantizado ya está descargado y completo.
+  /// En web no hay filesystem: devuelve false sin lanzar.
+  Future<bool> checkModelExists() async {
+    if (kIsWeb) return false;
+    if (_useMobileBackend) return FlutterGemmaBackend.instance.isInstalled();
+    final modelFile = File(await _modelPath);
+    final modelFileExists = await modelFile.exists();
+    if (!modelFileExists) return false;
+    final length = await modelFile.length();
+    return length >= _minValidModelBytes;
+  }
 
-    // Si ya existe y pesa lo suficiente (más de 1 GB), se asume correcto
-    if (await modelFile.exists()) {
-      final length = await modelFile.length();
-      if (length > 1000 * 1024 * 1024) {
-        downloadProgress.value = 1.0;
-        statusNotifier.value = 'Modelo listo.';
-        _initialized = true;
-        return;
-      }
+  /// La IA está disponible si ya hay un motor sano respondiendo (otra
+  /// instancia o proceso externo lo levantó — único camino en web) o si el
+  /// modelo está descargado y podemos arrancarlo nosotros.
+  Future<bool> isAvailable() async {
+    if (_useMobileBackend) return FlutterGemmaBackend.instance.isInstalled();
+    final engineAlreadyUp = await LlamaServerManager.instance.isHealthy();
+    if (engineAlreadyUp) return true;
+    return checkModelExists();
+  }
+
+  /// Descarga única del modelo Gemma 3 4B QAT Q4_0 (~2.4 GB).
+  /// Acción 100% controlada por el usuario y opcional.
+  Future<void> downloadModel() async {
+    if (_useMobileBackend) {
+      await FlutterGemmaBackend.instance.downloadModel(
+        onProgress: (p) => downloadProgress.value = p,
+        onStatus: (s) => statusNotifier.value = s,
+      );
+      return;
     }
 
-    final dio = Dio();
-    statusNotifier.value = 'Iniciando descarga de Gemma 2B (INT4)...';
+    final savePath = await _modelPath;
+
+    final alreadyDownloaded = await checkModelExists();
+    if (alreadyDownloaded) {
+      downloadProgress.value = 1.0;
+      statusNotifier.value = 'Modelo listo.';
+      return;
+    }
+
+    statusNotifier.value = 'Iniciando descarga de Gemma 3 4B (QAT Q4_0)…';
     downloadProgress.value = 0.0;
 
     try {
-      await dio.download(
+      await _dio.download(
         _modelUrl,
         savePath,
         onReceiveProgress: (received, total) {
           if (total > 0) {
-            double progress = (received / total).clamp(0.0, 1.0);
+            final progress = (received / total).clamp(0.0, 1.0);
             downloadProgress.value = progress;
             final percent = (progress * 100).round();
             statusNotifier.value = 'Descargando modelo local: $percent%';
@@ -76,8 +169,7 @@ class LocalLlmService {
 
       downloadProgress.value = 1.0;
       statusNotifier.value = 'Descarga de IA completada con éxito.';
-      _initialized = true;
-      debugPrint('Local LLM (Gemma 2 2B INT4) model downloaded successfully.');
+      await _deleteLegacyModel();
     } catch (e) {
       statusNotifier.value = 'Error al descargar modelo local de IA.';
       debugPrint('Error downloading LLM model: $e');
@@ -85,27 +177,58 @@ class LocalLlmService {
     }
   }
 
-  /// Inicializa los bindings de inferencia local de MediaPipe / Llama C++ (Metal/GPU).
-  Future<void> initLlm() async {
-    if (_initialized) return;
+  /// El modelo Gemma 2 antiguo ya no se usa; liberar sus ~1.4 GB.
+  Future<void> _deleteLegacyModel() async {
+    final dir = await _llmDirectory;
+    final legacyFile = File('${dir.path}/$_legacyModelFileName');
+    final legacyExists = await legacyFile.exists();
+    if (legacyExists) {
+      await legacyFile.delete();
+      debugPrint('Modelo legado Gemma 2 eliminado.');
+    }
+  }
+
+  /// Levanta (o reutiliza) el motor llama.cpp con el modelo cargado.
+  Future<void> initLlm() {
+    if (_initialized) return Future.value();
+    return _initInFlight ??= _doInit().whenComplete(() {
+      _initInFlight = null;
+    });
+  }
+
+  Future<void> _doInit() async {
+    statusNotifier.value = 'Inicializando IA local en el dispositivo…';
+
+    if (_useMobileBackend) {
+      await FlutterGemmaBackend.instance
+          .init(onStatus: (s) => statusNotifier.value = s);
+      _initialized = true;
+      return;
+    }
+
+    // Si otra instancia (u otro proceso) ya dejó el motor sano con el modelo
+    // cargado, reutilizarlo sin tocar disco.
+    final engineAlreadyUp = await LlamaServerManager.instance.isHealthy();
+    if (engineAlreadyUp) {
+      _initialized = true;
+      statusNotifier.value = 'IA lista offline.';
+      return;
+    }
 
     final exists = await checkModelExists();
     if (!exists) {
-      throw Exception('El modelo de IA local no está descargado.');
+      throw StateError('El modelo de IA local no está descargado.');
     }
 
-    statusNotifier.value = 'Inicializando IA local en el dispositivo...';
-    
     try {
-      final dir = await _llmDirectory;
-      final modelPath = '${dir.path}/$_modelFileName';
-      
-      // Motor nativo configurado: apuntando a 'modelPath' con aceleración GPU (Metal/NNAPI).
-      // En macOS, la GPU Metal cargará nativamente el archivo de inferencia .task.
-      
+      final modelPath = await _modelPath;
+      await LlamaServerManager.instance.ensureRunning(
+        modelPath,
+        onStatus: (status) => statusNotifier.value = status,
+      );
       _initialized = true;
       statusNotifier.value = 'IA lista offline.';
-      debugPrint('Local LLM Service initialized successfully using: $modelPath');
+      debugPrint('Local LLM listo sirviendo: $modelPath');
     } catch (e) {
       statusNotifier.value = 'Error al inicializar IA local.';
       debugPrint('Error initializing local LLM: $e');
@@ -113,451 +236,135 @@ class LocalLlmService {
     }
   }
 
-  /// Genera distractores sumamente realistas y contextuales para cuestionarios.
-  /// Intenta correr en el LLM local offline y, si no está inicializado, usa el
-  /// generador lingüístico local inteligente para no entorpecer la UI.
-  Future<List<String>> generateDistractors(String verseText) async {
-    final prompt = '<start_of_turn>user\n'
-        'Genera 3 frases en español muy similares pero incorrectas o alteradas para este versículo: "$verseText".\n'
-        'Devuelve únicamente las 3 frases, una por línea, sin números ni texto extra.\n'
-        '<end_of_turn>\n'
-        '<start_of_turn>model\n';
-
+  /// Calienta el motor en segundo plano al arrancar la app si el modelo ya
+  /// está descargado, para que el primer quiz no espere la carga del modelo.
+  Future<void> warmUpIfModelReady() async {
+    if (!_useMobileBackend && !LlamaServerManager.instance.isSupportedPlatform) {
+      return;
+    }
     try {
-      if (_initialized) {
-        final response = await generate(prompt);
-        final lines = response
-            .split('\n')
-            .map((l) => l.trim())
-            .where((l) => l.isNotEmpty && l.length > 5 && !l.contains('Gemma'))
-            .toList();
-        if (lines.length >= 3) {
-          return lines.take(3).toList();
-        }
-      }
+      final exists = await checkModelExists();
+      if (!exists) return;
+      await initLlm();
     } catch (e) {
-      debugPrint('Error generating distractors with LLM: $e');
-    }
-
-    // Fallback lingüístico local de alta fidelidad
-    return _generateOfflineFallbackDistractors(verseText);
-  }
-
-  /// Exposición síncrona del motor lingüístico local offline para uso inmediato en renderizado UI síncrono.
-  List<String> generateDistractorsSync(String verseText) {
-    return _generateOfflineFallbackDistractors(verseText);
-  }
-
-  /// Generador lingüístico offline inteligente y de alta fidelidad que altera
-  /// sutilmente el versículo bíblico para crear distractores extremadamente reales y desafiantes.
-  List<String> _generateOfflineFallbackDistractors(String verseText) {
-    final words = verseText.split(' ');
-    final synonyms = {
-      'Cristo': ['el Señor', 'Dios', 'el Salvador', 'el Hijo'],
-      'Dios': ['el Señor', 'el Padre', 'el Altísimo', 'el Creador'],
-      'Señor': ['Dios', 'el Padre', 'el Altísimo', 'el Creador'],
-      'Padre': ['Dios', 'el Señor', 'el Creador'],
-      'fortalece': ['sostiene', 'guía', 'consuela', 'ilumina'],
-      'puedo': ['logro', 'alcanzo', 'soporto', 'resisto'],
-      'suplirá': ['proveerá', 'llenará', 'enviará', 'otorgará'],
-      'riquezas': ['bendiciones', 'promesas', 'virtudes', 'gracias'],
-      'gloria': ['amor', 'paz', 'bondad', 'sabiduría'],
-      'camino': ['sendero', 'rumbo', 'destino', 'propósito'],
-      'vida': ['alma', 'existencia', 'jornada', 'fe'],
-      'verdad': ['justicia', 'luz', 'esperanza', 'palabra'],
-      'amor': ['gracia', 'paz', 'gozo', 'perdón'],
-      'creó': ['formó', 'hizo', 'estableció', 'diseñó'],
-      'cielo': ['universo', 'firmamento', 'reino'],
-      'tierra': ['mundo', 'creación', 'suelo'],
-      'séptimo': ['sexto', 'quinto', 'cuarto'],
-      'acabó': ['completó', 'terminó', 'concluyó'],
-      'descansó': ['reposó', 'cesó', 'se detuvo'],
-      'obra': ['creación', 'labor', 'acción'],
-      'hecho': ['creado', 'formado', 'diseñado'],
-      'mujer': ['esposa', 'dama', 'sierva'],
-      'respondió': ['dijo', 'habló', 'contestó'],
-      'serpiente': ['tentador', 'adversario', 'enemigo'],
-      'fruto': ['resultado', 'alimento', 'árbol'],
-      'árboles': ['plantas', 'arbustos', 'ramas'],
-      'huerto': ['jardín', 'campo', 'paraíso'],
-      'podemos': ['debemos', 'queremos', 'logramos'],
-      'comer': ['tomar', 'alimentarnos', 'probar'],
-    };
-
-    final distractors = <String>{};
-    final rand = math.Random(verseText.hashCode);
-
-    // Helper para negar verbos clave
-    String negateVerbs(String sentence) {
-      var s = sentence;
-      final verbMap = {
-        ' vio ': ' no vio ',
-        ' separó ': ' no separó ',
-        ' llamó ': ' no llamó ',
-        ' hizo ': ' no hizo ',
-        ' creó ': ' no creó ',
-        ' respondió ': ' no respondió ',
-        ' comer ': ' no comer ',
-        ' guardará ': ' no guardará ',
-        ' suplirá ': ' no suplirá ',
-      };
-      verbMap.forEach((k, v) {
-        s = s.replaceAll(k, v);
-      });
-      return s;
-    }
-
-    // Helper para invertir cláusulas coordinadas o subordinadas
-    String reverseClauses(String sentence) {
-      if (sentence.contains(';')) {
-        final parts = sentence.split(';');
-        if (parts.length == 2) {
-          final p1 = parts[0].trim();
-          final p2 = parts[1].trim();
-          if (p1.isNotEmpty && p2.isNotEmpty) {
-            final p2Cap = p2.substring(0, 1).toUpperCase() + p2.substring(1);
-            final p1Low = p1.substring(0, 1).toLowerCase() + p1.substring(1);
-            // Preservar punto final si existe
-            var cleanP1 = p1Low;
-            var suffix = '';
-            if (cleanP1.endsWith('.')) {
-              cleanP1 = cleanP1.substring(0, cleanP1.length - 1);
-              suffix = '.';
-            }
-            return '$p2Cap; $cleanP1$suffix';
-          }
-        }
-      } else if (sentence.contains(',')) {
-        final parts = sentence.split(',');
-        if (parts.length == 2) {
-          final p1 = parts[0].trim();
-          final p2 = parts[1].trim();
-          if (p1.isNotEmpty && p2.isNotEmpty) {
-            final p2Cap = p2.substring(0, 1).toUpperCase() + p2.substring(1);
-            final p1Low = p1.substring(0, 1).toLowerCase() + p1.substring(1);
-            var cleanP1 = p1Low;
-            var suffix = '';
-            if (cleanP1.endsWith('.')) {
-              cleanP1 = cleanP1.substring(0, cleanP1.length - 1);
-              suffix = '.';
-            }
-            return '$p2Cap, $cleanP1$suffix';
-          }
-        }
-      }
-      return sentence;
-    }
-
-    // Helper para intercambiar antónimos semánticos
-    String swapAntonyms(String sentence) {
-      var s = sentence;
-      final antonymMap = {
-        'buena': 'mala',
-        'bueno': 'malo',
-        'luz': 'tinieblas',
-        'tinieblas': 'luz',
-        'noche': 'día',
-        'día': 'noche',
-        'comer': 'ayunar',
-        'vida': 'muerte',
-        'verdad': 'mentira',
-        'paz': 'turbación',
-      };
-      antonymMap.forEach((k, v) {
-        final regex = RegExp('\\b$k\\b', caseSensitive: false);
-        s = s.replaceAllMapped(regex, (m) {
-          final matched = m.group(0)!;
-          if (matched.isNotEmpty && matched[0] == matched[0].toUpperCase()) {
-            return v.substring(0, 1).toUpperCase() + v.substring(1);
-          }
-          return v;
-        });
-      });
-      return s;
-    }
-
-    // 1. Intentar hasta 40 combinaciones diferentes basadas en reemplazo de sinónimos
-    for (var attempt = 0; attempt < 40 && distractors.length < 3; attempt++) {
-      var altered = List<String>.from(words);
-      var replaced = false;
-
-      for (var w = 0; w < altered.length; w++) {
-        final cleanWord = altered[w].replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
-        if (cleanWord.isEmpty) continue;
-        
-        var dictKey = cleanWord;
-        if (!synonyms.containsKey(dictKey) && cleanWord.length > 1) {
-          dictKey = cleanWord.substring(0, 1).toUpperCase() + cleanWord.substring(1).toLowerCase();
-        }
-        if (!synonyms.containsKey(dictKey)) {
-          dictKey = cleanWord.toLowerCase();
-        }
-
-        if (synonyms.containsKey(dictKey) && rand.nextDouble() < 0.6) {
-          final options = synonyms[dictKey]!;
-          final chosen = options[rand.nextInt(options.length)];
-          
-          final pos = altered[w].toLowerCase().indexOf(cleanWord.toLowerCase());
-          if (pos != -1) {
-            var capitalizedChosen = chosen;
-            if (cleanWord[0] == cleanWord[0].toUpperCase() && cleanWord[0] != cleanWord[0].toLowerCase() && chosen.isNotEmpty) {
-              capitalizedChosen = chosen.substring(0, 1).toUpperCase() + chosen.substring(1);
-            }
-            altered[w] = altered[w].substring(0, pos) + capitalizedChosen + altered[w].substring(pos + cleanWord.length);
-            replaced = true;
-          }
-        }
-      }
-
-      // 2. Aplicar variaciones gramaticales de artículos y pronombres para dar variedad natural
-      if (!replaced || rand.nextDouble() < 0.4) {
-        for (var w = 0; w < altered.length; w++) {
-          final clean = altered[w].replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
-          final cleanLower = clean.toLowerCase();
-          
-          if (cleanLower == 'el' || cleanLower == 'la' || cleanLower == 'los' || cleanLower == 'las') {
-            if (rand.nextDouble() < 0.5) {
-              final replacement = (cleanLower == 'el' || cleanLower == 'la') ? 'un' : 'unos';
-              final pos = altered[w].toLowerCase().indexOf(cleanLower);
-              if (pos != -1) {
-                var chosen = replacement;
-                if (clean[0] == clean[0].toUpperCase() && clean[0] != clean[0].toLowerCase()) {
-                  chosen = replacement.substring(0, 1).toUpperCase() + replacement.substring(1);
-                }
-                altered[w] = altered[w].substring(0, pos) + chosen + altered[w].substring(pos + clean.length);
-                replaced = true;
-              }
-            }
-          } else if (cleanLower == 'mi' || cleanLower == 'su') {
-            if (rand.nextDouble() < 0.5) {
-              final replacement = (cleanLower == 'mi') ? 'nuestro' : 'la';
-              final pos = altered[w].toLowerCase().indexOf(cleanLower);
-              if (pos != -1) {
-                var chosen = replacement;
-                if (clean[0] == clean[0].toUpperCase() && clean[0] != clean[0].toLowerCase()) {
-                  chosen = replacement.substring(0, 1).toUpperCase() + replacement.substring(1);
-                }
-                altered[w] = altered[w].substring(0, pos) + chosen + altered[w].substring(pos + clean.length);
-                replaced = true;
-              }
-            }
-          } else if (cleanLower == 'y') {
-            if (rand.nextDouble() < 0.5) {
-              final pos = altered[w].toLowerCase().indexOf(cleanLower);
-              if (pos != -1) {
-                var chosen = 'o';
-                if (clean[0] == clean[0].toUpperCase() && clean[0] != clean[0].toLowerCase()) {
-                  chosen = 'O';
-                }
-                altered[w] = altered[w].substring(0, pos) + chosen + altered[w].substring(pos + clean.length);
-                replaced = true;
-              }
-            }
-          }
-        }
-      }
-
-      final distractorText = altered.join(' ');
-      if (distractorText.trim() != verseText.trim() && distractorText.trim().isNotEmpty) {
-        distractors.add(distractorText);
-      }
-    }
-
-    final result = distractors.toList();
-
-    // 3. Si aún no tenemos 3 distractores (porque el versículo es inusual o no tiene sinónimos precargados),
-    // aplicamos nuestras transformaciones estructurales avanzadas sobre el texto original
-    if (result.length < 3) {
-      final negated = negateVerbs(verseText);
-      if (negated != verseText && !result.contains(negated)) {
-        result.add(negated);
-      }
-    }
-    if (result.length < 3) {
-      final swapped = swapAntonyms(verseText);
-      if (swapped != verseText && !result.contains(swapped)) {
-        result.add(swapped);
-      }
-    }
-    if (result.length < 3) {
-      final reversed = reverseClauses(verseText);
-      if (reversed != verseText && !result.contains(reversed)) {
-        result.add(reversed);
-      }
-    }
-
-    // 4. Como último recurso absoluto si el versículo es extremadamente corto y no aplica nada más,
-    // generamos alteraciones conceptuales exactas sobre el mismo en lugar de concatenar sufijos
-    if (result.length < 3) {
-      final finalNegated = verseText.toLowerCase().contains('no ')
-          ? verseText.replaceAll(RegExp(r'\bno\b', caseSensitive: false), '')
-          : 'Ciertamente, ' + verseText.substring(0, 1).toLowerCase() + verseText.substring(1);
-      if (!result.contains(finalNegated) && finalNegated != verseText) {
-        result.add(finalNegated);
-      }
-    }
-
-    // Asegurarse de retornar exactamente 3
-    while (result.length < 3) {
-      result.add(verseText + (result.length == 0 ? ' [versión modificada]' : ' [lectura alternativa]'));
-    }
-
-    return result.take(3).toList();
-  }
-
-  /// Genera una afirmación verdadera o falsa con IA local Gemma.
-  Future<String> generateTrueFalseStatement(String verseText, bool isTrue) async {
-    final prompt = '<start_of_turn>user\n'
-        'Basándote en este versículo bíblico: "$verseText".\n'
-        'Genera una única frase corta en español afirmando algo sobre su contenido.\n'
-        'La frase debe ser ${isTrue ? "totalmente VERDADERA y coherente" : "totalmente FALSA (con un error sutil o concepto cambiado)"}.\n'
-        'Devuelve únicamente la frase, sin explicaciones ni prefijos.\n'
-        '<end_of_turn>\n'
-        '<start_of_turn>model\n';
-    try {
-      if (_initialized) {
-        final res = await generate(prompt);
-        return res.trim().replaceAll('"', '');
-      }
-    } catch (e) {
-      debugPrint('Error generating TF with LLM: $e');
-    }
-    // Fallback lingüístico síncrono
-    return _generateTrueFalseFallback(verseText, isTrue);
-  }
-
-  /// Genera una pregunta de opción múltiple conceptual real con IA local Gemma.
-  Future<(String, String, List<String>)> generateConceptualQuestion(String verseText) async {
-    final prompt = '<start_of_turn>user\n'
-        'Genera un cuestionario de opción múltiple para este texto: "$verseText".\n'
-        'Devuelve exactamente 5 líneas en este formato preciso:\n'
-        'Línea 1: La pregunta de análisis espiritual.\n'
-        'Línea 2: La respuesta correcta exacta.\n'
-        'Línea 3: Distractor incorrecto A.\n'
-        'Línea 4: Distractor incorrecto B.\n'
-        'Línea 5: Distractor incorrecto C.\n'
-        'No devuelvas números, letras de opciones, explicaciones ni formato Markdown.\n'
-        '<end_of_turn>\n'
-        '<start_of_turn>model\n';
-    try {
-      if (_initialized) {
-        final res = await generate(prompt);
-        final lines = res.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
-        if (lines.length >= 5) {
-          final question = lines[0];
-          final correct = lines[1];
-          final distractors = lines.sublist(2, 5);
-          return (question, correct, distractors);
-        }
-      }
-    } catch (e) {
-      debugPrint('Error generating conceptual with LLM: $e');
-    }
-    // Fallback lingüístico síncrono de alta fidelidad
-    return _generateConceptualFallback(verseText);
-  }
-
-  /// Fallback síncrono ultra-inteligente para Verdadero o Falso libre de condicionales fijos
-  String _generateTrueFalseFallback(String verseText, bool isTrue) {
-    final cleanText = verseText.replaceAll(RegExp(r'[.,;:!?¡¿()"\d]'), '');
-    final words = cleanText.split(RegExp(r'\s+')).where((w) => w.length > 4).toList();
-    if (isTrue) {
-      if (words.isNotEmpty) {
-        words.shuffle();
-        final word = words.first.toLowerCase();
-        return 'El pasaje incluye de forma explícita palabras o ideas relacionadas con el término "$word".';
-      }
-      return 'El versículo contiene una enseñanza espiritual y un mensaje práctico de fe.';
-    } else {
-      final commonBibleWords = [
-        'templo', 'ley', 'pecado', 'sacrificio', 'ángel', 'profeta', 'altar', 'desierto', 'ofrenda'
-      ];
-      final fakeWords = commonBibleWords
-          .where((w) => !verseText.toLowerCase().contains(w.toLowerCase()))
-          .toList();
-      if (fakeWords.isNotEmpty) {
-        fakeWords.shuffle();
-        final fakeWord = fakeWords.first;
-        return 'El versículo menciona explícitamente y de forma textual el término "$fakeWord".';
-      }
-      return 'El pasaje fue escrito originalmente en la época medieval.';
+      debugPrint('Warm-up de IA local falló (no bloqueante): $e');
     }
   }
 
-  /// Fallback síncrono de alta fidelidad para pregunta conceptual libre de condicionales fijos
-  (String, String, List<String>) _generateConceptualFallback(String verseText) {
-    final cleanText = verseText.replaceAll(RegExp(r'[.,;:!?¡¿()"\d]'), '');
-    final words = cleanText.split(RegExp(r'\s+')).where((w) => w.length > 4).toList();
-    
-    String keyWord = 'Dios';
-    if (words.isNotEmpty) {
-      words.shuffle();
-      keyWord = words.first;
-    }
-    
-    final question = '¿Cuál es el propósito o la enseñanza central del término "$keyWord" en este pasaje?';
-    final correct = 'Establecer una directriz de fe y un recordatorio de la soberanía y el amor divino.';
-    final distractors = [
-      'Garantizar el éxito material y la prosperidad económica a través de rituales vacíos.',
-      'Sugerir que la conducta humana carece de importancia espiritual e impacto real.',
-      'Proponer una resignación filosófica y un conformismo cínico ante el destino terrenal.'
-    ];
-    return (question, correct, distractors);
+  /// Genera un set completo de preguntas (V/F, opción múltiple y respuesta
+  /// abierta) sobre el versículo dado. Cada llamada produce preguntas nuevas.
+  Future<AiQuizRoundSet> generateQuizRoundSet({
+    required String reference,
+    required String verseText,
+    required bool advanced,
+  }) async {
+    final depthInstruction = advanced
+        ? 'Las preguntas deben ser de análisis teológico profundo: doctrina, '
+            'contexto histórico, implicaciones espirituales y aplicación práctica. '
+            'Los distractores deben ser errores teológicos sutiles pero claramente incorrectos.'
+        : 'Las preguntas deben ser simples y directas, centradas en comprender '
+            'el contenido del texto. Los distractores deben ser plausibles pero claramente incorrectos.';
+
+    final prompt = 'Eres un generador de cuestionarios en español para una app de memorización de versículos bíblicos.\n'
+        'Texto a evaluar ($reference): "$verseText"\n\n'
+        'Genera exactamente:\n'
+        '1. "trueFalse": una afirmación sobre el contenido del texto con su veredicto "isTrue". '
+        'Decide al azar si la haces verdadera o falsa; si es falsa, introduce un error sutil.\n'
+        '2. "multipleChoice": una pregunta con "correct" (respuesta correcta) y "distractors" (exactamente 3 incorrectas).\n'
+        '3. "openQuestion": una pregunta abierta corta para que el usuario explique el texto con sus palabras.\n\n'
+        '$depthInstruction\n'
+        'Todo en español. Responde únicamente con el JSON.';
+
+    final content = await _chat(
+      prompt,
+      temperature: _quizTemperature,
+      maxTokens: _quizMaxTokens,
+      jsonSchema: _quizRoundSetSchema,
+    );
+    return AiQuizRoundSet.fromJson(_decodeJsonObject(content));
   }
 
-  /// Ejecuta inferencia local y genera una respuesta para el prompt provisto.
-  /// No requiere conexión a internet y se procesa 100% en la GPU/NPU del dispositivo.
-  Future<String> generate(String prompt) async {
+  /// Evalúa con la IA local la respuesta libre del usuario a una pregunta
+  /// abierta sobre el versículo. Devuelve veredicto y feedback breve.
+  Future<AiOpenAnswerEvaluation> evaluateOpenAnswer({
+    required String question,
+    required String verseText,
+    required String userAnswer,
+  }) async {
+    final prompt = 'Eres un tutor de memorización bíblica. Evalúa en español la respuesta del usuario.\n'
+        'Texto de referencia: "$verseText"\n'
+        'Pregunta abierta: "$question"\n'
+        'Respuesta del usuario: "${userAnswer.trim()}"\n\n'
+        'Marca "isCorrect" como true solo si la respuesta demuestra comprensión real del texto '
+        '(aunque esté escrita con sus propias palabras). Una respuesta vacía de contenido, '
+        'fuera de tema o sin relación con el texto es incorrecta.\n'
+        'En "feedback" escribe 1 o 2 frases breves, cálidas y concretas explicando el veredicto.\n'
+        'Responde únicamente con el JSON.';
+
+    final content = await _chat(
+      prompt,
+      temperature: 0.4,
+      maxTokens: _evaluationMaxTokens,
+      jsonSchema: _openAnswerEvaluationSchema,
+    );
+    return AiOpenAnswerEvaluation.fromJson(_decodeJsonObject(content));
+  }
+
+  /// Inferencia base contra el servidor llama.cpp local (API OpenAI-compatible).
+  Future<String> _chat(
+    String prompt, {
+    required double temperature,
+    required int maxTokens,
+    Map<String, dynamic>? jsonSchema,
+  }) async {
     if (!_initialized) {
       await initLlm();
     }
 
-    debugPrint('Local LLM processing prompt: "$prompt"');
-
-    try {
-      // Inferencia nativa del motor de IA en Metal/GPU
-      // String response = await _nativeEngine.generateResponse(prompt);
-      
-      // Fallback/Simulación para compatibilidad multiplataforma instantánea (sin romper builds de Linux/Windows)
-      await Future.delayed(const Duration(milliseconds: 600));
-      
-      // Si el prompt pide distractores para Filipenses 4:13
-      if (prompt.contains('fortalece')) {
-        return 'Todo lo logro en la fe que me sostiene.\n'
-            'Nada puedo hacer sin Cristo que me fortalece.\n'
-            'Todo lo puedo en Dios que me da paciencia.';
-      }
-      
-      // Si es Filipenses 4:19
-      if (prompt.contains('suplirá')) {
-        return 'Mi Dios, pues, proveerá todo lo que os falta conforme a su amor.\n'
-            'El Señor suplirá todas vuestras bendiciones en la gloria de Cristo Jesús.\n'
-            'Mi Dios llenará todas vuestras necesidades con riquezas en gloria.';
-      }
-
-      // Si es una pregunta conceptual por IA
-      if (prompt.contains('opción múltiple')) {
-        return '¿Qué actitud fundamental promueve este pasaje en tu vida diaria?\n'
-            'Una fe activa y un compromiso sincero con la verdad de Dios.\n'
-            'Un optimismo pragmático orientado al éxito puramente terrenal.\n'
-            'La supresión estoica de cualquier emoción o sentimiento natural.\n'
-            'La búsqueda egoísta del bienestar material a costa de los demás.';
-      }
-
-      // Si es verdadero o falso por IA
-      if (prompt.contains('afirmando algo')) {
-        final isTrue = prompt.contains('VERDADERA');
-        return isTrue 
-            ? 'El versículo nos invita a meditar con sabiduría en el carácter y los caminos de Dios.'
-            : 'El texto sostiene que el destino del creyente está determinado por la casualidad.';
-      }
-
-      return 'Línea de distractor simulado A para el versículo.\n'
-          'Línea de distractor simulado B con variaciones de fe.\n'
-          'Línea de distractor simulado C con palabras clave modificadas.';
-    } catch (e) {
-      debugPrint('Error running local LLM inference: $e');
-      rethrow;
+    if (_useMobileBackend) {
+      // flutter_gemma no aplica grammar JSON como llama.cpp: el prompt ya pide
+      // "responde únicamente con el JSON" y _decodeJsonObject lo sanea.
+      return FlutterGemmaBackend.instance.chat(
+        prompt,
+        temperature: temperature,
+        randomSeed: _seedRandom.nextInt(1 << 30),
+        onStatus: (s) => statusNotifier.value = s,
+      );
     }
+
+    final baseUrl = LlamaServerManager.instance.baseUrl;
+    final response = await _dio.post(
+      '$baseUrl/v1/chat/completions',
+      data: {
+        'messages': [
+          {'role': 'user', 'content': prompt},
+        ],
+        'temperature': temperature,
+        'max_tokens': maxTokens,
+        'seed': _seedRandom.nextInt(1 << 30),
+        if (jsonSchema != null)
+          'response_format': {
+            'type': 'json_object',
+            'schema': jsonSchema,
+          },
+      },
+    );
+
+    final content =
+        response.data['choices'][0]['message']['content'] as String?;
+    if (content == null || content.trim().isEmpty) {
+      throw StateError('La IA local devolvió una respuesta vacía.');
+    }
+    return content.trim();
+  }
+
+  Map<String, dynamic> _decodeJsonObject(String content) {
+    // La gramática de llama.cpp permite saltos de línea crudos dentro de
+    // strings JSON; jsonDecode los rechaza. Normalizarlos a espacios es
+    // inocuo fuera de strings y repara el JSON dentro de ellas.
+    final sanitized = content.replaceAll(RegExp(r'[\x00-\x1F]'), ' ');
+    final decoded = jsonDecode(sanitized);
+    if (decoded is Map<String, dynamic>) return decoded;
+    throw const FormatException('La IA local no devolvió un objeto JSON.');
   }
 }

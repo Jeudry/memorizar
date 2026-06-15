@@ -78,6 +78,66 @@ CREATE TABLE IF NOT EXISTS shared_resources (
 CREATE INDEX IF NOT EXISTS idx_shares_owner ON shared_resources(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_shares_target ON shared_resources(target_user_id);
 
+CREATE TABLE IF NOT EXISTS share_imports (
+    share_id    TEXT NOT NULL REFERENCES shared_resources(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL,
+    PRIMARY KEY (share_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_share_imports_share ON share_imports(share_id);
+
+CREATE TABLE IF NOT EXISTS deck_likes (
+    share_id    TEXT NOT NULL REFERENCES shared_resources(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL,
+    PRIMARY KEY (share_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_deck_likes_share ON deck_likes(share_id);
+
+CREATE TABLE IF NOT EXISTS follows (
+    follower_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    creator_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL,
+    PRIMARY KEY (follower_id, creator_id)
+);
+CREATE INDEX IF NOT EXISTS idx_follows_creator ON follows(creator_id);
+
+CREATE TABLE IF NOT EXISTS deck_reports (
+    id           TEXT PRIMARY KEY,
+    deck_id      TEXT NOT NULL,
+    deck_title   TEXT NOT NULL DEFAULT '',
+    reporter_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reason       TEXT NOT NULL,
+    note         TEXT NOT NULL DEFAULT '',
+    status       TEXT NOT NULL DEFAULT 'pending',
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_deck_reports_status ON deck_reports(status);
+
+CREATE TABLE IF NOT EXISTS analytics_events (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL DEFAULT '',
+    event       TEXT NOT NULL,
+    props_json  TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_analytics_event ON analytics_events(event);
+
+CREATE TABLE IF NOT EXISTS premium_subscriptions (
+    user_id       TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    plan          TEXT NOT NULL,
+    activated_at  TEXT NOT NULL,
+    expires_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS push_tokens (
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token       TEXT NOT NULL,
+    platform    TEXT NOT NULL DEFAULT '',
+    updated_at  TEXT NOT NULL,
+    PRIMARY KEY (user_id, token)
+);
+
 CREATE TABLE IF NOT EXISTS feed_reactions (
     id          TEXT PRIMARY KEY,
     entry_id    TEXT NOT NULL,

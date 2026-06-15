@@ -7,7 +7,6 @@ import '../../../core/app_state.dart';
 import '../../../../core/theme/ref_colors.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../home/presentation/home_screen.dart';
-import '../../home/presentation/ui_screens.dart';
 import '../data/reading_plans.dart';
 
 /// Detail screen for a [ReadingPlan]: lists all days, lets the user mark

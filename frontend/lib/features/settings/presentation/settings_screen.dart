@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/app_state.dart';
-import '../../../core/i18n/strings.dart';
 import '../../../core/router/app_routes.dart';
 import '../../../core/theme/ref_colors.dart';
 import '../../../core/ui/widgets.dart';
@@ -347,7 +346,7 @@ class _ToggleRow extends StatelessWidget {
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: RefColors.pink,
+            activeThumbColor: RefColors.pink,
           ),
         ],
       ),

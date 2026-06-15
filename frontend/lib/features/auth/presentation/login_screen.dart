@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../../core/app_state.dart';
 import '../../../core/router/app_routes.dart';
@@ -79,8 +78,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
               onPrimary: Colors.black,
               surface: Color(0xFF161A22),
               onSurface: Colors.white,
-            ),
-            dialogBackgroundColor: const Color(0xFF0F1219),
+            ), dialogTheme: DialogThemeData(backgroundColor: const Color(0xFF0F1219)),
           ),
           child: child!,
         );
@@ -820,8 +818,7 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
               onPrimary: Colors.white,
               surface: Color(0xFF140F26),
               onSurface: Colors.white,
-            ),
-            dialogBackgroundColor: const Color(0xFF0F0C1B),
+            ), dialogTheme: DialogThemeData(backgroundColor: const Color(0xFF0F0C1B)),
           ),
           child: child!,
         );

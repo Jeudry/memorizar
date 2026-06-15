@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -6,7 +8,9 @@ import 'core/app_state.dart';
 import 'core/i18n/strings.dart';
 import 'core/router/app_routes.dart';
 import 'core/services/analytics_service.dart';
+import 'core/services/backend_analytics_provider.dart';
 import 'core/services/deeplink_service.dart';
+import 'core/services/local_llm_service.dart';
 import 'core/services/push_service.dart';
 import 'core/theme.dart';
 import 'core/ui/reference_page.dart';
@@ -30,6 +34,14 @@ Future<void> main() async {
 
   // Push: solo inicializa el plugin local, no requiere Firebase para correr.
   await PushService.instance.initialize();
+
+  // Calienta la IA local en segundo plano si el modelo ya está descargado,
+  // para que el primer quiz no espere la carga del modelo en GPU.
+  unawaited(LocalLlmService.instance.warmUpIfModelReady());
+
+  // Analytics propio: los eventos se persisten en el backend (sin SDKs de
+  // terceros). En web/dev sin backend los flush fallan en silencio.
+  Analytics.instance.use(BackendAnalyticsProvider(api: store.api));
 
   // Si hay usuario logueado, identifícalo en analytics.
   if (store.currentUser != null) {

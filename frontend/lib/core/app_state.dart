@@ -11,6 +11,8 @@ import 'api/memorizar_client.dart';
 import 'api/models.dart';
 import 'db/app_database.dart';
 import 'services/push_service.dart';
+import 'services/secure_store.dart';
+import 'srs/sm2.dart';
 import '../features/cooperativo/data/coop_service.dart';
 import 'package:drift/drift.dart' as drift;
 
@@ -60,6 +62,10 @@ class MemoryCardData {
   final String icon;
   final int retention;
   final int lapses;
+  final double easeFactor;
+  final int intervalDays;
+  final int repetitions;
+  final DateTime? nextReviewAt;
 
   const MemoryCardData({
     required this.id,
@@ -69,7 +75,22 @@ class MemoryCardData {
     required this.icon,
     this.retention = 82,
     this.lapses = 0,
+    this.easeFactor = Sm2State.defaultEaseFactor,
+    this.intervalDays = 0,
+    this.repetitions = 0,
+    this.nextReviewAt,
   });
+
+  /// Estado SM-2 de la tarjeta para alimentar el algoritmo.
+  Sm2State get srsState => Sm2State(
+        easeFactor: easeFactor,
+        intervalDays: intervalDays,
+        repetitions: repetitions,
+        nextReviewAt: nextReviewAt,
+      );
+
+  /// Due = nunca repasada o con la fecha de repaso vencida.
+  bool get isDueForReview => isDue(srsState);
 
   MemoryCardData copyWith({
     String? id,
@@ -79,6 +100,10 @@ class MemoryCardData {
     String? icon,
     int? retention,
     int? lapses,
+    double? easeFactor,
+    int? intervalDays,
+    int? repetitions,
+    DateTime? nextReviewAt,
   }) {
     return MemoryCardData(
       id: id ?? this.id,
@@ -88,6 +113,10 @@ class MemoryCardData {
       icon: icon ?? this.icon,
       retention: retention ?? this.retention,
       lapses: lapses ?? this.lapses,
+      easeFactor: easeFactor ?? this.easeFactor,
+      intervalDays: intervalDays ?? this.intervalDays,
+      repetitions: repetitions ?? this.repetitions,
+      nextReviewAt: nextReviewAt ?? this.nextReviewAt,
     );
   }
 }
@@ -189,8 +218,74 @@ class AppStore extends ChangeNotifier {
   final AppDatabase? db;
   final bool enableDatabasePersistence;
 
+  /// Código de sala pendiente de un deeplink memorizar://coop/{code}.
+  /// El lobby cooperativo lo consume en su init y se une automáticamente.
+  String? pendingCoopJoinCode;
+
+  /// Historial de actividad diaria (día 'YYYY-MM-DD' → totales), ordenado
+  /// del más reciente. Fuente de la racha real y de los filtros de Stats.
+  List<DailyActivityData> _dailyActivity = [];
+  List<DailyActivityData> get dailyActivity =>
+      List.unmodifiable(_dailyActivity);
+
+  static String _dayKey(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+  Future<void> _loadDailyActivity() async {
+    if (db == null) return;
+    _dailyActivity = await db!.getAllDailyActivity();
+  }
+
+  /// Registra una respuesta en la actividad de HOY (memoria + Drift).
+  void _recordAnswerActivity({required bool correct, int count = 1}) {
+    final today = _dayKey(DateTime.now());
+    final index = _dailyActivity.indexWhere((entry) => entry.day == today);
+    if (index >= 0) {
+      final current = _dailyActivity[index];
+      _dailyActivity[index] = current.copyWith(
+        correct: current.correct + (correct ? count : 0),
+        wrong: current.wrong + (correct ? 0 : count),
+        cardsReviewed: current.cardsReviewed + count,
+      );
+    } else {
+      _dailyActivity.insert(
+        0,
+        DailyActivityData(
+          day: today,
+          correct: correct ? count : 0,
+          wrong: correct ? 0 : count,
+          cardsReviewed: count,
+        ),
+      );
+    }
+    if (enableDatabasePersistence) {
+      unawaited(db!.recordDailyActivity(
+        day: today,
+        correctDelta: correct ? count : 0,
+        wrongDelta: correct ? 0 : count,
+        reviewedDelta: count,
+      ));
+    }
+  }
+
+  /// Suma de actividad de los últimos [days] días (incluyendo hoy).
+  ({int correct, int wrong, int reviewed}) activityInLastDays(int days) {
+    final cutoff = _dayKey(DateTime.now().subtract(Duration(days: days - 1)));
+    var correct = 0;
+    var wrong = 0;
+    var reviewed = 0;
+    for (final entry in _dailyActivity) {
+      if (entry.day.compareTo(cutoff) < 0) break;
+      correct += entry.correct;
+      wrong += entry.wrong;
+      reviewed += entry.cardsReviewed;
+    }
+    return (correct: correct, wrong: wrong, reviewed: reviewed);
+  }
+
   Future<void> loadDecksFromDatabase() async {
     if (db == null) return;
+    await _loadDailyActivity();
     final dbDecks = await db!.getAllDecks();
     if (dbDecks.isEmpty) {
       // Pre-cargar mazo de demostración de Filipenses 4
@@ -245,6 +340,10 @@ class AppStore extends ChangeNotifier {
         icon: c.icon,
         retention: c.retention,
         lapses: c.lapses,
+        easeFactor: c.easeFactor,
+        intervalDays: c.intervalDays,
+        repetitions: c.repetitions,
+        nextReviewAt: c.nextReviewAt,
       )).toList();
 
       loadedDecks.add(MemoryDeckData(
@@ -271,12 +370,49 @@ class AppStore extends ChangeNotifier {
   static const _kSessionTokenKey = 'memorizar.session.token';
   static const _kSessionUserKey = 'memorizar.session.user';
 
+  /// Identificador de instancia derivado del mismo dart-define que aísla la
+  /// base de datos. Las SharedPreferences son por bundle (compartidas entre
+  /// instancias), así que el usuario invitado debe claver por instancia: si
+  /// no, dos ventanas comparten guest id y el hub coop las pisa entre sí.
+  static const String _instanceId =
+      String.fromEnvironment('DB_NAME', defaultValue: 'memorizar.sqlite');
+  static const _kGuestUserKey =
+      'memorizar.session.guest_user.$_instanceId';
+
   RemoteUser? _currentUser;
+  RemoteUser? _guestUser;
   String? _sessionToken;
 
   RemoteUser? get currentUser => _currentUser;
   String? get sessionToken => _sessionToken;
   bool get isLoggedIn => _sessionToken != null && _sessionToken!.isNotEmpty;
+
+  /// Solo los moderadores ven la cola de moderación. El backend es la fuente
+  /// de verdad (gate 403); este flag decide si se ofrece la UI.
+  bool get isModerator => _currentUser?.isModerator ?? false;
+  
+  RemoteUser get effectiveUser {
+    if (_currentUser != null) {
+      return _currentUser!;
+    }
+    if (_guestUser == null) {
+      final nowStr = DateTime.now().millisecondsSinceEpoch.toString();
+      final num = nowStr.substring(nowStr.length - 4);
+      _guestUser = RemoteUser(
+        id: 'guest_$nowStr',
+        email: 'guest_$nowStr@memorizar.local',
+        displayName: 'Invitado #$num',
+        username: 'guest_$nowStr',
+        emailVerified: false,
+      );
+      // Persist asynchronously
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setString(_kGuestUserKey, jsonEncode(_guestUser!.toJson()));
+      });
+    }
+    return _guestUser!;
+  }
+
   /// Modo invitado: el usuario decide no iniciar sesión todavía pero sigue
   /// usando la app. La diferencia con "no logueado" es semántica solamente —
   /// hoy ambos se comportan igual.
@@ -409,8 +545,29 @@ class AppStore extends ChangeNotifier {
       await loadDecksFromDatabase();
     }
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString(_kSessionTokenKey);
-    final userJson = prefs.getString(_kSessionUserKey);
+    final guestUserJson = prefs.getString(_kGuestUserKey);
+    if (guestUserJson != null) {
+      try {
+        _guestUser = RemoteUser.fromJson(jsonDecode(guestUserJson) as Map<String, dynamic>);
+      } catch (_) {}
+    }
+    // Secreto de sesión: vive en almacenamiento cifrado. Si todavía está en
+    // SharedPreferences (versiones previas), se migra una sola vez y se borra
+    // el rastro en texto plano.
+    var token = await SecureStore.instance.read(_kSessionTokenKey);
+    var userJson = await SecureStore.instance.read(_kSessionUserKey);
+    if (token == null || token.isEmpty || userJson == null) {
+      final legacyToken = prefs.getString(_kSessionTokenKey);
+      final legacyUser = prefs.getString(_kSessionUserKey);
+      if (legacyToken != null && legacyToken.isNotEmpty && legacyUser != null) {
+        token = legacyToken;
+        userJson = legacyUser;
+        await SecureStore.instance.write(_kSessionTokenKey, legacyToken);
+        await SecureStore.instance.write(_kSessionUserKey, legacyUser);
+        await prefs.remove(_kSessionTokenKey);
+        await prefs.remove(_kSessionUserKey);
+      }
+    }
     if (token == null || token.isEmpty || userJson == null) return;
     try {
       _sessionToken = token;
@@ -421,8 +578,8 @@ class AppStore extends ChangeNotifier {
       _startInviteTimer();
       unawaited(checkAndApplyPendingReferrer());
     } catch (_) {
-      await prefs.remove(_kSessionTokenKey);
-      await prefs.remove(_kSessionUserKey);
+      await SecureStore.instance.delete(_kSessionTokenKey);
+      await SecureStore.instance.delete(_kSessionUserKey);
     }
   }
 
@@ -440,12 +597,15 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> _persistSession(String token, RemoteUser user) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kSessionTokenKey, token);
-    await prefs.setString(_kSessionUserKey, jsonEncode(user.toJson()));
+    await SecureStore.instance.write(_kSessionTokenKey, token);
+    await SecureStore.instance
+        .write(_kSessionUserKey, jsonEncode(user.toJson()));
   }
 
   Future<void> _clearPersistedSession() async {
+    await SecureStore.instance.delete(_kSessionTokenKey);
+    await SecureStore.instance.delete(_kSessionUserKey);
+    // Limpia también cualquier rastro legado en texto plano.
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kSessionTokenKey);
     await prefs.remove(_kSessionUserKey);
@@ -478,6 +638,7 @@ class AppStore extends ChangeNotifier {
     unawaited(checkAndApplyPendingReferrer());
     // Bajar snapshot remoto en background (best-effort, no bloquea login).
     unawaited(pullProgressSnapshot());
+    unawaited(refreshPremiumStatus());
     unawaited(refreshPendingCount());
   }
 
@@ -512,6 +673,7 @@ class AppStore extends ChangeNotifier {
     _startInviteTimer();
     unawaited(checkAndApplyPendingReferrer());
     unawaited(pullProgressSnapshot());
+    unawaited(refreshPremiumStatus());
     unawaited(refreshPendingCount());
   }
 
@@ -528,6 +690,7 @@ class AppStore extends ChangeNotifier {
     _startInviteTimer();
     unawaited(checkAndApplyPendingReferrer());
     unawaited(pullProgressSnapshot());
+    unawaited(refreshPremiumStatus());
     unawaited(refreshPendingCount());
   }
 
@@ -617,7 +780,12 @@ class AppStore extends ChangeNotifier {
     _bigFont = prefs.getBool(_kBigFontKey) ?? false;
     _reminderEnabled = prefs.getBool(_kReminderEnabledKey) ?? false;
     _reminderHour = prefs.getInt(_kReminderHourKey) ?? 20;
-    
+    // Re-programar al arrancar mantiene el recordatorio vigente aunque el
+    // sistema lo haya purgado (reinicios, actualizaciones de la app).
+    if (_reminderEnabled) {
+      unawaited(PushService.instance.scheduleDailyReminder(hour: _reminderHour));
+    }
+
     notifyListeners();
   }
 
@@ -660,6 +828,11 @@ class AppStore extends ChangeNotifier {
     _reminderEnabled = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kReminderEnabledKey, value);
+    if (value) {
+      unawaited(PushService.instance.scheduleDailyReminder(hour: _reminderHour));
+    } else {
+      unawaited(PushService.instance.cancelDailyReminder());
+    }
     notifyListeners();
   }
 
@@ -667,6 +840,9 @@ class AppStore extends ChangeNotifier {
     _reminderHour = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_kReminderHourKey, value);
+    if (_reminderEnabled) {
+      unawaited(PushService.instance.scheduleDailyReminder(hour: value));
+    }
     notifyListeners();
   }
 
@@ -938,8 +1114,103 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  static const List<int> _streakMilestones = [3, 7, 14, 30, 100];
+
+  /// Registra logros reales en el backend al terminar una sesión: la sesión
+  /// completada siempre, y el hito de racha la primera vez que se alcanza.
+  /// Best-effort: sin sesión o sin red no interrumpe el flujo.
+  Future<void> _recordSessionAchievements() async {
+    if (!isLoggedIn) return;
+    try {
+      await api.recordAchievement(
+        code: 'session_completed',
+        title: 'Sesión completada',
+        description:
+            'Completó una sesión de $_sessionDailyTarget ${_sessionDailyTarget == 1 ? 'tarjeta' : 'tarjetas'} en "${activeDeck.title}"',
+        deckName: activeDeck.title,
+        emoji: '🎯',
+      );
+
+      final streak = streakDays;
+      if (_streakMilestones.contains(streak)) {
+        final prefs = await SharedPreferences.getInstance();
+        const milestoneKey = 'memorizar.achievements.lastStreakMilestone';
+        final lastRecorded = prefs.getInt(milestoneKey) ?? 0;
+        if (streak > lastRecorded) {
+          await api.recordAchievement(
+            code: 'streak_$streak',
+            title: 'Racha de $streak días',
+            description: 'Practicó $streak días seguidos',
+            emoji: '🔥',
+          );
+          await prefs.setInt(milestoneKey, streak);
+        }
+      }
+    } catch (e) {
+      debugPrint('No se pudieron registrar logros: $e');
+    }
+  }
+
+  /// Sincroniza el estado premium persistido en el backend. Se llama al
+  /// iniciar sesión; sin sesión es no-op (el preview local de invitado se
+  /// pierde al reinstalar, a propósito).
+  Future<void> refreshPremiumStatus() async {
+    if (!isLoggedIn) return;
+    try {
+      final status = await api.getPremiumStatus();
+      final active = (status['active'] as bool?) ?? false;
+      if (_isPremium != active) {
+        _isPremium = active;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('No se pudo refrescar el estado premium: $e');
+    }
+  }
+
+  /// Activa el trial premium real (server-side). Devuelve un mensaje de
+  /// error amigable, o null si quedó activo.
+  Future<String?> activatePremiumTrial() async {
+    if (!isLoggedIn) {
+      // Invitado: preview local explícito, sin persistencia.
+      setPremiumPreview(true);
+      return null;
+    }
+    try {
+      await api.activatePremiumTrial();
+      _isPremium = true;
+      notifyListeners();
+      return null;
+    } catch (e) {
+      final message = e.toString();
+      if (message.contains('trial already used')) {
+        return 'Tu período de prueba ya fue utilizado.';
+      }
+      debugPrint('Error activando trial premium: $e');
+      return 'No se pudo activar la prueba premium. Inténtalo de nuevo.';
+    }
+  }
+
   int get completedCards => _correctAnswers + _wrongAnswers;
-  int get streakDays => _decks.isEmpty ? 0 : 1;
+
+  /// Racha real: días consecutivos con actividad registrada, contando hacia
+  /// atrás desde hoy (o desde ayer, para no romper la racha antes de
+  /// practicar hoy).
+  int get streakDays {
+    if (_dailyActivity.isEmpty) return 0;
+    final activeDays = _dailyActivity.map((entry) => entry.day).toSet();
+    var cursor = DateTime.now();
+    if (!activeDays.contains(_dayKey(cursor))) {
+      cursor = cursor.subtract(const Duration(days: 1));
+      if (!activeDays.contains(_dayKey(cursor))) return 0;
+    }
+    var streak = 0;
+    while (activeDays.contains(_dayKey(cursor))) {
+      streak++;
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+    return streak;
+  }
   int get totalCards =>
       _decks.fold(0, (total, deck) => total + deck.cards.length);
   int get averageRetention {
@@ -966,15 +1237,25 @@ class AppStore extends ChangeNotifier {
     return null;
   }
 
+  /// Tarjetas vencidas según SM-2 (nextReviewAt en el pasado o nunca
+  /// repasadas), las más débiles primero. Limitadas a 5 para la sesión de
+  /// rescate rápida.
   List<MemoryCardData> get dueCards {
     final cards = [
       for (final deck in _decks)
         for (final card in deck.cards)
-          if (card.retention < 60) card,
+          if (card.isDueForReview) card,
     ];
     cards.sort((a, b) => a.retention.compareTo(b.retention));
     return cards.take(5).toList();
   }
+
+  /// Total de tarjetas con repaso vencido hoy (sin límite).
+  int get dueTodayCount => _decks.fold(
+        0,
+        (total, deck) =>
+            total + deck.cards.where((card) => card.isDueForReview).length,
+      );
 
   /// Catálogo de versiones empacadas localmente. Cada entrada apunta a su
   /// asset JSON. Versiones bajo licencia (RV1960, NBLA, etc.) se cargarán
@@ -1220,6 +1501,7 @@ class AppStore extends ChangeNotifier {
       _sessionCardsCompleted += 1;
     }
     if (sessionFinished) {
+      unawaited(_recordSessionAchievements());
       notifyListeners();
       return false;
     }
@@ -1262,9 +1544,18 @@ class AppStore extends ChangeNotifier {
     if (_completedExerciseSteps.add(key)) {
       if (CoopService.active != null) {
         CoopService.active!.reportScore(10);
+        // Sincroniza el paso completado a todos los miembros para que el árbol
+        // de progreso sea idéntico en host e invitados.
+        CoopService.active!.broadcastStepDone(key);
       }
       notifyListeners();
     }
+  }
+
+  /// Marca un paso como completado a partir de un evento de red (otro jugador
+  /// lo terminó). No re-emite para evitar bucles.
+  void applyRemoteStepDone(String key) {
+    if (_completedExerciseSteps.add(key)) notifyListeners();
   }
 
   void resetExerciseStepCompleted(String slug) {
@@ -1354,6 +1645,21 @@ class AppStore extends ChangeNotifier {
       createdAt: DateTime.now(),
     );
     _deckReports.insert(0, report);
+    // Persistir en la cola de moderación del backend (best-effort: la copia
+    // local mantiene la UX si no hay sesión o falla la red).
+    if (isLoggedIn) {
+      unawaited(api
+          .fileDeckReport(
+            deckId: deckId,
+            deckTitle: deckTitle,
+            reason: reason.serverKey,
+            note: note,
+          )
+          .catchError((e) {
+        debugPrint('No se pudo persistir el reporte en backend: $e');
+        return <String, dynamic>{};
+      }));
+    }
     // Auto-bajar visibilidad mientras se revisa.
     final index = _decks.indexWhere((d) => d.id == deckId);
     if (index >= 0 && _decks[index].visibility == DeckVisibility.public) {
@@ -1674,6 +1980,64 @@ class AppStore extends ChangeNotifier {
     ];
   }
 
+  /// Aplica un repaso a la tarjeta: SM-2 (intervalos reales) + la señal
+  /// visual de retención existente, y persiste todo el estado SRS.
+  MemoryCardData _applySrsAnswer(MemoryCardData card, {required bool correct}) {
+    final next = applySm2(card.srsState, correct: correct);
+    final updated = card.copyWith(
+      retention: (card.retention + (correct ? 8 : -14)).clamp(18, 100),
+      lapses: card.lapses + (correct ? 0 : 1),
+      easeFactor: next.easeFactor,
+      intervalDays: next.intervalDays,
+      repetitions: next.repetitions,
+      nextReviewAt: next.nextReviewAt,
+    );
+    if (enableDatabasePersistence) {
+      unawaited(db!.updateCardSrs(
+        updated.id,
+        retention: updated.retention,
+        lapses: updated.lapses,
+        easeFactor: updated.easeFactor,
+        intervalDays: updated.intervalDays,
+        repetitions: updated.repetitions,
+        nextReviewAt: updated.nextReviewAt,
+      ));
+    }
+    return updated;
+  }
+
+  /// Registra el resultado de una tarjeta jugada en modo cooperativo sobre
+  /// el SRS local, con la misma curva que el modo solitario.
+  void recordCoopAnswer({
+    required String deckId,
+    required String cardId,
+    required bool correct,
+  }) {
+    final deckIndex = _decks.indexWhere((deck) => deck.id == deckId);
+    if (deckIndex < 0) return;
+    final deck = _decks[deckIndex];
+    final cardIndex = deck.cards.indexWhere((card) => card.id == cardId);
+    if (cardIndex < 0) return;
+    final cards = [...deck.cards];
+    cards[cardIndex] = _applySrsAnswer(cards[cardIndex], correct: correct);
+    _decks[deckIndex] = MemoryDeckData(
+      id: deck.id,
+      title: deck.title,
+      subtitle: deck.subtitle,
+      icon: deck.icon,
+      cards: cards,
+      createdAt: deck.createdAt,
+      isBible: deck.isBible,
+    );
+    if (correct) {
+      _correctAnswers++;
+    } else {
+      _wrongAnswers++;
+    }
+    _recordAnswerActivity(correct: correct);
+    notifyListeners();
+  }
+
   void answerCurrentCard(bool correct) {
     if (_decks.isEmpty || activeDeck.cards.isEmpty) return;
     final deckIndex = _decks.indexWhere((deck) => deck.id == activeDeck.id);
@@ -1683,14 +2047,7 @@ class AppStore extends ChangeNotifier {
     final isCombinedBible = false;
     if (isCombinedBible) {
       for (var i = 0; i < cards.length; i++) {
-        final card = cards[i];
-        cards[i] = card.copyWith(
-          retention: (card.retention + (correct ? 8 : -14)).clamp(18, 100),
-          lapses: card.lapses + (correct ? 0 : 1),
-        );
-        if (enableDatabasePersistence) {
-          unawaited(db!.updateCardRetention(cards[i].id, cards[i].retention, cards[i].lapses));
-        }
+        cards[i] = _applySrsAnswer(cards[i], correct: correct);
       }
       _decks[deckIndex] = MemoryDeckData(
         id: deck.id,
@@ -1706,18 +2063,13 @@ class AppStore extends ChangeNotifier {
       } else {
         _wrongAnswers += cards.length;
       }
+      _recordAnswerActivity(correct: correct, count: cards.length);
       _currentCardIndex = 0;
       notifyListeners();
       return;
     }
-    final card = cards[_currentCardIndex];
-    cards[_currentCardIndex] = card.copyWith(
-      retention: (card.retention + (correct ? 8 : -14)).clamp(18, 100),
-      lapses: card.lapses + (correct ? 0 : 1),
-    );
-    if (enableDatabasePersistence) {
-      unawaited(db!.updateCardRetention(cards[_currentCardIndex].id, cards[_currentCardIndex].retention, cards[_currentCardIndex].lapses));
-    }
+    cards[_currentCardIndex] =
+        _applySrsAnswer(cards[_currentCardIndex], correct: correct);
     _decks[deckIndex] = MemoryDeckData(
       id: deck.id,
       title: deck.title,
@@ -1732,6 +2084,7 @@ class AppStore extends ChangeNotifier {
     } else {
       _wrongAnswers++;
     }
+    _recordAnswerActivity(correct: correct);
     _currentCardIndex = (_currentCardIndex + 1) % cards.length;
     notifyListeners();
   }

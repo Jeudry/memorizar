@@ -431,6 +431,27 @@ func (r *Repository) ListSharedResourcesForUser(userID string) ([]domain.SharedR
 	return out, nil
 }
 
+func (r *Repository) FindSharedResource(id string) (*domain.SharedResource, error) {
+	row := r.db.QueryRow(`
+		SELECT id, owner_user_id, target_user_id, kind, title, summary,
+		       deck_id, plan_id, payload_json, is_public, created_at
+		FROM shared_resources
+		WHERE id = ?`, id)
+	s, err := r.scanShare(row.Scan)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return s, nil
+}
+
+func (r *Repository) DeleteSharedResource(id string) error {
+	_, err := r.db.Exec(`DELETE FROM shared_resources WHERE id = ?`, id)
+	return err
+}
+
 func (r *Repository) ListPublicSharedResourcesByUserIDs(userIDs []string) ([]domain.SharedResource, error) {
 	if len(userIDs) == 0 {
 		return []domain.SharedResource{}, nil
@@ -459,6 +480,332 @@ func (r *Repository) ListPublicSharedResourcesByUserIDs(userIDs []string) ([]dom
 		out = append(out, *s)
 	}
 	return out, nil
+}
+
+func (r *Repository) SaveShareImport(shareImport domain.ShareImport) error {
+	_, err := r.db.Exec(`
+		INSERT OR IGNORE INTO share_imports (share_id, user_id, created_at)
+		VALUES (?, ?, ?)`,
+		shareImport.ShareID, shareImport.UserID, formatTime(shareImport.CreatedAt),
+	)
+	return err
+}
+
+func (r *Repository) CountShareImports(shareIDs []string) (map[string]int, error) {
+	return r.countShareImportsWhere(shareIDs, "", nil)
+}
+
+func (r *Repository) CountShareImportsSince(shareIDs []string, since time.Time) (map[string]int, error) {
+	return r.countShareImportsWhere(shareIDs, " AND created_at >= ?", []any{formatTime(since)})
+}
+
+func (r *Repository) countShareImportsWhere(shareIDs []string, extraWhere string, extraArgs []any) (map[string]int, error) {
+	counts := map[string]int{}
+	if len(shareIDs) == 0 {
+		return counts, nil
+	}
+	placeholders := strings.Repeat("?,", len(shareIDs)-1) + "?"
+	args := make([]any, 0, len(shareIDs)+len(extraArgs))
+	for _, v := range shareIDs {
+		args = append(args, v)
+	}
+	args = append(args, extraArgs...)
+	rows, err := r.db.Query(`
+		SELECT share_id, COUNT(*)
+		FROM share_imports
+		WHERE share_id IN (`+placeholders+`)`+extraWhere+`
+		GROUP BY share_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var shareID string
+		var count int
+		if err := rows.Scan(&shareID, &count); err != nil {
+			return nil, err
+		}
+		counts[shareID] = count
+	}
+	return counts, nil
+}
+
+// ─── Deck likes ──────────────────────────────────────────────────────────
+
+func (r *Repository) SaveDeckLike(shareID, userID string, createdAt time.Time) error {
+	_, err := r.db.Exec(`
+		INSERT OR IGNORE INTO deck_likes (share_id, user_id, created_at)
+		VALUES (?, ?, ?)`,
+		shareID, userID, formatTime(createdAt),
+	)
+	return err
+}
+
+func (r *Repository) DeleteDeckLike(shareID, userID string) error {
+	_, err := r.db.Exec(
+		`DELETE FROM deck_likes WHERE share_id = ? AND user_id = ?`,
+		shareID, userID,
+	)
+	return err
+}
+
+func (r *Repository) CountDeckLikes(shareIDs []string) (map[string]int, error) {
+	counts := map[string]int{}
+	if len(shareIDs) == 0 {
+		return counts, nil
+	}
+	placeholders := strings.Repeat("?,", len(shareIDs)-1) + "?"
+	args := make([]any, len(shareIDs))
+	for i, v := range shareIDs {
+		args[i] = v
+	}
+	rows, err := r.db.Query(`
+		SELECT share_id, COUNT(*)
+		FROM deck_likes
+		WHERE share_id IN (`+placeholders+`)
+		GROUP BY share_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var shareID string
+		var count int
+		if err := rows.Scan(&shareID, &count); err != nil {
+			return nil, err
+		}
+		counts[shareID] = count
+	}
+	return counts, nil
+}
+
+func (r *Repository) ListLikedShareIDsByUser(userID string) ([]string, error) {
+	rows, err := r.db.Query(
+		`SELECT share_id FROM deck_likes WHERE user_id = ?`, userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	liked := []string{}
+	for rows.Next() {
+		var shareID string
+		if err := rows.Scan(&shareID); err != nil {
+			return nil, err
+		}
+		liked = append(liked, shareID)
+	}
+	return liked, nil
+}
+
+// ─── Follows (seguir creadores) ──────────────────────────────────────────
+
+func (r *Repository) SaveFollow(followerID, creatorID string, createdAt time.Time) error {
+	_, err := r.db.Exec(`
+		INSERT OR IGNORE INTO follows (follower_id, creator_id, created_at)
+		VALUES (?, ?, ?)`,
+		followerID, creatorID, formatTime(createdAt),
+	)
+	return err
+}
+
+func (r *Repository) DeleteFollow(followerID, creatorID string) error {
+	_, err := r.db.Exec(
+		`DELETE FROM follows WHERE follower_id = ? AND creator_id = ?`,
+		followerID, creatorID,
+	)
+	return err
+}
+
+func (r *Repository) CountFollowers(creatorIDs []string) (map[string]int, error) {
+	counts := map[string]int{}
+	if len(creatorIDs) == 0 {
+		return counts, nil
+	}
+	placeholders := strings.Repeat("?,", len(creatorIDs)-1) + "?"
+	args := make([]any, len(creatorIDs))
+	for i, v := range creatorIDs {
+		args[i] = v
+	}
+	rows, err := r.db.Query(`
+		SELECT creator_id, COUNT(*)
+		FROM follows
+		WHERE creator_id IN (`+placeholders+`)
+		GROUP BY creator_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var creatorID string
+		var count int
+		if err := rows.Scan(&creatorID, &count); err != nil {
+			return nil, err
+		}
+		counts[creatorID] = count
+	}
+	return counts, nil
+}
+
+func (r *Repository) ListFollowingByUser(followerID string) ([]string, error) {
+	rows, err := r.db.Query(
+		`SELECT creator_id FROM follows WHERE follower_id = ?`, followerID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	following := []string{}
+	for rows.Next() {
+		var creatorID string
+		if err := rows.Scan(&creatorID); err != nil {
+			return nil, err
+		}
+		following = append(following, creatorID)
+	}
+	return following, nil
+}
+
+// ─── Deck reports (moderación) ───────────────────────────────────────────
+
+func (r *Repository) SaveDeckReport(report domain.DeckReport) error {
+	_, err := r.db.Exec(`
+		INSERT OR REPLACE INTO deck_reports
+		    (id, deck_id, deck_title, reporter_id, reason, note, status, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		report.ID, report.DeckID, report.DeckTitle, report.ReporterID,
+		report.Reason, report.Note, string(report.Status), formatTime(report.CreatedAt),
+	)
+	return err
+}
+
+func (r *Repository) scanDeckReport(scan func(...any) error) (*domain.DeckReport, error) {
+	var report domain.DeckReport
+	var status, ts string
+	if err := scan(
+		&report.ID, &report.DeckID, &report.DeckTitle, &report.ReporterID,
+		&report.Reason, &report.Note, &status, &ts,
+	); err != nil {
+		return nil, err
+	}
+	report.Status = domain.DeckReportStatus(status)
+	report.CreatedAt = parseTime(ts)
+	return &report, nil
+}
+
+func (r *Repository) FindDeckReportByID(reportID string) (*domain.DeckReport, error) {
+	row := r.db.QueryRow(`
+		SELECT id, deck_id, deck_title, reporter_id, reason, note, status, created_at
+		FROM deck_reports WHERE id = ?`, reportID)
+	report, err := r.scanDeckReport(row.Scan)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return report, err
+}
+
+func (r *Repository) ListDeckReports() ([]domain.DeckReport, error) {
+	rows, err := r.db.Query(`
+		SELECT id, deck_id, deck_title, reporter_id, reason, note, status, created_at
+		FROM deck_reports ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.DeckReport{}
+	for rows.Next() {
+		report, err := r.scanDeckReport(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *report)
+	}
+	return out, nil
+}
+
+// ─── Push tokens ─────────────────────────────────────────────────────────
+
+func (r *Repository) SavePushToken(token domain.PushToken) error {
+	_, err := r.db.Exec(`
+		INSERT OR REPLACE INTO push_tokens (user_id, token, platform, updated_at)
+		VALUES (?, ?, ?, ?)`,
+		token.UserID, token.Token, token.Platform, formatTime(token.UpdatedAt),
+	)
+	return err
+}
+
+// ─── Premium ─────────────────────────────────────────────────────────────
+
+func (r *Repository) SavePremiumSubscription(subscription domain.PremiumSubscription) error {
+	_, err := r.db.Exec(`
+		INSERT OR REPLACE INTO premium_subscriptions (user_id, plan, activated_at, expires_at)
+		VALUES (?, ?, ?, ?)`,
+		subscription.UserID, subscription.Plan,
+		formatTime(subscription.ActivatedAt), formatTime(subscription.ExpiresAt),
+	)
+	return err
+}
+
+func (r *Repository) FindPremiumSubscription(userID string) (*domain.PremiumSubscription, error) {
+	row := r.db.QueryRow(`
+		SELECT user_id, plan, activated_at, expires_at
+		FROM premium_subscriptions WHERE user_id = ?`, userID)
+	var subscription domain.PremiumSubscription
+	var activatedAt, expiresAt string
+	err := row.Scan(&subscription.UserID, &subscription.Plan, &activatedAt, &expiresAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	subscription.ActivatedAt = parseTime(activatedAt)
+	subscription.ExpiresAt = parseTime(expiresAt)
+	return &subscription, nil
+}
+
+// ─── Analytics ────────────────────────────────────────────────────────────
+
+func (r *Repository) SaveAnalyticsEvents(events []domain.AnalyticsEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	stmt, err := tx.Prepare(`
+		INSERT OR IGNORE INTO analytics_events (id, user_id, event, props_json, created_at)
+		VALUES (?, ?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for _, event := range events {
+		if _, err := stmt.Exec(event.ID, event.UserID, event.Event, event.PropsJSON, formatTime(event.CreatedAt)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) CountAnalyticsEventsByName() (map[string]int, error) {
+	rows, err := r.db.Query(`SELECT event, COUNT(*) FROM analytics_events GROUP BY event`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := map[string]int{}
+	for rows.Next() {
+		var event string
+		var count int
+		if err := rows.Scan(&event, &count); err != nil {
+			return nil, err
+		}
+		counts[event] = count
+	}
+	return counts, nil
 }
 
 // ─── Reactions & Comments ───────────────────────────────────────────────

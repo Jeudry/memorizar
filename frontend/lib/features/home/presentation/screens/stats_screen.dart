@@ -2,8 +2,39 @@
 // StatsScreen + helpers.
 part of '../ui_screens.dart';
 
-class StatsScreen extends StatelessWidget {
+class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
+
+  @override
+  State<StatsScreen> createState() => _StatsScreenState();
+}
+
+class _StatsScreenState extends State<StatsScreen> {
+  static const _periods = [
+    (label: 'Hoy', days: 1),
+    (label: 'Semana', days: 7),
+    (label: 'Mes', days: 30),
+    (label: 'Todo', days: 0),
+  ];
+
+  int _periodIndex = 1;
+
+  /// Actividad del período activo; days == 0 significa todo el historial.
+  ({int correct, int wrong, int reviewed}) _periodActivity(AppStore store) {
+    final days = _periods[_periodIndex].days;
+    if (days == 0) {
+      var correct = 0;
+      var wrong = 0;
+      var reviewed = 0;
+      for (final entry in store.dailyActivity) {
+        correct += entry.correct;
+        wrong += entry.wrong;
+        reviewed += entry.cardsReviewed;
+      }
+      return (correct: correct, wrong: wrong, reviewed: reviewed);
+    }
+    return store.activityInLastDays(days);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,8 +69,9 @@ class StatsScreen extends StatelessWidget {
         ),
       );
     }
-    final correct = store.correctAnswers;
-    final wrong = store.wrongAnswers;
+    final activity = _periodActivity(store);
+    final correct = activity.correct;
+    final wrong = activity.wrong;
     final accuracy = (correct + wrong) == 0
         ? 0
         : ((correct / (correct + wrong)) * 100).round();
@@ -49,7 +81,11 @@ class StatsScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const RefTopBar(title: 'Tu progreso'),
-          const _StatsPeriodTabs(),
+          _StatsPeriodTabs(
+            periods: [for (final p in _periods) p.label],
+            activeIndex: _periodIndex,
+            onSelect: (index) => setState(() => _periodIndex = index),
+          ),
           _StreakHeroCard(store: store),
           Row(
             children: [
@@ -97,7 +133,7 @@ class StatsScreen extends StatelessWidget {
                 child: _StatTile(
                   emoji: '✅',
                   value: '$correct',
-                  label: 'Aciertos',
+                  label: 'Aciertos · ${_periods[_periodIndex].label.toLowerCase()}',
                 ),
               ),
               const SizedBox(width: 8),
@@ -105,7 +141,7 @@ class StatsScreen extends StatelessWidget {
                 child: _StatTile(
                   emoji: '❌',
                   value: '$wrong',
-                  label: 'Errores',
+                  label: 'Errores · ${_periods[_periodIndex].label.toLowerCase()}',
                 ),
               ),
               const SizedBox(width: 8),
@@ -236,7 +272,15 @@ class _DeckStatsRow extends StatelessWidget {
 }
 
 class _StatsPeriodTabs extends StatelessWidget {
-  const _StatsPeriodTabs();
+  final List<String> periods;
+  final int activeIndex;
+  final ValueChanged<int> onSelect;
+
+  const _StatsPeriodTabs({
+    required this.periods,
+    required this.activeIndex,
+    required this.onSelect,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -248,11 +292,15 @@ class _StatsPeriodTabs extends StatelessWidget {
         color: HtmlRefColors.glassSoft,
         border: Border.all(color: HtmlRefColors.glassBorder),
         child: Row(
-          children: const [
-            Expanded(child: _PeriodTab('Hoy')),
-            Expanded(child: _PeriodTab('Semana', active: true)),
-            Expanded(child: _PeriodTab('Mes')),
-            Expanded(child: _PeriodTab('Todo')),
+          children: [
+            for (var i = 0; i < periods.length; i++)
+              Expanded(
+                child: _PeriodTab(
+                  periods[i],
+                  active: i == activeIndex,
+                  onTap: () => onSelect(i),
+                ),
+              ),
           ],
         ),
       ),
@@ -263,25 +311,30 @@ class _StatsPeriodTabs extends StatelessWidget {
 class _PeriodTab extends StatelessWidget {
   final String label;
   final bool active;
+  final VoidCallback onTap;
 
-  const _PeriodTab(this.label, {this.active = false});
+  const _PeriodTab(this.label, {this.active = false, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        color: active ? HtmlRefColors.glassStrong : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-        border: active ? Border.all(color: HtmlRefColors.glassBorder) : null,
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          color: active ? RefColors.ink : RefColors.muted,
-          fontWeight: FontWeight.w800,
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: active ? HtmlRefColors.glassStrong : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: active ? Border.all(color: HtmlRefColors.glassBorder) : null,
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: active ? RefColors.ink : RefColors.muted,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
     );
@@ -346,7 +399,10 @@ class _StreakHeroCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _StreakMetric('${store.completedCards}', 'TARJETAS HOY'),
+                _StreakMetric(
+                  '${store.activityInLastDays(1).reviewed}',
+                  'TARJETAS HOY',
+                ),
                 const SizedBox(width: 22),
                 _StreakMetric('${store.estimatedPendingMinutes} min', 'TIEMPO'),
                 const SizedBox(width: 22),

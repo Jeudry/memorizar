@@ -1,7 +1,7 @@
 /// Punto de entrada de pantallas. Se descompone en `part` files
 /// dentro de `screens/` para mantener navegación legible sin perder
 /// visibilidad de los muchos widgets privados compartidos.
-library memorizar_screens;
+library;
 
 import 'dart:async';
 import 'dart:convert';
@@ -15,18 +15,19 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:speech_to_text/speech_recognition_result.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:file_selector/file_selector.dart';
 import '../../../core/api/models.dart';
 import '../../../core/app_state.dart';
 import '../../../core/db/app_database.dart';
 import 'package:drift/drift.dart' as drift;
+import '../../../core/import/csv_import.dart';
+import 'screens/coop_recap_share.dart';
 import '../../../core/services/local_llm_service.dart';
-import '../../../core/services/gemini_api_service.dart';
+import '../../../core/services/ai_quiz_models.dart';
 import '../../account/presentation/account_screen.dart';
 import '../../auth/presentation/login_screen.dart';
 import '../../auth/presentation/password_reset_screen.dart';
@@ -43,9 +44,7 @@ import '../../moderation/presentation/moderation_queue_screen.dart';
 import '../../moderation/presentation/report_dialog.dart';
 import '../../settings/presentation/settings_screen.dart';
 import 'glyph_icon.dart';
-import 'home_screen.dart';
 import '../../plans/presentation/plans_screen.dart';
-import '../../missions/presentation/missions_panel.dart';
 
 // Imports for the extracted shared building blocks.
 import '../../../core/router/app_routes.dart';
@@ -288,7 +287,7 @@ class ExerciseFlowScreen extends StatelessWidget {
         return const PremiumScreen();
       }
       return FutureBuilder<bool>(
-        future: llmService.checkModelExists(),
+        future: llmService.isAvailable(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
@@ -297,8 +296,8 @@ class ExerciseFlowScreen extends StatelessWidget {
               ),
             );
           }
-          final exists = snapshot.data ?? false;
-          if (!exists) {
+          final available = snapshot.data ?? false;
+          if (!available) {
             return const PremiumScreen();
           }
           if (!llmService.isReady) {
@@ -446,8 +445,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   bool _isEvaluatingOpenQuestion = false;
   final _openQuestionController = TextEditingController();
   
-  bool _isAdvancedLoading = false;
-  String _advancedLoadingText = '';
+  bool _isAiQuizLoading = false;
+  String _aiQuizLoadingText = '';
+  String? _aiQuizError;
 
   String? _matchingSelectedLeft;
   String? _matchingSelectedRight;
@@ -491,9 +491,25 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     return DateTime.now().millisecondsSinceEpoch - ts < 700;
   }
 
+  bool _coopEverHadPeers = false;
+
+  void _closeCoopAndGoHome(String message) async {
+    await CoopService.active?.disconnect();
+    CoopService.active = null;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: RefColors.urgent,
+        ),
+      );
+      Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
+    }
+  }
+
   String? _fogCardId;
   bool _fogFinished = false;
-  bool _fogShowHintTemp = false;
+  final bool _fogShowHintTemp = false;
   StreamSubscription<CoopRoomState>? _coopStateSub;
   StreamSubscription<CoopMessage>? _coopMsgSub;
   final Set<String> _failedUserIds = {};
@@ -511,15 +527,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         // Si el host abandonó la partida, cancelar y volver al home
         final hostLeft = !s.memberIds.contains(s.hostId);
         if (hostLeft) {
-          CoopService.active?.disconnect();
-          CoopService.active = null;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('La partida cooperativa ha sido cancelada por el Host.'),
-              backgroundColor: RefColors.urgent,
-            ),
-          );
-          Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
+          _closeCoopAndGoHome('La partida cooperativa ha sido cancelada por el Host.');
+          return;
+        }
+
+        // Una vez vimos 2+ jugadores, si la sala baja a 1 se cierra para todos.
+        if (s.memberIds.length >= 2) _coopEverHadPeers = true;
+        if (_coopEverHadPeers && s.memberIds.length <= 1) {
+          _closeCoopAndGoHome('La sala se cerró: no quedan suficientes jugadores.');
           return;
         }
 
@@ -538,7 +553,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
       _coopMsgSub = coop.messages.listen((msg) {
         if (!mounted) return;
-        if (msg.type == 'coop_fail') {
+        if (msg.type == 'room_closed') {
+          if (msg.userId != CoopService.activeUserId) {
+            _closeCoopAndGoHome('El host cerró la sala.');
+          }
+          return;
+        } else if (msg.type == 'step_done') {
+          final key = msg.payload?['key'] as String?;
+          if (key != null && key.isNotEmpty && msg.userId != CoopService.activeUserId) {
+            AppScope.of(context).applyRemoteStepDone(key);
+          }
+          return;
+        } else if (msg.type == 'coop_fail') {
           final failedUserId = msg.payload?['userId'] as String? ?? msg.userId;
           if (failedUserId.isNotEmpty) {
             setState(() {
@@ -1167,644 +1193,112 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 
   void _ensureQuizRounds(MemoryDeckData deck, MemoryCardData card) {
-    final isFinishedSession = _quizRounds.isNotEmpty && _quizRoundIndex >= _quizRounds.length - 1 && _quizRounds.last.answered;
-    if (_quizCardId == card.id && _quizRounds.isNotEmpty && !isFinishedSession) return;
+    final alreadyHandledCard = _quizCardId == card.id &&
+        (_quizRounds.isNotEmpty || _isAiQuizLoading || _aiQuizError != null);
+    if (alreadyHandledCard) return;
+    // Se invoca durante build: mutar campos sin setState; el async sí lo usa.
     _quizCardId = card.id;
     _quizRoundIndex = 0;
     _quizScore = 0;
     _openQuestionController.clear();
-    if (widget.data.slug == '09-quiz-avanzado') {
-      _quizRounds = [];
-      _loadAdvancedQuizRounds(deck, card);
-    } else {
-      _quizRounds = _buildQuizRounds(deck, card);
-    }
+    _quizRounds = [];
+    _isAiQuizLoading = true;
+    _aiQuizError = null;
+    _aiQuizLoadingText = 'Despertando la IA local…';
+    unawaited(_loadAiQuizRounds(
+      card,
+      advanced: widget.data.slug == '09-quiz-avanzado',
+    ));
   }
 
-  _QuizRound _buildCorruptedWordRound(MemoryCardData card, math.Random rng, int index) {
-    final text = card.back;
-    
-    final question = '¿Cuál es el versículo correcto?';
-
-    final swaps = [
-      ('israel', 'Judá'),
-      ('david', 'Saúl'),
-      ('salomón', 'David'),
-      ('hijo', 'siervo'),
-      ('hijos', 'siervos'),
-      ('rey', 'príncipe'),
-      ('reyes', 'príncipes'),
-      ('proverbios', 'salmos'),
-      ('cielos', 'abismos'),
-      ('tierra', 'nación'),
-      ('dios', 'Señor'),
-      ('señor', 'Dios'),
-      ('creó', 'formó'),
-      ('principio', 'comienzo'),
-      ('luz', 'gloria'),
-      ('tinieblas', 'sombras'),
-      ('pastor', 'guía'),
-      ('fortalece', 'sostiene'),
-      ('puedo', 'hago'),
-      ('serpiente', 'bestia'),
-      ('árbol', 'fruto'),
-      ('fruto', 'trigo'),
-      ('huerto', 'jardín'),
-      ('comer', 'beber'),
-      ('buena', 'santa'),
-      ('bueno', 'justo'),
-      ('paz', 'guerra'),
-      ('vida', 'muerte'),
-    ];
-
-    final wrongPool = [
-      'Jerusalén', 'templo', 'pacto', 'altar', 'profeta', 'sacerdote',
-      'sabiduría', 'entendimiento', 'justicia', 'heredad', 'ofrenda',
-      'consejo', 'camino', 'verdad', 'vida', 'gracia', 'promesa'
-    ];
-
-    String replaceWordSafely(String sentence, String targetWord, String replacementWord) {
-      final words = sentence.split(' ');
-      final targetLower = targetWord.toLowerCase();
-      for (var i = 0; i < words.length; i++) {
-        final cleanWord = words[i].replaceAll(RegExp(r'[.,;:!?¡¿()]'), '').toLowerCase();
-        if (cleanWord == targetLower) {
-          final origWord = words[i];
-          final cleanOrig = origWord.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
-          
-          String replacement = replacementWord;
-          if (cleanOrig.isNotEmpty && cleanOrig[0] == cleanOrig[0].toUpperCase()) {
-            replacement = replacementWord.substring(0, 1).toUpperCase() + replacementWord.substring(1);
-          }
-          
-          final prefixIndex = origWord.indexOf(cleanOrig);
-          if (prefixIndex != -1) {
-            final prefix = origWord.substring(0, prefixIndex);
-            final suffix = origWord.substring(prefixIndex + cleanOrig.length);
-            words[i] = prefix + replacement + suffix;
-          }
-        }
-      }
-      return words.join(' ');
-    }
-
-    final corruptedSentences = <String>{};
-
-    final cleanTextLower = text.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '').toLowerCase();
-    
-    final shuffledSwaps = List<(String, String)>.from(swaps.map((e) => (e.$1, e.$2)))..shuffle(rng);
-    
-    for (final swap in shuffledSwaps) {
-      if (cleanTextLower.split(' ').contains(swap.$1)) {
-        final corrupted = replaceWordSafely(text, swap.$1, swap.$2);
-        if (corrupted != text) {
-          corruptedSentences.add(corrupted);
-          if (corruptedSentences.length >= 2) break;
-        }
+  Future<void> _loadAiQuizRounds(
+    MemoryCardData card, {
+    required bool advanced,
+  }) async {
+    final llm = LocalLlmService.instance;
+    void onEngineStatus() {
+      if (!mounted || !_isAiQuizLoading) return;
+      final status = llm.statusNotifier.value;
+      if (status.isNotEmpty) {
+        setState(() => _aiQuizLoadingText = status);
       }
     }
 
-    if (corruptedSentences.length < 2) {
-      final cleanText = text.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '');
-      final candidateWords = cleanText
-          .split(' ')
-          .where((w) => w.length > 4 && !w.contains(RegExp(r'\d')))
-          .toList()
-          ..shuffle(rng);
-
-      final shuffledWrongPool = List<String>.from(wrongPool)..shuffle(rng);
-      var wrongIdx = 0;
-
-      for (final candidate in candidateWords) {
-        if (corruptedSentences.length >= 2) break;
-        final wrongWord = shuffledWrongPool[wrongIdx % shuffledWrongPool.length];
-        wrongIdx++;
-        final corrupted = replaceWordSafely(text, candidate, wrongWord);
-        if (corrupted != text) {
-          corruptedSentences.add(corrupted);
-        }
-      }
-    }
-
-    while (corruptedSentences.length < 2) {
-      corruptedSentences.add('$text (incorrecto ${corruptedSentences.length + 1})');
-    }
-
-    final distractors = corruptedSentences.toList();
-
-    final targetCard = MemoryCardData(
-      id: 'quiz-corrupt-${card.id}-$index',
-      front: question,
-      back: text,
-      source: card.source,
-      icon: card.icon,
-    );
-    
-    final optionCards = <MemoryCardData>[
-      targetCard,
-      for (var idx = 0; idx < distractors.length; idx++)
-        MemoryCardData(
-          id: 'quiz-corrupt-distractor-$idx-${card.id}-$index',
-          front: question,
-          back: distractors[idx],
-          source: 'Sistema',
-          icon: card.icon,
-        )
-    ]..shuffle(rng);
-    
-    return _QuizRound(
-      target: targetCard,
-      type: _QuizQuestionType.frontToBack,
-      options: optionCards,
-    );
-  }
-
-  _QuizRound _buildOddOneOutRound(MemoryCardData card, math.Random rng, int index) {
-    final cleanText = card.back.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '').toLowerCase();
-    final words = cleanText.split(' ').where((w) => w.length > 4 && !w.contains(RegExp(r'\d'))).toList();
-    
-    // Pick 3 words that are in the verse
-    final presentWords = <String>{};
-    if (words.length >= 3) {
-      words.shuffle(rng);
-      for (final w in words) {
-        if (presentWords.length < 3) {
-          presentWords.add(w.substring(0, 1).toUpperCase() + w.substring(1));
-        }
-      }
-    }
-    
-    while (presentWords.length < 3) {
-      presentWords.add('Palabra${presentWords.length}');
-    }
-    
-    // Pick a word that is NOT in the verse from a pool of plausible biblical context words
-    final potentialOddWords = [
-      'sabiduría', 'justicia', 'entendimiento', 'consejo', 'pacto', 'ley', 
-      'profeta', 'sacerdote', 'altar', 'ofrenda', 'heredad', 'templo', 'reino', 
-      'mandato', 'enseñanza', 'prójimo', 'salvación', 'fidelidad', 'gracia',
-      'promesa', 'camino', 'verdad', 'vida', 'cielo', 'tierra', 'amor', 'fe',
-      'oración', 'esperanza', 'pecado', 'perdón', 'bendición'
-    ];
-    potentialOddWords.shuffle(rng);
-    
-    String oddWord = '';
-    for (final ow in potentialOddWords) {
-      if (!cleanText.contains(ow.toLowerCase())) {
-        oddWord = ow.substring(0, 1).toUpperCase() + ow.substring(1);
-        break;
-      }
-    }
-    if (oddWord.isEmpty) {
-      oddWord = 'Pacto';
-    }
-    
-    final question = '¿Cuál de estas palabras NO aparece en el versículo de ${card.front}?';
-    final correctOpt = oddWord;
-    final distractors = presentWords.toList();
-    
-    final targetCard = MemoryCardData(
-      id: 'quiz-odd-${card.id}-$index',
-      front: question,
-      back: correctOpt,
-      source: card.source,
-      icon: card.icon,
-    );
-    
-    final optionCards = <MemoryCardData>[
-      targetCard,
-      for (var idx = 0; idx < distractors.length; idx++)
-        MemoryCardData(
-          id: 'quiz-odd-distractor-$idx-${card.id}-$index',
-          front: question,
-          back: distractors[idx],
-          source: 'Sistema',
-          icon: card.icon,
-        )
-    ]..shuffle(rng);
-    
-    return _QuizRound(
-      target: targetCard,
-      type: _QuizQuestionType.frontToBack,
-      options: optionCards,
-    );
-  }
-
-  String _generateTrueFalseStatement(MemoryCardData target, bool isTrue, math.Random rng, {int variant = 0}) {
-    final text = target.back.toLowerCase();
-    
-    // Extracción de palabras reales del versículo (limpiando puntuación)
-    final cleanWords = target.back
-        .replaceAll(RegExp(r'[.,;:!?¡¿"()]'), '')
-        .split(RegExp(r'\s+'))
-        .where((w) => w.length > 3 && !w.contains(RegExp(r'\d')))
-        .toList();
-        
-    if (isTrue && cleanWords.isNotEmpty) {
-      final realWord = cleanWords[rng.nextInt(cleanWords.length)];
-      return 'El versículo contiene la palabra "$realWord".';
-    } else {
-      final plausibleFalseWords = [
-        'sabiduría', 'justicia', 'entendimiento', 'consejo', 'pacto', 'ley', 
-        'profeta', 'sacerdote', 'altar', 'ofrenda', 'heredad', 'templo', 'reino', 
-        'mandato', 'enseñanza', 'prójimo', 'salvación', 'fidelidad', 'gracia',
-        'promesa', 'camino', 'verdad', 'vida', 'cielo', 'tierra', 'amor', 'fe'
-      ];
-      
-      String falseWord = 'pacto';
-      final shuffledFalse = List<String>.from(plausibleFalseWords)..shuffle(rng);
-      for (final fw in shuffledFalse) {
-        if (!text.contains(fw.toLowerCase())) {
-          falseWord = fw;
-          break;
-        }
-      }
-      return 'El versículo contiene la palabra "$falseWord".';
-    }
-  }
-
-  List<_QuizRound> _buildQuizRounds(
-    MemoryDeckData deck,
-    MemoryCardData activeCard,
-  ) {
-    final rng = math.Random(
-      activeCard.id.hashCode ^ DateTime.now().millisecondsSinceEpoch,
-    );
-    final rounds = <_QuizRound>[];
-    final store = AppScope.of(context);
-    final isCombinedBible = false;
-    final List<MemoryCardData> sessionStudiedCards = isCombinedBible
-        ? deck.cards.take(store.sessionDailyTarget).toList()
-        : deck.cards.take(store.currentCardIndex + 1).toList();
-
-    final studiedPool = sessionStudiedCards.isNotEmpty ? sessionStudiedCards : [activeCard];
-
-    // Ronda 1: ¿Contiene el versículo la palabra X? (True/False)
-    {
-      final target = studiedPool[0 % studiedPool.length];
-      final isTrue = rng.nextBool();
-      final statement = _generateTrueFalseStatement(target, isTrue, rng);
-      rounds.add(_QuizRound(
-        target: target,
-        type: _QuizQuestionType.trueFalse,
-        options: const [],
-        trueFalseStatement: statement,
-        isStatementTrue: isTrue,
-      ));
-    }
-
-    // Ronda 2: Comparar versiones (¿Cuál es el versículo correcto? - 3 opciones en total)
-    {
-      final target = studiedPool[rng.nextInt(studiedPool.length)];
-      rounds.add(_buildCorruptedWordRound(target, rng, 1));
-    }
-
-    // Ronda 3: Seleccionar la palabra que NO está contenida (Selección múltiple)
-    {
-      final target = studiedPool.length > 1 
-          ? studiedPool[1 % studiedPool.length] 
-          : studiedPool[0 % studiedPool.length];
-      rounds.add(_buildOddOneOutRound(target, rng, 2));
-    }
-
-    return rounds;
-  }
-
-  Future<void> _loadAdvancedQuizRounds(MemoryDeckData deck, MemoryCardData card) async {
-    if (_isAdvancedLoading) return;
-    setState(() {
-      _isAdvancedLoading = true;
-      _advancedLoadingText = 'Conectando con el motor de razonamiento teológico de Gemini...';
-    });
-
-    // Delays progresivos de "Thinking" para simular el razonamiento profundo teológico de la IA
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-    setState(() {
-      _advancedLoadingText = 'Analizando pasaje doctrinal y contexto hermenéutico de ${card.front}...';
-    });
-
-    await Future.delayed(const Duration(milliseconds: 700));
-    if (!mounted) return;
-    setState(() {
-      _advancedLoadingText = 'Estructurando antítesis y distractores teológicos conceptuales...';
-    });
-
-    await Future.delayed(const Duration(milliseconds: 700));
-    if (!mounted) return;
-
+    llm.statusNotifier.addListener(onEngineStatus);
     try {
-      final roundsData = await GeminiApiService.instance.fetchAdvancedQuizData(card.front, card.back);
+      await llm.initLlm();
       if (!mounted) return;
-
-      final parsedRounds = <_QuizRound>[];
-      for (var idx = 0; idx < roundsData.length; idx++) {
-        final roundData = roundsData[idx];
-        final typeStr = roundData['type'] as String? ?? 'conceptual';
-        
-        if (typeStr == 'trueFalse') {
-          final statement = roundData['statement'] as String? ?? 'Afirmación teológica sobre ${card.front}';
-          final isTrue = roundData['isTrue'] as bool? ?? true;
-          parsedRounds.add(_QuizRound(
-            target: card,
-            type: _QuizQuestionType.trueFalse,
-            options: const [],
-            trueFalseStatement: statement,
-            isStatementTrue: isTrue,
-          ));
-        } else {
-          // 'conceptual' o 'antithesis'
-          final question = roundData['question'] as String? ?? (typeStr == 'antithesis' 
-              ? '¿Qué actitud contradice el mensaje de este pasaje?' 
-              : '¿Cuál es el significado de este versículo?');
-          final correctText = roundData['correct'] as String? ?? card.back;
-          final rawDistractors = roundData['distractors'];
-          final distractors = <String>[];
-          if (rawDistractors is List) {
-            distractors.addAll(rawDistractors.map((d) => d.toString()));
-          }
-          while (distractors.length < 3) {
-            distractors.add('Distractor teológico de respaldo ${distractors.length + 1}');
-          }
-
-          final targetCard = MemoryCardData(
-            id: 'quiz-adv-$typeStr-${card.id}-$idx',
-            front: question,
-            back: correctText,
-            source: card.source,
-            icon: card.icon,
-          );
-
-          final optionCards = <MemoryCardData>[
-            targetCard,
-            for (var dIdx = 0; dIdx < distractors.length; dIdx++)
-              MemoryCardData(
-                id: 'quiz-adv-$typeStr-distractor-$dIdx-${card.id}-$idx',
-                front: question,
-                back: distractors[dIdx],
-                source: 'Sistema',
-                icon: card.icon,
-              )
-          ]..shuffle();
-
-          parsedRounds.add(_QuizRound(
-            target: targetCard,
-            type: _QuizQuestionType.frontToBack,
-            options: optionCards,
-          ));
-        }
-      }
-
-      if (parsedRounds.length == 3) {
-        setState(() {
-          _quizRounds = parsedRounds;
-          _isAdvancedLoading = false;
-        });
-        return;
-      }
-      throw Exception('Estructura de rondas inválida.');
-    } catch (e) {
-      debugPrint('Error cargando quiz avanzado de Gemini: $e. Activando fallback local teológico...');
-      if (!mounted) return;
-      
-      // Fallback local teológico de alta coherencia
-      final fallbackRounds = _buildLocalAdvancedQuizRounds(deck, card);
       setState(() {
-        _quizRounds = fallbackRounds;
-        _isAdvancedLoading = false;
+        _aiQuizLoadingText = advanced
+            ? 'Gemma 3 está razonando preguntas teológicas sobre ${card.front}…'
+            : 'Gemma 3 está creando preguntas únicas sobre ${card.front}…';
       });
+      final roundSet = await llm.generateQuizRoundSet(
+        reference: card.front,
+        verseText: card.back,
+        advanced: advanced,
+      );
+      if (!mounted) return;
+      setState(() {
+        _quizRounds = _roundsFromAi(card, roundSet);
+        _isAiQuizLoading = false;
+      });
+    } catch (e) {
+      debugPrint('Error generando quiz con IA local: $e');
+      if (!mounted) return;
+      setState(() {
+        _isAiQuizLoading = false;
+        _aiQuizError =
+            'La IA local no pudo generar las preguntas. Verifica que el '
+            'modelo esté descargado y vuelve a intentarlo.';
+      });
+    } finally {
+      llm.statusNotifier.removeListener(onEngineStatus);
     }
   }
 
-  List<_QuizRound> _buildLocalAdvancedQuizRounds(MemoryDeckData deck, MemoryCardData card) {
-    final rng = math.Random(card.id.hashCode ^ DateTime.now().millisecondsSinceEpoch);
-    final text = card.back.toLowerCase();
-    
-    // Categorización teológica según el texto del versículo
-    String category = 'default';
-    if (text.contains('justicia') || text.contains('justo') || text.contains('ley')) {
-      category = 'justice';
-    } else if (text.contains('fe') || text.contains('gracia') || text.contains('salva')) {
-      category = 'grace';
-    } else if (text.contains('pacto') || text.contains('promesa')) {
-      category = 'covenant';
-    } else if (text.contains('sabiduría') || text.contains('entender') || text.contains('conoce') || text.contains('ciencia')) {
-      category = 'wisdom';
-    }
+  List<_QuizRound> _roundsFromAi(MemoryCardData card, AiQuizRoundSet set) {
+    final trueFalseRound = _QuizRound(
+      target: card,
+      type: _QuizQuestionType.trueFalse,
+      options: const [],
+      trueFalseStatement: set.trueFalse.statement,
+      isStatementTrue: set.trueFalse.isTrue,
+    );
 
-    final rounds = <_QuizRound>[];
+    final multipleChoice = set.multipleChoice;
+    final correctCard = MemoryCardData(
+      id: 'quiz-ai-mc-${card.id}',
+      front: multipleChoice.question,
+      back: multipleChoice.correct,
+      source: card.source,
+      icon: card.icon,
+    );
+    final optionCards = <MemoryCardData>[
+      correctCard,
+      for (var idx = 0; idx < multipleChoice.distractors.length; idx++)
+        MemoryCardData(
+          id: 'quiz-ai-mc-distractor-$idx-${card.id}',
+          front: multipleChoice.question,
+          back: multipleChoice.distractors[idx],
+          source: 'IA local',
+          icon: card.icon,
+        ),
+    ]..shuffle();
+    final multipleChoiceRound = _QuizRound(
+      target: correctCard,
+      type: _QuizQuestionType.frontToBack,
+      options: optionCards,
+    );
 
-    // Ronda 1: Conceptual Choice
-    {
-      String question = '';
-      String correct = '';
-      List<String> distractors = [];
+    final openRound = _QuizRound(
+      target: card,
+      type: _QuizQuestionType.openQuestion,
+      options: const [],
+      openQuestionPrompt: set.openQuestion.question,
+    );
 
-      switch (category) {
-        case 'justice':
-          question = '¿Cuál es el significado teológico de la "justicia" en el contexto de este pasaje?';
-          correct = 'Es la declaración legal y soberana de Dios donde nos otorga la perfecta rectitud de Cristo, no por méritos humanos.';
-          distractors = [
-            'Es el premio que Dios otorga a aquellos que logran cumplir a la perfección cada mandato moral.',
-            'Es una condición mística interna que el creyente debe cultivar con esfuerzo constante para ser aceptado.',
-            'Es la fuerza moral con la que Dios castiga a los infractores y bendice exclusivamente a Israel.',
-          ];
-          break;
-        case 'grace':
-          question = '¿Cómo opera la relación entre "gracia" y "fe" según el análisis doctrinal de este pasaje?';
-          correct = 'La gracia es la causa soberana no merecida, y la fe es el instrumento receptor a través del cual nos aferramos a la promesa.';
-          distractors = [
-            'La fe es la obra meritoria inicial del hombre que convence a Dios de darnos su gracia posterior.',
-            'La gracia y la fe son términos idénticos que eliminan la necesidad de cualquier obediencia o fruto moral.',
-            'La fe es un poder mental creador con el cual el creyente obliga a Dios a actuar por gracia.',
-          ];
-          break;
-        case 'covenant':
-          question = '¿Qué implicación teológica profunda tiene el concepto de "pacto" o "promesa" en este texto?';
-          correct = 'Refleja el compromiso incondicional y eterno de Dios de sostener a su pueblo basándose en su propio carácter.';
-          distractors = [
-            'Es un acuerdo de beneficio mutuo donde si el hombre falla una vez, Dios queda libre de toda obligación.',
-            'Representa una formalidad ceremonial del Antiguo Testamento que no tiene relevancia en el Nuevo Pacto.',
-            'Es un contrato legal donde el creyente puede exigir prosperidad material a cambio de su fidelidad.',
-          ];
-          break;
-        case 'wisdom':
-          question = '¿Qué tipo de "sabiduría" o "entendimiento" se promueve teológicamente en este versículo?';
-          correct = 'Es el conocimiento práctico y devocional que nace del temor reverente a Dios y guía el comportamiento moral.';
-          distractors = [
-            'Es una revelación gnóstica intelectual reservada exclusivamente para una élite académica o mística.',
-            'Es la acumulación de datos enciclopédicos sobre historia y filosofía humana.',
-            'Es la capacidad de debatir y persuadir con retórica humana para demostrar superioridad intelectual.',
-          ];
-          break;
-        default:
-          question = '¿Cuál es el núcleo y la aplicación práctica central de este versículo doctrinal?';
-          correct = 'Reconocer que nuestra comunión con Dios se fundamenta en su soberanía y demanda una vida de sincera fidelidad.';
-          distractors = [
-            'Adoptar una postura ascética de aislamiento total para evitar cualquier contacto con el mundo exterior.',
-            'Considerar que el conocimiento puramente conceptual es suficiente para complacer a Dios sin necesidad de obediencia.',
-            'Buscar activamente la aprobación y el reconocimiento de la sociedad secular como medida de éxito espiritual.',
-          ];
-      }
-
-      final targetCard = MemoryCardData(
-        id: 'quiz-adv-local-conceptual-${card.id}-0',
-        front: question,
-        back: correct,
-        source: card.source,
-        icon: card.icon,
-      );
-
-      final optionCards = <MemoryCardData>[
-        targetCard,
-        for (var idx = 0; idx < distractors.length; idx++)
-          MemoryCardData(
-            id: 'quiz-adv-local-conceptual-distractor-$idx-${card.id}-0',
-            front: question,
-            back: distractors[idx],
-            source: 'Sistema',
-            icon: card.icon,
-          )
-      ]..shuffle(rng);
-
-      rounds.add(_QuizRound(
-        target: targetCard,
-        type: _QuizQuestionType.frontToBack,
-        options: optionCards,
-      ));
-    }
-
-    // Ronda 2: Theological True/False
-    {
-      String statement = '';
-      bool isTrue = rng.nextBool();
-
-      if (isTrue) {
-        switch (category) {
-          case 'justice':
-            statement = 'La justicia descrita en el versículo no se alcanza por medio de la ley moral humana, sino por la imputación gratuita del carácter justo de Dios.';
-            break;
-          case 'grace':
-            statement = 'La gracia soberana divina precede a cualquier iniciativa humana de fe y es la fuente exclusiva del rescate espiritual.';
-            break;
-          case 'covenant':
-            statement = 'Las promesas divinas en este pasaje se sostienen sobre la inmutabilidad de la palabra y el carácter absoluto del Creador.';
-            break;
-          case 'wisdom':
-            statement = 'El verdadero entendimiento bíblico trasciende la mera capacidad intelectual e involucra una sumisión total a la voluntad divina.';
-            break;
-          default:
-            statement = 'El pasaje nos enseña que el carácter soberano de Dios y su gracia son el ancla firme para nuestra confianza en medio de la debilidad.';
-        }
-      } else {
-        switch (category) {
-          case 'justice':
-            statement = 'El versículo enseña que el camino establecido por Dios para la justificación perfecta reside en la acumulación de buenas obras individuales.';
-            break;
-          case 'grace':
-            statement = 'El pasaje establece que la gracia de Dios es un recurso inactivo que sólo se activa cuando el hombre realiza una obra de fe perfecta.';
-            break;
-          case 'covenant':
-            statement = 'El texto enseña que los pactos con Dios son transacciones inestables y enteramente dependientes del cumplimiento moral constante del hombre.';
-            break;
-          case 'wisdom':
-            statement = 'El versículo sugiere que la sabiduría espiritual es equivalente a la erudición filosófica humana y el racionalismo frío.';
-            break;
-          default:
-            statement = 'El texto sugiere que los seres humanos poseemos la fuerza interna de voluntad suficiente para agradar a Dios sin ayuda de su Espíritu.';
-        }
-      }
-
-      rounds.add(_QuizRound(
-        target: card,
-        type: _QuizQuestionType.trueFalse,
-        options: const [],
-        trueFalseStatement: statement,
-        isStatementTrue: isTrue,
-      ));
-    }
-
-    // Ronda 3: Antithesis/Contra-argument
-    {
-      String question = '';
-      String correct = '';
-      List<String> distractors = [];
-
-      switch (category) {
-        case 'justice':
-          question = '¿Qué actitud contradice directamente la enseñanza de este pasaje sobre la justicia?';
-          correct = 'El legalismo autosuficiente que busca impresionar a Dios mediante el estricto cumplimiento exterior de reglas.';
-          distractors = [
-            'La humilde confesión de la propia debilidad espiritual ante el Creador.',
-            'El deseo genuino de buscar la santidad y amar al prójimo con sinceridad.',
-            'El agradecimiento reverente por el perdón inmerecido.',
-          ];
-          break;
-        case 'grace':
-          question = '¿Qué perspectiva contradice directamente la doctrina de la gracia en este pasaje?';
-          correct = 'El orgullo espiritual que asume que el rescate del alma depende en parte del mérito o la dignidad humana.';
-          distractors = [
-            'La confianza plena en las promesas divinas en momentos de aflicción.',
-            'La rendición incondicional del propio ego ante el señorío de Cristo.',
-            'La obediencia gozosa motivada únicamente por el amor y la gratitud.',
-          ];
-          break;
-        case 'covenant':
-          question = '¿Qué actitud contradice la seguridad de las promesas de Dios descritas aquí?';
-          correct = 'La incredulidad ansiosa que teme que la fidelidad de Dios pueda caducar ante nuestras fallas morales arrepentidas.';
-          distractors = [
-            'La convicción pacífica de que Dios completará su obra soberana en nosotros.',
-            'La paciencia perseverante que aguarda el cumplimiento del tiempo divino.',
-            'La alabanza sincera al carácter inmutable y eterno del Creador.',
-          ];
-          break;
-        case 'wisdom':
-          question = '¿Qué postura contradice el principio de la verdadera sabiduría bíblica en este texto?';
-          correct = 'La vanidad intelectual que confía en el propio raciocinio humano y desprecia la revelación del Espíritu.';
-          distractors = [
-            'La docilidad de corazón que recibe la Palabra con sencillez y alegría.',
-            'El estudio reflexivo de las Escrituras con una actitud de humilde oración.',
-            'La disposición a ser enseñado por otros creyentes maduros en la fe.',
-          ];
-          break;
-        default:
-          question = '¿Qué postura o actitud contradice el llamado central de este pasaje bíblico?';
-          correct = 'La apatía espiritual o la autosuficiencia arrogante que vive ignorando nuestra total dependencia de Dios.';
-          distractors = [
-            'La entrega consagrada del servicio a los necesitados en amor.',
-            'La búsqueda constante de la paz y la reconciliación comunitaria.',
-            'El reconocimiento humilde de que toda buena dádiva proviene del Padre.',
-          ];
-      }
-
-      final targetCard = MemoryCardData(
-        id: 'quiz-adv-local-antithesis-${card.id}-2',
-        front: question,
-        back: correct,
-        source: card.source,
-        icon: card.icon,
-      );
-
-      final optionCards = <MemoryCardData>[
-        targetCard,
-        for (var idx = 0; idx < distractors.length; idx++)
-          MemoryCardData(
-            id: 'quiz-adv-local-antithesis-distractor-$idx-${card.id}-2',
-            front: question,
-            back: distractors[idx],
-            source: 'Sistema',
-            icon: card.icon,
-          )
-      ]..shuffle(rng);
-
-      rounds.add(_QuizRound(
-        target: targetCard,
-        type: _QuizQuestionType.frontToBack,
-        options: optionCards,
-      ));
-    }
-
-    return rounds;
+    return [trueFalseRound, multipleChoiceRound, openRound];
   }
 
   void _selectQuizOption(int idx) {
@@ -2051,44 +1545,35 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     setState(() {
       _isEvaluatingOpenQuestion = true;
     });
-    
-    // Simulación premium de análisis de la IA Local Offline
-    await Future.delayed(const Duration(milliseconds: 600));
-    
+
+    final AiOpenAnswerEvaluation evaluation;
+    try {
+      evaluation = await LocalLlmService.instance.evaluateOpenAnswer(
+        question: round.openQuestionPrompt ?? round.target.front,
+        verseText: round.target.back,
+        userAnswer: response,
+      );
+    } catch (e) {
+      debugPrint('Error evaluando respuesta abierta con IA local: $e');
+      if (!mounted) return;
+      setState(() {
+        _isEvaluatingOpenQuestion = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'La IA local no pudo evaluar tu respuesta. Inténtalo de nuevo.',
+          ),
+        ),
+      );
+      return;
+    }
+
     if (!mounted) return;
-    
-    final text = response.toLowerCase();
-    final keywords = <String>[];
-    final targetText = round.target.back.toLowerCase();
-    
-    if (targetText.contains('puedo') || targetText.contains('fortalece')) {
-      keywords.addAll(['cri', 'pod', 'for', 'fue', 'dio', 'fe', 'sos', 'paz', 'tod']);
-    } else if (targetText.contains('gracias') || targetText.contains('misericordia') || targetText.contains('bueno')) {
-      keywords.addAll(['gra', 'miser', 'buen', 'amo', 'fie', 'dio', 'etern']);
-    } else if (targetText.contains('angustia') || targetText.contains('clamar') || targetText.contains('liberó')) {
-      keywords.addAll(['cla', 'ang', 'libe', 'salv', 'dio', 'fe', 'ora']);
-    } else if (targetText.contains('paz') || targetText.contains('cuidado') || targetText.contains('ansiedad')) {
-      keywords.addAll(['paz', 'ans', 'cui', 'ora', 'gra', 'men', 'cor']);
-    } else if (round.target.front.contains('Bíceps') || targetText.contains('flexor') || targetText.contains('codo')) {
-      keywords.addAll(['bic', 'cod', 'fle', 'art', 'bra', 'mus', 'mov']);
-    } else {
-      keywords.addAll(['dio', 'fe', 'amo', 'vida', 'pal', 'con']);
-    }
-    
-    int matches = 0;
-    for (final kw in keywords) {
-      if (text.contains(kw)) {
-        matches++;
-      }
-    }
-    
-    final responseWords = text.split(RegExp(r'\s+')).map((w) => w.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '')).where((w) => w.length > 3).toSet();
-    final targetWords = targetText.split(RegExp(r'\s+')).map((w) => w.replaceAll(RegExp(r'[.,;:!?¡¿()]'), '')).where((w) => w.length > 3).toSet();
-    final wordOverlap = responseWords.intersection(targetWords).length;
-    
-    // La respuesta debe tener al menos 8 caracteres y contener al menos una idea clave del versículo
-    final bool passes = response.length >= 8 && (matches >= 1 || wordOverlap >= 1);
-    
+
+    final passes = evaluation.isCorrect;
+    final feedback = evaluation.feedback;
+
     setState(() {
       _isEvaluatingOpenQuestion = false;
       round.selectedIdx = 1; // Mark as answered
@@ -2096,19 +1581,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         _quizScore += 1;
       }
     });
-    
-    String feedback = '';
-    if (passes) {
-      feedback = '¡Excelente asimilación! ';
-      if (matches >= 3 || wordOverlap >= 2) {
-        feedback += 'La IA Local Offline reconoció tus ideas clave y tu conceptualización de este pasaje. ¡Sigue así!';
-      } else {
-        feedback += 'La IA Local Offline identificó conceptos importantes en tu respuesta y validó tu razonamiento básico.';
-      }
-    } else {
-      feedback = 'Asimilación insuficiente. La IA Local Offline no detectó conceptos clave ni coincidencia temática en tu respuesta. Intenta detallar más el valor práctico del texto.';
-    }
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         duration: const Duration(seconds: 4),
@@ -2519,30 +1992,74 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   ) {
     final completed = store.isExerciseStepCompleted(slug);
 
-    if (slug == '09-quiz-avanzado' && _isAdvancedLoading) {
-      return Center(
-        child: Glass(
-          padding: const EdgeInsets.all(28),
-          color: RefColors.glassStrong,
-          border: Border.all(color: RefColors.border),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const SizedBox(
-                width: 48,
-                height: 48,
-                child: CircularProgressIndicator(
-                  strokeWidth: 3,
-                  valueColor: AlwaysStoppedAnimation<Color>(RefColors.cyan),
+    if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
+      _ensureQuizRounds(deck, card);
+      if (_isAiQuizLoading) {
+        return Center(
+          child: Glass(
+            padding: const EdgeInsets.all(28),
+            color: RefColors.glassStrong,
+            border: Border.all(color: RefColors.border),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    valueColor: AlwaysStoppedAnimation<Color>(RefColors.cyan),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 24),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                child: Text(
-                  _advancedLoadingText,
-                  key: ValueKey(_advancedLoadingText),
+                const SizedBox(height: 24),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: Text(
+                    _aiQuizLoadingText,
+                    key: ValueKey(_aiQuizLoadingText),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      height: 1.45,
+                      fontWeight: FontWeight.w700,
+                      color: RefColors.ink,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Preguntas generadas en vivo por la IA local · sin internet',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: RefColors.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+      if (_aiQuizError != null) {
+        return Center(
+          child: Glass(
+            padding: const EdgeInsets.all(28),
+            color: RefColors.glassStrong,
+            border: Border.all(color: RefColors.urgent.withValues(alpha: .5)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.psychology_alt_rounded,
+                  color: RefColors.urgent,
+                  size: 44,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _aiQuizError!,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 14,
@@ -2551,11 +2068,21 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     color: RefColors.ink,
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 18),
+                Cta(
+                  'Reintentar con IA',
+                  onTap: () {
+                    setState(() {
+                      _quizCardId = null;
+                      _aiQuizError = null;
+                    });
+                  },
+                ),
+              ],
+            ),
           ),
-        ),
-      );
+        );
+      }
     }
 
     if (slug == '00-solo-lectura') {
@@ -3251,7 +2778,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       );
     }
 
-    _ensureQuizRounds(deck, card);
+    if (_quizRounds.isEmpty) {
+      // El loading/error de la IA ya se renderizó arriba; nunca indexar vacío.
+      return const SizedBox.shrink();
+    }
     final round = _quizRounds[_quizRoundIndex];
     final answered = round.answered;
     final isFrontToBack = round.type == _QuizQuestionType.frontToBack;
@@ -3347,9 +2877,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 20),
                     decoration: BoxDecoration(
                       color: answered && round.isStatementTrue == true
-                          ? RefColors.lime.withOpacity(0.12)
+                          ? RefColors.lime.withValues(alpha: 0.12)
                           : round.selectedIdx == 0
-                          ? (round.correct ? RefColors.lime.withOpacity(0.12) : RefColors.urgent.withOpacity(0.12))
+                          ? (round.correct ? RefColors.lime.withValues(alpha: 0.12) : RefColors.urgent.withValues(alpha: 0.12))
                           : RefColors.glassStrong,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
@@ -3391,9 +2921,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 20),
                     decoration: BoxDecoration(
                       color: answered && round.isStatementTrue == false
-                          ? RefColors.lime.withOpacity(0.12)
+                          ? RefColors.lime.withValues(alpha: 0.12)
                           : round.selectedIdx == 1
-                          ? (round.correct ? RefColors.lime.withOpacity(0.12) : RefColors.urgent.withOpacity(0.12))
+                          ? (round.correct ? RefColors.lime.withValues(alpha: 0.12) : RefColors.urgent.withValues(alpha: 0.12))
                           : RefColors.glassStrong,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
@@ -3443,9 +2973,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
                           decoration: BoxDecoration(
                             color: _matchingCompletedLeft.contains(leftItem)
-                                ? RefColors.lime.withOpacity(0.12)
+                                ? RefColors.lime.withValues(alpha: 0.12)
                                 : _matchingSelectedLeft == leftItem
-                                ? RefColors.pink.withOpacity(0.12)
+                                ? RefColors.pink.withValues(alpha: 0.12)
                                 : RefColors.glassStrong,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
@@ -3493,9 +3023,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
                           decoration: BoxDecoration(
                             color: _matchingCompletedRight.contains(rightItem)
-                                ? RefColors.lime.withOpacity(0.12)
+                                ? RefColors.lime.withValues(alpha: 0.12)
                                 : _matchingSelectedRight == rightItem
-                                ? RefColors.pink.withOpacity(0.12)
+                                ? RefColors.pink.withValues(alpha: 0.12)
                                 : RefColors.glassStrong,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
@@ -4856,9 +4386,9 @@ class _RealPairingReviewState extends State<_RealPairingReview> {
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
           decoration: BoxDecoration(
             color: active
-                ? RefColors.pink.withOpacity(0.08)
+                ? RefColors.pink.withValues(alpha: 0.08)
                 : completed
-                ? RefColors.lime.withOpacity(0.06)
+                ? RefColors.lime.withValues(alpha: 0.06)
                 : RefColors.glassSoft,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
@@ -4949,9 +4479,9 @@ class _RealPairingReviewState extends State<_RealPairingReview> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   decoration: BoxDecoration(
-                    color: RefColors.lime.withOpacity(0.12),
+                    color: RefColors.lime.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(99),
-                    border: Border.all(color: RefColors.lime.withOpacity(0.3)),
+                    border: Border.all(color: RefColors.lime.withValues(alpha: 0.3)),
                   ),
                   child: const Text(
                     'Mini-repaso',
@@ -5047,7 +4577,7 @@ class _RealPairingReviewState extends State<_RealPairingReview> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      color: RefColors.pink.withOpacity(0.12),
+                      color: RefColors.pink.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
@@ -5101,9 +4631,9 @@ class _RealPairingReviewState extends State<_RealPairingReview> {
                                 padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
                                 decoration: BoxDecoration(
                                   color: _matched.contains(card.id)
-                                      ? RefColors.lime.withOpacity(0.12)
+                                      ? RefColors.lime.withValues(alpha: 0.12)
                                       : _frontId == card.id
-                                      ? RefColors.pink.withOpacity(0.12)
+                                      ? RefColors.pink.withValues(alpha: 0.12)
                                       : RefColors.glassStrong,
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
@@ -5165,9 +4695,9 @@ class _RealPairingReviewState extends State<_RealPairingReview> {
                                 padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
                                 decoration: BoxDecoration(
                                   color: _matched.contains(card.id)
-                                      ? RefColors.lime.withOpacity(0.12)
+                                      ? RefColors.lime.withValues(alpha: 0.12)
                                       : _backId == card.id
-                                      ? RefColors.pink.withOpacity(0.12)
+                                      ? RefColors.pink.withValues(alpha: 0.12)
                                       : RefColors.glassStrong,
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
@@ -5397,9 +4927,9 @@ class _RealPairingReviewState extends State<_RealPairingReview> {
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
                             color: _e3Completed && _e3Options[i] == _e3CorrectText
-                                ? RefColors.lime.withOpacity(0.12)
+                                ? RefColors.lime.withValues(alpha: 0.12)
                                 : _e3SelectedIdx == i
-                                ? (_e3Options[i] == _e3CorrectText ? RefColors.lime.withOpacity(0.12) : RefColors.urgent.withOpacity(0.12))
+                                ? (_e3Options[i] == _e3CorrectText ? RefColors.lime.withValues(alpha: 0.12) : RefColors.urgent.withValues(alpha: 0.12))
                                 : RefColors.glassSoft,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
@@ -5537,9 +5067,9 @@ class _RealFinalReview extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   decoration: BoxDecoration(
-                    color: RefColors.lime.withOpacity(0.12),
+                    color: RefColors.lime.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(99),
-                    border: Border.all(color: RefColors.lime.withOpacity(0.3)),
+                    border: Border.all(color: RefColors.lime.withValues(alpha: 0.3)),
                   ),
                   child: const Text(
                     'FIN DE SESIÓN',
@@ -5561,7 +5091,7 @@ class _RealFinalReview extends StatelessWidget {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  const Color(0xFF5DF07E).withOpacity(0.9),
+                  const Color(0xFF5DF07E).withValues(alpha: 0.9),
                   const Color(0xFF38CD6E),
                 ],
                 begin: Alignment.topLeft,
@@ -5570,7 +5100,7 @@ class _RealFinalReview extends StatelessWidget {
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF38CD6E).withOpacity(0.4),
+                  color: const Color(0xFF38CD6E).withValues(alpha: 0.4),
                   blurRadius: 16,
                   offset: const Offset(0, 8),
                 ),
@@ -5600,7 +5130,7 @@ class _RealFinalReview extends StatelessWidget {
             child: Row(
               children: [
                 // Circle percent indicator
-                Container(
+                SizedBox(
                   width: 90,
                   height: 90,
                   child: Stack(
@@ -5612,7 +5142,7 @@ class _RealFinalReview extends StatelessWidget {
                         child: CircularProgressIndicator(
                           value: retention / 100,
                           strokeWidth: 9,
-                          backgroundColor: RefColors.border.withOpacity(0.1),
+                          backgroundColor: RefColors.border.withValues(alpha: 0.1),
                           color: RefColors.lime,
                           strokeCap: StrokeCap.round,
                         ),
@@ -5800,9 +5330,9 @@ class _RealFinalReview extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: RefColors.lime.withOpacity(0.12),
+                      color: RefColors.lime.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: RefColors.lime.withOpacity(0.3)),
+                      border: Border.all(color: RefColors.lime.withValues(alpha: 0.3)),
                     ),
                     child: const Text(
                       '✓ 100%',

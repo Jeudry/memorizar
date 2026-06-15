@@ -46,8 +46,12 @@ type User struct {
 	PasswordHash  string    `json:"-"`
 	Locale        string    `json:"locale,omitempty"`
 	EmailVerified bool      `json:"emailVerified"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	// IsModerator habilita la cola de moderación de comunidad. Se concede
+	// vía allowlist de correos (MEMORIZAR_MODERATOR_EMAILS) o seteando el
+	// campo persistido; el gate vive en application.Service.IsModerator.
+	IsModerator bool      `json:"isModerator"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 // Sanitize devuelve una copia del User sin campos sensibles.
@@ -106,6 +110,66 @@ type SharedResource struct {
 	PayloadJSON  string    `json:"payloadJson"`
 	IsPublic     bool      `json:"isPublic"`
 	CreatedAt    time.Time `json:"createdAt"`
+}
+
+// PushToken es el token FCM/APNs de un dispositivo del usuario. Se persiste
+// aunque el envío remoto aún no esté configurado (LogNotifier) para que el
+// switch a FCM no requiera re-registrar dispositivos.
+type PushToken struct {
+	UserID    string    `json:"userId"`
+	Token     string    `json:"token"`
+	Platform  string    `json:"platform"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// PremiumSubscription es el estado premium de un usuario, persistido del
+// lado servidor para sobrevivir reinstalaciones. Sin pasarela de pago aún:
+// el único plan activable hoy es el trial.
+type PremiumSubscription struct {
+	UserID      string    `json:"userId"`
+	Plan        string    `json:"plan"`
+	ActivatedAt time.Time `json:"activatedAt"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+}
+
+// AnalyticsEvent es un evento de producto registrado por la app. UserID
+// queda vacío para invitados.
+type AnalyticsEvent struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"userId,omitempty"`
+	Event     string    `json:"event"`
+	PropsJSON string    `json:"propsJson,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// DeckReportStatus es el estado de un reporte en la cola de moderación.
+type DeckReportStatus string
+
+const (
+	ReportStatusPending         DeckReportStatus = "pending"
+	ReportStatusResolvedKept    DeckReportStatus = "resolved_kept"
+	ReportStatusResolvedHidden  DeckReportStatus = "resolved_hidden"
+	ReportStatusResolvedRemoved DeckReportStatus = "resolved_removed"
+)
+
+// DeckReport es la denuncia de un usuario sobre un mazo comunitario.
+type DeckReport struct {
+	ID         string           `json:"id"`
+	DeckID     string           `json:"deckId"`
+	DeckTitle  string           `json:"deckTitle"`
+	ReporterID string           `json:"reporterId"`
+	Reason     string           `json:"reason"`
+	Note       string           `json:"note"`
+	Status     DeckReportStatus `json:"status"`
+	CreatedAt  time.Time        `json:"createdAt"`
+}
+
+// ShareImport registra que un usuario importó un deck comunitario a su
+// colección. Una fila por (share, usuario): re-importar no infla stats.
+type ShareImport struct {
+	ShareID   string    `json:"shareId"`
+	UserID    string    `json:"userId"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 type ProgressSnapshot struct {

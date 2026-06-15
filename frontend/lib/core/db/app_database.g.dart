@@ -491,6 +491,53 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, Card> {
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _easeFactorMeta = const VerificationMeta(
+    'easeFactor',
+  );
+  @override
+  late final GeneratedColumn<double> easeFactor = GeneratedColumn<double>(
+    'ease_factor',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(2.5),
+  );
+  static const VerificationMeta _intervalDaysMeta = const VerificationMeta(
+    'intervalDays',
+  );
+  @override
+  late final GeneratedColumn<int> intervalDays = GeneratedColumn<int>(
+    'interval_days',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _repetitionsMeta = const VerificationMeta(
+    'repetitions',
+  );
+  @override
+  late final GeneratedColumn<int> repetitions = GeneratedColumn<int>(
+    'repetitions',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _nextReviewAtMeta = const VerificationMeta(
+    'nextReviewAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> nextReviewAt = GeneratedColumn<DateTime>(
+    'next_review_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -501,6 +548,10 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, Card> {
     icon,
     retention,
     lapses,
+    easeFactor,
+    intervalDays,
+    repetitions,
+    nextReviewAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -571,6 +622,39 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, Card> {
         lapses.isAcceptableOrUnknown(data['lapses']!, _lapsesMeta),
       );
     }
+    if (data.containsKey('ease_factor')) {
+      context.handle(
+        _easeFactorMeta,
+        easeFactor.isAcceptableOrUnknown(data['ease_factor']!, _easeFactorMeta),
+      );
+    }
+    if (data.containsKey('interval_days')) {
+      context.handle(
+        _intervalDaysMeta,
+        intervalDays.isAcceptableOrUnknown(
+          data['interval_days']!,
+          _intervalDaysMeta,
+        ),
+      );
+    }
+    if (data.containsKey('repetitions')) {
+      context.handle(
+        _repetitionsMeta,
+        repetitions.isAcceptableOrUnknown(
+          data['repetitions']!,
+          _repetitionsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('next_review_at')) {
+      context.handle(
+        _nextReviewAtMeta,
+        nextReviewAt.isAcceptableOrUnknown(
+          data['next_review_at']!,
+          _nextReviewAtMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -612,6 +696,22 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, Card> {
         DriftSqlType.int,
         data['${effectivePrefix}lapses'],
       )!,
+      easeFactor: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}ease_factor'],
+      )!,
+      intervalDays: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}interval_days'],
+      )!,
+      repetitions: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}repetitions'],
+      )!,
+      nextReviewAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}next_review_at'],
+      ),
     );
   }
 
@@ -630,6 +730,10 @@ class Card extends DataClass implements Insertable<Card> {
   final String icon;
   final int retention;
   final int lapses;
+  final double easeFactor;
+  final int intervalDays;
+  final int repetitions;
+  final DateTime? nextReviewAt;
   const Card({
     required this.id,
     required this.deckId,
@@ -639,6 +743,10 @@ class Card extends DataClass implements Insertable<Card> {
     required this.icon,
     required this.retention,
     required this.lapses,
+    required this.easeFactor,
+    required this.intervalDays,
+    required this.repetitions,
+    this.nextReviewAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -651,6 +759,12 @@ class Card extends DataClass implements Insertable<Card> {
     map['icon'] = Variable<String>(icon);
     map['retention'] = Variable<int>(retention);
     map['lapses'] = Variable<int>(lapses);
+    map['ease_factor'] = Variable<double>(easeFactor);
+    map['interval_days'] = Variable<int>(intervalDays);
+    map['repetitions'] = Variable<int>(repetitions);
+    if (!nullToAbsent || nextReviewAt != null) {
+      map['next_review_at'] = Variable<DateTime>(nextReviewAt);
+    }
     return map;
   }
 
@@ -664,6 +778,12 @@ class Card extends DataClass implements Insertable<Card> {
       icon: Value(icon),
       retention: Value(retention),
       lapses: Value(lapses),
+      easeFactor: Value(easeFactor),
+      intervalDays: Value(intervalDays),
+      repetitions: Value(repetitions),
+      nextReviewAt: nextReviewAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(nextReviewAt),
     );
   }
 
@@ -681,6 +801,10 @@ class Card extends DataClass implements Insertable<Card> {
       icon: serializer.fromJson<String>(json['icon']),
       retention: serializer.fromJson<int>(json['retention']),
       lapses: serializer.fromJson<int>(json['lapses']),
+      easeFactor: serializer.fromJson<double>(json['easeFactor']),
+      intervalDays: serializer.fromJson<int>(json['intervalDays']),
+      repetitions: serializer.fromJson<int>(json['repetitions']),
+      nextReviewAt: serializer.fromJson<DateTime?>(json['nextReviewAt']),
     );
   }
   @override
@@ -695,6 +819,10 @@ class Card extends DataClass implements Insertable<Card> {
       'icon': serializer.toJson<String>(icon),
       'retention': serializer.toJson<int>(retention),
       'lapses': serializer.toJson<int>(lapses),
+      'easeFactor': serializer.toJson<double>(easeFactor),
+      'intervalDays': serializer.toJson<int>(intervalDays),
+      'repetitions': serializer.toJson<int>(repetitions),
+      'nextReviewAt': serializer.toJson<DateTime?>(nextReviewAt),
     };
   }
 
@@ -707,6 +835,10 @@ class Card extends DataClass implements Insertable<Card> {
     String? icon,
     int? retention,
     int? lapses,
+    double? easeFactor,
+    int? intervalDays,
+    int? repetitions,
+    Value<DateTime?> nextReviewAt = const Value.absent(),
   }) => Card(
     id: id ?? this.id,
     deckId: deckId ?? this.deckId,
@@ -716,6 +848,10 @@ class Card extends DataClass implements Insertable<Card> {
     icon: icon ?? this.icon,
     retention: retention ?? this.retention,
     lapses: lapses ?? this.lapses,
+    easeFactor: easeFactor ?? this.easeFactor,
+    intervalDays: intervalDays ?? this.intervalDays,
+    repetitions: repetitions ?? this.repetitions,
+    nextReviewAt: nextReviewAt.present ? nextReviewAt.value : this.nextReviewAt,
   );
   Card copyWithCompanion(CardsCompanion data) {
     return Card(
@@ -727,6 +863,18 @@ class Card extends DataClass implements Insertable<Card> {
       icon: data.icon.present ? data.icon.value : this.icon,
       retention: data.retention.present ? data.retention.value : this.retention,
       lapses: data.lapses.present ? data.lapses.value : this.lapses,
+      easeFactor: data.easeFactor.present
+          ? data.easeFactor.value
+          : this.easeFactor,
+      intervalDays: data.intervalDays.present
+          ? data.intervalDays.value
+          : this.intervalDays,
+      repetitions: data.repetitions.present
+          ? data.repetitions.value
+          : this.repetitions,
+      nextReviewAt: data.nextReviewAt.present
+          ? data.nextReviewAt.value
+          : this.nextReviewAt,
     );
   }
 
@@ -740,14 +888,30 @@ class Card extends DataClass implements Insertable<Card> {
           ..write('source: $source, ')
           ..write('icon: $icon, ')
           ..write('retention: $retention, ')
-          ..write('lapses: $lapses')
+          ..write('lapses: $lapses, ')
+          ..write('easeFactor: $easeFactor, ')
+          ..write('intervalDays: $intervalDays, ')
+          ..write('repetitions: $repetitions, ')
+          ..write('nextReviewAt: $nextReviewAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, deckId, front, back, source, icon, retention, lapses);
+  int get hashCode => Object.hash(
+    id,
+    deckId,
+    front,
+    back,
+    source,
+    icon,
+    retention,
+    lapses,
+    easeFactor,
+    intervalDays,
+    repetitions,
+    nextReviewAt,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -759,7 +923,11 @@ class Card extends DataClass implements Insertable<Card> {
           other.source == this.source &&
           other.icon == this.icon &&
           other.retention == this.retention &&
-          other.lapses == this.lapses);
+          other.lapses == this.lapses &&
+          other.easeFactor == this.easeFactor &&
+          other.intervalDays == this.intervalDays &&
+          other.repetitions == this.repetitions &&
+          other.nextReviewAt == this.nextReviewAt);
 }
 
 class CardsCompanion extends UpdateCompanion<Card> {
@@ -771,6 +939,10 @@ class CardsCompanion extends UpdateCompanion<Card> {
   final Value<String> icon;
   final Value<int> retention;
   final Value<int> lapses;
+  final Value<double> easeFactor;
+  final Value<int> intervalDays;
+  final Value<int> repetitions;
+  final Value<DateTime?> nextReviewAt;
   final Value<int> rowid;
   const CardsCompanion({
     this.id = const Value.absent(),
@@ -781,6 +953,10 @@ class CardsCompanion extends UpdateCompanion<Card> {
     this.icon = const Value.absent(),
     this.retention = const Value.absent(),
     this.lapses = const Value.absent(),
+    this.easeFactor = const Value.absent(),
+    this.intervalDays = const Value.absent(),
+    this.repetitions = const Value.absent(),
+    this.nextReviewAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   CardsCompanion.insert({
@@ -792,6 +968,10 @@ class CardsCompanion extends UpdateCompanion<Card> {
     required String icon,
     this.retention = const Value.absent(),
     this.lapses = const Value.absent(),
+    this.easeFactor = const Value.absent(),
+    this.intervalDays = const Value.absent(),
+    this.repetitions = const Value.absent(),
+    this.nextReviewAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        deckId = Value(deckId),
@@ -808,6 +988,10 @@ class CardsCompanion extends UpdateCompanion<Card> {
     Expression<String>? icon,
     Expression<int>? retention,
     Expression<int>? lapses,
+    Expression<double>? easeFactor,
+    Expression<int>? intervalDays,
+    Expression<int>? repetitions,
+    Expression<DateTime>? nextReviewAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -819,6 +1003,10 @@ class CardsCompanion extends UpdateCompanion<Card> {
       if (icon != null) 'icon': icon,
       if (retention != null) 'retention': retention,
       if (lapses != null) 'lapses': lapses,
+      if (easeFactor != null) 'ease_factor': easeFactor,
+      if (intervalDays != null) 'interval_days': intervalDays,
+      if (repetitions != null) 'repetitions': repetitions,
+      if (nextReviewAt != null) 'next_review_at': nextReviewAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -832,6 +1020,10 @@ class CardsCompanion extends UpdateCompanion<Card> {
     Value<String>? icon,
     Value<int>? retention,
     Value<int>? lapses,
+    Value<double>? easeFactor,
+    Value<int>? intervalDays,
+    Value<int>? repetitions,
+    Value<DateTime?>? nextReviewAt,
     Value<int>? rowid,
   }) {
     return CardsCompanion(
@@ -843,6 +1035,10 @@ class CardsCompanion extends UpdateCompanion<Card> {
       icon: icon ?? this.icon,
       retention: retention ?? this.retention,
       lapses: lapses ?? this.lapses,
+      easeFactor: easeFactor ?? this.easeFactor,
+      intervalDays: intervalDays ?? this.intervalDays,
+      repetitions: repetitions ?? this.repetitions,
+      nextReviewAt: nextReviewAt ?? this.nextReviewAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -874,6 +1070,18 @@ class CardsCompanion extends UpdateCompanion<Card> {
     if (lapses.present) {
       map['lapses'] = Variable<int>(lapses.value);
     }
+    if (easeFactor.present) {
+      map['ease_factor'] = Variable<double>(easeFactor.value);
+    }
+    if (intervalDays.present) {
+      map['interval_days'] = Variable<int>(intervalDays.value);
+    }
+    if (repetitions.present) {
+      map['repetitions'] = Variable<int>(repetitions.value);
+    }
+    if (nextReviewAt.present) {
+      map['next_review_at'] = Variable<DateTime>(nextReviewAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -891,6 +1099,321 @@ class CardsCompanion extends UpdateCompanion<Card> {
           ..write('icon: $icon, ')
           ..write('retention: $retention, ')
           ..write('lapses: $lapses, ')
+          ..write('easeFactor: $easeFactor, ')
+          ..write('intervalDays: $intervalDays, ')
+          ..write('repetitions: $repetitions, ')
+          ..write('nextReviewAt: $nextReviewAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $DailyActivityTable extends DailyActivity
+    with TableInfo<$DailyActivityTable, DailyActivityData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DailyActivityTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _dayMeta = const VerificationMeta('day');
+  @override
+  late final GeneratedColumn<String> day = GeneratedColumn<String>(
+    'day',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _correctMeta = const VerificationMeta(
+    'correct',
+  );
+  @override
+  late final GeneratedColumn<int> correct = GeneratedColumn<int>(
+    'correct',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _wrongMeta = const VerificationMeta('wrong');
+  @override
+  late final GeneratedColumn<int> wrong = GeneratedColumn<int>(
+    'wrong',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _cardsReviewedMeta = const VerificationMeta(
+    'cardsReviewed',
+  );
+  @override
+  late final GeneratedColumn<int> cardsReviewed = GeneratedColumn<int>(
+    'cards_reviewed',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [day, correct, wrong, cardsReviewed];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'daily_activity';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DailyActivityData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('day')) {
+      context.handle(
+        _dayMeta,
+        day.isAcceptableOrUnknown(data['day']!, _dayMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_dayMeta);
+    }
+    if (data.containsKey('correct')) {
+      context.handle(
+        _correctMeta,
+        correct.isAcceptableOrUnknown(data['correct']!, _correctMeta),
+      );
+    }
+    if (data.containsKey('wrong')) {
+      context.handle(
+        _wrongMeta,
+        wrong.isAcceptableOrUnknown(data['wrong']!, _wrongMeta),
+      );
+    }
+    if (data.containsKey('cards_reviewed')) {
+      context.handle(
+        _cardsReviewedMeta,
+        cardsReviewed.isAcceptableOrUnknown(
+          data['cards_reviewed']!,
+          _cardsReviewedMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {day};
+  @override
+  DailyActivityData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DailyActivityData(
+      day: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}day'],
+      )!,
+      correct: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}correct'],
+      )!,
+      wrong: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}wrong'],
+      )!,
+      cardsReviewed: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cards_reviewed'],
+      )!,
+    );
+  }
+
+  @override
+  $DailyActivityTable createAlias(String alias) {
+    return $DailyActivityTable(attachedDatabase, alias);
+  }
+}
+
+class DailyActivityData extends DataClass
+    implements Insertable<DailyActivityData> {
+  final String day;
+  final int correct;
+  final int wrong;
+  final int cardsReviewed;
+  const DailyActivityData({
+    required this.day,
+    required this.correct,
+    required this.wrong,
+    required this.cardsReviewed,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['day'] = Variable<String>(day);
+    map['correct'] = Variable<int>(correct);
+    map['wrong'] = Variable<int>(wrong);
+    map['cards_reviewed'] = Variable<int>(cardsReviewed);
+    return map;
+  }
+
+  DailyActivityCompanion toCompanion(bool nullToAbsent) {
+    return DailyActivityCompanion(
+      day: Value(day),
+      correct: Value(correct),
+      wrong: Value(wrong),
+      cardsReviewed: Value(cardsReviewed),
+    );
+  }
+
+  factory DailyActivityData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DailyActivityData(
+      day: serializer.fromJson<String>(json['day']),
+      correct: serializer.fromJson<int>(json['correct']),
+      wrong: serializer.fromJson<int>(json['wrong']),
+      cardsReviewed: serializer.fromJson<int>(json['cardsReviewed']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'day': serializer.toJson<String>(day),
+      'correct': serializer.toJson<int>(correct),
+      'wrong': serializer.toJson<int>(wrong),
+      'cardsReviewed': serializer.toJson<int>(cardsReviewed),
+    };
+  }
+
+  DailyActivityData copyWith({
+    String? day,
+    int? correct,
+    int? wrong,
+    int? cardsReviewed,
+  }) => DailyActivityData(
+    day: day ?? this.day,
+    correct: correct ?? this.correct,
+    wrong: wrong ?? this.wrong,
+    cardsReviewed: cardsReviewed ?? this.cardsReviewed,
+  );
+  DailyActivityData copyWithCompanion(DailyActivityCompanion data) {
+    return DailyActivityData(
+      day: data.day.present ? data.day.value : this.day,
+      correct: data.correct.present ? data.correct.value : this.correct,
+      wrong: data.wrong.present ? data.wrong.value : this.wrong,
+      cardsReviewed: data.cardsReviewed.present
+          ? data.cardsReviewed.value
+          : this.cardsReviewed,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DailyActivityData(')
+          ..write('day: $day, ')
+          ..write('correct: $correct, ')
+          ..write('wrong: $wrong, ')
+          ..write('cardsReviewed: $cardsReviewed')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(day, correct, wrong, cardsReviewed);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DailyActivityData &&
+          other.day == this.day &&
+          other.correct == this.correct &&
+          other.wrong == this.wrong &&
+          other.cardsReviewed == this.cardsReviewed);
+}
+
+class DailyActivityCompanion extends UpdateCompanion<DailyActivityData> {
+  final Value<String> day;
+  final Value<int> correct;
+  final Value<int> wrong;
+  final Value<int> cardsReviewed;
+  final Value<int> rowid;
+  const DailyActivityCompanion({
+    this.day = const Value.absent(),
+    this.correct = const Value.absent(),
+    this.wrong = const Value.absent(),
+    this.cardsReviewed = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  DailyActivityCompanion.insert({
+    required String day,
+    this.correct = const Value.absent(),
+    this.wrong = const Value.absent(),
+    this.cardsReviewed = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : day = Value(day);
+  static Insertable<DailyActivityData> custom({
+    Expression<String>? day,
+    Expression<int>? correct,
+    Expression<int>? wrong,
+    Expression<int>? cardsReviewed,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (day != null) 'day': day,
+      if (correct != null) 'correct': correct,
+      if (wrong != null) 'wrong': wrong,
+      if (cardsReviewed != null) 'cards_reviewed': cardsReviewed,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  DailyActivityCompanion copyWith({
+    Value<String>? day,
+    Value<int>? correct,
+    Value<int>? wrong,
+    Value<int>? cardsReviewed,
+    Value<int>? rowid,
+  }) {
+    return DailyActivityCompanion(
+      day: day ?? this.day,
+      correct: correct ?? this.correct,
+      wrong: wrong ?? this.wrong,
+      cardsReviewed: cardsReviewed ?? this.cardsReviewed,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (day.present) {
+      map['day'] = Variable<String>(day.value);
+    }
+    if (correct.present) {
+      map['correct'] = Variable<int>(correct.value);
+    }
+    if (wrong.present) {
+      map['wrong'] = Variable<int>(wrong.value);
+    }
+    if (cardsReviewed.present) {
+      map['cards_reviewed'] = Variable<int>(cardsReviewed.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DailyActivityCompanion(')
+          ..write('day: $day, ')
+          ..write('correct: $correct, ')
+          ..write('wrong: $wrong, ')
+          ..write('cardsReviewed: $cardsReviewed, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -902,11 +1425,16 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final $DecksTable decks = $DecksTable(this);
   late final $CardsTable cards = $CardsTable(this);
+  late final $DailyActivityTable dailyActivity = $DailyActivityTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
-  List<DatabaseSchemaEntity> get allSchemaEntities => [decks, cards];
+  List<DatabaseSchemaEntity> get allSchemaEntities => [
+    decks,
+    cards,
+    dailyActivity,
+  ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
     WritePropagation(
@@ -1240,6 +1768,10 @@ typedef $$CardsTableCreateCompanionBuilder =
       required String icon,
       Value<int> retention,
       Value<int> lapses,
+      Value<double> easeFactor,
+      Value<int> intervalDays,
+      Value<int> repetitions,
+      Value<DateTime?> nextReviewAt,
       Value<int> rowid,
     });
 typedef $$CardsTableUpdateCompanionBuilder =
@@ -1252,6 +1784,10 @@ typedef $$CardsTableUpdateCompanionBuilder =
       Value<String> icon,
       Value<int> retention,
       Value<int> lapses,
+      Value<double> easeFactor,
+      Value<int> intervalDays,
+      Value<int> repetitions,
+      Value<DateTime?> nextReviewAt,
       Value<int> rowid,
     });
 
@@ -1317,6 +1853,26 @@ class $$CardsTableFilterComposer extends Composer<_$AppDatabase, $CardsTable> {
 
   ColumnFilters<int> get lapses => $composableBuilder(
     column: $table.lapses,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get easeFactor => $composableBuilder(
+    column: $table.easeFactor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get intervalDays => $composableBuilder(
+    column: $table.intervalDays,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get repetitions => $composableBuilder(
+    column: $table.repetitions,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get nextReviewAt => $composableBuilder(
+    column: $table.nextReviewAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1388,6 +1944,26 @@ class $$CardsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get easeFactor => $composableBuilder(
+    column: $table.easeFactor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get intervalDays => $composableBuilder(
+    column: $table.intervalDays,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get repetitions => $composableBuilder(
+    column: $table.repetitions,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get nextReviewAt => $composableBuilder(
+    column: $table.nextReviewAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$DecksTableOrderingComposer get deckId {
     final $$DecksTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -1441,6 +2017,26 @@ class $$CardsTableAnnotationComposer
 
   GeneratedColumn<int> get lapses =>
       $composableBuilder(column: $table.lapses, builder: (column) => column);
+
+  GeneratedColumn<double> get easeFactor => $composableBuilder(
+    column: $table.easeFactor,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get intervalDays => $composableBuilder(
+    column: $table.intervalDays,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get repetitions => $composableBuilder(
+    column: $table.repetitions,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get nextReviewAt => $composableBuilder(
+    column: $table.nextReviewAt,
+    builder: (column) => column,
+  );
 
   $$DecksTableAnnotationComposer get deckId {
     final $$DecksTableAnnotationComposer composer = $composerBuilder(
@@ -1502,6 +2098,10 @@ class $$CardsTableTableManager
                 Value<String> icon = const Value.absent(),
                 Value<int> retention = const Value.absent(),
                 Value<int> lapses = const Value.absent(),
+                Value<double> easeFactor = const Value.absent(),
+                Value<int> intervalDays = const Value.absent(),
+                Value<int> repetitions = const Value.absent(),
+                Value<DateTime?> nextReviewAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CardsCompanion(
                 id: id,
@@ -1512,6 +2112,10 @@ class $$CardsTableTableManager
                 icon: icon,
                 retention: retention,
                 lapses: lapses,
+                easeFactor: easeFactor,
+                intervalDays: intervalDays,
+                repetitions: repetitions,
+                nextReviewAt: nextReviewAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -1524,6 +2128,10 @@ class $$CardsTableTableManager
                 required String icon,
                 Value<int> retention = const Value.absent(),
                 Value<int> lapses = const Value.absent(),
+                Value<double> easeFactor = const Value.absent(),
+                Value<int> intervalDays = const Value.absent(),
+                Value<int> repetitions = const Value.absent(),
+                Value<DateTime?> nextReviewAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CardsCompanion.insert(
                 id: id,
@@ -1534,6 +2142,10 @@ class $$CardsTableTableManager
                 icon: icon,
                 retention: retention,
                 lapses: lapses,
+                easeFactor: easeFactor,
+                intervalDays: intervalDays,
+                repetitions: repetitions,
+                nextReviewAt: nextReviewAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -1601,6 +2213,193 @@ typedef $$CardsTableProcessedTableManager =
       Card,
       PrefetchHooks Function({bool deckId})
     >;
+typedef $$DailyActivityTableCreateCompanionBuilder =
+    DailyActivityCompanion Function({
+      required String day,
+      Value<int> correct,
+      Value<int> wrong,
+      Value<int> cardsReviewed,
+      Value<int> rowid,
+    });
+typedef $$DailyActivityTableUpdateCompanionBuilder =
+    DailyActivityCompanion Function({
+      Value<String> day,
+      Value<int> correct,
+      Value<int> wrong,
+      Value<int> cardsReviewed,
+      Value<int> rowid,
+    });
+
+class $$DailyActivityTableFilterComposer
+    extends Composer<_$AppDatabase, $DailyActivityTable> {
+  $$DailyActivityTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get day => $composableBuilder(
+    column: $table.day,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get correct => $composableBuilder(
+    column: $table.correct,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get wrong => $composableBuilder(
+    column: $table.wrong,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get cardsReviewed => $composableBuilder(
+    column: $table.cardsReviewed,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$DailyActivityTableOrderingComposer
+    extends Composer<_$AppDatabase, $DailyActivityTable> {
+  $$DailyActivityTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get day => $composableBuilder(
+    column: $table.day,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get correct => $composableBuilder(
+    column: $table.correct,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get wrong => $composableBuilder(
+    column: $table.wrong,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get cardsReviewed => $composableBuilder(
+    column: $table.cardsReviewed,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$DailyActivityTableAnnotationComposer
+    extends Composer<_$AppDatabase, $DailyActivityTable> {
+  $$DailyActivityTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get day =>
+      $composableBuilder(column: $table.day, builder: (column) => column);
+
+  GeneratedColumn<int> get correct =>
+      $composableBuilder(column: $table.correct, builder: (column) => column);
+
+  GeneratedColumn<int> get wrong =>
+      $composableBuilder(column: $table.wrong, builder: (column) => column);
+
+  GeneratedColumn<int> get cardsReviewed => $composableBuilder(
+    column: $table.cardsReviewed,
+    builder: (column) => column,
+  );
+}
+
+class $$DailyActivityTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $DailyActivityTable,
+          DailyActivityData,
+          $$DailyActivityTableFilterComposer,
+          $$DailyActivityTableOrderingComposer,
+          $$DailyActivityTableAnnotationComposer,
+          $$DailyActivityTableCreateCompanionBuilder,
+          $$DailyActivityTableUpdateCompanionBuilder,
+          (
+            DailyActivityData,
+            BaseReferences<
+              _$AppDatabase,
+              $DailyActivityTable,
+              DailyActivityData
+            >,
+          ),
+          DailyActivityData,
+          PrefetchHooks Function()
+        > {
+  $$DailyActivityTableTableManager(_$AppDatabase db, $DailyActivityTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DailyActivityTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DailyActivityTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DailyActivityTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> day = const Value.absent(),
+                Value<int> correct = const Value.absent(),
+                Value<int> wrong = const Value.absent(),
+                Value<int> cardsReviewed = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DailyActivityCompanion(
+                day: day,
+                correct: correct,
+                wrong: wrong,
+                cardsReviewed: cardsReviewed,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String day,
+                Value<int> correct = const Value.absent(),
+                Value<int> wrong = const Value.absent(),
+                Value<int> cardsReviewed = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DailyActivityCompanion.insert(
+                day: day,
+                correct: correct,
+                wrong: wrong,
+                cardsReviewed: cardsReviewed,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DailyActivityTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $DailyActivityTable,
+      DailyActivityData,
+      $$DailyActivityTableFilterComposer,
+      $$DailyActivityTableOrderingComposer,
+      $$DailyActivityTableAnnotationComposer,
+      $$DailyActivityTableCreateCompanionBuilder,
+      $$DailyActivityTableUpdateCompanionBuilder,
+      (
+        DailyActivityData,
+        BaseReferences<_$AppDatabase, $DailyActivityTable, DailyActivityData>,
+      ),
+      DailyActivityData,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -1609,4 +2408,6 @@ class $AppDatabaseManager {
       $$DecksTableTableManager(_db, _db.decks);
   $$CardsTableTableManager get cards =>
       $$CardsTableTableManager(_db, _db.cards);
+  $$DailyActivityTableTableManager get dailyActivity =>
+      $$DailyActivityTableTableManager(_db, _db.dailyActivity);
 }

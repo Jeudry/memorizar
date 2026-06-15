@@ -5,7 +5,6 @@ import '../../../core/app_state.dart';
 import '../../../core/theme.dart';
 import 'glyph_icon.dart';
 import '../../../core/ui/main_tab_shell.dart';
-import '../../plans/presentation/plans_screen.dart';
 import '../../missions/presentation/missions_panel.dart';
 import 'ui_screens.dart';
 import '../../cooperativo/data/coop_service.dart';
@@ -541,15 +540,16 @@ void _showAccountMenu(BuildContext context) {
                   Navigator.pushNamed(context, '/legal');
                 },
               ),
-              _AccountMenuRow(
-                icon: Icons.shield_outlined,
-                label: 'Moderación',
-                subtitle: 'Cola de reportes recibidos',
-                onTap: () {
-                  Navigator.of(sheetCtx).pop();
-                  Navigator.pushNamed(context, '/moderation');
-                },
-              ),
+              if (store.isModerator)
+                _AccountMenuRow(
+                  icon: Icons.shield_outlined,
+                  label: 'Moderación',
+                  subtitle: 'Cola de reportes recibidos',
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    Navigator.pushNamed(context, '/moderation');
+                  },
+                ),
             ],
           ),
         ),
@@ -993,7 +993,7 @@ class _HeroSection extends StatelessWidget {
                 colors: [
                   Colors.white,
                   Colors.white,
-                  Colors.white.withOpacity(0.28),
+                  Colors.white.withValues(alpha: 0.28),
                   Colors.transparent,
                 ],
                 stops: const [0.0, 0.45, 0.88, 1.0],
@@ -1852,7 +1852,7 @@ class _ActivityFeedState extends State<_ActivityFeed> {
         child: Column(
           children: [
             for (final raw in _entries!.take(5).toList().asMap().entries) ...[
-              _RemoteFeedRow(entry: raw.value as FeedEntry),
+              _RemoteFeedRow(entry: raw.value),
               if (raw.key != 4 && raw.key < _entries!.length - 1)
                 const Divider(color: AppColors.glassBorder, height: 20),
             ],
@@ -1902,14 +1902,42 @@ class _ActivityFeedState extends State<_ActivityFeed> {
 }
 
 /// Una fila del feed remoto. Mapea por `type` (achievement / activity /
-/// share) a iconos y colores distintos.
-class _RemoteFeedRow extends StatelessWidget {
+/// share) a iconos y colores distintos; tocar el icono envía una reacción
+/// real al backend.
+class _RemoteFeedRow extends StatefulWidget {
   final FeedEntry entry;
   const _RemoteFeedRow({required this.entry});
 
   @override
+  State<_RemoteFeedRow> createState() => _RemoteFeedRowState();
+}
+
+class _RemoteFeedRowState extends State<_RemoteFeedRow> {
+  bool _reacted = false;
+  bool _sending = false;
+
+  Future<void> _react() async {
+    if (_reacted || _sending) return;
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) return;
+    setState(() => _sending = true);
+    try {
+      await store.api.reactToFeedEntry(
+        entryId: widget.entry.id,
+        emoji: '❤️',
+      );
+      if (!mounted) return;
+      setState(() => _reacted = true);
+    } catch (e) {
+      debugPrint('No se pudo reaccionar al feed: $e');
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final type = entry.type.name;
+    final entry = widget.entry;
     final title = entry.title;
     final description = entry.description;
     final initial = title.isNotEmpty ? title.substring(0, 1).toUpperCase() : '?';
@@ -1929,7 +1957,8 @@ class _RemoteFeedRow extends StatelessWidget {
       name: title,
       action: description,
       time: 'Hoy',
-      emoji: emoji,
+      emoji: _reacted ? '❤️' : emoji,
+      onEmojiTap: _react,
     );
   }
 }
@@ -1998,6 +2027,7 @@ class _FeedItem extends StatelessWidget {
   final String action;
   final String time;
   final String emoji;
+  final VoidCallback? onEmojiTap;
 
   const _FeedItem({
     required this.label,
@@ -2006,6 +2036,7 @@ class _FeedItem extends StatelessWidget {
     required this.action,
     required this.time,
     required this.emoji,
+    this.onEmojiTap,
   });
 
   @override
@@ -2041,15 +2072,18 @@ class _FeedItem extends StatelessWidget {
             ],
           ),
         ),
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: AppColors.glassSoft,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppColors.glassBorder),
+        GestureDetector(
+          onTap: onEmojiTap,
+          child: Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.glassSoft,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.glassBorder),
+            ),
+            child: Center(child: GlyphIcon(emoji, size: 18)),
           ),
-          child: Center(child: GlyphIcon(emoji, size: 18)),
         ),
       ],
     );

@@ -100,9 +100,17 @@ func (h *Hub) cleanupLoop() {
 			lastActivity := r.LastActivityAt
 			r.mu.RUnlock()
 
-			// Si la sala no tiene miembros y lleva más de 1 minuto creada, se borra.
-			// O si lleva más de 30 minutos sin ninguna actividad (inactiva), se borra.
-			if (memberCount == 0 && time.Since(createdAt) > 1*time.Minute) ||
+			// Sala sin miembros: si nunca arrancó partida se borra al minuto;
+			// con partida activa (deck asignado) se da un grace period de 5
+			// minutos para permitir reconexiones tras caídas de red.
+			r.mu.RLock()
+			gameStarted := r.DeckID != ""
+			r.mu.RUnlock()
+			emptyGrace := 1 * time.Minute
+			if gameStarted {
+				emptyGrace = 5 * time.Minute
+			}
+			if (memberCount == 0 && time.Since(createdAt) > emptyGrace && time.Since(lastActivity) > emptyGrace) ||
 				(time.Since(lastActivity) > 30*time.Minute) {
 				delete(h.rooms, code)
 				log.Printf("[coop] room %s cleaned up due to inactivity/emptiness/timeout", code)

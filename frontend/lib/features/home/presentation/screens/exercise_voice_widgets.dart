@@ -1763,7 +1763,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
                 );
               }
               // Verso entero "ya leído": lime suave.
-              if (activeVerse != null && i < activeVerse!) {
+              if (activeVerse != null && i < activeVerse) {
                 return const TextStyle(
                   color: RefColors.lime,
                   fontWeight: FontWeight.w900,

@@ -334,6 +334,19 @@ class MemorizarClient {
     await _decode(r);
   }
 
+  /// Reacciona con un emoji a una entrada del feed de amigos.
+  Future<void> reactToFeedEntry({
+    required String entryId,
+    required String emoji,
+  }) async {
+    final r = await _http.post(
+      _uri('/v1/social/feed/reactions'),
+      headers: _headers,
+      body: jsonEncode({'entryId': entryId, 'emoji': emoji}),
+    );
+    await _decode(r);
+  }
+
   Future<void> recordAchievement({
     required String code,
     required String title,
@@ -384,10 +397,16 @@ class MemorizarClient {
     return _decode(r);
   }
 
-  Future<List<Map<String, dynamic>>> searchCommunityDecks(String query) async {
-    final encoded = Uri.encodeQueryComponent(query);
+  Future<List<Map<String, dynamic>>> searchCommunityDecks(
+    String query, {
+    String category = '',
+  }) async {
+    final params = <String>['q=${Uri.encodeQueryComponent(query)}'];
+    if (category.isNotEmpty) {
+      params.add('category=${Uri.encodeQueryComponent(category)}');
+    }
     final r = await _http.get(
-      _uri('/v1/community/decks?q=$encoded'),
+      _uri('/v1/community/decks?${params.join('&')}'),
       headers: _headers,
     );
     final body = await _decode(r);
@@ -400,6 +419,149 @@ class MemorizarClient {
     final body = await _decode(r);
     final list = (body['shares'] as List? ?? const []).cast<dynamic>();
     return list.cast<Map<String, dynamic>>();
+  }
+
+  /// Registra el token de push del dispositivo (FCM/APNs) en el backend.
+  Future<void> registerPushToken({
+    required String token,
+    required String platform,
+  }) async {
+    final r = await _http.post(
+      _uri('/v1/push/register-token'),
+      headers: _headers,
+      body: jsonEncode({'token': token, 'platform': platform}),
+    );
+    if (r.statusCode >= 400) {
+      throw Exception('No se pudo registrar el token push (${r.statusCode}).');
+    }
+  }
+
+  /// Activa el trial premium del usuario en el backend.
+  Future<Map<String, dynamic>> activatePremiumTrial() async {
+    final r = await _http.post(_uri('/v1/premium/trial'), headers: _headers);
+    return _decode(r);
+  }
+
+  /// Estado premium vigente del usuario (persistido server-side).
+  Future<Map<String, dynamic>> getPremiumStatus() async {
+    final r = await _http.get(_uri('/v1/premium/status'), headers: _headers);
+    return _decode(r);
+  }
+
+  /// Envía un batch de eventos de producto al backend de analytics propio.
+  /// Funciona también sin sesión (eventos de invitado).
+  Future<void> sendAnalyticsEvents(List<Map<String, dynamic>> events) async {
+    if (events.isEmpty) return;
+    final r = await _http.post(
+      _uri('/v1/analytics/events'),
+      headers: _headers,
+      body: jsonEncode({'events': events}),
+    );
+    if (r.statusCode >= 400) {
+      throw Exception('No se pudo enviar analytics (${r.statusCode}).');
+    }
+  }
+
+  /// Portada de Comunidad: destacados, populares, creadores y categorías
+  /// reales del catálogo público.
+  Future<Map<String, dynamic>> getCommunityOverview() async {
+    final r = await _http.get(_uri('/v1/community/overview'), headers: _headers);
+    return _decode(r);
+  }
+
+  /// Mis decks publicados a la comunidad, con stats (importCount).
+  Future<List<Map<String, dynamic>>> listMyCommunityDecks() async {
+    final r = await _http.get(_uri('/v1/community/mine'), headers: _headers);
+    final body = await _decode(r);
+    final list = (body['decks'] as List? ?? const []).cast<dynamic>();
+    return list.cast<Map<String, dynamic>>();
+  }
+
+  /// Alterna seguir/dejar de seguir a un creador. Devuelve
+  /// {following, followerCount} con el estado resultante.
+  Future<Map<String, dynamic>> toggleFollow(String creatorId) async {
+    final r = await _http.post(
+      _uri('/v1/social/follow'),
+      headers: _headers,
+      body: jsonEncode({'creatorId': creatorId}),
+    );
+    return _decode(r);
+  }
+
+  /// Alterna el "me gusta" del usuario sobre un deck comunitario.
+  /// Devuelve {liked, likeCount} con el estado resultante.
+  Future<Map<String, dynamic>> toggleDeckLike(String shareId) async {
+    final r = await _http.post(
+      _uri('/v1/community/decks/like'),
+      headers: _headers,
+      body: jsonEncode({'shareId': shareId}),
+    );
+    return _decode(r);
+  }
+
+  /// Despublica un mazo propio de la comunidad (lo borra del catálogo).
+  /// Solo el dueño puede; el backend devuelve 404 en caso contrario.
+  Future<void> unpublishCommunityDeck(String shareId) async {
+    final r = await _http.delete(
+      _uri('/v1/social/shares?id=${Uri.encodeQueryComponent(shareId)}'),
+      headers: _headers,
+    );
+    if (r.statusCode >= 400) {
+      throw Exception('No se pudo despublicar el mazo (${r.statusCode}).');
+    }
+  }
+
+  /// Archiva una denuncia de mazo en la cola de moderación del backend.
+  Future<Map<String, dynamic>> fileDeckReport({
+    required String deckId,
+    required String deckTitle,
+    required String reason,
+    String note = '',
+  }) async {
+    final r = await _http.post(
+      _uri('/v1/community/reports'),
+      headers: _headers,
+      body: jsonEncode({
+        'deckId': deckId,
+        'deckTitle': deckTitle,
+        'reason': reason,
+        'note': note,
+      }),
+    );
+    return _decode(r);
+  }
+
+  /// Cola de moderación persistida en el backend.
+  Future<List<Map<String, dynamic>>> listDeckReports() async {
+    final r = await _http.get(_uri('/v1/community/reports'), headers: _headers);
+    final body = await _decode(r);
+    final list = (body['reports'] as List? ?? const []).cast<dynamic>();
+    return list.cast<Map<String, dynamic>>();
+  }
+
+  /// Cierra un reporte con su resolución: kept | hidden | removed.
+  Future<Map<String, dynamic>> resolveDeckReport({
+    required String reportId,
+    required String resolution,
+  }) async {
+    final r = await _http.post(
+      _uri('/v1/community/reports/resolve'),
+      headers: _headers,
+      body: jsonEncode({'reportId': reportId, 'resolution': resolution}),
+    );
+    return _decode(r);
+  }
+
+  /// Registra que este usuario importó un deck comunitario (stats del autor).
+  Future<void> registerCommunityImport(String shareId) async {
+    final r = await _http.post(
+      _uri('/v1/community/imports'),
+      headers: _headers,
+      body: jsonEncode({'shareId': shareId}),
+    );
+    if (r.statusCode >= 400) {
+      throw Exception('No se pudo registrar la importación (${r.statusCode}).');
+    }
   }
 
   // ─── Sync de progreso ───────────────────────────────────────────────────
@@ -433,6 +595,7 @@ class MemorizarClient {
     bool isPublic = true,
     String deckId = '',
     String deckName = '',
+    String? hostId,
   }) async {
     final r = await _http.post(
       _uri('/v1/coop/rooms'),
@@ -441,6 +604,7 @@ class MemorizarClient {
         'isPublic': isPublic,
         'deckId': deckId,
         'deckName': deckName,
+        'hostId': ?hostId,
       }),
     );
     return _decode(r);

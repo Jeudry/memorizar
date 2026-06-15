@@ -1,0 +1,31 @@
+# Memorizar — backend Go (modular monolith) con SQLite persistente.
+# Levantar: docker compose up --build
+# El frontend Flutter no se containeriza (corre como app nativa/desktop/móvil).
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: memorizar-api:latest
+    container_name: memorizar-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      MEMORIZAR_API_ADDR: ":8080"
+      MEMORIZAR_STORE: "sqlite"
+      MEMORIZAR_SQLITE_PATH: "/data/memorizar.db"
+      # Correos con rol de moderador (coma-separados). Vacío = nadie modera.
+      MEMORIZAR_MODERATOR_EMAILS: "${MEMORIZAR_MODERATOR_EMAILS:-}"
+    volumes:
+      - memorizar-data:/data
+    healthcheck:
+      test: ["CMD", "/app/memorizar-api", "-healthcheck"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  memorizar-data:

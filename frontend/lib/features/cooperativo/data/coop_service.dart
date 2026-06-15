@@ -85,7 +85,7 @@ class CoopRoomState {
         memberNames: memberNames,
         currentDeckId: deckId,
         currentCardIndex: cardIndex,
-        currentSlug: slug ?? this.currentSlug,
+        currentSlug: slug ?? currentSlug,
         scores: scores,
         lobbyDeckId: lobbyDeckId,
         lobbyDeckName: lobbyDeckName,
@@ -95,6 +95,22 @@ class CoopRoomState {
         sessionDailyTarget: sessionDailyTarget,
         sessionMaxPlayers: sessionMaxPlayers,
       );
+}
+
+/// Resultado de una pregunta respondida por el usuario local durante la
+/// partida cooperativa. Alimenta el recap real de la pantalla de éxito.
+class CoopAnswerRecord {
+  final int cardIndex;
+  final String question;
+  final String correctAnswer;
+  final bool wasCorrect;
+
+  const CoopAnswerRecord({
+    required this.cardIndex,
+    required this.question,
+    required this.correctAnswer,
+    required this.wasCorrect,
+  });
 }
 
 class CoopMessage {
@@ -143,15 +159,37 @@ class CoopService {
   /// para que la pantalla de juego sepa cuál fila del scoreboard es "yo".
   static String? activeUserId;
 
+  /// Último código de sala al que se conectó esta sesión de app. Permite
+  /// ofrecer "Reconectar" en el lobby tras una caída de conexión (la sala
+  /// con partida activa sobrevive 5 min vacía en el backend).
+  static String? lastRoomCode;
+
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _sub;
   CoopRoomState? _state;
   final _stateCtrl = StreamController<CoopRoomState>.broadcast();
   final _messagesCtrl = StreamController<CoopMessage>.broadcast();
 
+  /// Bitácora local de respuestas de ESTA partida (solo el usuario local).
+  final List<CoopAnswerRecord> answerLog = [];
+
+  /// Pistas que el usuario local compartió en esta partida.
+  int hintsShared = 0;
+
+  /// Preguntas del modo quiz transmitidas por el host (generadas con su IA
+  /// local). Vacío = cada cliente genera el set determinista compartido.
+  List<Map<String, dynamic>>? sharedQuizCards;
+
   CoopRoomState? get state => _state;
   Stream<CoopRoomState> get stateStream => _stateCtrl.stream;
   Stream<CoopMessage> get messages => _messagesCtrl.stream;
+
+  /// Reinicia los acumuladores de partida (al conectar o al empezar ronda).
+  void resetSessionLog() {
+    answerLog.clear();
+    hintsShared = 0;
+    sharedQuizCards = null;
+  }
 
   Future<CoopRoomState> createRoom({
     required String userId,
@@ -164,6 +202,7 @@ class CoopService {
       isPublic: isPublic,
       deckId: deckId,
       deckName: deckName,
+      hostId: userId,
     );
     final code = (res['code'] as String?) ?? '';
     final hostId = (res['hostId'] as String?) ?? userId;
@@ -221,6 +260,8 @@ class CoopService {
     bool isPublic = true,
   }) async {
     await disconnect();
+    resetSessionLog();
+    lastRoomCode = code;
     final uri = client.coopWsUri(code: code, userId: userId, name: name);
     final channel = WebSocketChannel.connect(uri);
     _channel = channel;
@@ -314,6 +355,20 @@ class CoopService {
         _state = state.copyWith(sessionDifficulty: diff, sessionDailyTarget: target, sessionMaxPlayers: maxP);
         _stateCtrl.add(_state!);
         break;
+      case 'countdown':
+        // Nueva ronda en camino: limpiar la bitácora de la partida anterior.
+        resetSessionLog();
+        break;
+      case 'quiz_cards':
+        // El host arranca el modo quiz; con payload usa SUS preguntas (IA),
+        // sin payload cada cliente genera el set determinista compartido.
+        final rawCards = msg.payload?['cards'];
+        sharedQuizCards = rawCards is List
+            ? rawCards
+                .map((card) => Map<String, dynamic>.from(card as Map))
+                .toList()
+            : <Map<String, dynamic>>[];
+        break;
     }
     _messagesCtrl.add(msg);
   }
@@ -328,9 +383,48 @@ class CoopService {
   }
 
   void broadcastCountdown() {
+    resetSessionLog();
     send(CoopMessage(
       type: 'countdown',
       userId: '',
+    ));
+  }
+
+  /// El host arranca el modo quiz. [cards] son las preguntas generadas con
+  /// su IA local; lista vacía = generar determinista en cada cliente.
+  void broadcastQuizCards(List<Map<String, dynamic>> cards) {
+    send(CoopMessage(
+      type: 'quiz_cards',
+      userId: activeUserId ?? '',
+      payload: {'cards': cards},
+    ));
+  }
+
+  /// El host marca la partida como terminada: todos los miembros navegan a
+  /// la pantalla de resultados al recibirlo (el relay incluye al emisor).
+  void broadcastSessionEnd() {
+    send(CoopMessage(
+      type: 'session_end',
+      userId: activeUserId ?? '',
+    ));
+  }
+
+  /// Sincroniza la finalización de un paso del ejercicio a todos los miembros.
+  /// [stepKey] es la clave completa `deck:card:slug` para que el receptor marque
+  /// exactamente el mismo paso sin ambigüedad.
+  void broadcastStepDone(String stepKey) {
+    send(CoopMessage(
+      type: 'step_done',
+      userId: activeUserId ?? '',
+      payload: {'key': stepKey},
+    ));
+  }
+
+  /// El host cierra la sala: notifica a todos para que salgan de inmediato.
+  void broadcastRoomClosed() {
+    send(CoopMessage(
+      type: 'room_closed',
+      userId: activeUserId ?? '',
     ));
   }
 
@@ -343,7 +437,7 @@ class CoopService {
       payload: {
         'deckId': deckId,
         'cardIndex': cardIndex,
-        if (slug != null) 'slug': slug,
+        'slug': ?slug,
       },
     ));
   }
@@ -361,7 +455,7 @@ class CoopService {
         'deckId': deckId,
         'deckName': deckName,
         'isBible': isBible,
-        if (cards != null) 'cards': cards,
+        'cards': ?cards,
       },
     ));
   }

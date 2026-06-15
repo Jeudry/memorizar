@@ -20,7 +20,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
   bool _initialized = false;
   String? _currentUserId;
 
-  bool _isPublic = true;
+  final bool _isPublic = true;
   List<dynamic> _publicRooms = [];
   bool _loadingRooms = false;
   bool _creatingDeckInline = false;
@@ -69,10 +69,6 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
 
   Future<void> _joinPublic(String code) async {
     final store = AppScope.of(context);
-    if (!store.isLoggedIn) {
-      Navigator.pushNamed(context, AppRoutes.login);
-      return;
-    }
     setState(() {
       _busy = true;
       _error = null;
@@ -80,11 +76,11 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     try {
       await _coop!.joinRoom(
         code: code,
-        userId: store.currentUser!.id,
-        name: store.currentUser!.effectiveName,
+        userId: store.effectiveUser.id,
+        name: store.effectiveUser.effectiveName,
       );
       CoopService.active = _coop;
-      CoopService.activeUserId = store.currentUser!.id;
+      CoopService.activeUserId = store.effectiveUser.id;
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -103,9 +99,18 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     if (!_initialized) {
       _initialized = true;
       final store = AppScope.of(context);
-      _currentUserId = store.currentUser?.id;
+      _currentUserId = store.effectiveUser.id;
       _coop = CoopService(client: store.api);
       _loadPublicRooms();
+
+      // Deeplink memorizar://coop/{code}: unirse automáticamente a la sala.
+      final pendingCode = store.pendingCoopJoinCode;
+      if (pendingCode != null && pendingCode.isNotEmpty) {
+        store.pendingCoopJoinCode = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _joinPublic(pendingCode);
+        });
+      }
       _sub = _coop!.stateStream.listen((s) {
         if (!mounted) return;
         final wasInGame = _state?.currentDeckId != null;
@@ -143,7 +148,9 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
 
         // Cuando el host empuja la primera tarjeta y el invitado todavía
         // está en el lobby, lo llevamos automáticamente al game screen.
-        final nowInGame = s.currentDeckId != null;
+        // En modo quiz la navegación la dispara el mensaje quiz_cards: los
+        // avances de tarjeta del juego no deben re-navegar al flow.
+        final nowInGame = s.currentDeckId != null && s.mode != 'quiz';
         final iAmHost = _currentUserId == s.hostId;
         debugPrint('[coop] stateStream.listen: nowInGame=$nowInGame, wasInGame=$wasInGame, iAmHost=$iAmHost, currentDeckId=${s.currentDeckId}');
         if (!iAmHost && nowInGame && !wasInGame) {
@@ -239,15 +246,75 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
               _checkGuestCanStartGame(store);
             });
           }
+        } else if (msg.type == 'quiz_cards' && mounted) {
+          // El host arrancó el modo quiz; los guests entran directo (las
+          // preguntas ya quedaron en CoopService.sharedQuizCards).
+          final iAmHost = _currentUserId == _state?.hostId;
+          if (!iAmHost) {
+            debugPrint('[coop] Guest entering quiz mode');
+            Navigator.pushNamed(context, AppRoutes.cooperativoJuego);
+          }
         }
       });
     }
   }
 
-  String _deckCreationTab = 'manual'; // 'manual' | 'biblia' | 'texto'
+  /// Arranca el modo quiz como host: genera las preguntas con la IA local
+  /// (una por tarjeta del objetivo) mostrando progreso; si la IA no está
+  /// disponible transmite lista vacía y cada cliente usa el set determinista
+  /// compartido. Al final navega a la pantalla de juego.
+  Future<void> _startQuizMode(MemoryDeckData deck, int target) async {
+    final llm = LocalLlmService.instance;
+    final cardCount = math.min(target, deck.cards.length);
+    var quizCards = <Map<String, dynamic>>[];
+
+    final aiAvailable = await llm.isAvailable();
+    if (aiAvailable && mounted) {
+      final progress = ValueNotifier<String>('Despertando la IA local…');
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _QuizGenerationDialog(progress: progress),
+      );
+      try {
+        await llm.initLlm();
+        for (var i = 0; i < cardCount; i++) {
+          final card = deck.cards[i];
+          progress.value =
+              'Generando pregunta ${i + 1} de $cardCount con Gemma 3…';
+          final set = await llm.generateQuizRoundSet(
+            reference: card.front,
+            verseText: card.back,
+            advanced: false,
+          );
+          final mc = set.multipleChoice;
+          final options = <String>[mc.correct, ...mc.distractors]..shuffle();
+          quizCards.add({
+            'question': mc.question,
+            'options': options,
+            'correct': options.indexOf(mc.correct),
+            'sourceCardId': card.id,
+          });
+        }
+      } catch (e) {
+        debugPrint('[coop] Generación IA falló, usando set determinista: $e');
+        quizCards = [];
+      } finally {
+        if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
+
+    if (!mounted) return;
+    _coop!.broadcastQuizCards(quizCards);
+    // El relay también entrega el mensaje al host: su CoopService guarda las
+    // cards y la pantalla de juego las leerá igual que los guests.
+    Navigator.pushNamed(context, AppRoutes.cooperativoJuego);
+  }
+
+  final String _deckCreationTab = 'manual'; // 'manual' | 'biblia' | 'texto'
   final _rawContentCtrl = TextEditingController();
   final _bibleSearchCtrl = TextEditingController();
-  List<BibleVerseData> _bibleSearchResults = [];
+  final List<BibleVerseData> _bibleSearchResults = [];
   final List<BibleVerseData> _inlineSelectedVerses = [];
 
   final _deckTitleCtrl = TextEditingController();
@@ -893,24 +960,20 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
 
   Future<void> _create() async {
     final store = AppScope.of(context);
-    if (!store.isLoggedIn) {
-      Navigator.pushNamed(context, AppRoutes.login);
-      return;
-    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       await _coop!.createRoom(
-        userId: store.currentUser!.id,
-        name: store.currentUser!.effectiveName,
+        userId: store.effectiveUser.id,
+        name: store.effectiveUser.effectiveName,
         isPublic: _isPublic,
         deckId: '',
         deckName: '',
       );
       CoopService.active = _coop;
-      CoopService.activeUserId = store.currentUser!.id;
+      CoopService.activeUserId = store.effectiveUser.id;
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -920,10 +983,6 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
 
   Future<void> _join() async {
     final store = AppScope.of(context);
-    if (!store.isLoggedIn) {
-      Navigator.pushNamed(context, AppRoutes.login);
-      return;
-    }
     final code = _joinCtrl.text.trim().toUpperCase();
     if (code.isEmpty) return;
     setState(() {
@@ -933,11 +992,11 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     try {
       await _coop!.joinRoom(
         code: code,
-        userId: store.currentUser!.id,
-        name: store.currentUser!.effectiveName,
+        userId: store.effectiveUser.id,
+        name: store.effectiveUser.effectiveName,
       );
       CoopService.active = _coop;
-      CoopService.activeUserId = store.currentUser!.id;
+      CoopService.activeUserId = store.effectiveUser.id;
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -1007,6 +1066,15 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 8),
+                  if (CoopService.lastRoomCode != null && _state == null) ...[
+                    GhostButton(
+                      '↻ Reconectar a la sala ${CoopService.lastRoomCode}',
+                      onTap: _busy
+                          ? null
+                          : () => _joinPublic(CoopService.lastRoomCode!),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,
@@ -1398,7 +1466,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                 },
               ),
               const SizedBox(height: 12),
-              if (state.hostId == AppScope.of(context).currentUser?.id) ...[
+              if (state.hostId == AppScope.of(context).effectiveUser.id) ...[
                 Cta(
                   'Iniciar partida →',
                   disabled: (state.lobbyDeckId == null || state.lobbyDeckId!.isEmpty) || (state.memberIds.length <= 1),
@@ -1429,7 +1497,12 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                             isBible: d.isBible,
                             cards: cardsList,
                           );
-                          
+
+                          if (state.mode == 'quiz') {
+                            await _startQuizMode(d, target);
+                            return;
+                          }
+
                           // Broadcast countdown so guests also start their local countdowns
                           debugPrint('[coop] Host broadcasting countdown');
                           _coop!.broadcastCountdown();
@@ -2061,11 +2134,66 @@ class _CoopCard {
   final String question;
   final List<String> options;
   final int correct;
+  /// Id de la tarjeta del deck que originó esta pregunta; vacío para las
+  /// tarjetas creadas en caliente (no actualizan SRS).
+  final String sourceCardId;
   const _CoopCard({
     required this.question,
     required this.options,
     required this.correct,
+    this.sourceCardId = '',
   });
+}
+
+/// Diálogo de progreso mientras la IA local del host genera las preguntas
+/// del modo quiz cooperativo.
+class _QuizGenerationDialog extends StatelessWidget {
+  final ValueNotifier<String> progress;
+  const _QuizGenerationDialog({required this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF0F0C1B),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 42,
+              height: 42,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation<Color>(RefColors.pink),
+              ),
+            ),
+            const SizedBox(height: 18),
+            ValueListenableBuilder<String>(
+              valueListenable: progress,
+              builder: (context, status, _) => Text(
+                status,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  height: 1.4,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Las mismas preguntas llegarán a todos los jugadores',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: RefColors.muted, fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class CooperativoGameScreen extends StatefulWidget {
@@ -2076,6 +2204,8 @@ class CooperativoGameScreen extends StatefulWidget {
 }
 
 class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
+  static const int _questionSeconds = 30;
+
   CoopService? _coop;
   CoopRoomState? _state;
   StreamSubscription<CoopRoomState>? _sub;
@@ -2086,6 +2216,8 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
   bool _answered = false; // ya contestó esta tarjeta
   String? _lastResult; // 'correct' | 'wrong'
   List<_CoopCard>? _dynamicCards;
+  Timer? _questionTimer;
+  int _secondsLeft = _questionSeconds;
 
   @override
   void initState() {
@@ -2093,6 +2225,7 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
     _coop = CoopService.active;
     _state = _coop?.state;
     
+    _startQuestionTimer();
     _sub = _coop?.stateStream.listen((s) {
       if (!mounted) return;
       final movedCard = s.currentCardIndex != _state?.currentCardIndex;
@@ -2104,6 +2237,7 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
           _lastResult = null;
           _answeredUsers.clear();
           _activeHint = null;
+          _startQuestionTimer();
         }
       });
     });
@@ -2132,15 +2266,75 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
             ),
           );
         }
+      } else if (msg.type == 'session_end') {
+        // El host terminó la partida: todos pasan a resultados. El host ya
+        // navegó localmente; su pantalla desmontada ignora este mensaje.
+        Navigator.pushReplacementNamed(context, AppRoutes.cooperativoLogrado);
+      } else if (msg.type == 'room_closed') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('El host cerró la sala.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        Navigator.pushReplacementNamed(context, AppRoutes.cooperativo);
       }
     });
   }
 
   @override
   void dispose() {
+    _questionTimer?.cancel();
     _sub?.cancel();
     _msgSub?.cancel();
     super.dispose();
+  }
+
+  /// Cuenta regresiva por pregunta: al agotarse, la pregunta se da por
+  /// fallada automáticamente para que una persona ausente no congele la
+  /// partida del grupo.
+  void _startQuestionTimer() {
+    _questionTimer?.cancel();
+    _secondsLeft = _questionSeconds;
+    _questionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || _answered) {
+        timer.cancel();
+        return;
+      }
+      if (_secondsLeft <= 1) {
+        timer.cancel();
+        _confirmTimeout();
+        return;
+      }
+      setState(() => _secondsLeft--);
+    });
+  }
+
+  void _confirmTimeout() {
+    if (_answered) return;
+    setState(() {
+      _answered = true;
+      _lastResult = 'wrong';
+      _answeredUsers.add(CoopService.activeUserId ?? '');
+    });
+    _coop?.reportScore(0);
+    final gameCards = _getGameCards(context);
+    if (gameCards.isNotEmpty && _state != null) {
+      final cardIndex = _state!.currentCardIndex % gameCards.length;
+      final currentCard = gameCards[cardIndex];
+      _coop?.answerLog.add(CoopAnswerRecord(
+        cardIndex: cardIndex,
+        question: currentCard.question,
+        correctAnswer: currentCard.options[currentCard.correct],
+        wasCorrect: false,
+      ));
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('⏰ Se acabó el tiempo para esta pregunta.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   bool get _isHost {
@@ -2251,7 +2445,23 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
 
   List<_CoopCard> _getGameCards(BuildContext context) {
     if (_dynamicCards != null) return _dynamicCards!;
-    
+
+    // Preguntas transmitidas por el host (modo quiz con IA local): idénticas
+    // para todos los jugadores.
+    final shared = _coop?.sharedQuizCards;
+    if (shared != null && shared.isNotEmpty) {
+      _dynamicCards = [
+        for (final card in shared)
+          _CoopCard(
+            question: (card['question'] as String?) ?? '',
+            options: List<String>.from(card['options'] as List? ?? const []),
+            correct: (card['correct'] as int?) ?? 0,
+            sourceCardId: (card['sourceCardId'] as String?) ?? '',
+          ),
+      ];
+      return _dynamicCards!;
+    }
+
     final store = AppScope.of(context);
     final deck = store.decks.firstWhere(
       (d) => d.id == _state?.currentDeckId,
@@ -2278,20 +2488,30 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
           : '¿Cuál es la respuesta correcta para: "${card.front}"?';
       
       final correctAns = card.back.trim();
-      
+
       final otherCards = deck.cards.where((c) => c.id != card.id).toList();
       final shuffledOthers = _deterministicShuffle(otherCards, '${card.id}_$roomCode');
       final wrongOptions = shuffledOthers.map((c) => c.back.trim()).toSet().toList();
-      
-      final fallbacks = [
-        'Jesús lloró.',
-        'En el principio creó Dios los cielos y la tierra.',
-        'Jehová es mi pastor; nada me faltará.',
-        'Porque de tal manera amó Dios al mundo...',
-        'El amor es sufrido, es benigno...',
-      ];
+
+      // Relleno solo para decks con menos de 4 tarjetas: opciones acordes
+      // al tipo de deck para no mezclar versículos en mazos de otro tema.
+      final fallbacks = deck.isBible
+          ? const [
+              'Jesús lloró.',
+              'En el principio creó Dios los cielos y la tierra.',
+              'Jehová es mi pastor; nada me faltará.',
+              'Porque de tal manera amó Dios al mundo...',
+              'El amor es sufrido, es benigno...',
+            ]
+          : const [
+              'Ninguna de las otras opciones es correcta.',
+              'Es un concepto que no pertenece a este mazo.',
+              'La definición corresponde a otra tarjeta.',
+              'No aplica para esta pregunta.',
+              'Es lo contrario de la respuesta correcta.',
+            ];
       final shuffledFallbacks = _deterministicShuffle(fallbacks, '${card.id}_fallbacks_$roomCode');
-      
+
       int fallbackIdx = 0;
       while (wrongOptions.length < 3) {
         final dist = shuffledFallbacks[fallbackIdx % shuffledFallbacks.length];
@@ -2300,16 +2520,17 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
           wrongOptions.add(dist);
         }
       }
-      
+
       final wrong3 = wrongOptions.take(3).toList();
       final allOptions = [correctAns, ...wrong3];
       final shuffledOptions = _deterministicShuffle(allOptions, '${card.id}_options_$roomCode');
       final correctIdx = shuffledOptions.indexOf(correctAns);
-      
+
       generated.add(_CoopCard(
         question: questionText,
         options: shuffledOptions,
         correct: correctIdx,
+        sourceCardId: card.id,
       ));
     }
     
@@ -2320,7 +2541,8 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
   void _confirm() {
     if (_answered || _selectedOption == null) return;
     final gameCards = _getGameCards(context);
-    final currentCard = gameCards[_state!.currentCardIndex % gameCards.length];
+    final cardIndex = _state!.currentCardIndex % gameCards.length;
+    final currentCard = gameCards[cardIndex];
     final correct = _selectedOption == currentCard.correct;
     setState(() {
       _answered = true;
@@ -2329,6 +2551,25 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
     });
     // Reportar puntos al server: +10 acierto, +0 fallo.
     _coop?.reportScore(correct ? 10 : 0);
+
+    // Bitácora local para el recap real de la pantalla de resultados.
+    _coop?.answerLog.add(CoopAnswerRecord(
+      cardIndex: cardIndex,
+      question: currentCard.question,
+      correctAnswer: currentCard.options[currentCard.correct],
+      wasCorrect: correct,
+    ));
+
+    // Paridad con el solitario: el repaso cooperativo también alimenta el SRS.
+    final sourceCardId = currentCard.sourceCardId;
+    final deckId = _state?.currentDeckId;
+    if (sourceCardId.isNotEmpty && deckId != null && deckId.isNotEmpty) {
+      AppScope.of(context).recordCoopAnswer(
+        deckId: deckId,
+        cardId: sourceCardId,
+        correct: correct,
+      );
+    }
   }
 
   void _next() {
@@ -2336,10 +2577,53 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
     final gameCards = _getGameCards(context);
     final next = (_state?.currentCardIndex ?? 0) + 1;
     if (next >= gameCards.length) {
+      // Notificar a TODOS (incluido este host, vía relay) que terminó la
+      // partida; los guests navegan al recibir 'session_end'.
+      _coop?.broadcastSessionEnd();
       Navigator.pushReplacementNamed(context, AppRoutes.cooperativoLogrado);
       return;
     }
     _coop?.broadcastCard(deckId: _state?.currentDeckId ?? 'mock-deck', cardIndex: next);
+  }
+
+  /// Salida limpia de la partida: el host cierra la sala para todos; el
+  /// invitado solo se desconecta. Siempre vuelve al lobby cooperativo.
+  Future<void> _leaveRoom() async {
+    final exitConfirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF0F0C1B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          _isHost ? '¿Cerrar la sala?' : '¿Salir de la partida?',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16),
+        ),
+        content: Text(
+          _isHost
+              ? 'Eres el host: la sala se cerrará para todos los jugadores.'
+              : 'Saldrás de la partida; el resto puede seguir jugando.',
+          style: const TextStyle(color: RefColors.muted, fontSize: 12),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar', style: TextStyle(color: RefColors.muted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: RefColors.urgent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Salir', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+    if (exitConfirmed != true || !mounted) return;
+    if (_isHost) {
+      _coop?.broadcastRoomClosed();
+    }
+    await _coop?.disconnect();
+    if (!mounted) return;
+    Navigator.pushReplacementNamed(context, AppRoutes.cooperativo);
   }
 
   void _shareHint() {
@@ -2361,7 +2645,8 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
         'senderName': me,
       },
     ));
-    
+    coop.hintsShared++;
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('¡Pista compartida con el equipo! 💡'),
@@ -2459,7 +2744,7 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
                 Expanded(
                   child: GhostButton(
                     '← Salir de sala',
-                    onTap: () => Navigator.pop(context),
+                    onTap: _leaveRoom,
                   ),
                 ),
               ],
@@ -2478,7 +2763,9 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _CoopTopBar(
-            center: 'EN JUEGO · ${state.currentCardIndex + 1}/${gameCards.length}',
+            center: _answered
+                ? 'EN JUEGO · ${state.currentCardIndex + 1}/${gameCards.length}'
+                : 'EN JUEGO · ${state.currentCardIndex + 1}/${gameCards.length} · ⏱ ${_secondsLeft}s',
             live: true,
           ),
           const SizedBox(height: 8),
@@ -2530,7 +2817,7 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
               Expanded(
                 child: GhostButton(
                   '← Salir',
-                  onTap: () => Navigator.pop(context),
+                  onTap: _leaveRoom,
                 ),
               ),
               const SizedBox(width: 8),
@@ -2778,7 +3065,7 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
   Widget build(BuildContext context) {
     final memberIds = widget.roomState.memberIds.toList();
     final hostId = widget.roomState.hostId;
-    final me = AppScope.of(context).currentUser?.id ?? '';
+    final me = AppScope.of(context).effectiveUser.id;
 
     return Glass(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
@@ -2966,7 +3253,7 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
                           await store.api.sendCoopInvite(
                             friendUserId: f.id,
                             roomCode: widget.roomState.code,
-                            hostName: store.currentUser?.effectiveName ?? 'Tu amigo',
+                            hostName: store.effectiveUser.effectiveName,
                           );
                         } catch (e) {
                           debugPrint('Error sending coop invite: $e');
@@ -3178,7 +3465,7 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
 
   void _showMemberProfile(String targetUserId) {
     final store = AppScope.of(context);
-    final me = store.currentUser?.id ?? '';
+    final me = store.effectiveUser.id;
     
     showDialog(
       context: context,
@@ -3427,7 +3714,7 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
                               ),
                             )
                           else
-                            Container(
+                            SizedBox(
                               height: 60,
                               child: ListView.builder(
                                 scrollDirection: Axis.horizontal,
@@ -3765,7 +4052,7 @@ class _CoopSettingsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
-    final isHost = roomState.hostId == store.currentUser?.id;
+    final isHost = roomState.hostId == store.effectiveUser.id;
     final coop = CoopService.active;
     
     // Find the deck based on lobbyDeckId (no fallback to activeDeck)
@@ -3792,6 +4079,9 @@ class _CoopSettingsCard extends StatelessWidget {
     if (roomState.mode == 'libre') {
       modeDesc = 'Cualquiera responde · 8s cooldown si fallas';
       modeLabel = 'Estudio Libre';
+    } else if (roomState.mode == 'quiz') {
+      modeDesc = 'Preguntas generadas por la IA local del host';
+      modeLabel = 'Quiz Rápido (IA)';
     }
 
     final totalCards = deck?.cards.length ?? 0;
@@ -3964,6 +4254,16 @@ class _CoopSettingsCard extends StatelessWidget {
                 trailing: roomState.mode == 'libre' ? const Icon(Icons.check_circle, color: RefColors.cyan) : null,
                 onTap: () {
                   coop.broadcastMode('libre');
+                  Navigator.pop(ctx);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.psychology_rounded, color: RefColors.pink),
+                title: const Text('Quiz Rápido (IA)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                subtitle: const Text('Preguntas de opción múltiple generadas por la IA local del host', style: TextStyle(color: RefColors.muted, fontSize: 11)),
+                trailing: roomState.mode == 'quiz' ? const Icon(Icons.check_circle, color: RefColors.pink) : null,
+                onTap: () {
+                  coop.broadcastMode('quiz');
                   Navigator.pop(ctx);
                 },
               ),
@@ -4791,17 +5091,33 @@ class _CoopGameChatState extends State<_CoopGameChat> {
 class _CoopCelebrateCard extends StatelessWidget {
   const _CoopCelebrateCard();
 
+  /// Resumen real de la partida: jugadores de la sala y aciertos del
+  /// scoreboard. Sin números fingidos.
+  String _buildSummary() {
+    final coop = CoopService.active;
+    final state = coop?.state;
+    if (state == null) return 'Sesión cooperativa completada';
+    final playerCount = state.memberIds.length;
+    final totalCorrect = state.scores.values
+        .fold<int>(0, (sum, score) => sum + score ~/ 10);
+    final parts = <String>[
+      '$playerCount ${playerCount == 1 ? 'jugador' : 'jugadores'}',
+      '$totalCorrect ${totalCorrect == 1 ? 'acierto' : 'aciertos'} del equipo',
+    ];
+    return parts.join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
-    return const Glass(
-      padding: EdgeInsets.fromLTRB(22, 24, 22, 22),
+    return Glass(
+      padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
       gradient: RefColors.success,
-      border: Border(),
+      border: const Border(),
       child: Column(
         children: [
-          Text('🎉', style: TextStyle(fontSize: 52)),
-          SizedBox(height: 6),
-          Text(
+          const Text('🎉', style: TextStyle(fontSize: 52)),
+          const SizedBox(height: 6),
+          const Text(
             '¡Lo lograron juntos!',
             textAlign: TextAlign.center,
             style: TextStyle(
@@ -4811,10 +5127,10 @@ class _CoopCelebrateCard extends StatelessWidget {
               fontWeight: FontWeight.w900,
             ),
           ),
-          SizedBox(height: 6),
+          const SizedBox(height: 6),
           Text(
-            '20 tarjetas · 12 min · 85% aciertos',
-            style: TextStyle(
+            _buildSummary(),
+            style: const TextStyle(
               color: RefColors.successInk,
               fontSize: 14,
               fontWeight: FontWeight.w800,
@@ -5016,6 +5332,22 @@ class _CoopScoreRow extends StatelessWidget {
 class _CoopShareCard extends StatelessWidget {
   const _CoopShareCard();
 
+  String _buildShareSummary() {
+    final coop = CoopService.active;
+    final state = coop?.state;
+    final answerLog = coop?.answerLog ?? const <CoopAnswerRecord>[];
+    final correctCount = answerLog.where((record) => record.wasCorrect).length;
+    final buffer = StringBuffer('🎉 ¡Sesión cooperativa completada en Memorizar!\n');
+    if (state != null) {
+      buffer.writeln('Mazo: ${state.lobbyDeckName ?? 'sin nombre'} · Sala ${state.code}');
+      buffer.writeln('Jugadores: ${state.memberIds.length}');
+    }
+    if (answerLog.isNotEmpty) {
+      buffer.writeln('Mis aciertos: $correctCount/${answerLog.length}');
+    }
+    return buffer.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Glass(
@@ -5044,15 +5376,47 @@ class _CoopShareCard extends StatelessWidget {
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-            decoration: BoxDecoration(
-              gradient: RefColors.primary,
-              borderRadius: BorderRadius.circular(10),
+          GestureDetector(
+            onTap: () async {
+              await Clipboard.setData(ClipboardData(text: _buildShareSummary()));
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Resumen copiado al portapapeles 📋'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: RefColors.glassStrong,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.copy_rounded,
+                  size: 16, color: RefColors.ink),
             ),
-            child: const Text(
-              'Compartir',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => shareCoopRecapAsImage(context),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              decoration: BoxDecoration(
+                gradient: RefColors.primary,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.image_rounded, size: 14, color: Colors.white),
+                  SizedBox(width: 5),
+                  Text(
+                    'Imagen',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -5066,13 +5430,15 @@ class _CoopRecapCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Glass(
-      padding: EdgeInsets.all(16),
+    final answerLog = CoopService.active?.answerLog ?? const <CoopAnswerRecord>[];
+
+    return Glass(
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '📖 CÓMO LES FUE A LAS TARJETAS',
+          const Text(
+            '📖 TU RECORRIDO PREGUNTA A PREGUNTA',
             style: TextStyle(
               color: RefColors.muted,
               fontSize: 11,
@@ -5080,44 +5446,27 @@ class _CoopRecapCard extends StatelessWidget {
               letterSpacing: 1.2,
             ),
           ),
-          SizedBox(height: 10),
-          _CoopRecapItem(
-            '1',
-            'Alvéolos · función',
-            'Marco · sin errores',
-            1,
-            '✓ 100%',
-          ),
-          _CoopRecapItem(
-            '2',
-            'Bronquios principales',
-            'Ana · 1 error',
-            .92,
-            '✓ 92%',
-          ),
-          _CoopRecapItem(
-            '3',
-            'Diafragma · función',
-            'Lucía · 2 errores',
-            .85,
-            '⚡ 85%',
-            warn: true,
-          ),
-          _CoopRecapItem(
-            '4',
-            'Tráquea · anillos',
-            'Marco · sin errores',
-            .98,
-            '✓ 98%',
-          ),
-          _CoopRecapItem(
-            '5',
-            'Intercambio gaseoso',
-            'Ana · 3 errores',
-            .78,
-            '⚡ 78%',
-            warn: true,
-          ),
+          const SizedBox(height: 10),
+          if (answerLog.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'No respondiste preguntas en esta partida.',
+                style: TextStyle(color: RefColors.muted, fontSize: 12),
+              ),
+            )
+          else
+            for (final record in answerLog)
+              _CoopRecapItem(
+                '${record.cardIndex + 1}',
+                record.question,
+                record.wasCorrect
+                    ? 'Correcta'
+                    : 'Fallada · era: ${record.correctAnswer}',
+                record.wasCorrect ? 1 : 0,
+                record.wasCorrect ? '✓' : '✗',
+                warn: !record.wasCorrect,
+              ),
         ],
       ),
     );
@@ -5240,30 +5589,67 @@ class _CoopAchievements extends StatelessWidget {
             ),
           ),
           SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _CoopAchievement(
-                  '🤝',
-                  'En equipo',
-                  '3 sesiones co-op',
-                  warm: true,
-                ),
-                SizedBox(width: 8),
-                _CoopAchievement(
-                  '💡',
-                  'Buena pista',
-                  'Ayudaste 2x',
-                  warm: true,
-                ),
-                SizedBox(width: 8),
-                _CoopAchievement('🔥', 'Racha 10', '3 días restantes'),
-                SizedBox(width: 8),
-                _CoopAchievement('🌟', 'Precisión', '90% en 3 sesiones'),
-              ],
-            ),
-          ),
+          _CoopEarnedAchievements(),
+        ],
+      ),
+    );
+  }
+}
+
+/// Logros calculados con los datos reales de la partida que acaba de
+/// terminar (bitácora local + scoreboard de la sala). Sin datos fingidos.
+class _CoopEarnedAchievements extends StatelessWidget {
+  const _CoopEarnedAchievements();
+
+  @override
+  Widget build(BuildContext context) {
+    final coop = CoopService.active;
+    final answerLog = coop?.answerLog ?? const <CoopAnswerRecord>[];
+    final memberCount = coop?.state?.memberIds.length ?? 0;
+    final hintsShared = coop?.hintsShared ?? 0;
+
+    final correctCount =
+        answerLog.where((record) => record.wasCorrect).length;
+    final answeredAll = answerLog.isNotEmpty;
+    final perfectRun = answeredAll && correctCount == answerLog.length;
+    final solidAccuracy =
+        answeredAll && !perfectRun && correctCount * 10 >= answerLog.length * 7;
+
+    var bestStreak = 0;
+    var currentStreak = 0;
+    for (final record in answerLog) {
+      currentStreak = record.wasCorrect ? currentStreak + 1 : 0;
+      if (currentStreak > bestStreak) bestStreak = currentStreak;
+    }
+
+    final earned = <Widget>[
+      if (memberCount >= 2)
+        _CoopAchievement('🤝', 'En equipo', '$memberCount jugadores', warm: true),
+      if (perfectRun)
+        _CoopAchievement('🌟', 'Perfecto', '$correctCount/${answerLog.length} aciertos', warm: true),
+      if (solidAccuracy)
+        _CoopAchievement('🎯', 'Precisión', '$correctCount/${answerLog.length} aciertos'),
+      if (bestStreak >= 3)
+        _CoopAchievement('🔥', 'Racha $bestStreak', 'aciertos seguidos'),
+      if (hintsShared > 0)
+        _CoopAchievement('💡', 'Buena pista', 'Ayudaste ${hintsShared}x', warm: true),
+    ];
+
+    if (earned.isEmpty) {
+      return const Text(
+        'Sin logros esta vez. ¡La próxima partida es tuya!',
+        style: TextStyle(color: RefColors.muted, fontSize: 12),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (var i = 0; i < earned.length; i++) ...[
+            if (i > 0) const SizedBox(width: 8),
+            earned[i],
+          ],
         ],
       ),
     );

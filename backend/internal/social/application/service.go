@@ -26,6 +26,12 @@ var (
 	ErrFriendshipForbidden = errors.New("friendship does not belong to user")
 	ErrInvalidShareKind    = errors.New("invalid share kind")
 	ErrMissingPayload      = errors.New("missing payload")
+	ErrShareNotFound       = errors.New("share not found")
+	ErrMissingTitle        = errors.New("missing title")
+	ErrInvalidReportReason     = errors.New("invalid report reason")
+	ErrInvalidReportResolution = errors.New("invalid report resolution")
+	ErrReportNotFound          = errors.New("report not found")
+	ErrTrialAlreadyUsed        = errors.New("trial already used")
 	ErrFeedEntryNotFound   = errors.New("feed entry not found")
 	ErrEmailInUse          = errors.New("email already in use")
 	ErrInvalidCredentials  = errors.New("invalid credentials")
@@ -39,6 +45,10 @@ type Service struct {
 	repo     ports.Repository
 	now      func() time.Time
 	notifier notify.Notifier
+	// moderatorEmails es una allowlist (lowercase) de correos con permiso de
+	// moderación, inyectada desde env. Complementa el flag persistido
+	// User.IsModerator para que se pueda promover sin tocar la base.
+	moderatorEmails map[string]bool
 }
 
 func NewService(repo ports.Repository, opts ...Option) *Service {
@@ -72,6 +82,40 @@ func WithClock(now func() time.Time) Option {
 			s.now = now
 		}
 	}
+}
+
+// WithModeratorEmails registra la allowlist de correos que pueden moderar.
+// Se normaliza a lowercase y se ignoran entradas vacías.
+func WithModeratorEmails(emails []string) Option {
+	return func(s *Service) {
+		if s.moderatorEmails == nil {
+			s.moderatorEmails = map[string]bool{}
+		}
+		for _, e := range emails {
+			e = strings.ToLower(strings.TrimSpace(e))
+			if e != "" {
+				s.moderatorEmails[e] = true
+			}
+		}
+	}
+}
+
+// IsModerator decide si un usuario puede operar la cola de moderación.
+// Verdadero si su correo está en la allowlist de env o si el registro
+// persistido tiene el flag IsModerator.
+func (s *Service) IsModerator(userID string) bool {
+	user, err := s.repo.FindUserByID(userID)
+	if err != nil || user == nil {
+		return false
+	}
+	if user.IsModerator {
+		return true
+	}
+	if s.moderatorEmails != nil &&
+		s.moderatorEmails[strings.ToLower(strings.TrimSpace(user.Email))] {
+		return true
+	}
+	return false
 }
 
 // notifySafe envuelve s.notifier.Notify en una guarda nil — los seeds en
@@ -177,7 +221,7 @@ func (s *Service) SocialLogin(input SocialLoginInput) (*SocialLoginOutput, error
 		return nil, err
 	}
 
-	return &SocialLoginOutput{User: user.Sanitize(), Session: *session}, nil
+	return &SocialLoginOutput{User: s.withModeratorFlag(*user).Sanitize(), Session: *session}, nil
 }
 
 // createSession crea + persiste un Session token con TTL 30 días.
@@ -205,7 +249,23 @@ func (s *Service) Authenticate(token string) (*domain.User, error) {
 }
 
 func (s *Service) GetUser(userID string) (*domain.User, error) {
-	return s.repo.FindUserByID(strings.TrimSpace(userID))
+	user, err := s.repo.FindUserByID(strings.TrimSpace(userID))
+	if err != nil || user == nil {
+		return user, err
+	}
+	decorated := s.withModeratorFlag(*user)
+	return &decorated, nil
+}
+
+// withModeratorFlag devuelve una copia del usuario con IsModerator calculado
+// a partir de la allowlist de env (sin persistir). Se aplica en los límites
+// de lectura para que el cliente sepa si debe mostrar la cola de moderación.
+func (s *Service) withModeratorFlag(user domain.User) domain.User {
+	if !user.IsModerator && s.moderatorEmails != nil &&
+		s.moderatorEmails[strings.ToLower(strings.TrimSpace(user.Email))] {
+		user.IsModerator = true
+	}
+	return user
 }
 
 func (s *Service) RequestFriend(requesterID, addresseeID string) (*domain.Friendship, error) {
@@ -415,11 +475,578 @@ func (s *Service) ListSuggestedPeople(userID string) ([]domain.User, error) {
 	return suggestions, nil
 }
 
+// CommunityDeck es un SharedResource público enriquecido con sus stats a
+// nivel comunidad (cuántos usuarios distintos lo importaron).
+type CommunityDeck struct {
+	domain.SharedResource
+	ImportCount int  `json:"importCount"`
+	LikeCount   int  `json:"likeCount"`
+	LikedByMe   bool `json:"likedByMe"`
+}
+
+// attachCommunityStats enriquece recursos con sus contadores de importación,
+// likes y si el usuario que consulta ya les dio like.
+func (s *Service) attachCommunityStats(userID string, resources []domain.SharedResource) ([]CommunityDeck, error) {
+	shareIDs := make([]string, 0, len(resources))
+	for _, resource := range resources {
+		shareIDs = append(shareIDs, resource.ID)
+	}
+	counts, err := s.repo.CountShareImports(shareIDs)
+	if err != nil {
+		return nil, err
+	}
+	likeCounts, err := s.repo.CountDeckLikes(shareIDs)
+	if err != nil {
+		return nil, err
+	}
+	likedByMe := map[string]bool{}
+	if userID != "" {
+		liked, err := s.repo.ListLikedShareIDsByUser(userID)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range liked {
+			likedByMe[id] = true
+		}
+	}
+	enriched := make([]CommunityDeck, 0, len(resources))
+	for _, resource := range resources {
+		enriched = append(enriched, CommunityDeck{
+			SharedResource: resource,
+			ImportCount:    counts[resource.ID],
+			LikeCount:      likeCounts[resource.ID],
+			LikedByMe:      likedByMe[resource.ID],
+		})
+	}
+	return enriched, nil
+}
+
+// ToggleDeckLike alterna el like del usuario sobre un deck público y devuelve
+// el nuevo estado (liked) y el total de likes.
+func (s *Service) ToggleDeckLike(userID, shareID string) (bool, int, error) {
+	shareID = strings.TrimSpace(shareID)
+	if shareID == "" {
+		return false, 0, ErrShareNotFound
+	}
+	share, err := s.repo.FindSharedResource(shareID)
+	if err != nil {
+		return false, 0, err
+	}
+	if share == nil || !share.IsPublic {
+		return false, 0, ErrShareNotFound
+	}
+	liked, err := s.repo.ListLikedShareIDsByUser(userID)
+	if err != nil {
+		return false, 0, err
+	}
+	already := false
+	for _, id := range liked {
+		if id == shareID {
+			already = true
+			break
+		}
+	}
+	if already {
+		if err := s.repo.DeleteDeckLike(shareID, userID); err != nil {
+			return false, 0, err
+		}
+	} else {
+		if err := s.repo.SaveDeckLike(shareID, userID, s.now().UTC()); err != nil {
+			return false, 0, err
+		}
+	}
+	counts, err := s.repo.CountDeckLikes([]string{shareID})
+	if err != nil {
+		return false, 0, err
+	}
+	return !already, counts[shareID], nil
+}
+
+// RegisterCommunityImport registra que `userID` importó el deck comunitario
+// `shareID`. Idempotente por usuario; el dueño no puede inflar sus stats.
+func (s *Service) RegisterCommunityImport(userID, shareID string) error {
+	shareID = strings.TrimSpace(shareID)
+	if shareID == "" {
+		return ErrMissingPayload
+	}
+	share, err := s.FindShareByID(shareID)
+	if err != nil {
+		return err
+	}
+	if share == nil || !share.IsPublic {
+		return ErrShareNotFound
+	}
+	if share.OwnerUserID == userID {
+		return nil
+	}
+	return s.repo.SaveShareImport(domain.ShareImport{
+		ShareID:   shareID,
+		UserID:    userID,
+		CreatedAt: s.now().UTC(),
+	})
+}
+
+// ListOwnedCommunityDecks devuelve los decks que el usuario publicó a la
+// comunidad, con sus stats de importación, ordenados del más reciente.
+func (s *Service) ListOwnedCommunityDecks(userID string) ([]CommunityDeck, error) {
+	all, err := s.repo.ListSharedResourcesForUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	owned := make([]domain.SharedResource, 0, len(all))
+	for _, resource := range all {
+		if resource.OwnerUserID == userID && resource.Kind == domain.ShareKindDeck && resource.IsPublic {
+			owned = append(owned, resource)
+		}
+	}
+	sort.Slice(owned, func(i, j int) bool {
+		return owned[i].CreatedAt.After(owned[j].CreatedAt)
+	})
+	return s.attachCommunityStats(userID, owned)
+}
+
+// RegisterPushToken persiste el token de push del dispositivo del usuario.
+func (s *Service) RegisterPushToken(userID, token, platform string) error {
+	token = strings.TrimSpace(token)
+	if token == "" || len(token) > 512 {
+		return ErrMissingPayload
+	}
+	return s.repo.SavePushToken(domain.PushToken{
+		UserID:    userID,
+		Token:     token,
+		Platform:  strings.TrimSpace(platform),
+		UpdatedAt: s.now().UTC(),
+	})
+}
+
+// PremiumStatus es lo que la app consulta al iniciar sesión.
+type PremiumStatus struct {
+	Active    bool       `json:"active"`
+	Plan      string     `json:"plan,omitempty"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+}
+
+const premiumTrialDays = 14
+
+// ActivatePremiumTrial activa (o devuelve, si sigue vigente) el trial del
+// usuario. Idempotente: reactivar con un trial vivo no extiende la fecha.
+func (s *Service) ActivatePremiumTrial(userID string) (*domain.PremiumSubscription, error) {
+	existing, err := s.repo.FindPremiumSubscription(userID)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now().UTC()
+	if existing != nil && existing.ExpiresAt.After(now) {
+		return existing, nil
+	}
+	if existing != nil && existing.Plan == "trial" {
+		return nil, ErrTrialAlreadyUsed
+	}
+	subscription := domain.PremiumSubscription{
+		UserID:      userID,
+		Plan:        "trial",
+		ActivatedAt: now,
+		ExpiresAt:   now.AddDate(0, 0, premiumTrialDays),
+	}
+	if err := s.repo.SavePremiumSubscription(subscription); err != nil {
+		return nil, err
+	}
+	return &subscription, nil
+}
+
+// PremiumStatusFor devuelve el estado premium vigente del usuario.
+func (s *Service) PremiumStatusFor(userID string) (*PremiumStatus, error) {
+	subscription, err := s.repo.FindPremiumSubscription(userID)
+	if err != nil {
+		return nil, err
+	}
+	if subscription == nil || !subscription.ExpiresAt.After(s.now().UTC()) {
+		return &PremiumStatus{Active: false}, nil
+	}
+	expires := subscription.ExpiresAt
+	return &PremiumStatus{Active: true, Plan: subscription.Plan, ExpiresAt: &expires}, nil
+}
+
+// AnalyticsEventInput es un evento del batch que manda la app.
+type AnalyticsEventInput struct {
+	Event string         `json:"event"`
+	Props map[string]any `json:"props,omitempty"`
+}
+
+const maxAnalyticsBatch = 100
+
+// RecordAnalyticsEvents persiste un batch de eventos de producto. Acepta
+// invitados (userID vacío) y descarta silenciosamente eventos sin nombre.
+func (s *Service) RecordAnalyticsEvents(userID string, batch []AnalyticsEventInput) error {
+	if len(batch) == 0 {
+		return nil
+	}
+	if len(batch) > maxAnalyticsBatch {
+		batch = batch[:maxAnalyticsBatch]
+	}
+	events := make([]domain.AnalyticsEvent, 0, len(batch))
+	now := s.now().UTC()
+	for _, input := range batch {
+		name := strings.TrimSpace(input.Event)
+		if name == "" || len(name) > 120 {
+			continue
+		}
+		propsJSON := ""
+		if len(input.Props) > 0 {
+			if encoded, err := json.Marshal(input.Props); err == nil {
+				propsJSON = string(encoded)
+			}
+		}
+		events = append(events, domain.AnalyticsEvent{
+			ID:        newID("evt"),
+			UserID:    userID,
+			Event:     name,
+			PropsJSON: propsJSON,
+			CreatedAt: now,
+		})
+	}
+	if len(events) == 0 {
+		return nil
+	}
+	return s.repo.SaveAnalyticsEvents(events)
+}
+
+// AnalyticsSummary devuelve el conteo total por nombre de evento.
+func (s *Service) AnalyticsSummary() (map[string]int, error) {
+	return s.repo.CountAnalyticsEventsByName()
+}
+
+// FileDeckReportInput es la denuncia que envía la app.
+type FileDeckReportInput struct {
+	DeckID    string `json:"deckId"`
+	DeckTitle string `json:"deckTitle"`
+	Reason    string `json:"reason"`
+	Note      string `json:"note"`
+}
+
+var validReportReasons = map[string]struct{}{
+	"copyright": {}, "hate": {}, "sexual": {}, "minor_risk": {},
+	"spam": {}, "impersonation": {}, "inaccurate": {}, "other": {},
+}
+
+var validReportResolutions = map[string]domain.DeckReportStatus{
+	"kept":    domain.ReportStatusResolvedKept,
+	"hidden":  domain.ReportStatusResolvedHidden,
+	"removed": domain.ReportStatusResolvedRemoved,
+}
+
+// FileDeckReport persiste una denuncia en la cola de moderación.
+func (s *Service) FileDeckReport(reporterID string, input FileDeckReportInput) (*domain.DeckReport, error) {
+	reason := strings.TrimSpace(strings.ToLower(input.Reason))
+	if _, ok := validReportReasons[reason]; !ok {
+		return nil, ErrInvalidReportReason
+	}
+	if strings.TrimSpace(input.DeckID) == "" {
+		return nil, ErrMissingPayload
+	}
+	report := domain.DeckReport{
+		ID:         newID("rep"),
+		DeckID:     strings.TrimSpace(input.DeckID),
+		DeckTitle:  strings.TrimSpace(input.DeckTitle),
+		ReporterID: reporterID,
+		Reason:     reason,
+		Note:       strings.TrimSpace(input.Note),
+		Status:     domain.ReportStatusPending,
+		CreatedAt:  s.now().UTC(),
+	}
+	if err := s.repo.SaveDeckReport(report); err != nil {
+		return nil, err
+	}
+	return &report, nil
+}
+
+// ListDeckReports devuelve la cola completa, pendientes primero y luego por
+// fecha descendente. La autorización por rol de moderador queda pendiente.
+func (s *Service) ListDeckReports() ([]domain.DeckReport, error) {
+	reports, err := s.repo.ListDeckReports()
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(reports, func(i, j int) bool {
+		iPending := reports[i].Status == domain.ReportStatusPending
+		jPending := reports[j].Status == domain.ReportStatusPending
+		if iPending != jPending {
+			return iPending
+		}
+		return reports[i].CreatedAt.After(reports[j].CreatedAt)
+	})
+	return reports, nil
+}
+
+// ResolveDeckReport marca un reporte como mantenido/oculto/eliminado.
+func (s *Service) ResolveDeckReport(reportID, resolution string) (*domain.DeckReport, error) {
+	status, ok := validReportResolutions[strings.TrimSpace(strings.ToLower(resolution))]
+	if !ok {
+		return nil, ErrInvalidReportResolution
+	}
+	report, err := s.repo.FindDeckReportByID(strings.TrimSpace(reportID))
+	if err != nil {
+		return nil, err
+	}
+	if report == nil {
+		return nil, ErrReportNotFound
+	}
+	report.Status = status
+	if err := s.repo.SaveDeckReport(*report); err != nil {
+		return nil, err
+	}
+	return report, nil
+}
+
+// CommunityCreatorStat resume a un autor del catálogo comunitario.
+type CommunityCreatorStat struct {
+	UserID        string `json:"userId"`
+	DisplayName   string `json:"displayName"`
+	DeckCount     int    `json:"deckCount"`
+	ImportCount   int    `json:"importCount"`
+	FollowerCount int    `json:"followerCount"`
+	FollowedByMe  bool   `json:"followedByMe"`
+}
+
+// ToggleFollow alterna que `followerID` siga a `creatorID` (relación de una
+// vía, sin aceptación). Devuelve el nuevo estado y el total de seguidores.
+func (s *Service) ToggleFollow(followerID, creatorID string) (bool, int, error) {
+	creatorID = strings.TrimSpace(creatorID)
+	if creatorID == "" || creatorID == followerID {
+		return false, 0, ErrUserNotFound
+	}
+	creator, err := s.repo.FindUserByID(creatorID)
+	if err != nil {
+		return false, 0, err
+	}
+	if creator == nil {
+		return false, 0, ErrUserNotFound
+	}
+	following, err := s.repo.ListFollowingByUser(followerID)
+	if err != nil {
+		return false, 0, err
+	}
+	already := false
+	for _, id := range following {
+		if id == creatorID {
+			already = true
+			break
+		}
+	}
+	if already {
+		if err := s.repo.DeleteFollow(followerID, creatorID); err != nil {
+			return false, 0, err
+		}
+	} else {
+		if err := s.repo.SaveFollow(followerID, creatorID, s.now().UTC()); err != nil {
+			return false, 0, err
+		}
+	}
+	counts, err := s.repo.CountFollowers([]string{creatorID})
+	if err != nil {
+		return false, 0, err
+	}
+	return !already, counts[creatorID], nil
+}
+
+// CommunityCategoryStat agrupa los decks públicos por su icono (la señal de
+// categoría real que viaja en el payload del deck).
+type CommunityCategoryStat struct {
+	Icon  string `json:"icon"`
+	Count int    `json:"count"`
+}
+
+// CommunityOverview alimenta la portada de la pestaña Comunidad con datos
+// reales del catálogo en lugar de números decorativos.
+type CommunityOverview struct {
+	Featured   []CommunityDeck         `json:"featured"`
+	Popular    []CommunityDeck         `json:"popular"`
+	Creators   []CommunityCreatorStat  `json:"creators"`
+	Categories []CommunityCategoryStat `json:"categories"`
+	TotalDecks int                     `json:"totalDecks"`
+}
+
+const featuredWindowDays = 7
+
+func (s *Service) listAllPublicDecks() ([]domain.SharedResource, error) {
+	users, err := s.repo.ListUsers()
+	if err != nil {
+		return nil, err
+	}
+	allUserIDs := make([]string, 0, len(users))
+	for _, u := range users {
+		allUserIDs = append(allUserIDs, u.ID)
+	}
+	resources, err := s.repo.ListPublicSharedResourcesByUserIDs(allUserIDs)
+	if err != nil {
+		return nil, err
+	}
+	decks := make([]domain.SharedResource, 0, len(resources))
+	for _, resource := range resources {
+		if resource.Kind == domain.ShareKindDeck && resource.IsPublic {
+			decks = append(decks, resource)
+		}
+	}
+	return decks, nil
+}
+
+func deckIcon(resource domain.SharedResource) string {
+	var payload struct {
+		Icon string `json:"icon"`
+	}
+	if err := json.Unmarshal([]byte(resource.PayloadJSON), &payload); err == nil {
+		icon := strings.TrimSpace(payload.Icon)
+		if icon != "" {
+			return icon
+		}
+	}
+	return "🌍"
+}
+
+// CommunityOverview arma destacados (importaciones de los últimos 7 días),
+// populares (importaciones totales), creadores top y categorías por icono.
+func (s *Service) CommunityOverview(userID string) (*CommunityOverview, error) {
+	decks, err := s.listAllPublicDecks()
+	if err != nil {
+		return nil, err
+	}
+
+	shareIDs := make([]string, 0, len(decks))
+	for _, deck := range decks {
+		shareIDs = append(shareIDs, deck.ID)
+	}
+	totalCounts, err := s.repo.CountShareImports(shareIDs)
+	if err != nil {
+		return nil, err
+	}
+	since := s.now().UTC().AddDate(0, 0, -featuredWindowDays)
+	recentCounts, err := s.repo.CountShareImportsSince(shareIDs, since)
+	if err != nil {
+		return nil, err
+	}
+
+	enrich := func(resource domain.SharedResource) CommunityDeck {
+		return CommunityDeck{SharedResource: resource, ImportCount: totalCounts[resource.ID]}
+	}
+
+	featuredSource := append([]domain.SharedResource{}, decks...)
+	sort.SliceStable(featuredSource, func(i, j int) bool {
+		ri, rj := recentCounts[featuredSource[i].ID], recentCounts[featuredSource[j].ID]
+		if ri != rj {
+			return ri > rj
+		}
+		return featuredSource[i].CreatedAt.After(featuredSource[j].CreatedAt)
+	})
+	featured := make([]CommunityDeck, 0, 3)
+	for _, resource := range featuredSource {
+		if len(featured) == 3 {
+			break
+		}
+		featured = append(featured, enrich(resource))
+	}
+
+	popularSource := append([]domain.SharedResource{}, decks...)
+	sort.SliceStable(popularSource, func(i, j int) bool {
+		ti, tj := totalCounts[popularSource[i].ID], totalCounts[popularSource[j].ID]
+		if ti != tj {
+			return ti > tj
+		}
+		return popularSource[i].CreatedAt.After(popularSource[j].CreatedAt)
+	})
+	popular := make([]CommunityDeck, 0, 6)
+	for _, resource := range popularSource {
+		if len(popular) == 6 {
+			break
+		}
+		popular = append(popular, enrich(resource))
+	}
+
+	type creatorAgg struct {
+		deckCount   int
+		importCount int
+	}
+	byOwner := map[string]*creatorAgg{}
+	for _, deck := range decks {
+		agg, ok := byOwner[deck.OwnerUserID]
+		if !ok {
+			agg = &creatorAgg{}
+			byOwner[deck.OwnerUserID] = agg
+		}
+		agg.deckCount++
+		agg.importCount += totalCounts[deck.ID]
+	}
+	creatorIDs := make([]string, 0, len(byOwner))
+	for ownerID := range byOwner {
+		creatorIDs = append(creatorIDs, ownerID)
+	}
+	followerCounts, err := s.repo.CountFollowers(creatorIDs)
+	if err != nil {
+		return nil, err
+	}
+	followedByMe := map[string]bool{}
+	if userID != "" {
+		following, err := s.repo.ListFollowingByUser(userID)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range following {
+			followedByMe[id] = true
+		}
+	}
+	creators := make([]CommunityCreatorStat, 0, len(byOwner))
+	for ownerID, agg := range byOwner {
+		creators = append(creators, CommunityCreatorStat{
+			UserID:        ownerID,
+			DisplayName:   s.userDisplay(ownerID),
+			DeckCount:     agg.deckCount,
+			ImportCount:   agg.importCount,
+			FollowerCount: followerCounts[ownerID],
+			FollowedByMe:  followedByMe[ownerID],
+		})
+	}
+	sort.SliceStable(creators, func(i, j int) bool {
+		if creators[i].ImportCount != creators[j].ImportCount {
+			return creators[i].ImportCount > creators[j].ImportCount
+		}
+		return creators[i].DeckCount > creators[j].DeckCount
+	})
+	if len(creators) > 3 {
+		creators = creators[:3]
+	}
+
+	categoryCounts := map[string]int{}
+	for _, deck := range decks {
+		categoryCounts[deckIcon(deck)]++
+	}
+	categories := make([]CommunityCategoryStat, 0, len(categoryCounts))
+	for icon, count := range categoryCounts {
+		categories = append(categories, CommunityCategoryStat{Icon: icon, Count: count})
+	}
+	sort.SliceStable(categories, func(i, j int) bool {
+		if categories[i].Count != categories[j].Count {
+			return categories[i].Count > categories[j].Count
+		}
+		return categories[i].Icon < categories[j].Icon
+	})
+	if len(categories) > 8 {
+		categories = categories[:8]
+	}
+
+	return &CommunityOverview{
+		Featured:   featured,
+		Popular:    popular,
+		Creators:   creators,
+		Categories: categories,
+		TotalDecks: len(decks),
+	}, nil
+}
+
 // SearchCommunityDecks busca SharedResources públicos cuyo título o
 // summary coincidan con la query (case-insensitive). Excluye los del propio
 // usuario. Devuelve hasta 25.
-func (s *Service) SearchCommunityDecks(userID, rawQuery string) ([]domain.SharedResource, error) {
+func (s *Service) SearchCommunityDecks(userID, rawQuery, category string) ([]CommunityDeck, error) {
 	q := strings.ToLower(strings.TrimSpace(rawQuery))
+	cat := strings.TrimSpace(category)
 	users, err := s.repo.ListUsers()
 	if err != nil {
 		return nil, err
@@ -443,6 +1070,10 @@ func (s *Service) SearchCommunityDecks(userID, rawQuery string) ([]domain.Shared
 		if !r.IsPublic {
 			continue
 		}
+		// Filtro por categoría (icono/emoji del payload), si se pidió.
+		if cat != "" && deckIcon(r) != cat {
+			continue
+		}
 		if q == "" ||
 			strings.Contains(strings.ToLower(r.Title), q) ||
 			strings.Contains(strings.ToLower(r.Summary), q) {
@@ -455,7 +1086,7 @@ func (s *Service) SearchCommunityDecks(userID, rawQuery string) ([]domain.Shared
 	sort.Slice(matches, func(i, j int) bool {
 		return matches[i].CreatedAt.After(matches[j].CreatedAt)
 	})
-	return matches, nil
+	return s.attachCommunityStats(userID, matches)
 }
 
 // SearchPeople busca usuarios por coincidencia parcial de email o
@@ -701,18 +1332,43 @@ func (s *Service) ShareResource(userID string, input ShareResourceInput) (*domai
 	if strings.TrimSpace(input.PayloadJSON) == "" {
 		return nil, ErrMissingPayload
 	}
+	if input.IsPublic && strings.TrimSpace(input.Title) == "" {
+		return nil, ErrMissingTitle
+	}
+
+	resourceID := newID("shr")
+	createdAt := s.now().UTC()
+	deckID := strings.TrimSpace(input.DeckID)
+	// Republicar el mismo deck actualiza la publicación existente en lugar
+	// de duplicarla en el catálogo comunitario.
+	if input.IsPublic && input.Kind == domain.ShareKindDeck && deckID != "" {
+		existing, err := s.repo.ListSharedResourcesForUser(userID)
+		if err != nil {
+			return nil, err
+		}
+		for _, prior := range existing {
+			isSamePublicDeck := prior.OwnerUserID == userID && prior.IsPublic &&
+				prior.Kind == domain.ShareKindDeck && prior.DeckID == deckID
+			if isSamePublicDeck {
+				resourceID = prior.ID
+				createdAt = prior.CreatedAt
+				break
+			}
+		}
+	}
+
 	resource := domain.SharedResource{
-		ID:           newID("shr"),
+		ID:           resourceID,
 		OwnerUserID:  userID,
 		TargetUserID: strings.TrimSpace(input.TargetUserID),
 		Kind:         input.Kind,
 		Title:        strings.TrimSpace(input.Title),
 		Summary:      strings.TrimSpace(input.Summary),
-		DeckID:       strings.TrimSpace(input.DeckID),
+		DeckID:       deckID,
 		PlanID:       strings.TrimSpace(input.PlanID),
 		PayloadJSON:  input.PayloadJSON,
 		IsPublic:     input.IsPublic,
-		CreatedAt:    s.now().UTC(),
+		CreatedAt:    createdAt,
 	}
 	if err := s.repo.SaveSharedResource(resource); err != nil {
 		return nil, err
@@ -767,6 +1423,27 @@ func (s *Service) ListSharedResources(userID string) ([]domain.SharedResource, e
 		return result[i].CreatedAt.After(result[j].CreatedAt)
 	})
 	return result, nil
+}
+
+// UnpublishSharedResource despublica/elimina un recurso compartido. Solo su
+// dueño puede hacerlo; despublicar lo saca del catálogo comunitario y de las
+// bandejas 1:1.
+func (s *Service) UnpublishSharedResource(userID, shareID string) error {
+	shareID = strings.TrimSpace(shareID)
+	if shareID == "" {
+		return ErrShareNotFound
+	}
+	existing, err := s.repo.FindSharedResource(shareID)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return ErrShareNotFound
+	}
+	if existing.OwnerUserID != userID {
+		return ErrShareNotFound
+	}
+	return s.repo.DeleteSharedResource(shareID)
 }
 
 func (s *Service) SaveProgressSnapshot(userID string, input ProgressSyncInput) (*domain.ProgressSnapshot, error) {
@@ -1095,7 +1772,7 @@ func (s *Service) RegisterEmail(input EmailRegisterInput) (*SocialLoginOutput, e
 	if err != nil {
 		return nil, err
 	}
-	return &SocialLoginOutput{User: user.Sanitize(), Session: *session}, nil
+	return &SocialLoginOutput{User: s.withModeratorFlag(user).Sanitize(), Session: *session}, nil
 }
 
 func (s *Service) LoginEmail(input EmailLoginInput) (*SocialLoginOutput, error) {
@@ -1114,7 +1791,7 @@ func (s *Service) LoginEmail(input EmailLoginInput) (*SocialLoginOutput, error) 
 	if err != nil {
 		return nil, err
 	}
-	return &SocialLoginOutput{User: user.Sanitize(), Session: *session}, nil
+	return &SocialLoginOutput{User: s.withModeratorFlag(*user).Sanitize(), Session: *session}, nil
 }
 
 // UpdateProfileInput permite editar nombre, avatar y locale del usuario

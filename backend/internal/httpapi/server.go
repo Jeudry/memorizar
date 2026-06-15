@@ -54,6 +54,18 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/social/suggestions", s.withAuth(s.handleSuggestions))
 	s.mux.HandleFunc("/v1/social/search", s.withAuth(s.handleSearch))
 	s.mux.HandleFunc("/v1/community/decks", s.withAuth(s.handleCommunitySearch))
+	s.mux.HandleFunc("/v1/community/mine", s.withAuth(s.handleCommunityMine))
+	s.mux.HandleFunc("/v1/community/overview", s.withAuth(s.handleCommunityOverview))
+	s.mux.HandleFunc("/v1/community/reports", s.withAuth(s.handleCommunityReports))
+	s.mux.HandleFunc("/v1/community/reports/resolve", s.withAuth(s.handleCommunityReportResolve))
+	s.mux.HandleFunc("/v1/analytics/events", s.withOptionalAuth(s.handleAnalyticsEvents))
+	s.mux.HandleFunc("/v1/analytics/summary", s.withAuth(s.handleAnalyticsSummary))
+	s.mux.HandleFunc("/v1/premium/trial", s.withAuth(s.handlePremiumTrial))
+	s.mux.HandleFunc("/v1/premium/status", s.withAuth(s.handlePremiumStatus))
+	s.mux.HandleFunc("/v1/push/register-token", s.withAuth(s.handlePushRegisterToken))
+	s.mux.HandleFunc("/v1/community/imports", s.withAuth(s.handleCommunityImport))
+	s.mux.HandleFunc("/v1/community/decks/like", s.withAuth(s.handleCommunityLike))
+	s.mux.HandleFunc("/v1/social/follow", s.withAuth(s.handleFollow))
 	// Endpoint público (sin auth) para resolver deeplinks `memorizar://deck/ID`.
 	// Solo expone shares con IsPublic=true.
 	s.mux.HandleFunc("/v1/public/shares/", s.handlePublicShare)
@@ -69,9 +81,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/sync/progress", s.withAuth(s.handleSyncProgress))
 
 	// Cooperativo en tiempo real (websocket).
-	s.mux.HandleFunc("/v1/coop/rooms", s.withAuth(s.handleCoopCreateRoom))
-	s.mux.HandleFunc("/v1/coop/rooms/lookup", s.withAuth(s.handleCoopLookup))
-	s.mux.HandleFunc("/v1/coop/rooms/public", s.withAuth(s.handleCoopListPublicRooms))
+	s.mux.HandleFunc("/v1/coop/rooms", s.withOptionalAuth(s.handleCoopCreateRoom))
+	s.mux.HandleFunc("/v1/coop/rooms/lookup", s.withOptionalAuth(s.handleCoopLookup))
+	s.mux.HandleFunc("/v1/coop/rooms/public", s.withOptionalAuth(s.handleCoopListPublicRooms))
 	s.mux.HandleFunc("/v1/coop/invite", s.withAuth(s.handleCoopInvite))
 	s.mux.HandleFunc("/v1/coop/invites/pending", s.withAuth(s.handleCoopGetPendingInvites))
 	s.mux.HandleFunc("/v1/coop/ws", s.coop.HandleWebsocket)
@@ -82,6 +94,22 @@ func (s *Server) withAuth(next func(http.ResponseWriter, *http.Request, string))
 		token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 		if token == "" {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing bearer token"})
+			return
+		}
+		user, err := s.service.Authenticate(token)
+		if err != nil || user == nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid session"})
+			return
+		}
+		next(w, r, user.ID)
+	}
+}
+
+func (s *Server) withOptionalAuth(next func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		if token == "" {
+			next(w, r, "")
 			return
 		}
 		user, err := s.service.Authenticate(token)
@@ -336,12 +364,267 @@ func (s *Server) handleCommunitySearch(w http.ResponseWriter, r *http.Request, u
 		return
 	}
 	query := r.URL.Query().Get("q")
-	decks, err := s.service.SearchCommunityDecks(userID, query)
+	category := r.URL.Query().Get("category")
+	decks, err := s.service.SearchCommunityDecks(userID, query, category)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"decks": decks})
+}
+
+// handleCommunityMine devuelve los decks que el usuario publicó a la
+// comunidad con sus stats (importaciones por usuarios distintos).
+func (s *Server) handleCommunityMine(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	decks, err := s.service.ListOwnedCommunityDecks(userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"decks": decks})
+}
+
+// handleCommunityOverview alimenta la portada de Comunidad con datos reales.
+func (s *Server) handleCommunityOverview(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	overview, err := s.service.CommunityOverview(userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, overview)
+}
+
+// handlePushRegisterToken persiste el token FCM/APNs del dispositivo.
+func (s *Server) handlePushRegisterToken(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		Token    string `json:"token"`
+		Platform string `json:"platform"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	if err := s.service.RegisterPushToken(userID, body.Token, body.Platform); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handlePremiumTrial activa el trial premium del usuario autenticado.
+func (s *Server) handlePremiumTrial(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	subscription, err := s.service.ActivatePremiumTrial(userID)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, application.ErrTrialAlreadyUsed) {
+			status = http.StatusConflict
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusCreated, subscription)
+}
+
+// handlePremiumStatus devuelve el estado premium vigente.
+func (s *Server) handlePremiumStatus(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	status, err := s.service.PremiumStatusFor(userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+// handleAnalyticsEvents recibe batches de eventos de producto (también de
+// invitados) y los persiste.
+func (s *Server) handleAnalyticsEvents(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		Events []application.AnalyticsEventInput `json:"events"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	if err := s.service.RecordAnalyticsEvents(userID, body.Events); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleAnalyticsSummary expone conteos por evento para inspección rápida.
+func (s *Server) handleAnalyticsSummary(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	summary, err := s.service.AnalyticsSummary()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"events": summary})
+}
+
+// handleCommunityReports archiva (POST) y lista (GET) denuncias de mazos.
+func (s *Server) handleCommunityReports(w http.ResponseWriter, r *http.Request, userID string) {
+	switch r.Method {
+	case http.MethodGet:
+		// Listar reportes es una acción de moderación: gate por rol.
+		if !s.service.IsModerator(userID) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "moderator role required"})
+			return
+		}
+		reports, err := s.service.ListDeckReports()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"reports": reports})
+	case http.MethodPost:
+		var body application.FileDeckReportInput
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+			return
+		}
+		report, err := s.service.FileDeckReport(userID, body)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusCreated, report)
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+	}
+}
+
+// handleCommunityReportResolve cierra un reporte con su resolución.
+func (s *Server) handleCommunityReportResolve(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	// Resolver un reporte solo lo puede hacer un moderador.
+	if !s.service.IsModerator(userID) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "moderator role required"})
+		return
+	}
+	var body struct {
+		ReportID   string `json:"reportId"`
+		Resolution string `json:"resolution"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	report, err := s.service.ResolveDeckReport(body.ReportID, body.Resolution)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, application.ErrReportNotFound) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+// handleFollow alterna que el usuario siga a un creador (relación de una vía).
+func (s *Server) handleFollow(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		CreatorID string `json:"creatorId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	following, count, err := s.service.ToggleFollow(userID, body.CreatorID)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, application.ErrUserNotFound) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"following": following, "followerCount": count})
+}
+
+// handleCommunityLike alterna el like del usuario sobre un deck público.
+func (s *Server) handleCommunityLike(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		ShareID string `json:"shareId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	liked, count, err := s.service.ToggleDeckLike(userID, body.ShareID)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, application.ErrShareNotFound) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"liked": liked, "likeCount": count})
+}
+
+// handleCommunityImport registra que el usuario importó un deck comunitario.
+func (s *Server) handleCommunityImport(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		ShareID string `json:"shareId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	if err := s.service.RegisterCommunityImport(userID, body.ShareID); err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, application.ErrShareNotFound) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleFriendRequest(w http.ResponseWriter, r *http.Request, userID string) {
@@ -542,6 +825,18 @@ func (s *Server) handleShares(w http.ResponseWriter, r *http.Request, userID str
 			return
 		}
 		writeJSON(w, http.StatusCreated, share)
+	case http.MethodDelete:
+		// Despublicar: ?id=shr_xxx. Solo el dueño puede.
+		shareID := strings.TrimSpace(r.URL.Query().Get("id"))
+		if err := s.service.UnpublishSharedResource(userID, shareID); err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, application.ErrShareNotFound) {
+				status = http.StatusNotFound
+			}
+			writeJSON(w, status, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"unpublished": shareID})
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 	}
@@ -729,6 +1024,7 @@ func (s *Server) handleCoopCreateRoom(w http.ResponseWriter, r *http.Request, us
 		IsPublic bool   `json:"isPublic"`
 		DeckID   string `json:"deckId"`
 		DeckName string `json:"deckName"`
+		HostID   string `json:"hostId"`
 	}
 	input := CreateInput{
 		IsPublic: true, // Default to public
@@ -736,7 +1032,14 @@ func (s *Server) handleCoopCreateRoom(w http.ResponseWriter, r *http.Request, us
 	if r.ContentLength > 0 {
 		_ = json.NewDecoder(r.Body).Decode(&input)
 	}
-	room := s.coop.CreateRoom(userID, input.IsPublic, input.DeckID, input.DeckName)
+	effectiveHostID := userID
+	if effectiveHostID == "" {
+		effectiveHostID = input.HostID
+	}
+	if effectiveHostID == "" {
+		effectiveHostID = "guest_temp"
+	}
+	room := s.coop.CreateRoom(effectiveHostID, input.IsPublic, input.DeckID, input.DeckName)
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"code":   room.Code,
 		"hostId": room.HostID,

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../router/app_routes.dart';
 import '../theme/ref_colors.dart';
 import 'bottom_nav.dart';
-import 'reference_page.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/home/presentation/ui_screens.dart';
 
@@ -153,7 +152,7 @@ class MainTabShellState extends State<MainTabShell> {
                 return Stack(
                   children: <Widget>[
                     ...previousChildren,
-                    if (currentChild != null) currentChild,
+                    ?currentChild,
                   ],
                 );
               },

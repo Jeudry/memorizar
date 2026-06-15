@@ -1,6 +1,10 @@
 package ports
 
-import "github.com/Jeudry/memorizar/backend/internal/social/domain"
+import (
+	"time"
+
+	"github.com/Jeudry/memorizar/backend/internal/social/domain"
+)
 
 type Repository interface {
 	FindUserByProvider(provider domain.SocialProvider, providerUserID string) (*domain.User, error)
@@ -27,6 +31,34 @@ type Repository interface {
 	SaveSharedResource(resource domain.SharedResource) error
 	ListSharedResourcesForUser(userID string) ([]domain.SharedResource, error)
 	ListPublicSharedResourcesByUserIDs(userIDs []string) ([]domain.SharedResource, error)
+	FindSharedResource(id string) (*domain.SharedResource, error)
+	DeleteSharedResource(id string) error
+
+	SaveShareImport(shareImport domain.ShareImport) error
+	CountShareImports(shareIDs []string) (map[string]int, error)
+	CountShareImportsSince(shareIDs []string, since time.Time) (map[string]int, error)
+
+	SaveDeckLike(shareID, userID string, createdAt time.Time) error
+	DeleteDeckLike(shareID, userID string) error
+	CountDeckLikes(shareIDs []string) (map[string]int, error)
+	ListLikedShareIDsByUser(userID string) ([]string, error)
+
+	SaveFollow(followerID, creatorID string, createdAt time.Time) error
+	DeleteFollow(followerID, creatorID string) error
+	CountFollowers(creatorIDs []string) (map[string]int, error)
+	ListFollowingByUser(followerID string) ([]string, error)
+
+	SaveDeckReport(report domain.DeckReport) error
+	FindDeckReportByID(reportID string) (*domain.DeckReport, error)
+	ListDeckReports() ([]domain.DeckReport, error)
+
+	SaveAnalyticsEvents(events []domain.AnalyticsEvent) error
+	CountAnalyticsEventsByName() (map[string]int, error)
+
+	SavePremiumSubscription(subscription domain.PremiumSubscription) error
+	FindPremiumSubscription(userID string) (*domain.PremiumSubscription, error)
+
+	SavePushToken(token domain.PushToken) error
 
 	SaveReaction(reaction domain.FeedReaction) error
 	ListReactionsByEntryIDs(entryIDs []string) ([]domain.FeedReaction, error)

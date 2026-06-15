@@ -3,6 +3,7 @@ package memory
 import (
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Jeudry/memorizar/backend/internal/social/domain"
 )
@@ -15,6 +16,13 @@ type Repository struct {
 	achievements      map[string]domain.Achievement
 	activities        map[string]domain.Activity
 	sharedResources   map[string]domain.SharedResource
+	shareImports      map[string]map[string]domain.ShareImport
+	deckLikes         map[string]map[string]time.Time
+	follows           map[string]map[string]time.Time
+	deckReports       map[string]domain.DeckReport
+	analyticsEvents   []domain.AnalyticsEvent
+	premiumSubs       map[string]domain.PremiumSubscription
+	pushTokens        map[string]domain.PushToken
 	reactions         map[string]domain.FeedReaction
 	comments          map[string]domain.FeedComment
 	progressSnapshots map[string]domain.ProgressSnapshot
@@ -28,6 +36,10 @@ func NewRepository() *Repository {
 		achievements:      map[string]domain.Achievement{},
 		activities:        map[string]domain.Activity{},
 		sharedResources:   map[string]domain.SharedResource{},
+		shareImports:      map[string]map[string]domain.ShareImport{},
+		deckLikes:         map[string]map[string]time.Time{},
+		follows:           map[string]map[string]time.Time{},
+		deckReports:       map[string]domain.DeckReport{},
 		reactions:         map[string]domain.FeedReaction{},
 		comments:          map[string]domain.FeedComment{},
 		progressSnapshots: map[string]domain.ProgressSnapshot{},
@@ -229,6 +241,241 @@ func (r *Repository) ListSharedResourcesForUser(userID string) ([]domain.SharedR
 		}
 	}
 	return result, nil
+}
+
+func (r *Repository) FindSharedResource(id string) (*domain.SharedResource, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	resource, ok := r.sharedResources[id]
+	if !ok {
+		return nil, nil
+	}
+	return &resource, nil
+}
+
+func (r *Repository) DeleteSharedResource(id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.sharedResources, id)
+	delete(r.deckLikes, id)
+	return nil
+}
+
+func (r *Repository) SaveDeckLike(shareID, userID string, createdAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	byUser, ok := r.deckLikes[shareID]
+	if !ok {
+		byUser = map[string]time.Time{}
+		r.deckLikes[shareID] = byUser
+	}
+	byUser[userID] = createdAt
+	return nil
+}
+
+func (r *Repository) DeleteDeckLike(shareID, userID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if byUser, ok := r.deckLikes[shareID]; ok {
+		delete(byUser, userID)
+	}
+	return nil
+}
+
+func (r *Repository) CountDeckLikes(shareIDs []string) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	counts := map[string]int{}
+	for _, shareID := range shareIDs {
+		if byUser, ok := r.deckLikes[shareID]; ok {
+			counts[shareID] = len(byUser)
+		}
+	}
+	return counts, nil
+}
+
+func (r *Repository) ListLikedShareIDsByUser(userID string) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	liked := []string{}
+	for shareID, byUser := range r.deckLikes {
+		if _, ok := byUser[userID]; ok {
+			liked = append(liked, shareID)
+		}
+	}
+	return liked, nil
+}
+
+// follows[creatorID][followerID] = createdAt
+func (r *Repository) SaveFollow(followerID, creatorID string, createdAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	byFollower, ok := r.follows[creatorID]
+	if !ok {
+		byFollower = map[string]time.Time{}
+		r.follows[creatorID] = byFollower
+	}
+	byFollower[followerID] = createdAt
+	return nil
+}
+
+func (r *Repository) DeleteFollow(followerID, creatorID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if byFollower, ok := r.follows[creatorID]; ok {
+		delete(byFollower, followerID)
+	}
+	return nil
+}
+
+func (r *Repository) CountFollowers(creatorIDs []string) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	counts := map[string]int{}
+	for _, creatorID := range creatorIDs {
+		if byFollower, ok := r.follows[creatorID]; ok {
+			counts[creatorID] = len(byFollower)
+		}
+	}
+	return counts, nil
+}
+
+func (r *Repository) ListFollowingByUser(followerID string) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	following := []string{}
+	for creatorID, byFollower := range r.follows {
+		if _, ok := byFollower[followerID]; ok {
+			following = append(following, creatorID)
+		}
+	}
+	return following, nil
+}
+
+func (r *Repository) SaveShareImport(shareImport domain.ShareImport) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.shareImports == nil {
+		r.shareImports = map[string]map[string]domain.ShareImport{}
+	}
+	byUser, ok := r.shareImports[shareImport.ShareID]
+	if !ok {
+		byUser = map[string]domain.ShareImport{}
+		r.shareImports[shareImport.ShareID] = byUser
+	}
+	if _, alreadyImported := byUser[shareImport.UserID]; alreadyImported {
+		return nil
+	}
+	byUser[shareImport.UserID] = shareImport
+	return nil
+}
+
+func (r *Repository) CountShareImports(shareIDs []string) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	counts := map[string]int{}
+	for _, shareID := range shareIDs {
+		if byUser, ok := r.shareImports[shareID]; ok {
+			counts[shareID] = len(byUser)
+		}
+	}
+	return counts, nil
+}
+
+func (r *Repository) CountShareImportsSince(shareIDs []string, since time.Time) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	counts := map[string]int{}
+	for _, shareID := range shareIDs {
+		byUser, ok := r.shareImports[shareID]
+		if !ok {
+			continue
+		}
+		recent := 0
+		for _, shareImport := range byUser {
+			if !shareImport.CreatedAt.Before(since) {
+				recent++
+			}
+		}
+		if recent > 0 {
+			counts[shareID] = recent
+		}
+	}
+	return counts, nil
+}
+
+func (r *Repository) SavePushToken(token domain.PushToken) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.pushTokens == nil {
+		r.pushTokens = map[string]domain.PushToken{}
+	}
+	r.pushTokens[token.UserID+"|"+token.Token] = token
+	return nil
+}
+
+func (r *Repository) SavePremiumSubscription(subscription domain.PremiumSubscription) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.premiumSubs == nil {
+		r.premiumSubs = map[string]domain.PremiumSubscription{}
+	}
+	r.premiumSubs[subscription.UserID] = subscription
+	return nil
+}
+
+func (r *Repository) FindPremiumSubscription(userID string) (*domain.PremiumSubscription, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if subscription, ok := r.premiumSubs[userID]; ok {
+		copy := subscription
+		return &copy, nil
+	}
+	return nil, nil
+}
+
+func (r *Repository) SaveAnalyticsEvents(events []domain.AnalyticsEvent) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.analyticsEvents = append(r.analyticsEvents, events...)
+	return nil
+}
+
+func (r *Repository) CountAnalyticsEventsByName() (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	counts := map[string]int{}
+	for _, event := range r.analyticsEvents {
+		counts[event.Event]++
+	}
+	return counts, nil
+}
+
+func (r *Repository) SaveDeckReport(report domain.DeckReport) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.deckReports[report.ID] = report
+	return nil
+}
+
+func (r *Repository) FindDeckReportByID(reportID string) (*domain.DeckReport, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if report, ok := r.deckReports[reportID]; ok {
+		copy := report
+		return &copy, nil
+	}
+	return nil, nil
+}
+
+func (r *Repository) ListDeckReports() ([]domain.DeckReport, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]domain.DeckReport, 0, len(r.deckReports))
+	for _, report := range r.deckReports {
+		out = append(out, report)
+	}
+	return out, nil
 }
 
 func (r *Repository) ListPublicSharedResourcesByUserIDs(userIDs []string) ([]domain.SharedResource, error) {

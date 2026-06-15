@@ -172,15 +172,25 @@ class _PremiumScreenState extends State<PremiumScreen> {
                     const SizedBox(height: 16),
                     Cta(
                       'Activar Prueba Premium Gratis',
-                      onTap: () {
-                        store.setPremiumPreview(true);
+                      onTap: () async {
+                        final error = await store.activatePremiumTrial();
+                        if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('¡Modo Premium activado! Ahora puedes descargar la IA local.'),
+                          SnackBar(
+                            content: Text(error ??
+                                '¡Modo Premium activado! Ahora puedes descargar la IA local.'),
                           ),
                         );
                       },
                     ),
+                    if (!store.isLoggedIn) ...[
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Como invitado el premium es solo de prueba local; inicia sesión para conservarlo.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: RefColors.muted, fontSize: 10, fontWeight: FontWeight.w600),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -219,7 +229,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        status.isEmpty ? 'Requiere descarga única (~1.4 GB)' : status,
+                                        status.isEmpty ? 'Requiere descarga única (~2.4 GB · Gemma 3 QAT)' : status,
                                         style: const TextStyle(color: RefColors.muted, fontSize: 11, fontWeight: FontWeight.w700),
                                       ),
                                     ],

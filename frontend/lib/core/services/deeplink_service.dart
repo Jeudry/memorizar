@@ -45,15 +45,32 @@ class DeeplinkService {
   void _handle(Uri uri) {
     // Esquemas soportados:
     //   memorizar://deck/{id}
+    //   memorizar://coop/{code}
     //   https://memorizar.app/deck/{id}    (universal link futuro)
-    if (uri.host != 'deck' && uri.pathSegments.firstOrNull != 'deck') return;
-    final id = uri.host == 'deck'
+    final isDeck = uri.host == 'deck' || uri.pathSegments.firstOrNull == 'deck';
+    final isCoop = uri.host == 'coop' || uri.pathSegments.firstOrNull == 'coop';
+    if (!isDeck && !isCoop) return;
+    final id = uri.host == 'deck' || uri.host == 'coop'
         ? uri.pathSegments.firstOrNull
         : uri.pathSegments.length > 1
             ? uri.pathSegments[1]
             : null;
     if (id == null || id.isEmpty) return;
+    if (isCoop) {
+      _openCoopRoom(id.toUpperCase());
+      return;
+    }
     _showPreview(id);
+  }
+
+  /// Deja el código pendiente en el store y abre el lobby cooperativo, que
+  /// lo consume y se une automáticamente a la sala.
+  void _openCoopRoom(String code) {
+    final navState = _navKey?.currentState;
+    final store = _store;
+    if (navState == null || store == null) return;
+    store.pendingCoopJoinCode = code;
+    navState.pushNamed(AppRoutes.cooperativo);
   }
 
   Future<void> _showPreview(String shareId) async {

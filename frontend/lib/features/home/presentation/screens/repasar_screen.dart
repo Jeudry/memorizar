@@ -9,7 +9,7 @@ class RepasarScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
     final dueCards = store.dueCards;
-    final weakCount = dueCards.where((card) => card.retention < 60).length;
+    final weakCount = store.dueTodayCount;
     return ReferencePage(
       active: AppRoutes.repasar,
       child: Column(
@@ -65,7 +65,7 @@ class RepasarScreen extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const TextSpan(text: ' están por caer bajo retención'),
+                      const TextSpan(text: ' tienen repaso vencido hoy'),
                     ],
                   ),
                 ),
