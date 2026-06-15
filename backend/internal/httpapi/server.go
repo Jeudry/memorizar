@@ -66,6 +66,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/community/imports", s.withAuth(s.handleCommunityImport))
 	s.mux.HandleFunc("/v1/community/decks/like", s.withAuth(s.handleCommunityLike))
 	s.mux.HandleFunc("/v1/community/liked", s.withAuth(s.handleCommunityLiked))
+	s.mux.HandleFunc("/v1/notifications", s.withAuth(s.handleNotifications))
+	s.mux.HandleFunc("/v1/notifications/read", s.withAuth(s.handleNotificationsRead))
 	s.mux.HandleFunc("/v1/social/follow", s.withAuth(s.handleFollow))
 	// Endpoint público (sin auth) para resolver deeplinks `memorizar://deck/ID`.
 	// Solo expone shares con IsPublic=true.
@@ -401,6 +403,44 @@ func (s *Server) handleCommunityLiked(w http.ResponseWriter, r *http.Request, us
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"decks": decks})
+}
+
+// handleNotifications (GET) devuelve la campanita del usuario: lista de
+// notificaciones más recientes y el conteo de no-leídas.
+func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	items, unread, err := s.service.ListNotifications(userID, 50)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"notifications": items, "unread": unread})
+}
+
+// handleNotificationsRead (POST) marca como leídas las notificaciones del
+// body {ids:[...]}; si ids viene vacío o ausente, marca todas. Devuelve el
+// nuevo conteo de no-leídas.
+func (s *Server) handleNotificationsRead(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if r.Body != nil {
+		// Cuerpo opcional: un POST vacío marca todas como leídas.
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+	unread, err := s.service.MarkNotificationsRead(userID, body.IDs)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"unread": unread})
 }
 
 // handleCommunityOverview alimenta la portada de Comunidad con datos reales.

@@ -373,6 +373,80 @@ func (r *Repository) ListActivitiesByUserIDs(userIDs []string) ([]domain.Activit
 	return out, nil
 }
 
+// ─── Notifications ──────────────────────────────────────────────────────
+
+func (r *Repository) SaveNotification(n domain.Notification) error {
+	read := 0
+	if n.Read {
+		read = 1
+	}
+	_, err := r.db.Exec(`
+		INSERT OR REPLACE INTO notifications
+		    (id, user_id, type, title, body, data_json, read, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		n.ID, n.UserID, n.Type, n.Title, n.Body, encodeProviders(n.Data), read,
+		formatTime(n.CreatedAt),
+	)
+	return err
+}
+
+func (r *Repository) ListNotificationsByUser(userID string, limit int) ([]domain.Notification, error) {
+	query := `
+		SELECT id, user_id, type, title, body, data_json, read, created_at
+		FROM notifications WHERE user_id = ?
+		ORDER BY created_at DESC`
+	args := []any{userID}
+	if limit > 0 {
+		query += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := r.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.Notification{}
+	for rows.Next() {
+		var n domain.Notification
+		var ts, dataJSON string
+		var read int
+		if err := rows.Scan(&n.ID, &n.UserID, &n.Type, &n.Title, &n.Body, &dataJSON, &read, &ts); err != nil {
+			return nil, err
+		}
+		n.Data = parseProviders(dataJSON)
+		n.Read = read != 0
+		n.CreatedAt = parseTime(ts)
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+func (r *Repository) MarkNotificationsRead(userID string, ids []string) error {
+	if len(ids) == 0 {
+		_, err := r.db.Exec(`UPDATE notifications SET read = 1 WHERE user_id = ? AND read = 0`, userID)
+		return err
+	}
+	placeholders := strings.Repeat("?,", len(ids)-1) + "?"
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, userID)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	_, err := r.db.Exec(
+		`UPDATE notifications SET read = 1 WHERE user_id = ? AND id IN (`+placeholders+`)`,
+		args...,
+	)
+	return err
+}
+
+func (r *Repository) CountUnreadNotifications(userID string) (int, error) {
+	var count int
+	err := r.db.QueryRow(
+		`SELECT COUNT(*) FROM notifications WHERE user_id = ? AND read = 0`, userID,
+	).Scan(&count)
+	return count, err
+}
+
 // ─── Shared Resources ───────────────────────────────────────────────────
 
 func (r *Repository) SaveSharedResource(s domain.SharedResource) error {

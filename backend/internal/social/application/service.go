@@ -3,10 +3,10 @@ package application
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"log"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -19,26 +19,26 @@ import (
 )
 
 var (
-	ErrInvalidProvider     = errors.New("invalid social provider")
-	ErrMissingIdentity     = errors.New("missing social identity")
-	ErrUserNotFound        = errors.New("user not found")
-	ErrFriendshipExists    = errors.New("friendship already exists")
-	ErrFriendshipForbidden = errors.New("friendship does not belong to user")
-	ErrInvalidShareKind    = errors.New("invalid share kind")
-	ErrMissingPayload      = errors.New("missing payload")
-	ErrShareNotFound       = errors.New("share not found")
-	ErrMissingTitle        = errors.New("missing title")
+	ErrInvalidProvider         = errors.New("invalid social provider")
+	ErrMissingIdentity         = errors.New("missing social identity")
+	ErrUserNotFound            = errors.New("user not found")
+	ErrFriendshipExists        = errors.New("friendship already exists")
+	ErrFriendshipForbidden     = errors.New("friendship does not belong to user")
+	ErrInvalidShareKind        = errors.New("invalid share kind")
+	ErrMissingPayload          = errors.New("missing payload")
+	ErrShareNotFound           = errors.New("share not found")
+	ErrMissingTitle            = errors.New("missing title")
 	ErrInvalidReportReason     = errors.New("invalid report reason")
 	ErrInvalidReportResolution = errors.New("invalid report resolution")
 	ErrReportNotFound          = errors.New("report not found")
 	ErrTrialAlreadyUsed        = errors.New("trial already used")
-	ErrFeedEntryNotFound   = errors.New("feed entry not found")
-	ErrEmailInUse          = errors.New("email already in use")
-	ErrInvalidCredentials  = errors.New("invalid credentials")
-	ErrWeakPassword        = errors.New("password must be at least 8 characters")
-	ErrUsernameInUse       = errors.New("username already in use")
-	ErrInvalidUsername     = errors.New("username must be 3-15 chars, alphanumeric or underscores")
-	ErrInvalidAge          = errors.New("invalid age")
+	ErrFeedEntryNotFound       = errors.New("feed entry not found")
+	ErrEmailInUse              = errors.New("email already in use")
+	ErrInvalidCredentials      = errors.New("invalid credentials")
+	ErrWeakPassword            = errors.New("password must be at least 8 characters")
+	ErrUsernameInUse           = errors.New("username already in use")
+	ErrInvalidUsername         = errors.New("username must be 3-15 chars, alphanumeric or underscores")
+	ErrInvalidAge              = errors.New("invalid age")
 )
 
 type Service struct {
@@ -118,13 +118,59 @@ func (s *Service) IsModerator(userID string) bool {
 	return false
 }
 
-// notifySafe envuelve s.notifier.Notify en una guarda nil — los seeds en
-// fase temprana podrían correr antes de inyectar uno.
+// notifySafe dispara el push (vía notifier) y además persiste la notificación
+// in-app para el destinatario, de modo que aparezca en la campanita. Es el
+// único punto por el que pasan todos los eventos notificables (friend
+// request/accept, deck shared, reaction, comment, like, follow), así que
+// persistir aquí los cubre todos sin tocar cada call site.
 func (s *Service) notifySafe(n notify.Notification) {
-	if s.notifier == nil {
+	if s.notifier != nil {
+		s.notifier.Notify(n)
+	}
+	// Persistimos solo notificaciones con destinatario; los seeds tempranos o
+	// eventos sin UserID no generan entrada en la campanita.
+	if n.UserID == "" {
 		return
 	}
-	s.notifier.Notify(n)
+	record := domain.Notification{
+		ID:        newID("ntf"),
+		UserID:    n.UserID,
+		Type:      string(n.Type),
+		Title:     n.Title,
+		Body:      n.Body,
+		Data:      n.Data,
+		Read:      false,
+		CreatedAt: s.now().UTC(),
+	}
+	if err := s.repo.SaveNotification(record); err != nil {
+		log.Printf("[notify] no se pudo persistir notificación para %s: %v", n.UserID, err)
+	}
+}
+
+// ListNotifications devuelve las notificaciones del usuario (más recientes
+// primero) junto con el conteo de no-leídas, para alimentar la campanita.
+func (s *Service) ListNotifications(userID string, limit int) ([]domain.Notification, int, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	items, err := s.repo.ListNotificationsByUser(userID, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	unread, err := s.repo.CountUnreadNotifications(userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, unread, nil
+}
+
+// MarkNotificationsRead marca como leídas las notificaciones indicadas (o
+// todas, si ids está vacío) y devuelve el nuevo conteo de no-leídas.
+func (s *Service) MarkNotificationsRead(userID string, ids []string) (int, error) {
+	if err := s.repo.MarkNotificationsRead(userID, ids); err != nil {
+		return 0, err
+	}
+	return s.repo.CountUnreadNotifications(userID)
 }
 
 // userDisplay devuelve el displayName de un usuario, fallback al ID.
@@ -1210,9 +1256,9 @@ type resetToken struct {
 }
 
 var (
-	verifyTokens   = map[string]verifyToken{}
-	resetTokens    = map[string]resetToken{}
-	tokensMu       sync.Mutex
+	verifyTokens = map[string]verifyToken{}
+	resetTokens  = map[string]resetToken{}
+	tokensMu     sync.Mutex
 )
 
 func (s *Service) RequestEmailVerify(userID string) (string, error) {
@@ -2062,4 +2108,3 @@ func (s *Service) ListAchievementsByUserIDs(userIDs []string) ([]domain.Achievem
 func (s *Service) ListPublicSharedResourcesByUserIDs(userIDs []string) ([]domain.SharedResource, error) {
 	return s.repo.ListPublicSharedResourcesByUserIDs(userIDs)
 }
-

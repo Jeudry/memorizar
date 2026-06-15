@@ -164,3 +164,15 @@ CREATE TABLE IF NOT EXISTS progress_snapshots (
     captured_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_snapshots_user ON progress_snapshots(user_id);
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type        TEXT NOT NULL DEFAULT '',
+    title       TEXT NOT NULL DEFAULT '',
+    body        TEXT NOT NULL DEFAULT '',
+    data_json   TEXT NOT NULL DEFAULT '{}',
+    read        INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read);

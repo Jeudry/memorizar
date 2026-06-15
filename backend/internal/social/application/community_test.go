@@ -365,3 +365,48 @@ func TestListLikedCommunityDecks(t *testing.T) {
 		t.Fatalf("after unlike expected 0, got %d", len(liked))
 	}
 }
+
+func TestNotificationsFromLikeAndMarkRead(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	owner := makeUser(t, s, "own@dev.io", "own_u", "Owner")
+	liker := makeUser(t, s, "lik@dev.io", "lik_u", "Liker")
+	share := publishDeck(t, s, owner, "deck-n", "Notif deck", `{"icon":"🔔"}`)
+
+	// El dueño aún no tiene notificaciones.
+	items, unread, err := s.ListNotifications(owner, 50)
+	if err != nil {
+		t.Fatalf("list (empty): %v", err)
+	}
+	if len(items) != 0 || unread != 0 {
+		t.Fatalf("expected no notifications, got %d items / %d unread", len(items), unread)
+	}
+
+	// Like → el dueño recibe una notificación deck_liked sin leer.
+	if _, _, err := s.ToggleDeckLike(liker, share); err != nil {
+		t.Fatalf("like: %v", err)
+	}
+	items, unread, err = s.ListNotifications(owner, 50)
+	if err != nil {
+		t.Fatalf("list (after like): %v", err)
+	}
+	if len(items) != 1 || unread != 1 {
+		t.Fatalf("expected 1 unread notification, got %d items / %d unread", len(items), unread)
+	}
+	if items[0].Type != "deck_liked" || items[0].Read {
+		t.Errorf("expected unread deck_liked, got %+v", items[0])
+	}
+
+	// El liker no recibe nada (no se notifica a sí mismo de su propio like).
+	if _, u, _ := s.ListNotifications(liker, 50); u != 0 {
+		t.Errorf("liker should have 0 unread, got %d", u)
+	}
+
+	// Marcar leídas → unread vuelve a 0.
+	newUnread, err := s.MarkNotificationsRead(owner, nil)
+	if err != nil {
+		t.Fatalf("mark read: %v", err)
+	}
+	if newUnread != 0 {
+		t.Errorf("expected 0 unread after mark-all-read, got %d", newUnread)
+	}
+}

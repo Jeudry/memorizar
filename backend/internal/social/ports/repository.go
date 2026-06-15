@@ -28,6 +28,13 @@ type Repository interface {
 	SaveActivity(activity domain.Activity) error
 	ListActivitiesByUserIDs(userIDs []string) ([]domain.Activity, error)
 
+	SaveNotification(notification domain.Notification) error
+	ListNotificationsByUser(userID string, limit int) ([]domain.Notification, error)
+	// MarkNotificationsRead marca como leídas las notificaciones del usuario.
+	// Si ids está vacío, marca todas las del usuario.
+	MarkNotificationsRead(userID string, ids []string) error
+	CountUnreadNotifications(userID string) (int, error)
+
 	SaveSharedResource(resource domain.SharedResource) error
 	ListSharedResourcesForUser(userID string) ([]domain.SharedResource, error)
 	ListPublicSharedResourcesByUserIDs(userIDs []string) ([]domain.SharedResource, error)

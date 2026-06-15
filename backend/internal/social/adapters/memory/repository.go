@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ type Repository struct {
 	friendships       map[string]domain.Friendship
 	achievements      map[string]domain.Achievement
 	activities        map[string]domain.Activity
+	notifications     map[string]domain.Notification
 	sharedResources   map[string]domain.SharedResource
 	shareImports      map[string]map[string]domain.ShareImport
 	deckLikes         map[string]map[string]time.Time
@@ -35,6 +37,7 @@ func NewRepository() *Repository {
 		friendships:       map[string]domain.Friendship{},
 		achievements:      map[string]domain.Achievement{},
 		activities:        map[string]domain.Activity{},
+		notifications:     map[string]domain.Notification{},
 		sharedResources:   map[string]domain.SharedResource{},
 		shareImports:      map[string]map[string]domain.ShareImport{},
 		deckLikes:         map[string]map[string]time.Time{},
@@ -222,6 +225,68 @@ func (r *Repository) ListActivitiesByUserIDs(userIDs []string) ([]domain.Activit
 		}
 	}
 	return result, nil
+}
+
+func (r *Repository) SaveNotification(notification domain.Notification) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.notifications[notification.ID] = notification
+	return nil
+}
+
+func (r *Repository) ListNotificationsByUser(userID string, limit int) ([]domain.Notification, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := []domain.Notification{}
+	for _, n := range r.notifications {
+		if n.UserID == userID {
+			result = append(result, n)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
+	if limit > 0 && len(result) > limit {
+		result = result[:limit]
+	}
+	return result, nil
+}
+
+func (r *Repository) MarkNotificationsRead(userID string, ids []string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var only map[string]struct{}
+	if len(ids) > 0 {
+		only = make(map[string]struct{}, len(ids))
+		for _, id := range ids {
+			only[id] = struct{}{}
+		}
+	}
+	for id, n := range r.notifications {
+		if n.UserID != userID || n.Read {
+			continue
+		}
+		if only != nil {
+			if _, ok := only[id]; !ok {
+				continue
+			}
+		}
+		n.Read = true
+		r.notifications[id] = n
+	}
+	return nil
+}
+
+func (r *Repository) CountUnreadNotifications(userID string) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	count := 0
+	for _, n := range r.notifications {
+		if n.UserID == userID && !n.Read {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (r *Repository) SaveSharedResource(resource domain.SharedResource) error {
@@ -595,6 +660,11 @@ func (r *Repository) DeleteUserCascade(userID string) error {
 	for id, a := range r.activities {
 		if a.UserID == userID {
 			delete(r.activities, id)
+		}
+	}
+	for id, n := range r.notifications {
+		if n.UserID == userID {
+			delete(r.notifications, id)
 		}
 	}
 	for id, s := range r.sharedResources {
