@@ -323,6 +323,129 @@ class _RealExerciseFlowScreen extends StatefulWidget {
       _RealExerciseFlowScreenState();
 }
 
+/// Selección múltiple que reemplaza un ejercicio de micrófono omitido (F2):
+/// "¿Cuál es el texto de X?" con el texto correcto + 3 distractores random de
+/// otras tarjetas. Al acertar avanza; al fallar permite reintentar.
+class _OmitSelectExercise extends StatefulWidget {
+  final MemoryCardData card;
+  final MemoryDeckData deck;
+  final VoidCallback onCorrect;
+
+  const _OmitSelectExercise({
+    super.key,
+    required this.card,
+    required this.deck,
+    required this.onCorrect,
+  });
+
+  @override
+  State<_OmitSelectExercise> createState() => _OmitSelectExerciseState();
+}
+
+class _OmitSelectExerciseState extends State<_OmitSelectExercise> {
+  late final List<String> _options;
+  int? _wrongIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    final correct = widget.card.back;
+    final distractors = widget.deck.cards
+        .where((c) => c.id != widget.card.id && c.back.trim().isNotEmpty)
+        .map((c) => c.back)
+        .toList()
+      ..shuffle();
+    final picked = distractors.take(3).toList();
+    var n = 1;
+    while (picked.length < 3) {
+      picked.add('${_firstWords(correct, 3)}… (opción ${n++})');
+    }
+    _options = [correct, ...picked]..shuffle();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final correct = widget.card.back;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Glass(
+          padding: const EdgeInsets.all(16),
+          color: RefColors.glassStrong,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('OMITIDO → ELIGE LA RESPUESTA',
+                  style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.3)),
+              const SizedBox(height: 8),
+              Text(
+                '¿Cuál es el texto de ${widget.card.front}?',
+                style: const TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w900, height: 1.2),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        for (var i = 0; i < _options.length; i++) ...[
+          GestureDetector(
+            onTap: () {
+              if (_options[i] == correct) {
+                widget.onCorrect();
+              } else {
+                setState(() => _wrongIndex = i);
+              }
+            },
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: _wrongIndex == i
+                    ? RefColors.urgent.withValues(alpha: .12)
+                    : RefColors.glassSoft,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: _wrongIndex == i ? RefColors.urgent : RefColors.border,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Text(String.fromCharCode(65 + i),
+                      style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                          color: RefColors.cyan)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _options[i],
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+        if (_wrongIndex != null)
+          const Text(
+            'Esa no es. Intenta con otra.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                color: RefColors.urgent,
+                fontSize: 12,
+                fontWeight: FontWeight.w700),
+          ),
+      ],
+    );
+  }
+}
+
 enum _QuizQuestionType { frontToBack, backToFront, trueFalse, matching, openQuestion }
 
 class _QuizRound {
@@ -392,6 +515,15 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   List<String>? _aiDistractorPool;
   String? _aiDistractorCardId;
   bool _aiDistractorLoading = false;
+  /// Pasos que el usuario "omitió": en vez de saltarlos, se transforman —
+  /// los de micrófono en una selección múltiple, el resto en una lectura.
+  /// La clave incluye la tarjeta para que el override sea per-tarjeta.
+  final Set<String> _omitOverride = {};
+
+  /// Un paso usa micrófono (recitación) → al omitirlo se reemplaza por
+  /// selección múltiple; el resto se reemplaza por lectura.
+  bool _isMicSlug(String slug) =>
+      slug.contains('voz') || slug.contains('niebla');
   String? _letterCardId;
   int _letterLevel = 1;
   List<String> _letterTargets = [];
@@ -1980,6 +2112,70 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
   }
 
+  /// Reemplazo de un paso omitido: lectura (no-mic) o selección múltiple (mic).
+  /// Cada variante trae su propio botón que cierra el override y avanza.
+  Widget _buildOmitReplacement(
+    BuildContext context,
+    AppStore store,
+    MemoryCardData card,
+    MemoryDeckData deck,
+    String slug,
+  ) {
+    void complete() {
+      if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
+        store.answerCurrentCard(true);
+      }
+      setState(() => _omitOverride.remove('${card.id}:$slug'));
+      _completeStepAndNavigate(context, store, slug);
+    }
+
+    if (_isMicSlug(slug)) {
+      return _OmitSelectExercise(
+        key: ValueKey('omit-sel-${card.id}-$slug'),
+        card: card,
+        deck: deck,
+        onCorrect: complete,
+      );
+    }
+
+    // No-micrófono → lectura simple del versículo.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Glass(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 30),
+          gradient: LinearGradient(
+            colors: [
+              RefColors.cyan.withValues(alpha: .22),
+              RefColors.violet.withValues(alpha: .20),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          child: Column(
+            children: [
+              const Text('📖 LEE EL VERSÍCULO',
+                  style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.3)),
+              const SizedBox(height: 14),
+              Text(
+                card.back,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 20, height: 1.55, fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Cta('Lo leí, continuar →', onTap: complete),
+      ],
+    );
+  }
+
   Widget _realExerciseBody(
     BuildContext context,
     AppStore store,
@@ -1988,6 +2184,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     String slug,
   ) {
     final completed = store.isExerciseStepCompleted(slug);
+
+    // F2: si el usuario omitió este paso, se transforma en lectura (no-mic)
+    // o selección múltiple (mic) en lugar de saltarse. Mismo camino en solo
+    // y coop (este motor es compartido).
+    if (_omitOverride.contains('${card.id}:$slug')) {
+      return _buildOmitReplacement(context, store, card, deck, slug);
+    }
 
     if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
       _ensureQuizRounds(deck, card);
@@ -3456,6 +3659,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     MemoryDeckData deck,
     String slug,
   ) {
+    // F2: el reemplazo por omitir trae su propio botón de continuar.
+    if (_omitOverride.contains('${card.id}:$slug')) {
+      return const SizedBox.shrink();
+    }
     final next = _nextFlowSlug(store, slug);
     final completed = store.isExerciseStepCompleted(slug);
     if (slug == '02-lectura-frag') {
@@ -3511,7 +3718,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               'Omitir',
               onTap: () {
                 ActiveMediaRegistry.stopAll();
-                _completeStepAndNavigate(context, store, slug);
+                setState(() => _omitOverride.add('${card.id}:$slug'));
               },
             ),
           ),
@@ -3531,7 +3738,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               'Omitir',
               onTap: () {
                 ActiveMediaRegistry.stopAll();
-                _completeStepAndNavigate(context, store, slug);
+                setState(() => _omitOverride.add('${card.id}:$slug'));
               },
             ),
           ),
@@ -3564,10 +3771,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             onTap: () {
               if (showOmitirForDefault) {
                 ActiveMediaRegistry.stopAll();
-                if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
-                  store.answerCurrentCard(true);
-                }
-                _completeStepAndNavigate(context, store, slug);
+                setState(() => _omitOverride.add('${card.id}:$slug'));
                 return;
               }
               if (slug == '05-bloques') {
