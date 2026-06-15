@@ -284,6 +284,54 @@ class LocalLlmService {
     return AiQuizRoundSet.fromJson(_decodeJsonObject(content));
   }
 
+  static const Map<String, dynamic> _distractorSchema = {
+    'type': 'object',
+    'properties': {
+      'distractors': {
+        'type': 'array',
+        'items': {'type': 'string'},
+        'minItems': 1,
+        'maxItems': 12,
+      },
+    },
+    'required': ['distractors'],
+  };
+
+  /// Genera un pool de palabras-distractoras tramposas (parecidas a las del
+  /// versículo) para el ejercicio "Elige la palabra correcta". A diferencia de
+  /// elegir otras palabras al azar del texto, la IA propone palabras que
+  /// confunden de verdad: sinónimos cercanos, misma familia, errores comunes.
+  /// Una sola llamada por tarjeta; el ejercicio reparte el pool entre huecos.
+  Future<List<String>> generateCompletionDistractors({
+    required String reference,
+    required String verseText,
+    int count = 8,
+  }) async {
+    final prompt =
+        'Eres un tutor de memorización de versículos en español.\n'
+        'Texto ($reference): "$verseText"\n\n'
+        'Devuelve "distractors": una lista de exactamente $count PALABRAS sueltas '
+        '(una sola palabra cada una, sin frases) que sirvan como opciones '
+        'INCORRECTAS pero CONFUSAS para un ejercicio de rellenar huecos del texto. '
+        'Deben parecerse a palabras del versículo: sinónimos cercanos, misma '
+        'familia, conjugaciones o errores plausibles — nunca palabras que '
+        'aparezcan tal cual en el texto. Todo en español. Solo el JSON.';
+    final content = await _chat(
+      prompt,
+      temperature: 0.9,
+      maxTokens: 200,
+      jsonSchema: _distractorSchema,
+    );
+    final decoded = _decodeJsonObject(content);
+    final raw = (decoded['distractors'] as List?) ?? const [];
+    final words = <String>[];
+    for (final item in raw) {
+      final word = item.toString().trim().split(RegExp(r'\s+')).first;
+      if (word.length > 2 && !words.contains(word)) words.add(word);
+    }
+    return words;
+  }
+
   /// Evalúa con la IA local la respuesta libre del usuario a una pregunta
   /// abierta sobre el versículo. Devuelve veredicto y feedback breve.
   Future<AiOpenAnswerEvaluation> evaluateOpenAnswer({

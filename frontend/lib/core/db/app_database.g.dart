@@ -73,6 +73,17 @@ class $DecksTable extends Decks with TableInfo<$DecksTable, Deck> {
     requiredDuringInsert: false,
     defaultValue: currentDateAndTime,
   );
+  static const VerificationMeta _groupIdMeta = const VerificationMeta(
+    'groupId',
+  );
+  @override
+  late final GeneratedColumn<String> groupId = GeneratedColumn<String>(
+    'group_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -81,6 +92,7 @@ class $DecksTable extends Decks with TableInfo<$DecksTable, Deck> {
     icon,
     isBible,
     createdAt,
+    groupId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -135,6 +147,12 @@ class $DecksTable extends Decks with TableInfo<$DecksTable, Deck> {
         createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
       );
     }
+    if (data.containsKey('group_id')) {
+      context.handle(
+        _groupIdMeta,
+        groupId.isAcceptableOrUnknown(data['group_id']!, _groupIdMeta),
+      );
+    }
     return context;
   }
 
@@ -168,6 +186,10 @@ class $DecksTable extends Decks with TableInfo<$DecksTable, Deck> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
       )!,
+      groupId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}group_id'],
+      ),
     );
   }
 
@@ -184,6 +206,7 @@ class Deck extends DataClass implements Insertable<Deck> {
   final String icon;
   final bool isBible;
   final DateTime createdAt;
+  final String? groupId;
   const Deck({
     required this.id,
     required this.title,
@@ -191,6 +214,7 @@ class Deck extends DataClass implements Insertable<Deck> {
     required this.icon,
     required this.isBible,
     required this.createdAt,
+    this.groupId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -201,6 +225,9 @@ class Deck extends DataClass implements Insertable<Deck> {
     map['icon'] = Variable<String>(icon);
     map['is_bible'] = Variable<bool>(isBible);
     map['created_at'] = Variable<DateTime>(createdAt);
+    if (!nullToAbsent || groupId != null) {
+      map['group_id'] = Variable<String>(groupId);
+    }
     return map;
   }
 
@@ -212,6 +239,9 @@ class Deck extends DataClass implements Insertable<Deck> {
       icon: Value(icon),
       isBible: Value(isBible),
       createdAt: Value(createdAt),
+      groupId: groupId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(groupId),
     );
   }
 
@@ -227,6 +257,7 @@ class Deck extends DataClass implements Insertable<Deck> {
       icon: serializer.fromJson<String>(json['icon']),
       isBible: serializer.fromJson<bool>(json['isBible']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      groupId: serializer.fromJson<String?>(json['groupId']),
     );
   }
   @override
@@ -239,6 +270,7 @@ class Deck extends DataClass implements Insertable<Deck> {
       'icon': serializer.toJson<String>(icon),
       'isBible': serializer.toJson<bool>(isBible),
       'createdAt': serializer.toJson<DateTime>(createdAt),
+      'groupId': serializer.toJson<String?>(groupId),
     };
   }
 
@@ -249,6 +281,7 @@ class Deck extends DataClass implements Insertable<Deck> {
     String? icon,
     bool? isBible,
     DateTime? createdAt,
+    Value<String?> groupId = const Value.absent(),
   }) => Deck(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -256,6 +289,7 @@ class Deck extends DataClass implements Insertable<Deck> {
     icon: icon ?? this.icon,
     isBible: isBible ?? this.isBible,
     createdAt: createdAt ?? this.createdAt,
+    groupId: groupId.present ? groupId.value : this.groupId,
   );
   Deck copyWithCompanion(DecksCompanion data) {
     return Deck(
@@ -265,6 +299,7 @@ class Deck extends DataClass implements Insertable<Deck> {
       icon: data.icon.present ? data.icon.value : this.icon,
       isBible: data.isBible.present ? data.isBible.value : this.isBible,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      groupId: data.groupId.present ? data.groupId.value : this.groupId,
     );
   }
 
@@ -276,14 +311,15 @@ class Deck extends DataClass implements Insertable<Deck> {
           ..write('subtitle: $subtitle, ')
           ..write('icon: $icon, ')
           ..write('isBible: $isBible, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('groupId: $groupId')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode =>
-      Object.hash(id, title, subtitle, icon, isBible, createdAt);
+      Object.hash(id, title, subtitle, icon, isBible, createdAt, groupId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -293,7 +329,8 @@ class Deck extends DataClass implements Insertable<Deck> {
           other.subtitle == this.subtitle &&
           other.icon == this.icon &&
           other.isBible == this.isBible &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.groupId == this.groupId);
 }
 
 class DecksCompanion extends UpdateCompanion<Deck> {
@@ -303,6 +340,7 @@ class DecksCompanion extends UpdateCompanion<Deck> {
   final Value<String> icon;
   final Value<bool> isBible;
   final Value<DateTime> createdAt;
+  final Value<String?> groupId;
   final Value<int> rowid;
   const DecksCompanion({
     this.id = const Value.absent(),
@@ -311,6 +349,7 @@ class DecksCompanion extends UpdateCompanion<Deck> {
     this.icon = const Value.absent(),
     this.isBible = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.groupId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   DecksCompanion.insert({
@@ -320,6 +359,7 @@ class DecksCompanion extends UpdateCompanion<Deck> {
     required String icon,
     this.isBible = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.groupId = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        title = Value(title),
@@ -332,6 +372,7 @@ class DecksCompanion extends UpdateCompanion<Deck> {
     Expression<String>? icon,
     Expression<bool>? isBible,
     Expression<DateTime>? createdAt,
+    Expression<String>? groupId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -341,6 +382,7 @@ class DecksCompanion extends UpdateCompanion<Deck> {
       if (icon != null) 'icon': icon,
       if (isBible != null) 'is_bible': isBible,
       if (createdAt != null) 'created_at': createdAt,
+      if (groupId != null) 'group_id': groupId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -352,6 +394,7 @@ class DecksCompanion extends UpdateCompanion<Deck> {
     Value<String>? icon,
     Value<bool>? isBible,
     Value<DateTime>? createdAt,
+    Value<String?>? groupId,
     Value<int>? rowid,
   }) {
     return DecksCompanion(
@@ -361,6 +404,7 @@ class DecksCompanion extends UpdateCompanion<Deck> {
       icon: icon ?? this.icon,
       isBible: isBible ?? this.isBible,
       createdAt: createdAt ?? this.createdAt,
+      groupId: groupId ?? this.groupId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -386,6 +430,9 @@ class DecksCompanion extends UpdateCompanion<Deck> {
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
+    if (groupId.present) {
+      map['group_id'] = Variable<String>(groupId.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -401,6 +448,7 @@ class DecksCompanion extends UpdateCompanion<Deck> {
           ..write('icon: $icon, ')
           ..write('isBible: $isBible, ')
           ..write('createdAt: $createdAt, ')
+          ..write('groupId: $groupId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1420,12 +1468,315 @@ class DailyActivityCompanion extends UpdateCompanion<DailyActivityData> {
   }
 }
 
+class $DeckGroupsTable extends DeckGroups
+    with TableInfo<$DeckGroupsTable, DeckGroup> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DeckGroupsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _iconMeta = const VerificationMeta('icon');
+  @override
+  late final GeneratedColumn<String> icon = GeneratedColumn<String>(
+    'icon',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('📁'),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, name, icon, createdAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'deck_groups';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DeckGroup> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('icon')) {
+      context.handle(
+        _iconMeta,
+        icon.isAcceptableOrUnknown(data['icon']!, _iconMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  DeckGroup map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DeckGroup(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      icon: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}icon'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $DeckGroupsTable createAlias(String alias) {
+    return $DeckGroupsTable(attachedDatabase, alias);
+  }
+}
+
+class DeckGroup extends DataClass implements Insertable<DeckGroup> {
+  final String id;
+  final String name;
+  final String icon;
+  final DateTime createdAt;
+  const DeckGroup({
+    required this.id,
+    required this.name,
+    required this.icon,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['name'] = Variable<String>(name);
+    map['icon'] = Variable<String>(icon);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  DeckGroupsCompanion toCompanion(bool nullToAbsent) {
+    return DeckGroupsCompanion(
+      id: Value(id),
+      name: Value(name),
+      icon: Value(icon),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory DeckGroup.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DeckGroup(
+      id: serializer.fromJson<String>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      icon: serializer.fromJson<String>(json['icon']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'name': serializer.toJson<String>(name),
+      'icon': serializer.toJson<String>(icon),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  DeckGroup copyWith({
+    String? id,
+    String? name,
+    String? icon,
+    DateTime? createdAt,
+  }) => DeckGroup(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    icon: icon ?? this.icon,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  DeckGroup copyWithCompanion(DeckGroupsCompanion data) {
+    return DeckGroup(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      icon: data.icon.present ? data.icon.value : this.icon,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DeckGroup(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('icon: $icon, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, name, icon, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DeckGroup &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.icon == this.icon &&
+          other.createdAt == this.createdAt);
+}
+
+class DeckGroupsCompanion extends UpdateCompanion<DeckGroup> {
+  final Value<String> id;
+  final Value<String> name;
+  final Value<String> icon;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const DeckGroupsCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.icon = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  DeckGroupsCompanion.insert({
+    required String id,
+    required String name,
+    this.icon = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       name = Value(name);
+  static Insertable<DeckGroup> custom({
+    Expression<String>? id,
+    Expression<String>? name,
+    Expression<String>? icon,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (icon != null) 'icon': icon,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  DeckGroupsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? name,
+    Value<String>? icon,
+    Value<DateTime>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return DeckGroupsCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      icon: icon ?? this.icon,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (icon.present) {
+      map['icon'] = Variable<String>(icon.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DeckGroupsCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('icon: $icon, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final $DecksTable decks = $DecksTable(this);
   late final $CardsTable cards = $CardsTable(this);
   late final $DailyActivityTable dailyActivity = $DailyActivityTable(this);
+  late final $DeckGroupsTable deckGroups = $DeckGroupsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1434,6 +1785,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     decks,
     cards,
     dailyActivity,
+    deckGroups,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -1455,6 +1807,7 @@ typedef $$DecksTableCreateCompanionBuilder =
       required String icon,
       Value<bool> isBible,
       Value<DateTime> createdAt,
+      Value<String?> groupId,
       Value<int> rowid,
     });
 typedef $$DecksTableUpdateCompanionBuilder =
@@ -1465,6 +1818,7 @@ typedef $$DecksTableUpdateCompanionBuilder =
       Value<String> icon,
       Value<bool> isBible,
       Value<DateTime> createdAt,
+      Value<String?> groupId,
       Value<int> rowid,
     });
 
@@ -1527,6 +1881,11 @@ class $$DecksTableFilterComposer extends Composer<_$AppDatabase, $DecksTable> {
 
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get groupId => $composableBuilder(
+    column: $table.groupId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1594,6 +1953,11 @@ class $$DecksTableOrderingComposer
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get groupId => $composableBuilder(
+    column: $table.groupId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$DecksTableAnnotationComposer
@@ -1622,6 +1986,9 @@ class $$DecksTableAnnotationComposer
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get groupId =>
+      $composableBuilder(column: $table.groupId, builder: (column) => column);
 
   Expression<T> cardsRefs<T extends Object>(
     Expression<T> Function($$CardsTableAnnotationComposer a) f,
@@ -1683,6 +2050,7 @@ class $$DecksTableTableManager
                 Value<String> icon = const Value.absent(),
                 Value<bool> isBible = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
+                Value<String?> groupId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DecksCompanion(
                 id: id,
@@ -1691,6 +2059,7 @@ class $$DecksTableTableManager
                 icon: icon,
                 isBible: isBible,
                 createdAt: createdAt,
+                groupId: groupId,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -1701,6 +2070,7 @@ class $$DecksTableTableManager
                 required String icon,
                 Value<bool> isBible = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
+                Value<String?> groupId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DecksCompanion.insert(
                 id: id,
@@ -1709,6 +2079,7 @@ class $$DecksTableTableManager
                 icon: icon,
                 isBible: isBible,
                 createdAt: createdAt,
+                groupId: groupId,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -2400,6 +2771,184 @@ typedef $$DailyActivityTableProcessedTableManager =
       DailyActivityData,
       PrefetchHooks Function()
     >;
+typedef $$DeckGroupsTableCreateCompanionBuilder =
+    DeckGroupsCompanion Function({
+      required String id,
+      required String name,
+      Value<String> icon,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+typedef $$DeckGroupsTableUpdateCompanionBuilder =
+    DeckGroupsCompanion Function({
+      Value<String> id,
+      Value<String> name,
+      Value<String> icon,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+
+class $$DeckGroupsTableFilterComposer
+    extends Composer<_$AppDatabase, $DeckGroupsTable> {
+  $$DeckGroupsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get icon => $composableBuilder(
+    column: $table.icon,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$DeckGroupsTableOrderingComposer
+    extends Composer<_$AppDatabase, $DeckGroupsTable> {
+  $$DeckGroupsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get icon => $composableBuilder(
+    column: $table.icon,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$DeckGroupsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $DeckGroupsTable> {
+  $$DeckGroupsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get icon =>
+      $composableBuilder(column: $table.icon, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$DeckGroupsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $DeckGroupsTable,
+          DeckGroup,
+          $$DeckGroupsTableFilterComposer,
+          $$DeckGroupsTableOrderingComposer,
+          $$DeckGroupsTableAnnotationComposer,
+          $$DeckGroupsTableCreateCompanionBuilder,
+          $$DeckGroupsTableUpdateCompanionBuilder,
+          (
+            DeckGroup,
+            BaseReferences<_$AppDatabase, $DeckGroupsTable, DeckGroup>,
+          ),
+          DeckGroup,
+          PrefetchHooks Function()
+        > {
+  $$DeckGroupsTableTableManager(_$AppDatabase db, $DeckGroupsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DeckGroupsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DeckGroupsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DeckGroupsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String> icon = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DeckGroupsCompanion(
+                id: id,
+                name: name,
+                icon: icon,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String name,
+                Value<String> icon = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DeckGroupsCompanion.insert(
+                id: id,
+                name: name,
+                icon: icon,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DeckGroupsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $DeckGroupsTable,
+      DeckGroup,
+      $$DeckGroupsTableFilterComposer,
+      $$DeckGroupsTableOrderingComposer,
+      $$DeckGroupsTableAnnotationComposer,
+      $$DeckGroupsTableCreateCompanionBuilder,
+      $$DeckGroupsTableUpdateCompanionBuilder,
+      (DeckGroup, BaseReferences<_$AppDatabase, $DeckGroupsTable, DeckGroup>),
+      DeckGroup,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -2410,4 +2959,6 @@ class $AppDatabaseManager {
       $$CardsTableTableManager(_db, _db.cards);
   $$DailyActivityTableTableManager get dailyActivity =>
       $$DailyActivityTableTableManager(_db, _db.dailyActivity);
+  $$DeckGroupsTableTableManager get deckGroups =>
+      $$DeckGroupsTableTableManager(_db, _db.deckGroups);
 }

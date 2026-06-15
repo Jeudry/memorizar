@@ -17,6 +17,7 @@ enum _DailyQuickPick { breve, recomendado, intenso, none }
 class _IniciarScreenState extends State<IniciarScreen> {
   int _difficulty = 1;
   int? _dailyTarget;
+  bool _doubleExercises = false;
   _DailyQuickPick _quickPick = _DailyQuickPick.recomendado;
   String? _deckId;
   String _selectedIcon = '✝️';
@@ -132,6 +133,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
     AppScope.of(context).configureSession(
       difficulty: _difficulty,
       dailyTarget: target,
+      doubleExercises: _doubleExercises,
     );
     Navigator.pushNamed(context, '${AppRoutes.flow}/progress-tree');
   }
@@ -526,6 +528,66 @@ class _IniciarScreenState extends State<IniciarScreen> {
                   ],
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () => setState(() => _doubleExercises = !_doubleExercises),
+            child: Glass(
+              color: HtmlRefColors.glassBg,
+              border: Border.all(
+                color: _doubleExercises
+                    ? RefColors.violet
+                    : HtmlRefColors.glassBorder,
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  const Text('🔬', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Duplicar ejercicios (experimental)',
+                          style: TextStyle(
+                              fontSize: 12.5, fontWeight: FontWeight.w900),
+                        ),
+                        Text(
+                          'Cada tarjeta repite su flujo 2 veces. Más repaso.',
+                          style: TextStyle(
+                              color: RefColors.muted, fontSize: 10.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    width: 42,
+                    height: 24,
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: _doubleExercises
+                          ? RefColors.violet
+                          : HtmlRefColors.glassStrong,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Align(
+                      alignment: _doubleExercises
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
+                      child: Container(
+                        width: 20,
+                        height: 20,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 14),

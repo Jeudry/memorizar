@@ -184,6 +184,19 @@ class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
                   Cta(
                     '¡Finalizar ejercicio! →',
                     onTap: () {
+                      // Modo "duplicar ejercicios" (solo, no coop): repite el
+                      // flujo de esta misma tarjeta una segunda vez antes de
+                      // avanzar. El namespace de pasos se renueva por pasada.
+                      if (CoopService.active == null &&
+                          store.shouldRepeatCardForDouble()) {
+                        store.startSecondPass();
+                        Navigator.pushNamedAndRemoveUntil(
+                          context,
+                          '${AppRoutes.flow}/progress-tree',
+                          (route) => route.isFirst,
+                        );
+                        return;
+                      }
                       final keepGoing = store.advanceToNextSessionCard(correct: true);
                       unawaited(store.pushProgressSnapshot());
                       if (CoopService.active != null) {

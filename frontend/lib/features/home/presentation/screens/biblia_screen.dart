@@ -2220,34 +2220,6 @@ List<String> _studyWords(String text) {
   return cleaned.split(' ');
 }
 
-List<MemoryCardData> _quizOptions(MemoryDeckData deck, MemoryCardData correct) {
-  final pool = deck.cards.where((item) => item.id != correct.id).toList();
-  final rng = math.Random(correct.id.hashCode);
-  pool.shuffle(rng);
-  final distractors = pool.take(3).toList();
-  if (distractors.length < 3) {
-    distractors.addAll([
-      MemoryCardData(
-        id: 'distractor-front',
-        front: 'Idea cercana',
-        back: 'Una respuesta parecida, pero no corresponde a ${correct.front}.',
-        source: 'Distractor',
-        icon: correct.icon,
-      ),
-      MemoryCardData(
-        id: 'distractor-partial',
-        front: 'Fragmento incompleto',
-        back: _firstWords(correct.back, 4),
-        source: 'Distractor',
-        icon: correct.icon,
-      ),
-    ]);
-  }
-  final options = [correct, ...distractors.take(3)];
-  options.shuffle(rng);
-  return options;
-}
-
 String _firstWords(String text, int count) {
   final words = _studyWords(text);
   return words.take(count).join(' ');
@@ -2266,8 +2238,7 @@ String _realStepTitle(String slug) {
   if (slug == '03-leer-voz') return 'Leer en voz';
   if (slug == '04-escuchar-voz') return 'Escuchar tu voz';
   if (slug.contains('bloques')) return 'Ordena el texto';
-  if (slug == '12-completar-n3') return 'Completado';
-  if (slug.contains('completar')) return 'Completa memoria';
+  if (slug.contains('completar')) return 'Elige la palabra';
   if (slug.contains('primera-letra')) return 'Iniciales';
   if (slug.contains('quiz')) return 'Quiz real';
   if (slug == '15-banco-completo') return 'Banco completo';
@@ -2490,25 +2461,50 @@ List<String> _completionOptions(
   String target, {
   int offset = 0,
   int seed = 0,
+  List<String>? aiPool,
 }) {
   final cleanRegex = RegExp(r'[^\wÁÉÍÓÚÜÑáéíóúüñ]');
   final cleanTarget = target.replaceAll(cleanRegex, '');
-  final pool = <String>[];
-  final words = _studyWords(text);
-  for (final word in words) {
-    final clean = word.replaceAll(cleanRegex, '');
-    if (clean.length > 3 &&
-        !_sameAnswer(clean, cleanTarget) &&
-        !pool.any((p) => _sameAnswer(p, clean))) {
-      pool.add(clean);
-    }
-  }
   final rng = math.Random(
     seed == 0 ? DateTime.now().microsecondsSinceEpoch : seed,
   );
-  pool.shuffle(rng);
-  final distractors = pool.take(4).toList();
-  final options = <String>[cleanTarget, ...distractors];
+
+  // Pool de palabras del propio versículo (fallback y relleno).
+  final versePool = <String>[];
+  for (final word in _studyWords(text)) {
+    final clean = word.replaceAll(cleanRegex, '');
+    if (clean.length > 3 &&
+        !_sameAnswer(clean, cleanTarget) &&
+        !versePool.any((p) => _sameAnswer(p, clean))) {
+      versePool.add(clean);
+    }
+  }
+
+  final distractors = <String>[];
+  // Preferimos los distractores tramposos de la IA (niveles 1-3).
+  if (aiPool != null && aiPool.isNotEmpty) {
+    final cleaned = <String>[];
+    for (final word in aiPool) {
+      final clean = word.replaceAll(cleanRegex, '');
+      if (clean.length > 2 &&
+          !_sameAnswer(clean, cleanTarget) &&
+          !cleaned.any((p) => _sameAnswer(p, clean))) {
+        cleaned.add(clean);
+      }
+    }
+    cleaned.shuffle(rng);
+    distractors.addAll(cleaned.take(4));
+  }
+  // Relleno con palabras del versículo si la IA no alcanzó 4.
+  if (distractors.length < 4) {
+    final pad = [...versePool]..shuffle(rng);
+    for (final word in pad) {
+      if (distractors.length >= 4) break;
+      if (!distractors.any((d) => _sameAnswer(d, word))) distractors.add(word);
+    }
+  }
+
+  final options = <String>[cleanTarget, ...distractors.take(4)];
   options.shuffle(rng);
   return options;
 }

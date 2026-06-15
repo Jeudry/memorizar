@@ -135,6 +135,8 @@ class MemoryDeckData {
   /// True después de que el creador aceptó la cláusula "tengo derechos sobre
   /// este contenido". Necesario para visibility != private.
   final bool rightsAcknowledged;
+  /// Grupo (carpeta) al que pertenece el mazo. null = sin grupo.
+  final String? groupId;
 
   const MemoryDeckData({
     required this.id,
@@ -146,6 +148,7 @@ class MemoryDeckData {
     this.isBible = false,
     this.visibility = DeckVisibility.private,
     this.rightsAcknowledged = false,
+    this.groupId,
   });
 
   int get retention {
@@ -162,6 +165,8 @@ class MemoryDeckData {
     String? icon,
     DeckVisibility? visibility,
     bool? rightsAcknowledged,
+    // Sentinel para poder asignar groupId a null ("sin grupo") explícitamente.
+    Object? groupId = _noChange,
   }) {
     return MemoryDeckData(
       id: id,
@@ -173,8 +178,26 @@ class MemoryDeckData {
       isBible: isBible,
       visibility: visibility ?? this.visibility,
       rightsAcknowledged: rightsAcknowledged ?? this.rightsAcknowledged,
+      groupId: groupId == _noChange ? this.groupId : groupId as String?,
     );
   }
+}
+
+const Object _noChange = Object();
+
+/// Grupo/carpeta para organizar mazos en la pestaña Mazos.
+class MemoryGroupData {
+  final String id;
+  final String name;
+  final String icon;
+  final DateTime createdAt;
+
+  const MemoryGroupData({
+    required this.id,
+    required this.name,
+    this.icon = '📁',
+    required this.createdAt,
+  });
 }
 
 const emptyCard = MemoryCardData(
@@ -353,10 +376,21 @@ class AppStore extends ChangeNotifier {
         icon: d.icon,
         createdAt: d.createdAt,
         isBible: d.isBible,
+        groupId: d.groupId,
         cards: cards,
       ));
     }
-    
+
+    final dbGroups = await db!.getAllGroups();
+    _groups
+      ..clear()
+      ..addAll(dbGroups.map((g) => MemoryGroupData(
+            id: g.id,
+            name: g.name,
+            icon: g.icon,
+            createdAt: g.createdAt,
+          )));
+
     _decks.clear();
     _decks.addAll(loadedDecks);
     if (_decks.isNotEmpty && _activeDeckId == null) {
@@ -1055,8 +1089,77 @@ class AppStore extends ChangeNotifier {
   int _sessionCardsCompleted = 0;
   int _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
   bool _isPremium = false;
+  /// Toggle experimental: cuando está activo, cada tarjeta corre su flujo de
+  /// ejercicios DOS veces antes de avanzar (más práctica por versículo). Es
+  /// solo de sesión (no se persiste). `_currentCardPass` distingue 0 vs 1.
+  bool _doubleExercises = false;
+  int _currentCardPass = 0;
 
   List<MemoryDeckData> get decks => List.unmodifiable(_decks);
+  final List<MemoryGroupData> _groups = [];
+  List<MemoryGroupData> get groups => List.unmodifiable(_groups);
+
+  /// Mazos que pertenecen a [groupId] (o sin grupo si es null).
+  List<MemoryDeckData> decksInGroup(String? groupId) =>
+      _decks.where((d) => d.groupId == groupId).toList();
+
+  MemoryGroupData? groupById(String? id) {
+    if (id == null) return null;
+    for (final g in _groups) {
+      if (g.id == id) return g;
+    }
+    return null;
+  }
+
+  /// Crea un grupo nuevo y lo persiste. Devuelve su id.
+  Future<String> createGroup(String name, {String icon = '📁'}) async {
+    final clean = name.trim();
+    final id = 'grp-${DateTime.now().microsecondsSinceEpoch}';
+    final group = MemoryGroupData(
+      id: id,
+      name: clean.isEmpty ? 'Grupo' : clean,
+      icon: icon,
+      createdAt: DateTime.now(),
+    );
+    _groups.add(group);
+    notifyListeners();
+    if (enableDatabasePersistence && db != null) {
+      await db!.upsertGroup(DeckGroupsCompanion(
+        id: drift.Value(group.id),
+        name: drift.Value(group.name),
+        icon: drift.Value(group.icon),
+        createdAt: drift.Value(group.createdAt),
+      ));
+    }
+    return id;
+  }
+
+  /// Asigna (o quita, con null) el grupo de un mazo y lo persiste.
+  Future<void> assignDeckToGroup(String deckId, String? groupId) async {
+    final index = _decks.indexWhere((d) => d.id == deckId);
+    if (index < 0) return;
+    final updated = _decks[index].copyWith(groupId: groupId);
+    _decks[index] = updated;
+    notifyListeners();
+    if (enableDatabasePersistence && db != null) {
+      await _persistDeckToDatabase(updated);
+    }
+  }
+
+  /// Borra un grupo; sus mazos quedan sin grupo (no se borran).
+  Future<void> deleteGroup(String groupId) async {
+    _groups.removeWhere((g) => g.id == groupId);
+    for (var i = 0; i < _decks.length; i++) {
+      if (_decks[i].groupId == groupId) {
+        _decks[i] = _decks[i].copyWith(groupId: null);
+      }
+    }
+    notifyListeners();
+    if (enableDatabasePersistence && db != null) {
+      await db!.deleteGroup(groupId);
+    }
+  }
+
   List<BibleVerseData> get bibleVerses => List.unmodifiable(_bibleVerses);
   List<BibleVerseData> get selectedBibleVerses =>
       List.unmodifiable(_selectedBibleVerses);
@@ -1106,6 +1209,7 @@ class AppStore extends ChangeNotifier {
       (_sessionDailyTarget - _sessionCardsCompleted).clamp(0, 99999);
   bool get sessionFinished => _sessionCardsCompleted >= _sessionDailyTarget;
   bool get isPremium => _isPremium;
+  bool get doubleExercises => _doubleExercises;
 
   void setPremiumPreview(bool value) {
     if (_isPremium == value) return;
@@ -1475,6 +1579,7 @@ class AppStore extends ChangeNotifier {
   void configureSession({
     required int difficulty,
     required int dailyTarget,
+    bool doubleExercises = false,
   }) {
     _sessionDifficulty = difficulty.clamp(0, 2);
     // El total configurable siempre es el número real de tarjetas en el mazo.
@@ -1484,8 +1589,24 @@ class AppStore extends ChangeNotifier {
     _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
     _correctAnswers = 0;
     _wrongAnswers = 0;
+    _doubleExercises = doubleExercises;
+    _currentCardPass = 0;
     final deckId = activeDeck.id;
     _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));
+    notifyListeners();
+  }
+
+  /// Con "duplicar ejercicios" activo, una tarjeta debe repetir su flujo si
+  /// todavía está en la primera pasada. El árbol de progreso lo consulta al
+  /// finalizar para decidir entre repetir o avanzar de tarjeta.
+  bool shouldRepeatCardForDouble() =>
+      _doubleExercises && _currentCardPass == 0;
+
+  /// Arranca la segunda pasada de la tarjeta actual: cambia el namespace de
+  /// pasos completados (vía `_currentCardPass`) para que el árbol los muestre
+  /// frescos sin tocar rutas ni slugs.
+  void startSecondPass() {
+    _currentCardPass = 1;
     notifyListeners();
   }
 
@@ -1505,6 +1626,8 @@ class AppStore extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+    // Nueva tarjeta → vuelve a la primera pasada.
+    _currentCardPass = 0;
     // Limpia los pasos completados del deck para que la próxima tarjeta
     // arranque con el árbol fresco. Las claves usan deck:card:slug, así que
     // basta con quitar los del deck activo.
@@ -1532,7 +1655,8 @@ class AppStore extends ChangeNotifier {
   String _exerciseStepKey(String slug) {
     final deck = activeDeck;
     final card = activeCard;
-    return '${deck.id}:${card.id}:$slug';
+    // `_currentCardPass` namespacea la segunda pasada del modo "duplicar".
+    return '${deck.id}:${card.id}:p$_currentCardPass:$slug';
   }
 
   bool isExerciseStepCompleted(String slug) {
@@ -1784,6 +1908,7 @@ class AppStore extends ChangeNotifier {
       icon: drift.Value(deck.icon),
       isBible: drift.Value(deck.isBible),
       createdAt: drift.Value(deck.createdAt),
+      groupId: drift.Value(deck.groupId),
     );
     await db!.upsertDeck(companion);
     for (final card in deck.cards) {
@@ -1865,6 +1990,7 @@ class AppStore extends ChangeNotifier {
     required String title,
     required String icon,
     required List<MemoryCardData> cards,
+    String? groupId,
   }) {
     final cleanCards = cards
         .where(
@@ -1893,6 +2019,7 @@ class AppStore extends ChangeNotifier {
       createdAt: DateTime.now(),
       cards: cleanCards,
       isBible: looksLikeBible,
+      groupId: groupId,
     );
     _decks.insert(0, deck);
     setActiveDeck(deck.id);
