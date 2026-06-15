@@ -44,6 +44,9 @@ class AppRoutes {
   // Mock moderation queue (admin / owner only — real auth comes in Fase 3).
   static const moderationQueue = '/moderation';
 
+  // Práctica suelta de "Elige la palabra correcta" (sin niveles ni sesión).
+  static const practicaElegirPalabra = '/practica-elige-palabra';
+
   // Auth + cuenta + bandeja de compartidos.
   static const login = '/login';
   static const account = '/account';
