@@ -1,11 +1,13 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Jeudry/memorizar/backend/internal/httpapi"
 	"github.com/Jeudry/memorizar/backend/internal/notify"
@@ -17,6 +19,16 @@ import (
 
 func main() {
 	addr := envOrDefault("MEMORIZAR_API_ADDR", ":8080")
+
+	// Modo healthcheck: usado por Docker (la imagen distroless no trae shell
+	// ni curl). Hace GET a /healthz y sale 0/1 según el estado.
+	healthcheck := flag.Bool("healthcheck", false, "ping /healthz and exit")
+	flag.Parse()
+	if *healthcheck {
+		runHealthcheck(addr)
+		return
+	}
+
 	driver := envOrDefault("MEMORIZAR_STORE", "sqlite")
 
 	var repo ports.Repository
@@ -63,6 +75,26 @@ func main() {
 	log.Printf("memorizar api listening on %s", addr)
 	if err := http.ListenAndServe(addr, server.Handler()); err != nil {
 		log.Fatal(err)
+	}
+}
+
+// runHealthcheck consulta /healthz en el addr local y termina el proceso con
+// código 0 (sano) o 1 (no responde / status != 200).
+func runHealthcheck(addr string) {
+	host := addr
+	if strings.HasPrefix(host, ":") {
+		host = "127.0.0.1" + host
+	}
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get("http://" + host + "/healthz")
+	if err != nil {
+		log.Printf("healthcheck failed: %v", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("healthcheck unhealthy: status %d", resp.StatusCode)
+		os.Exit(1)
 	}
 }
 
