@@ -17,6 +17,8 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
   Timer? _debounce;
   List<Map<String, dynamic>>? _results;
   bool _searching = false;
+  /// Categoría (emoji) activa para filtrar la búsqueda; vacío = todas.
+  String _activeCategory = '';
 
   int _tabIndex = _exploreTab;
   List<Map<String, dynamic>>? _myDecks;
@@ -248,7 +250,8 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
     }
     setState(() => _searching = true);
     try {
-      final results = await store.api.searchCommunityDecks(q);
+      final results =
+          await store.api.searchCommunityDecks(q, category: _activeCategory);
       if (!mounted) return;
       setState(() => _results = results);
     } catch (_) {
@@ -256,6 +259,16 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
     } finally {
       if (mounted) setState(() => _searching = false);
     }
+  }
+
+  /// Tap en una categoría de la portada: filtra la búsqueda por ese emoji y
+  /// salta a la pestaña Explorar. Volver a tocar la categoría activa la quita.
+  void _selectCategory(String icon) {
+    setState(() {
+      _activeCategory = _activeCategory == icon ? '' : icon;
+      _tabIndex = _exploreTab;
+    });
+    _runSearch(_searchCtrl.text.trim());
   }
 
   Future<void> _import(Map<String, dynamic> share) async {
@@ -460,6 +473,20 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
               ],
             ),
           ),
+          if (_activeCategory.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: GestureDetector(
+                onTap: () => _selectCategory(_activeCategory),
+                child: RefChip(
+                  '$_activeCategory ${_categoryLabels[_activeCategory] ?? 'Categoría'}  ✕',
+                  color: const Color(0x2200D4FF),
+                  textColor: RefColors.cyan,
+                ),
+              ),
+            ),
+          ],
           if (_results != null) ...[
             const SizedBox(height: 12),
             if (_results!.isEmpty)
@@ -599,6 +626,7 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
                 (category['icon'] as String?) ?? '🌍',
                 _categoryLabels[(category['icon'] as String?) ?? ''] ?? 'Otros',
                 '${(category['count'] as int?) ?? 0}',
+                onTap: () => _selectCategory((category['icon'] as String?) ?? ''),
               ),
           ],
         ),
@@ -1056,12 +1084,15 @@ class _CategoryTile extends StatelessWidget {
   final String emoji;
   final String title;
   final String count;
+  final VoidCallback? onTap;
 
-  const _CategoryTile(this.emoji, this.title, this.count);
+  const _CategoryTile(this.emoji, this.title, this.count, {this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Glass(
+    return GestureDetector(
+      onTap: onTap,
+      child: Glass(
       radius: 14,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
       color: const Color(0x10FFFFFF),
@@ -1083,6 +1114,7 @@ class _CategoryTile extends StatelessWidget {
             style: const TextStyle(fontSize: 8.5, color: RefColors.muted),
           ),
         ],
+      ),
       ),
     );
   }

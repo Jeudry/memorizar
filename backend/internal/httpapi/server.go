@@ -362,7 +362,8 @@ func (s *Server) handleCommunitySearch(w http.ResponseWriter, r *http.Request, u
 		return
 	}
 	query := r.URL.Query().Get("q")
-	decks, err := s.service.SearchCommunityDecks(userID, query)
+	category := r.URL.Query().Get("category")
+	decks, err := s.service.SearchCommunityDecks(userID, query, category)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

@@ -397,10 +397,16 @@ class MemorizarClient {
     return _decode(r);
   }
 
-  Future<List<Map<String, dynamic>>> searchCommunityDecks(String query) async {
-    final encoded = Uri.encodeQueryComponent(query);
+  Future<List<Map<String, dynamic>>> searchCommunityDecks(
+    String query, {
+    String category = '',
+  }) async {
+    final params = <String>['q=${Uri.encodeQueryComponent(query)}'];
+    if (category.isNotEmpty) {
+      params.add('category=${Uri.encodeQueryComponent(category)}');
+    }
     final r = await _http.get(
-      _uri('/v1/community/decks?q=$encoded'),
+      _uri('/v1/community/decks?${params.join('&')}'),
       headers: _headers,
     );
     final body = await _decode(r);

@@ -920,8 +920,9 @@ func (s *Service) CommunityOverview(userID string) (*CommunityOverview, error) {
 // SearchCommunityDecks busca SharedResources públicos cuyo título o
 // summary coincidan con la query (case-insensitive). Excluye los del propio
 // usuario. Devuelve hasta 25.
-func (s *Service) SearchCommunityDecks(userID, rawQuery string) ([]domain.SharedResource, error) {
+func (s *Service) SearchCommunityDecks(userID, rawQuery, category string) ([]domain.SharedResource, error) {
 	q := strings.ToLower(strings.TrimSpace(rawQuery))
+	cat := strings.TrimSpace(category)
 	users, err := s.repo.ListUsers()
 	if err != nil {
 		return nil, err
@@ -943,6 +944,10 @@ func (s *Service) SearchCommunityDecks(userID, rawQuery string) ([]domain.Shared
 			continue
 		}
 		if !r.IsPublic {
+			continue
+		}
+		// Filtro por categoría (icono/emoji del payload), si se pidió.
+		if cat != "" && deckIcon(r) != cat {
 			continue
 		}
 		if q == "" ||
