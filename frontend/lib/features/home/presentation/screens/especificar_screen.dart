@@ -145,6 +145,62 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
     });
   }
 
+  /// Importa un archivo CSV/TSV de dos columnas (frente, dorso) y precarga
+  /// las tarjetas en el editor para revisarlas antes de crear el mazo.
+  Future<void> _importCsvFile() async {
+    if (_submitting) return;
+    const typeGroup = XTypeGroup(
+      label: 'CSV / TSV',
+      extensions: ['csv', 'tsv', 'txt'],
+    );
+    final file = await openFile(acceptedTypeGroups: const [typeGroup]);
+    if (file == null || !mounted) return;
+    try {
+      final content = await file.readAsString();
+      final result = parseCsvCards(content);
+      if (!mounted) return;
+      if (result.cards.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No encontré filas válidas: el archivo debe tener dos columnas (frente y dorso).',
+            ),
+          ),
+        );
+        return;
+      }
+      final baseName = file.name.replaceAll(RegExp(r'\.(csv|tsv|txt)$'), '');
+      setState(() {
+        if (_titleController.text.trim().isEmpty) {
+          _titleController.text = baseName;
+        }
+        _segmentedCards = [
+          for (var i = 0; i < result.cards.length; i++)
+            MemoryCardData(
+              id: 'csv-${DateTime.now().microsecondsSinceEpoch}-$i',
+              front: result.cards[i].front,
+              back: result.cards[i].back,
+              source: file.name,
+              icon: '📂',
+            ),
+        ];
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${result.cards.length} tarjetas importadas'
+            '${result.skippedRows > 0 ? ' · ${result.skippedRows} filas saltadas' : ''}. Revísalas y crea el mazo.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo leer el archivo: $e')),
+      );
+    }
+  }
+
   void _updateSegmentedCard(int index, {String? front, String? back}) {
     if (index < 0 || index >= _segmentedCards.length) return;
     final cards = [..._segmentedCards];
@@ -325,8 +381,8 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
                     const SizedBox(width: 6),
                     Expanded(
                       child: GestureDetector(
-                        onTap: () => Navigator.pushNamed(context, AppRoutes.settings),
-                        child: const _ToolChip('⚙️ Ajustes'),
+                        onTap: _importCsvFile,
+                        child: const _ToolChip('📂 Importar CSV'),
                       ),
                     ),
                   ],
