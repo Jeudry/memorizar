@@ -921,11 +921,11 @@ class _MyDeckStat extends StatelessWidget {
   }
 }
 
-class _CommunityHit extends StatelessWidget {
+class _CommunityHit extends StatefulWidget {
   final Map<String, dynamic> share;
   final VoidCallback onImport;
   final VoidCallback onReport;
-  
+
   const _CommunityHit({
     required this.share,
     required this.onImport,
@@ -933,7 +933,57 @@ class _CommunityHit extends StatelessWidget {
   });
 
   @override
+  State<_CommunityHit> createState() => _CommunityHitState();
+}
+
+class _CommunityHitState extends State<_CommunityHit> {
+  late bool _liked = (widget.share['likedByMe'] as bool?) ?? false;
+  late int _likeCount = (widget.share['likeCount'] as int?) ?? 0;
+  bool _likeBusy = false;
+
+  Future<void> _toggleLike() async {
+    if (_likeBusy) return;
+    final shareId = (widget.share['id'] as String?) ?? '';
+    if (shareId.isEmpty) return;
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inicia sesión para dar me gusta.')),
+      );
+      return;
+    }
+    // Optimista: refleja el cambio y revierte si el backend falla.
+    final prevLiked = _liked;
+    final prevCount = _likeCount;
+    setState(() {
+      _likeBusy = true;
+      _liked = !prevLiked;
+      _likeCount = prevCount + (_liked ? 1 : -1);
+    });
+    try {
+      final res = await store.api.toggleDeckLike(shareId);
+      if (!mounted) return;
+      setState(() {
+        _liked = (res['liked'] as bool?) ?? _liked;
+        _likeCount = (res['likeCount'] as int?) ?? _likeCount;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _liked = prevLiked;
+        _likeCount = prevCount;
+      });
+      debugPrint('Error toggling like: $e');
+    } finally {
+      if (mounted) setState(() => _likeBusy = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final share = widget.share;
+    final onReport = widget.onReport;
+    final onImport = widget.onImport;
     final title = (share['title'] as String?) ?? 'Sin título';
     final summary = (share['summary'] as String?) ?? '';
     return Container(
@@ -968,6 +1018,45 @@ class _CommunityHit extends StatelessWidget {
                     ),
                   ),
               ],
+            ),
+          ),
+          GestureDetector(
+            onTap: _toggleLike,
+            child: Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+              decoration: BoxDecoration(
+                color: _liked
+                    ? RefColors.pink.withValues(alpha: .18)
+                    : HtmlRefColors.glassSoft,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: _liked
+                      ? RefColors.pink.withValues(alpha: .55)
+                      : HtmlRefColors.glassBorder,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                    color: _liked ? RefColors.pink : RefColors.muted,
+                    size: 15,
+                  ),
+                  if (_likeCount > 0) ...[
+                    const SizedBox(width: 4),
+                    Text(
+                      '$_likeCount',
+                      style: TextStyle(
+                        color: _liked ? RefColors.pink : RefColors.muted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
           GestureDetector(

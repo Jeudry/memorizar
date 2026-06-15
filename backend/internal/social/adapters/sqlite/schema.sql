@@ -86,6 +86,14 @@ CREATE TABLE IF NOT EXISTS share_imports (
 );
 CREATE INDEX IF NOT EXISTS idx_share_imports_share ON share_imports(share_id);
 
+CREATE TABLE IF NOT EXISTS deck_likes (
+    share_id    TEXT NOT NULL REFERENCES shared_resources(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL,
+    PRIMARY KEY (share_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_deck_likes_share ON deck_likes(share_id);
+
 CREATE TABLE IF NOT EXISTS deck_reports (
     id           TEXT PRIMARY KEY,
     deck_id      TEXT NOT NULL,

@@ -479,10 +479,14 @@ func (s *Service) ListSuggestedPeople(userID string) ([]domain.User, error) {
 // nivel comunidad (cuántos usuarios distintos lo importaron).
 type CommunityDeck struct {
 	domain.SharedResource
-	ImportCount int `json:"importCount"`
+	ImportCount int  `json:"importCount"`
+	LikeCount   int  `json:"likeCount"`
+	LikedByMe   bool `json:"likedByMe"`
 }
 
-func (s *Service) attachImportCounts(resources []domain.SharedResource) ([]CommunityDeck, error) {
+// attachCommunityStats enriquece recursos con sus contadores de importación,
+// likes y si el usuario que consulta ya les dio like.
+func (s *Service) attachCommunityStats(userID string, resources []domain.SharedResource) ([]CommunityDeck, error) {
 	shareIDs := make([]string, 0, len(resources))
 	for _, resource := range resources {
 		shareIDs = append(shareIDs, resource.ID)
@@ -491,14 +495,71 @@ func (s *Service) attachImportCounts(resources []domain.SharedResource) ([]Commu
 	if err != nil {
 		return nil, err
 	}
+	likeCounts, err := s.repo.CountDeckLikes(shareIDs)
+	if err != nil {
+		return nil, err
+	}
+	likedByMe := map[string]bool{}
+	if userID != "" {
+		liked, err := s.repo.ListLikedShareIDsByUser(userID)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range liked {
+			likedByMe[id] = true
+		}
+	}
 	enriched := make([]CommunityDeck, 0, len(resources))
 	for _, resource := range resources {
 		enriched = append(enriched, CommunityDeck{
 			SharedResource: resource,
 			ImportCount:    counts[resource.ID],
+			LikeCount:      likeCounts[resource.ID],
+			LikedByMe:      likedByMe[resource.ID],
 		})
 	}
 	return enriched, nil
+}
+
+// ToggleDeckLike alterna el like del usuario sobre un deck público y devuelve
+// el nuevo estado (liked) y el total de likes.
+func (s *Service) ToggleDeckLike(userID, shareID string) (bool, int, error) {
+	shareID = strings.TrimSpace(shareID)
+	if shareID == "" {
+		return false, 0, ErrShareNotFound
+	}
+	share, err := s.repo.FindSharedResource(shareID)
+	if err != nil {
+		return false, 0, err
+	}
+	if share == nil || !share.IsPublic {
+		return false, 0, ErrShareNotFound
+	}
+	liked, err := s.repo.ListLikedShareIDsByUser(userID)
+	if err != nil {
+		return false, 0, err
+	}
+	already := false
+	for _, id := range liked {
+		if id == shareID {
+			already = true
+			break
+		}
+	}
+	if already {
+		if err := s.repo.DeleteDeckLike(shareID, userID); err != nil {
+			return false, 0, err
+		}
+	} else {
+		if err := s.repo.SaveDeckLike(shareID, userID, s.now().UTC()); err != nil {
+			return false, 0, err
+		}
+	}
+	counts, err := s.repo.CountDeckLikes([]string{shareID})
+	if err != nil {
+		return false, 0, err
+	}
+	return !already, counts[shareID], nil
 }
 
 // RegisterCommunityImport registra que `userID` importó el deck comunitario
@@ -541,7 +602,7 @@ func (s *Service) ListOwnedCommunityDecks(userID string) ([]CommunityDeck, error
 	sort.Slice(owned, func(i, j int) bool {
 		return owned[i].CreatedAt.After(owned[j].CreatedAt)
 	})
-	return s.attachImportCounts(owned)
+	return s.attachCommunityStats(userID, owned)
 }
 
 // RegisterPushToken persiste el token de push del dispositivo del usuario.
@@ -920,7 +981,7 @@ func (s *Service) CommunityOverview(userID string) (*CommunityOverview, error) {
 // SearchCommunityDecks busca SharedResources públicos cuyo título o
 // summary coincidan con la query (case-insensitive). Excluye los del propio
 // usuario. Devuelve hasta 25.
-func (s *Service) SearchCommunityDecks(userID, rawQuery, category string) ([]domain.SharedResource, error) {
+func (s *Service) SearchCommunityDecks(userID, rawQuery, category string) ([]CommunityDeck, error) {
 	q := strings.ToLower(strings.TrimSpace(rawQuery))
 	cat := strings.TrimSpace(category)
 	users, err := s.repo.ListUsers()
@@ -962,7 +1023,7 @@ func (s *Service) SearchCommunityDecks(userID, rawQuery, category string) ([]dom
 	sort.Slice(matches, func(i, j int) bool {
 		return matches[i].CreatedAt.After(matches[j].CreatedAt)
 	})
-	return matches, nil
+	return s.attachCommunityStats(userID, matches)
 }
 
 // SearchPeople busca usuarios por coincidencia parcial de email o

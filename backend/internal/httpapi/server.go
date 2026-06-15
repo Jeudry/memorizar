@@ -64,6 +64,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/premium/status", s.withAuth(s.handlePremiumStatus))
 	s.mux.HandleFunc("/v1/push/register-token", s.withAuth(s.handlePushRegisterToken))
 	s.mux.HandleFunc("/v1/community/imports", s.withAuth(s.handleCommunityImport))
+	s.mux.HandleFunc("/v1/community/decks/like", s.withAuth(s.handleCommunityLike))
 	// Endpoint público (sin auth) para resolver deeplinks `memorizar://deck/ID`.
 	// Solo expone shares con IsPublic=true.
 	s.mux.HandleFunc("/v1/public/shares/", s.handlePublicShare)
@@ -549,6 +550,31 @@ func (s *Server) handleCommunityReportResolve(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, report)
+}
+
+// handleCommunityLike alterna el like del usuario sobre un deck público.
+func (s *Server) handleCommunityLike(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		ShareID string `json:"shareId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	liked, count, err := s.service.ToggleDeckLike(userID, body.ShareID)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, application.ErrShareNotFound) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"liked": liked, "likeCount": count})
 }
 
 // handleCommunityImport registra que el usuario importó un deck comunitario.

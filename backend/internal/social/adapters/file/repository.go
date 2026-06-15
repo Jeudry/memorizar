@@ -19,6 +19,7 @@ type state struct {
 	Activities        map[string]domain.Activity         `json:"activities"`
 	SharedResources   map[string]domain.SharedResource   `json:"sharedResources"`
 	ShareImports      map[string]map[string]domain.ShareImport `json:"shareImports"`
+	DeckLikes         map[string]map[string]time.Time          `json:"deckLikes"`
 	DeckReports       map[string]domain.DeckReport       `json:"deckReports"`
 	AnalyticsEvents   []domain.AnalyticsEvent            `json:"analyticsEvents"`
 	PremiumSubs       map[string]domain.PremiumSubscription `json:"premiumSubs"`
@@ -45,6 +46,7 @@ func NewRepository(path string) (*Repository, error) {
 			Activities:        map[string]domain.Activity{},
 			SharedResources:   map[string]domain.SharedResource{},
 			ShareImports:      map[string]map[string]domain.ShareImport{},
+		DeckLikes:         map[string]map[string]time.Time{},
 			DeckReports:       map[string]domain.DeckReport{},
 			Reactions:         map[string]domain.FeedReaction{},
 			Comments:          map[string]domain.FeedComment{},
@@ -287,7 +289,56 @@ func (r *Repository) DeleteSharedResource(id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.state.SharedResources, id)
+	delete(r.state.DeckLikes, id)
 	return r.persistLocked()
+}
+
+func (r *Repository) SaveDeckLike(shareID, userID string, createdAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state.DeckLikes == nil {
+		r.state.DeckLikes = map[string]map[string]time.Time{}
+	}
+	byUser, ok := r.state.DeckLikes[shareID]
+	if !ok {
+		byUser = map[string]time.Time{}
+		r.state.DeckLikes[shareID] = byUser
+	}
+	byUser[userID] = createdAt
+	return r.persistLocked()
+}
+
+func (r *Repository) DeleteDeckLike(shareID, userID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if byUser, ok := r.state.DeckLikes[shareID]; ok {
+		delete(byUser, userID)
+	}
+	return r.persistLocked()
+}
+
+func (r *Repository) CountDeckLikes(shareIDs []string) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	counts := map[string]int{}
+	for _, shareID := range shareIDs {
+		if byUser, ok := r.state.DeckLikes[shareID]; ok {
+			counts[shareID] = len(byUser)
+		}
+	}
+	return counts, nil
+}
+
+func (r *Repository) ListLikedShareIDsByUser(userID string) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	liked := []string{}
+	for shareID, byUser := range r.state.DeckLikes {
+		if _, ok := byUser[userID]; ok {
+			liked = append(liked, shareID)
+		}
+	}
+	return liked, nil
 }
 
 func (r *Repository) ListPublicSharedResourcesByUserIDs(userIDs []string) ([]domain.SharedResource, error) {

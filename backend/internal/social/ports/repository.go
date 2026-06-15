@@ -38,6 +38,11 @@ type Repository interface {
 	CountShareImports(shareIDs []string) (map[string]int, error)
 	CountShareImportsSince(shareIDs []string, since time.Time) (map[string]int, error)
 
+	SaveDeckLike(shareID, userID string, createdAt time.Time) error
+	DeleteDeckLike(shareID, userID string) error
+	CountDeckLikes(shareIDs []string) (map[string]int, error)
+	ListLikedShareIDsByUser(userID string) ([]string, error)
+
 	SaveDeckReport(report domain.DeckReport) error
 	FindDeckReportByID(reportID string) (*domain.DeckReport, error)
 	ListDeckReports() ([]domain.DeckReport, error)

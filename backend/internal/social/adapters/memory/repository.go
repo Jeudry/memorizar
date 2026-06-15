@@ -17,6 +17,7 @@ type Repository struct {
 	activities        map[string]domain.Activity
 	sharedResources   map[string]domain.SharedResource
 	shareImports      map[string]map[string]domain.ShareImport
+	deckLikes         map[string]map[string]time.Time
 	deckReports       map[string]domain.DeckReport
 	analyticsEvents   []domain.AnalyticsEvent
 	premiumSubs       map[string]domain.PremiumSubscription
@@ -35,6 +36,7 @@ func NewRepository() *Repository {
 		activities:        map[string]domain.Activity{},
 		sharedResources:   map[string]domain.SharedResource{},
 		shareImports:      map[string]map[string]domain.ShareImport{},
+		deckLikes:         map[string]map[string]time.Time{},
 		deckReports:       map[string]domain.DeckReport{},
 		reactions:         map[string]domain.FeedReaction{},
 		comments:          map[string]domain.FeedComment{},
@@ -253,7 +255,53 @@ func (r *Repository) DeleteSharedResource(id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.sharedResources, id)
+	delete(r.deckLikes, id)
 	return nil
+}
+
+func (r *Repository) SaveDeckLike(shareID, userID string, createdAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	byUser, ok := r.deckLikes[shareID]
+	if !ok {
+		byUser = map[string]time.Time{}
+		r.deckLikes[shareID] = byUser
+	}
+	byUser[userID] = createdAt
+	return nil
+}
+
+func (r *Repository) DeleteDeckLike(shareID, userID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if byUser, ok := r.deckLikes[shareID]; ok {
+		delete(byUser, userID)
+	}
+	return nil
+}
+
+func (r *Repository) CountDeckLikes(shareIDs []string) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	counts := map[string]int{}
+	for _, shareID := range shareIDs {
+		if byUser, ok := r.deckLikes[shareID]; ok {
+			counts[shareID] = len(byUser)
+		}
+	}
+	return counts, nil
+}
+
+func (r *Repository) ListLikedShareIDsByUser(userID string) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	liked := []string{}
+	for shareID, byUser := range r.deckLikes {
+		if _, ok := byUser[userID]; ok {
+			liked = append(liked, shareID)
+		}
+	}
+	return liked, nil
 }
 
 func (r *Repository) SaveShareImport(shareImport domain.ShareImport) error {

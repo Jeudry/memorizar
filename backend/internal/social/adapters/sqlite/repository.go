@@ -530,6 +530,74 @@ func (r *Repository) countShareImportsWhere(shareIDs []string, extraWhere string
 	return counts, nil
 }
 
+// ─── Deck likes ──────────────────────────────────────────────────────────
+
+func (r *Repository) SaveDeckLike(shareID, userID string, createdAt time.Time) error {
+	_, err := r.db.Exec(`
+		INSERT OR IGNORE INTO deck_likes (share_id, user_id, created_at)
+		VALUES (?, ?, ?)`,
+		shareID, userID, formatTime(createdAt),
+	)
+	return err
+}
+
+func (r *Repository) DeleteDeckLike(shareID, userID string) error {
+	_, err := r.db.Exec(
+		`DELETE FROM deck_likes WHERE share_id = ? AND user_id = ?`,
+		shareID, userID,
+	)
+	return err
+}
+
+func (r *Repository) CountDeckLikes(shareIDs []string) (map[string]int, error) {
+	counts := map[string]int{}
+	if len(shareIDs) == 0 {
+		return counts, nil
+	}
+	placeholders := strings.Repeat("?,", len(shareIDs)-1) + "?"
+	args := make([]any, len(shareIDs))
+	for i, v := range shareIDs {
+		args[i] = v
+	}
+	rows, err := r.db.Query(`
+		SELECT share_id, COUNT(*)
+		FROM deck_likes
+		WHERE share_id IN (`+placeholders+`)
+		GROUP BY share_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var shareID string
+		var count int
+		if err := rows.Scan(&shareID, &count); err != nil {
+			return nil, err
+		}
+		counts[shareID] = count
+	}
+	return counts, nil
+}
+
+func (r *Repository) ListLikedShareIDsByUser(userID string) ([]string, error) {
+	rows, err := r.db.Query(
+		`SELECT share_id FROM deck_likes WHERE user_id = ?`, userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	liked := []string{}
+	for rows.Next() {
+		var shareID string
+		if err := rows.Scan(&shareID); err != nil {
+			return nil, err
+		}
+		liked = append(liked, shareID)
+	}
+	return liked, nil
+}
+
 // ─── Deck reports (moderación) ───────────────────────────────────────────
 
 func (r *Repository) SaveDeckReport(report domain.DeckReport) error {

@@ -477,6 +477,17 @@ class MemorizarClient {
     return list.cast<Map<String, dynamic>>();
   }
 
+  /// Alterna el "me gusta" del usuario sobre un deck comunitario.
+  /// Devuelve {liked, likeCount} con el estado resultante.
+  Future<Map<String, dynamic>> toggleDeckLike(String shareId) async {
+    final r = await _http.post(
+      _uri('/v1/community/decks/like'),
+      headers: _headers,
+      body: jsonEncode({'shareId': shareId}),
+    );
+    return _decode(r);
+  }
+
   /// Despublica un mazo propio de la comunidad (lo borra del catálogo).
   /// Solo el dueño puede; el backend devuelve 404 en caso contrario.
   Future<void> unpublishCommunityDeck(String shareId) async {
