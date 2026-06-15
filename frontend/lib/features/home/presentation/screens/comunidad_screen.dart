@@ -12,6 +12,7 @@ class ComunidadScreen extends StatefulWidget {
 class _ComunidadScreenState extends State<ComunidadScreen> {
   static const int _exploreTab = 0;
   static const int _myDecksTab = 1;
+  static const int _likedTab = 2;
 
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
@@ -24,6 +25,10 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
   List<Map<String, dynamic>>? _myDecks;
   bool _loadingMine = false;
   String? _mineError;
+
+  List<Map<String, dynamic>>? _likedDecks;
+  bool _loadingLiked = false;
+  String? _likedError;
 
   Map<String, dynamic>? _overview;
   bool _loadingOverview = false;
@@ -81,6 +86,36 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
     setState(() => _tabIndex = index);
     if (index == _myDecksTab && _myDecks == null) {
       _loadMyDecks();
+    }
+    if (index == _likedTab && _likedDecks == null) {
+      _loadLikedDecks();
+    }
+  }
+
+  Future<void> _loadLikedDecks() async {
+    if (_loadingLiked) return;
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) {
+      setState(() {
+        _likedError = 'Inicia sesión para ver tus mazos favoritos.';
+        _likedDecks = const [];
+      });
+      return;
+    }
+    setState(() {
+      _loadingLiked = true;
+      _likedError = null;
+    });
+    try {
+      final decks = await store.api.listLikedCommunityDecks();
+      if (!mounted) return;
+      setState(() => _likedDecks = decks);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _likedError = 'No se pudieron cargar tus mazos favoritos.');
+      debugPrint('Error cargando mazos favoritos: $e');
+    } finally {
+      if (mounted) setState(() => _loadingLiked = false);
     }
   }
 
@@ -335,8 +370,89 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
               onTap: () => _switchTab(_myDecksTab),
             ),
           ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: _ComunidadTab(
+              label: 'Me gustan',
+              icon: Icons.favorite_rounded,
+              selected: _tabIndex == _likedTab,
+              onTap: () => _switchTab(_likedTab),
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildLikedTab() {
+    if (_loadingLiked) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 40),
+        child: Center(child: CircularProgressIndicator(color: RefColors.cyan)),
+      );
+    }
+    if (_likedError != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          children: [
+            Text(
+              _likedError!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: RefColors.muted, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            Cta('Reintentar', onTap: _loadLikedDecks),
+          ],
+        ),
+      );
+    }
+    final liked = _likedDecks ?? const [];
+    if (liked.isEmpty) {
+      return Glass(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 30),
+        child: Column(
+          children: const [
+            Icon(Icons.favorite_border_rounded, color: RefColors.pink, size: 42),
+            SizedBox(height: 12),
+            Text(
+              'Aún no te gusta ningún mazo',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+            ),
+            SizedBox(height: 6),
+            Text(
+              'Da ❤️ a los mazos que descubras en Explorar y los encontrarás aquí.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: RefColors.muted, fontSize: 12, height: 1.4),
+            ),
+          ],
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '${liked.length} ${liked.length == 1 ? 'MAZO QUE TE GUSTA' : 'MAZOS QUE TE GUSTAN'}',
+          style: const TextStyle(
+            color: RefColors.muted,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.1,
+          ),
+        ),
+        const SizedBox(height: 8),
+        for (final r in liked)
+          _CommunityHit(
+            share: r,
+            onImport: () => _import(r),
+            onReport: () => showReportDeckSheet(
+              context,
+              deckId: (r['id'] as String?) ?? '',
+              deckTitle: r['title'] as String? ?? 'Sin título',
+            ),
+          ),
+      ],
     );
   }
 
@@ -427,6 +543,8 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
           const SizedBox(height: 12),
           if (_tabIndex == _myDecksTab) ...[
             _buildMyDecksTab(),
+          ] else if (_tabIndex == _likedTab) ...[
+            _buildLikedTab(),
           ] else ...[
           Glass(
             radius: 18,
@@ -753,12 +871,16 @@ class _ComunidadTab extends StatelessWidget {
               color: selected ? Colors.white : RefColors.muted,
             ),
             const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-                color: selected ? Colors.white : RefColors.muted,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  color: selected ? Colors.white : RefColors.muted,
+                ),
               ),
             ),
           ],
