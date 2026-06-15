@@ -1,0 +1,330 @@
+package application
+
+import (
+	"errors"
+	"testing"
+
+	"github.com/Jeudry/memorizar/backend/internal/social/adapters/memory"
+	"github.com/Jeudry/memorizar/backend/internal/social/domain"
+)
+
+// makeUser registra un usuario por email y devuelve su ID. Usa el flujo
+// público (RegisterEmail) para mantener el setup consistente con los demás
+// tests del paquete.
+func makeUser(t *testing.T, s *Service, email, username, displayName string) string {
+	t.Helper()
+	out, err := s.RegisterEmail(EmailRegisterInput{
+		Email:       email,
+		Password:    "abcdefgh",
+		DisplayName: displayName,
+		Username:    username,
+		Age:         25,
+	})
+	if err != nil {
+		t.Fatalf("register %s: %v", email, err)
+	}
+	return out.User.ID
+}
+
+// publishDeck publica un deck público para el usuario y devuelve el shareID.
+func publishDeck(t *testing.T, s *Service, userID, deckID, title, payload string) string {
+	t.Helper()
+	share, err := s.ShareResource(userID, ShareResourceInput{
+		Kind:        domain.ShareKindDeck,
+		DeckID:      deckID,
+		Title:       title,
+		PayloadJSON: payload,
+		IsPublic:    true,
+	})
+	if err != nil {
+		t.Fatalf("publish deck %s: %v", deckID, err)
+	}
+	return share.ID
+}
+
+// ─── UnpublishSharedResource ──────────────────────────────────────────────
+
+func TestUnpublishSharedResource_OwnerRemovesIt(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	owner := makeUser(t, s, "owner@dev.io", "owner_u", "Owner")
+
+	shareID := publishDeck(t, s, owner, "deck-1", "Versículos", `{"icon":"✝️"}`)
+
+	// El recurso existe antes de despublicar.
+	if got, err := s.repo.FindSharedResource(shareID); err != nil || got == nil {
+		t.Fatalf("expected share to exist before unpublish, got %v / %v", got, err)
+	}
+
+	if err := s.UnpublishSharedResource(owner, shareID); err != nil {
+		t.Fatalf("unpublish as owner: %v", err)
+	}
+
+	got, err := s.repo.FindSharedResource(shareID)
+	if err != nil {
+		t.Fatalf("find after unpublish: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("expected nil share after unpublish, got %+v", got)
+	}
+}
+
+func TestUnpublishSharedResource_NonOwnerForbidden(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	owner := makeUser(t, s, "owner2@dev.io", "owner_u2", "Owner")
+	stranger := makeUser(t, s, "stranger@dev.io", "stranger_u", "Stranger")
+
+	shareID := publishDeck(t, s, owner, "deck-1", "Versículos", `{"icon":"✝️"}`)
+
+	if err := s.UnpublishSharedResource(stranger, shareID); !errors.Is(err, ErrShareNotFound) {
+		t.Fatalf("expected ErrShareNotFound for non-owner, got %v", err)
+	}
+
+	// El recurso sigue existiendo tras el intento del no-dueño.
+	if got, err := s.repo.FindSharedResource(shareID); err != nil || got == nil {
+		t.Fatalf("expected share to survive non-owner attempt, got %v / %v", got, err)
+	}
+}
+
+func TestUnpublishSharedResource_UnknownShareID(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	owner := makeUser(t, s, "owner3@dev.io", "owner_u3", "Owner")
+
+	if err := s.UnpublishSharedResource(owner, ""); !errors.Is(err, ErrShareNotFound) {
+		t.Fatalf("expected ErrShareNotFound for empty shareID, got %v", err)
+	}
+	if err := s.UnpublishSharedResource(owner, "shr_does_not_exist"); !errors.Is(err, ErrShareNotFound) {
+		t.Fatalf("expected ErrShareNotFound for unknown shareID, got %v", err)
+	}
+}
+
+// ─── ToggleDeckLike ───────────────────────────────────────────────────────
+
+func TestToggleDeckLike_TogglesAndCounts(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	owner := makeUser(t, s, "owner@dev.io", "owner_u", "Owner")
+	liker := makeUser(t, s, "liker@dev.io", "liker_u", "Liker")
+
+	shareID := publishDeck(t, s, owner, "deck-1", "Versículos", `{"icon":"✝️"}`)
+
+	// Primer like → liked=true, count=1.
+	liked, count, err := s.ToggleDeckLike(liker, shareID)
+	if err != nil {
+		t.Fatalf("first like: %v", err)
+	}
+	if !liked || count != 1 {
+		t.Fatalf("expected (true, 1), got (%v, %d)", liked, count)
+	}
+
+	// Segundo toggle → liked=false, count=0.
+	liked, count, err = s.ToggleDeckLike(liker, shareID)
+	if err != nil {
+		t.Fatalf("second toggle: %v", err)
+	}
+	if liked || count != 0 {
+		t.Fatalf("expected (false, 0), got (%v, %d)", liked, count)
+	}
+
+	// Tercer toggle → liked=true, count=1.
+	liked, count, err = s.ToggleDeckLike(liker, shareID)
+	if err != nil {
+		t.Fatalf("third toggle: %v", err)
+	}
+	if !liked || count != 1 {
+		t.Fatalf("expected (true, 1), got (%v, %d)", liked, count)
+	}
+}
+
+func TestToggleDeckLike_NonPublicShareNotFound(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	liker := makeUser(t, s, "liker@dev.io", "liker_u", "Liker")
+
+	if _, _, err := s.ToggleDeckLike(liker, ""); !errors.Is(err, ErrShareNotFound) {
+		t.Fatalf("expected ErrShareNotFound for empty shareID, got %v", err)
+	}
+	if _, _, err := s.ToggleDeckLike(liker, "shr_unknown"); !errors.Is(err, ErrShareNotFound) {
+		t.Fatalf("expected ErrShareNotFound for unknown share, got %v", err)
+	}
+}
+
+func TestToggleDeckLike_TwoUsersAccumulate(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	owner := makeUser(t, s, "owner@dev.io", "owner_u", "Owner")
+	a := makeUser(t, s, "a@dev.io", "user_a", "A")
+	b := makeUser(t, s, "b@dev.io", "user_b", "B")
+
+	shareID := publishDeck(t, s, owner, "deck-1", "Versículos", `{"icon":"✝️"}`)
+
+	if _, count, err := s.ToggleDeckLike(a, shareID); err != nil || count != 1 {
+		t.Fatalf("first user like: count=%d err=%v", count, err)
+	}
+	liked, count, err := s.ToggleDeckLike(b, shareID)
+	if err != nil {
+		t.Fatalf("second user like: %v", err)
+	}
+	if !liked || count != 2 {
+		t.Fatalf("expected (true, 2) for two distinct likers, got (%v, %d)", liked, count)
+	}
+}
+
+// ─── ToggleFollow ─────────────────────────────────────────────────────────
+
+func TestToggleFollow_TogglesAndCounts(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	follower := makeUser(t, s, "follower@dev.io", "follower_u", "Follower")
+	creator := makeUser(t, s, "creator@dev.io", "creator_u", "Creator")
+
+	following, count, err := s.ToggleFollow(follower, creator)
+	if err != nil {
+		t.Fatalf("follow: %v", err)
+	}
+	if !following || count != 1 {
+		t.Fatalf("expected (true, 1), got (%v, %d)", following, count)
+	}
+
+	following, count, err = s.ToggleFollow(follower, creator)
+	if err != nil {
+		t.Fatalf("unfollow: %v", err)
+	}
+	if following || count != 0 {
+		t.Fatalf("expected (false, 0), got (%v, %d)", following, count)
+	}
+}
+
+func TestToggleFollow_SelfForbidden(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	me := makeUser(t, s, "me@dev.io", "me_u", "Me")
+
+	if _, _, err := s.ToggleFollow(me, me); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound following self, got %v", err)
+	}
+}
+
+func TestToggleFollow_UnknownCreator(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	follower := makeUser(t, s, "follower@dev.io", "follower_u", "Follower")
+
+	if _, _, err := s.ToggleFollow(follower, "usr_unknown"); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound for unknown creator, got %v", err)
+	}
+	if _, _, err := s.ToggleFollow(follower, ""); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound for empty creator, got %v", err)
+	}
+}
+
+// ─── IsModerator ──────────────────────────────────────────────────────────
+
+func TestIsModerator_FalseByDefault(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	user := makeUser(t, s, "plain@dev.io", "plain_u", "Plain")
+
+	if s.IsModerator(user) {
+		t.Fatal("expected non-moderator by default")
+	}
+}
+
+func TestIsModerator_AllowlistEmail(t *testing.T) {
+	s := NewService(memory.NewRepository(), WithModeratorEmails([]string{"Mod@Dev.io"}))
+	mod := makeUser(t, s, "mod@dev.io", "mod_u", "Mod")
+	other := makeUser(t, s, "other@dev.io", "other_u", "Other")
+
+	if !s.IsModerator(mod) {
+		t.Fatal("expected allowlisted email to be moderator (case-insensitive)")
+	}
+	if s.IsModerator(other) {
+		t.Fatal("expected non-allowlisted email to not be moderator")
+	}
+}
+
+func TestIsModerator_PersistedFlag(t *testing.T) {
+	repo := memory.NewRepository()
+	s := NewService(repo)
+	userID := makeUser(t, s, "flagged@dev.io", "flagged_u", "Flagged")
+
+	user, err := repo.FindUserByID(userID)
+	if err != nil || user == nil {
+		t.Fatalf("find user: %v", err)
+	}
+	user.IsModerator = true
+	if err := repo.SaveUser(*user); err != nil {
+		t.Fatalf("save moderator flag: %v", err)
+	}
+
+	if !s.IsModerator(userID) {
+		t.Fatal("expected persisted IsModerator flag to grant moderation")
+	}
+}
+
+// ─── SearchCommunityDecks ─────────────────────────────────────────────────
+
+func TestSearchCommunityDecks_FilterByCategory(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	owner := makeUser(t, s, "owner@dev.io", "owner_u", "Owner")
+	searcher := makeUser(t, s, "searcher@dev.io", "searcher_u", "Searcher")
+
+	bibleID := publishDeck(t, s, owner, "deck-bible", "Salmos", `{"icon":"✝️"}`)
+	worldID := publishDeck(t, s, owner, "deck-world", "Inglés", `{"icon":"🌍"}`)
+
+	// Categoría "✝️" devuelve solo el deck bíblico.
+	bibleOnly, err := s.SearchCommunityDecks(searcher, "", "✝️")
+	if err != nil {
+		t.Fatalf("search by category: %v", err)
+	}
+	if len(bibleOnly) != 1 || bibleOnly[0].ID != bibleID {
+		t.Fatalf("expected only the ✝️ deck, got %+v", bibleOnly)
+	}
+
+	// Categoría vacía devuelve ambos (excluyendo los del propio searcher).
+	all, err := s.SearchCommunityDecks(searcher, "", "")
+	if err != nil {
+		t.Fatalf("search all: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("expected 2 decks for empty category, got %d", len(all))
+	}
+	_ = worldID
+}
+
+func TestSearchCommunityDecks_ExcludesOwnDecks(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	searcher := makeUser(t, s, "searcher@dev.io", "searcher_u", "Searcher")
+	other := makeUser(t, s, "other@dev.io", "other_u", "Other")
+
+	_ = publishDeck(t, s, searcher, "mine", "Mío", `{"icon":"✝️"}`)
+	othersID := publishDeck(t, s, other, "theirs", "Ajeno", `{"icon":"✝️"}`)
+
+	results, err := s.SearchCommunityDecks(searcher, "", "")
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != othersID {
+		t.Fatalf("expected only other users' decks, got %+v", results)
+	}
+}
+
+// attachCommunityStats ejercitado indirectamente: el resultado de la búsqueda
+// debe reflejar LikeCount y LikedByMe tras un like del propio searcher.
+func TestSearchCommunityDecks_CarriesLikeStats(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	owner := makeUser(t, s, "owner@dev.io", "owner_u", "Owner")
+	searcher := makeUser(t, s, "searcher@dev.io", "searcher_u", "Searcher")
+
+	shareID := publishDeck(t, s, owner, "deck-1", "Salmos", `{"icon":"✝️"}`)
+
+	if _, count, err := s.ToggleDeckLike(searcher, shareID); err != nil || count != 1 {
+		t.Fatalf("like: count=%d err=%v", count, err)
+	}
+
+	results, err := s.SearchCommunityDecks(searcher, "", "")
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].LikeCount != 1 {
+		t.Fatalf("expected LikeCount=1, got %d", results[0].LikeCount)
+	}
+	if !results[0].LikedByMe {
+		t.Fatal("expected LikedByMe=true for the searcher who liked it")
+	}
+}
