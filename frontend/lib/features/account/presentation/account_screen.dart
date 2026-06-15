@@ -356,7 +356,7 @@ class _AccountScreenState extends State<AccountScreen> {
               AppStrings.t(context, 'account.signOut'),
               onTap: () async {
                 await store.logout();
-                if (!mounted) return;
+                if (!context.mounted) return;
                 Navigator.pushNamedAndRemoveUntil(
                   context,
                   AppRoutes.home,

@@ -64,7 +64,7 @@ class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
     Future.delayed(const Duration(milliseconds: 380), () {
       if (!mounted) return;
       final ctx = _currentStepKey.currentContext;
-      if (ctx != null) {
+      if (ctx != null && ctx.mounted) {
         Scrollable.ensureVisible(
           ctx,
           duration: const Duration(milliseconds: 450),
@@ -98,6 +98,7 @@ class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
           final shouldPop = await _showExitConfirmationDialog(context);
           if (shouldPop && context.mounted) {
             await CoopService.active?.disconnect();
+            if (!context.mounted) return;
             CoopService.active = null;
             Navigator.pop(context);
           }

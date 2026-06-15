@@ -57,11 +57,13 @@ class _AmigosScreenState extends State<AmigosScreen> {
     final store = AppScope.of(context);
     try {
       await store.api.requestFriend(to.id);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Invitación enviada a ${to.displayName}')),
       );
       await _refresh();
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('No pude enviar la invitación: $e')),
       );
@@ -74,6 +76,7 @@ class _AmigosScreenState extends State<AmigosScreen> {
       await store.api.acceptFriend(f.id);
       await _refresh();
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('No pude aceptar: $e')),
       );

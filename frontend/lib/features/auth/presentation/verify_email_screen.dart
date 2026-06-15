@@ -53,8 +53,10 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     });
     try {
       await AppScope.of(context).api.confirmEmailVerify(t);
+      if (!mounted) return;
       // Refrescar perfil para que el flag emailVerified se actualice.
       final me = await AppScope.of(context).api.me();
+      if (!mounted) return;
       AppScope.of(context).overwriteCurrentUser(me);
       setState(() => _ok = '¡Correo verificado!');
     } catch (e) {

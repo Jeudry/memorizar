@@ -1890,6 +1890,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           final shouldPop = await _showExitConfirmationDialog(context);
           if (shouldPop && context.mounted) {
             await CoopService.active?.disconnect();
+            if (!context.mounted) return;
             CoopService.active = null;
             Navigator.pop(context);
           }
@@ -1915,6 +1916,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   final shouldPop = await _showExitConfirmationDialog(context);
                   if (shouldPop && context.mounted) {
                     await CoopService.active?.disconnect();
+                    if (!context.mounted) return;
                     CoopService.active = null;
                     Navigator.pop(context);
                   }
