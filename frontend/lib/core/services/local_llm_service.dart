@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'ai_quiz_models.dart';
+import 'flutter_gemma_backend.dart';
 import 'llama_server_manager.dart';
 
 /// Servicio local offline de inferencia de IA (Gemma 3 4B IT, cuantizado QAT
@@ -87,6 +88,11 @@ class LocalLlmService {
 
   bool get isReady => _initialized;
 
+  /// En móvil la inferencia corre on-device vía flutter_gemma (no hay
+  /// llama-server). El resto de plataformas usan el motor llama.cpp.
+  bool get _useMobileBackend =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
   Future<Directory> get _llmDirectory async {
     final docDir = await getApplicationSupportDirectory();
     final llmDir = Directory('${docDir.path}/local_llm');
@@ -106,6 +112,7 @@ class LocalLlmService {
   /// En web no hay filesystem: devuelve false sin lanzar.
   Future<bool> checkModelExists() async {
     if (kIsWeb) return false;
+    if (_useMobileBackend) return FlutterGemmaBackend.instance.isInstalled();
     final modelFile = File(await _modelPath);
     final modelFileExists = await modelFile.exists();
     if (!modelFileExists) return false;
@@ -117,6 +124,7 @@ class LocalLlmService {
   /// instancia o proceso externo lo levantó — único camino en web) o si el
   /// modelo está descargado y podemos arrancarlo nosotros.
   Future<bool> isAvailable() async {
+    if (_useMobileBackend) return FlutterGemmaBackend.instance.isInstalled();
     final engineAlreadyUp = await LlamaServerManager.instance.isHealthy();
     if (engineAlreadyUp) return true;
     return checkModelExists();
@@ -125,6 +133,14 @@ class LocalLlmService {
   /// Descarga única del modelo Gemma 3 4B QAT Q4_0 (~2.4 GB).
   /// Acción 100% controlada por el usuario y opcional.
   Future<void> downloadModel() async {
+    if (_useMobileBackend) {
+      await FlutterGemmaBackend.instance.downloadModel(
+        onProgress: (p) => downloadProgress.value = p,
+        onStatus: (s) => statusNotifier.value = s,
+      );
+      return;
+    }
+
     final savePath = await _modelPath;
 
     final alreadyDownloaded = await checkModelExists();
@@ -183,6 +199,13 @@ class LocalLlmService {
   Future<void> _doInit() async {
     statusNotifier.value = 'Inicializando IA local en el dispositivo…';
 
+    if (_useMobileBackend) {
+      await FlutterGemmaBackend.instance
+          .init(onStatus: (s) => statusNotifier.value = s);
+      _initialized = true;
+      return;
+    }
+
     // Si otra instancia (u otro proceso) ya dejó el motor sano con el modelo
     // cargado, reutilizarlo sin tocar disco.
     final engineAlreadyUp = await LlamaServerManager.instance.isHealthy();
@@ -216,7 +239,9 @@ class LocalLlmService {
   /// Calienta el motor en segundo plano al arrancar la app si el modelo ya
   /// está descargado, para que el primer quiz no espere la carga del modelo.
   Future<void> warmUpIfModelReady() async {
-    if (!LlamaServerManager.instance.isSupportedPlatform) return;
+    if (!_useMobileBackend && !LlamaServerManager.instance.isSupportedPlatform) {
+      return;
+    }
     try {
       final exists = await checkModelExists();
       if (!exists) return;
@@ -294,6 +319,17 @@ class LocalLlmService {
   }) async {
     if (!_initialized) {
       await initLlm();
+    }
+
+    if (_useMobileBackend) {
+      // flutter_gemma no aplica grammar JSON como llama.cpp: el prompt ya pide
+      // "responde únicamente con el JSON" y _decodeJsonObject lo sanea.
+      return FlutterGemmaBackend.instance.chat(
+        prompt,
+        temperature: temperature,
+        randomSeed: _seedRandom.nextInt(1 << 30),
+        onStatus: (s) => statusNotifier.value = s,
+      );
     }
 
     final baseUrl = LlamaServerManager.instance.baseUrl;
