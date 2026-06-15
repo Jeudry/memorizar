@@ -135,6 +135,8 @@ class MemoryDeckData {
   /// True después de que el creador aceptó la cláusula "tengo derechos sobre
   /// este contenido". Necesario para visibility != private.
   final bool rightsAcknowledged;
+  /// Grupo (carpeta) al que pertenece el mazo. null = sin grupo.
+  final String? groupId;
 
   const MemoryDeckData({
     required this.id,
@@ -146,6 +148,7 @@ class MemoryDeckData {
     this.isBible = false,
     this.visibility = DeckVisibility.private,
     this.rightsAcknowledged = false,
+    this.groupId,
   });
 
   int get retention {
@@ -162,6 +165,8 @@ class MemoryDeckData {
     String? icon,
     DeckVisibility? visibility,
     bool? rightsAcknowledged,
+    // Sentinel para poder asignar groupId a null ("sin grupo") explícitamente.
+    Object? groupId = _noChange,
   }) {
     return MemoryDeckData(
       id: id,
@@ -173,8 +178,26 @@ class MemoryDeckData {
       isBible: isBible,
       visibility: visibility ?? this.visibility,
       rightsAcknowledged: rightsAcknowledged ?? this.rightsAcknowledged,
+      groupId: groupId == _noChange ? this.groupId : groupId as String?,
     );
   }
+}
+
+const Object _noChange = Object();
+
+/// Grupo/carpeta para organizar mazos en la pestaña Mazos.
+class MemoryGroupData {
+  final String id;
+  final String name;
+  final String icon;
+  final DateTime createdAt;
+
+  const MemoryGroupData({
+    required this.id,
+    required this.name,
+    this.icon = '📁',
+    required this.createdAt,
+  });
 }
 
 const emptyCard = MemoryCardData(
@@ -353,10 +376,21 @@ class AppStore extends ChangeNotifier {
         icon: d.icon,
         createdAt: d.createdAt,
         isBible: d.isBible,
+        groupId: d.groupId,
         cards: cards,
       ));
     }
-    
+
+    final dbGroups = await db!.getAllGroups();
+    _groups
+      ..clear()
+      ..addAll(dbGroups.map((g) => MemoryGroupData(
+            id: g.id,
+            name: g.name,
+            icon: g.icon,
+            createdAt: g.createdAt,
+          )));
+
     _decks.clear();
     _decks.addAll(loadedDecks);
     if (_decks.isNotEmpty && _activeDeckId == null) {
@@ -1062,6 +1096,70 @@ class AppStore extends ChangeNotifier {
   int _currentCardPass = 0;
 
   List<MemoryDeckData> get decks => List.unmodifiable(_decks);
+  final List<MemoryGroupData> _groups = [];
+  List<MemoryGroupData> get groups => List.unmodifiable(_groups);
+
+  /// Mazos que pertenecen a [groupId] (o sin grupo si es null).
+  List<MemoryDeckData> decksInGroup(String? groupId) =>
+      _decks.where((d) => d.groupId == groupId).toList();
+
+  MemoryGroupData? groupById(String? id) {
+    if (id == null) return null;
+    for (final g in _groups) {
+      if (g.id == id) return g;
+    }
+    return null;
+  }
+
+  /// Crea un grupo nuevo y lo persiste. Devuelve su id.
+  Future<String> createGroup(String name, {String icon = '📁'}) async {
+    final clean = name.trim();
+    final id = 'grp-${DateTime.now().microsecondsSinceEpoch}';
+    final group = MemoryGroupData(
+      id: id,
+      name: clean.isEmpty ? 'Grupo' : clean,
+      icon: icon,
+      createdAt: DateTime.now(),
+    );
+    _groups.add(group);
+    notifyListeners();
+    if (enableDatabasePersistence && db != null) {
+      await db!.upsertGroup(DeckGroupsCompanion(
+        id: drift.Value(group.id),
+        name: drift.Value(group.name),
+        icon: drift.Value(group.icon),
+        createdAt: drift.Value(group.createdAt),
+      ));
+    }
+    return id;
+  }
+
+  /// Asigna (o quita, con null) el grupo de un mazo y lo persiste.
+  Future<void> assignDeckToGroup(String deckId, String? groupId) async {
+    final index = _decks.indexWhere((d) => d.id == deckId);
+    if (index < 0) return;
+    final updated = _decks[index].copyWith(groupId: groupId);
+    _decks[index] = updated;
+    notifyListeners();
+    if (enableDatabasePersistence && db != null) {
+      await _persistDeckToDatabase(updated);
+    }
+  }
+
+  /// Borra un grupo; sus mazos quedan sin grupo (no se borran).
+  Future<void> deleteGroup(String groupId) async {
+    _groups.removeWhere((g) => g.id == groupId);
+    for (var i = 0; i < _decks.length; i++) {
+      if (_decks[i].groupId == groupId) {
+        _decks[i] = _decks[i].copyWith(groupId: null);
+      }
+    }
+    notifyListeners();
+    if (enableDatabasePersistence && db != null) {
+      await db!.deleteGroup(groupId);
+    }
+  }
+
   List<BibleVerseData> get bibleVerses => List.unmodifiable(_bibleVerses);
   List<BibleVerseData> get selectedBibleVerses =>
       List.unmodifiable(_selectedBibleVerses);
@@ -1810,6 +1908,7 @@ class AppStore extends ChangeNotifier {
       icon: drift.Value(deck.icon),
       isBible: drift.Value(deck.isBible),
       createdAt: drift.Value(deck.createdAt),
+      groupId: drift.Value(deck.groupId),
     );
     await db!.upsertDeck(companion);
     for (final card in deck.cards) {
@@ -1891,6 +1990,7 @@ class AppStore extends ChangeNotifier {
     required String title,
     required String icon,
     required List<MemoryCardData> cards,
+    String? groupId,
   }) {
     final cleanCards = cards
         .where(
@@ -1919,6 +2019,7 @@ class AppStore extends ChangeNotifier {
       createdAt: DateTime.now(),
       cards: cleanCards,
       isBible: looksLikeBible,
+      groupId: groupId,
     );
     _decks.insert(0, deck);
     setActiveDeck(deck.id);

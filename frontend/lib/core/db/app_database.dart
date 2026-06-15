@@ -10,6 +10,19 @@ class Decks extends Table {
   TextColumn get icon => text()();
   BoolColumn get isBible => boolean().withDefault(const Constant(false))();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  // Grupo (carpeta) opcional al que pertenece el mazo. null = sin grupo.
+  TextColumn get groupId => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Grupos/carpetas para organizar mazos. Un mazo pertenece a 0 o 1 grupo.
+class DeckGroups extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text()();
+  TextColumn get icon => text().withDefault(const Constant('📁'))();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -48,13 +61,13 @@ class DailyActivity extends Table {
   Set<Column> get primaryKey => {day};
 }
 
-@DriftDatabase(tables: [Decks, Cards, DailyActivity])
+@DriftDatabase(tables: [Decks, Cards, DailyActivity, DeckGroups])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(impl.connect());
   AppDatabase.memory() : super(impl.connect(inMemory: true));
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -67,6 +80,10 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(cards, cards.intervalDays);
             await m.addColumn(cards, cards.repetitions);
             await m.addColumn(cards, cards.nextReviewAt);
+          }
+          if (from < 4) {
+            await m.createTable(deckGroups);
+            await m.addColumn(decks, decks.groupId);
           }
         },
       );
@@ -136,10 +153,24 @@ class AppDatabase extends _$AppDatabase {
             ..orderBy([(t) => OrderingTerm.desc(t.day)]))
           .get();
 
+  // Group queries
+  Future<List<DeckGroup>> getAllGroups() => select(deckGroups).get();
+
+  Future<void> upsertGroup(DeckGroupsCompanion group) =>
+      into(deckGroups).insertOnConflictUpdate(group);
+
+  /// Borra un grupo y desasigna sus mazos (quedan sin grupo, no se borran).
+  Future<void> deleteGroup(String groupId) async {
+    await (update(decks)..where((d) => d.groupId.equals(groupId)))
+        .write(const DecksCompanion(groupId: Value(null)));
+    await (delete(deckGroups)..where((g) => g.id.equals(groupId))).go();
+  }
+
   Future<void> clearAll() async {
     await delete(cards).go();
     await delete(decks).go();
     await delete(dailyActivity).go();
+    await delete(deckGroups).go();
   }
 }
 
