@@ -144,14 +144,79 @@ class RepasarScreen extends StatelessWidget {
               urgent: group.avgRetention < 60,
               onTap: () => Navigator.pushNamed(context, AppRoutes.flashcards),
             ),
-          const SectionHead('Mazos con retención baja'),
-          for (final deck in store.decks.take(3))
-            _DeckRetention(
-              deck.icon,
-              deck.title,
-              '${deck.weakCount} débiles · ${deck.cards.length} tarjetas',
-              deck.retention / 100,
+          const SectionHead('Tus mazos'),
+          ..._buildGroupedDecks(store),
+        ],
+      ),
+    );
+  }
+
+  /// Lista los mazos agrupados por carpeta: cada grupo con su encabezado, y
+  /// al final los mazos sin grupo. Un mazo pertenece a 0 o 1 grupo.
+  List<Widget> _buildGroupedDecks(AppStore store) {
+    Widget deckTile(MemoryDeckData deck) => _DeckRetention(
+          deck.icon,
+          deck.title,
+          '${deck.weakCount} débiles · ${deck.cards.length} tarjetas',
+          deck.retention / 100,
+        );
+
+    final widgets = <Widget>[];
+    for (final group in store.groups) {
+      final groupDecks = store.decksInGroup(group.id);
+      if (groupDecks.isEmpty) continue;
+      widgets.add(_GroupHeader('${group.icon} ${group.name}', groupDecks.length));
+      widgets.addAll(groupDecks.map(deckTile));
+    }
+    final ungrouped = store.decksInGroup(null);
+    if (ungrouped.isNotEmpty) {
+      // Solo mostramos el encabezado "Sin grupo" si hay grupos arriba.
+      if (store.groups.any((g) => store.decksInGroup(g.id).isNotEmpty)) {
+        widgets.add(_GroupHeader('📂 Sin grupo', ungrouped.length));
+      }
+      widgets.addAll(ungrouped.map(deckTile));
+    }
+    return widgets;
+  }
+}
+
+class _GroupHeader extends StatelessWidget {
+  final String label;
+  final int count;
+
+  const _GroupHeader(this.label, this.count);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10, bottom: 6),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              color: RefColors.ink,
             ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+            decoration: BoxDecoration(
+              color: HtmlRefColors.glassSoft,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: HtmlRefColors.glassBorder),
+            ),
+            child: Text(
+              '$count',
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                color: RefColors.muted,
+              ),
+            ),
+          ),
         ],
       ),
     );
