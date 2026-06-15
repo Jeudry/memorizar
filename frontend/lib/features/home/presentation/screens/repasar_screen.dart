@@ -145,7 +145,7 @@ class RepasarScreen extends StatelessWidget {
               onTap: () => Navigator.pushNamed(context, AppRoutes.flashcards),
             ),
           const SectionHead('Tus mazos'),
-          ..._buildGroupedDecks(store),
+          ..._buildGroupedDecks(context, store),
         ],
       ),
     );
@@ -153,12 +153,13 @@ class RepasarScreen extends StatelessWidget {
 
   /// Lista los mazos agrupados por carpeta: cada grupo con su encabezado, y
   /// al final los mazos sin grupo. Un mazo pertenece a 0 o 1 grupo.
-  List<Widget> _buildGroupedDecks(AppStore store) {
+  List<Widget> _buildGroupedDecks(BuildContext context, AppStore store) {
     Widget deckTile(MemoryDeckData deck) => _DeckRetention(
           deck.icon,
           deck.title,
           '${deck.weakCount} débiles · ${deck.cards.length} tarjetas',
           deck.retention / 100,
+          onExport: () => exportDeckToCsv(context, deck),
         );
 
     final widgets = <Widget>[];
@@ -381,8 +382,10 @@ class _DeckRetention extends StatelessWidget {
   final String title;
   final String subtitle;
   final double value;
+  final VoidCallback? onExport;
 
-  const _DeckRetention(this.emoji, this.title, this.subtitle, this.value);
+  const _DeckRetention(this.emoji, this.title, this.subtitle, this.value,
+      {this.onExport});
 
   @override
   Widget build(BuildContext context) {
@@ -411,6 +414,21 @@ class _DeckRetention extends StatelessWidget {
               ],
             ),
           ),
+          if (onExport != null)
+            GestureDetector(
+              onTap: onExport,
+              child: Container(
+                margin: const EdgeInsets.only(left: 8),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: RefColors.glassStrong,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: RefColors.border),
+                ),
+                child: const Icon(Icons.ios_share_rounded,
+                    size: 17, color: RefColors.cyan),
+              ),
+            ),
         ],
       ),
     );
