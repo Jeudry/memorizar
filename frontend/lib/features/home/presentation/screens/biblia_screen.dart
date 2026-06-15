@@ -2220,34 +2220,6 @@ List<String> _studyWords(String text) {
   return cleaned.split(' ');
 }
 
-List<MemoryCardData> _quizOptions(MemoryDeckData deck, MemoryCardData correct) {
-  final pool = deck.cards.where((item) => item.id != correct.id).toList();
-  final rng = math.Random(correct.id.hashCode);
-  pool.shuffle(rng);
-  final distractors = pool.take(3).toList();
-  if (distractors.length < 3) {
-    distractors.addAll([
-      MemoryCardData(
-        id: 'distractor-front',
-        front: 'Idea cercana',
-        back: 'Una respuesta parecida, pero no corresponde a ${correct.front}.',
-        source: 'Distractor',
-        icon: correct.icon,
-      ),
-      MemoryCardData(
-        id: 'distractor-partial',
-        front: 'Fragmento incompleto',
-        back: _firstWords(correct.back, 4),
-        source: 'Distractor',
-        icon: correct.icon,
-      ),
-    ]);
-  }
-  final options = [correct, ...distractors.take(3)];
-  options.shuffle(rng);
-  return options;
-}
-
 String _firstWords(String text, int count) {
   final words = _studyWords(text);
   return words.take(count).join(' ');
