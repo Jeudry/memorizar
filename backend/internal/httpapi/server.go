@@ -65,6 +65,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/push/register-token", s.withAuth(s.handlePushRegisterToken))
 	s.mux.HandleFunc("/v1/community/imports", s.withAuth(s.handleCommunityImport))
 	s.mux.HandleFunc("/v1/community/decks/like", s.withAuth(s.handleCommunityLike))
+	s.mux.HandleFunc("/v1/community/liked", s.withAuth(s.handleCommunityLiked))
 	s.mux.HandleFunc("/v1/social/follow", s.withAuth(s.handleFollow))
 	// Endpoint público (sin auth) para resolver deeplinks `memorizar://deck/ID`.
 	// Solo expone shares con IsPublic=true.
@@ -381,6 +382,20 @@ func (s *Server) handleCommunityMine(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 	decks, err := s.service.ListOwnedCommunityDecks(userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"decks": decks})
+}
+
+// handleCommunityLiked lista los decks que el usuario marcó con me gusta.
+func (s *Server) handleCommunityLiked(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	decks, err := s.service.ListLikedCommunityDecks(userID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

@@ -23,6 +23,8 @@ const (
 	EventDeckShared      EventType = "deck_shared"
 	EventReactionAdded   EventType = "reaction_added"
 	EventCommentAdded    EventType = "comment_added"
+	EventDeckLiked       EventType = "deck_liked"
+	EventFollowed        EventType = "followed"
 )
 
 type Notification struct {
