@@ -229,18 +229,18 @@ const flowScreens = [
   ExerciseFlowData('03-leer-voz', 'Leer en voz', 'Activa memoria auditiva'),
   ExerciseFlowData('04-escuchar-voz', 'Escuchar voz', 'Reconoce sin mirar'),
   ExerciseFlowData('05-bloques', 'Bloques', 'Ordena piezas clave'),
-  ExerciseFlowData('06-completar-n1', 'Completar N1', 'Recuerdo con apoyo'),
+  ExerciseFlowData('06-completar-n1', 'Elige la palabra · N1', 'Recuerdo con apoyo'),
   ExerciseFlowData(
     '07-primera-letra-n1',
     'Primera letra N1',
     'Menos pistas, más memoria',
   ),
   ExerciseFlowData('17-niebla-n2', 'Niebla N2', 'Recitación con difuminado medio'),
-  ExerciseFlowData('10-completar-n2', 'Completar N2', 'Recuerdo más fuerte'),
+  ExerciseFlowData('10-completar-n2', 'Elige la palabra · N2', 'Recuerdo más fuerte'),
   ExerciseFlowData('11-primera-letra-n2', 'Primera letra N2', 'Casi sin ayuda'),
   ExerciseFlowData('09-quiz', 'Quiz', 'Elige la respuesta correcta'),
   ExerciseFlowData('09-quiz-avanzado', 'Quiz Avanzado', 'Desafía tu teología con IA de razonamiento'),
-  ExerciseFlowData('12-completar-n3', 'Completado N3', 'Más huecos visibles'),
+  ExerciseFlowData('12-completar-n3', 'Elige la palabra · N3', 'Más huecos visibles'),
   ExerciseFlowData(
     '13-primera-letra-n3',
     'Iniciales N3',
@@ -427,6 +427,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   Timer? _completionTimer;
   int _completionSecondsLeft = 0;
   bool _completionLost = false;
+  /// Pool de distractores tramposos generado por la IA local para el ejercicio
+  /// "Elige la palabra correcta". Si está vacío/null, el banco cae a palabras
+  /// random del versículo (comportamiento clásico / fallback sin IA).
+  List<String>? _aiDistractorPool;
+  String? _aiDistractorCardId;
+  bool _aiDistractorLoading = false;
   String? _letterCardId;
   int _letterLevel = 1;
   List<String> _letterTargets = [];
@@ -1096,6 +1102,38 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     _checked = false;
     final seconds = _completionTimeFor(level, _completionTargets.length);
     _startCompletionTimer(seconds);
+  }
+
+  /// Carga (una vez por tarjeta) el pool de distractores tramposos de la IA
+  /// local para el ejercicio "Elige la palabra correcta". Si la IA no está
+  /// disponible o falla, el banco se queda con palabras random del versículo.
+  void _ensureAiDistractors(MemoryCardData card) {
+    if (_aiDistractorCardId == card.id) return;
+    _aiDistractorCardId = card.id;
+    _aiDistractorPool = null;
+    _aiDistractorLoading = false;
+    final llm = LocalLlmService.instance;
+    () async {
+      final available = await llm.isAvailable();
+      if (!available || !mounted || _aiDistractorCardId != card.id) return;
+      setState(() => _aiDistractorLoading = true);
+      try {
+        if (!llm.isReady) await llm.initLlm();
+        final pool = await llm.generateCompletionDistractors(
+          reference: card.front,
+          verseText: card.back,
+        );
+        if (!mounted || _aiDistractorCardId != card.id) return;
+        setState(() {
+          _aiDistractorPool = pool;
+          _aiDistractorLoading = false;
+        });
+      } catch (e) {
+        if (!mounted || _aiDistractorCardId != card.id) return;
+        setState(() => _aiDistractorLoading = false);
+        debugPrint('Distractores IA fallaron, usando random: $e');
+      }
+    }();
   }
 
   bool _completionComplete() {
@@ -2412,6 +2450,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       final level = _completionLevelForSlug(slug);
       final isHarder = level >= 2;
       _ensureCompletionState(card.id, card.back, level);
+      _ensureAiDistractors(card);
       final activeTarget = _completionTargets.isEmpty
           ? _targetWord(card.back, level: level)
           : _completionTargets[_activeCompletionIndex.clamp(
@@ -2422,6 +2461,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         card.back,
         activeTarget,
         seed: _completionSeed,
+        aiPool: _aiDistractorPool,
       );
       final hasInput = _hasCompletionInput();
       final complete = _completionComplete();
@@ -2503,6 +2543,28 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                       letterSpacing: 1.4,
                     ),
                   ),
+                  if (_aiDistractorLoading) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: RefColors.violet),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'La IA está generando opciones más difíciles…',
+                          style: TextStyle(
+                              color: RefColors.violet,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
