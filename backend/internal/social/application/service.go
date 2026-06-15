@@ -800,10 +800,53 @@ func (s *Service) ResolveDeckReport(reportID, resolution string) (*domain.DeckRe
 
 // CommunityCreatorStat resume a un autor del catálogo comunitario.
 type CommunityCreatorStat struct {
-	UserID      string `json:"userId"`
-	DisplayName string `json:"displayName"`
-	DeckCount   int    `json:"deckCount"`
-	ImportCount int    `json:"importCount"`
+	UserID        string `json:"userId"`
+	DisplayName   string `json:"displayName"`
+	DeckCount     int    `json:"deckCount"`
+	ImportCount   int    `json:"importCount"`
+	FollowerCount int    `json:"followerCount"`
+	FollowedByMe  bool   `json:"followedByMe"`
+}
+
+// ToggleFollow alterna que `followerID` siga a `creatorID` (relación de una
+// vía, sin aceptación). Devuelve el nuevo estado y el total de seguidores.
+func (s *Service) ToggleFollow(followerID, creatorID string) (bool, int, error) {
+	creatorID = strings.TrimSpace(creatorID)
+	if creatorID == "" || creatorID == followerID {
+		return false, 0, ErrUserNotFound
+	}
+	creator, err := s.repo.FindUserByID(creatorID)
+	if err != nil {
+		return false, 0, err
+	}
+	if creator == nil {
+		return false, 0, ErrUserNotFound
+	}
+	following, err := s.repo.ListFollowingByUser(followerID)
+	if err != nil {
+		return false, 0, err
+	}
+	already := false
+	for _, id := range following {
+		if id == creatorID {
+			already = true
+			break
+		}
+	}
+	if already {
+		if err := s.repo.DeleteFollow(followerID, creatorID); err != nil {
+			return false, 0, err
+		}
+	} else {
+		if err := s.repo.SaveFollow(followerID, creatorID, s.now().UTC()); err != nil {
+			return false, 0, err
+		}
+	}
+	counts, err := s.repo.CountFollowers([]string{creatorID})
+	if err != nil {
+		return false, 0, err
+	}
+	return !already, counts[creatorID], nil
 }
 
 // CommunityCategoryStat agrupa los decks públicos por su icono (la señal de
@@ -932,13 +975,33 @@ func (s *Service) CommunityOverview(userID string) (*CommunityOverview, error) {
 		agg.deckCount++
 		agg.importCount += totalCounts[deck.ID]
 	}
+	creatorIDs := make([]string, 0, len(byOwner))
+	for ownerID := range byOwner {
+		creatorIDs = append(creatorIDs, ownerID)
+	}
+	followerCounts, err := s.repo.CountFollowers(creatorIDs)
+	if err != nil {
+		return nil, err
+	}
+	followedByMe := map[string]bool{}
+	if userID != "" {
+		following, err := s.repo.ListFollowingByUser(userID)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range following {
+			followedByMe[id] = true
+		}
+	}
 	creators := make([]CommunityCreatorStat, 0, len(byOwner))
 	for ownerID, agg := range byOwner {
 		creators = append(creators, CommunityCreatorStat{
-			UserID:      ownerID,
-			DisplayName: s.userDisplay(ownerID),
-			DeckCount:   agg.deckCount,
-			ImportCount: agg.importCount,
+			UserID:        ownerID,
+			DisplayName:   s.userDisplay(ownerID),
+			DeckCount:     agg.deckCount,
+			ImportCount:   agg.importCount,
+			FollowerCount: followerCounts[ownerID],
+			FollowedByMe:  followedByMe[ownerID],
 		})
 	}
 	sort.SliceStable(creators, func(i, j int) bool {

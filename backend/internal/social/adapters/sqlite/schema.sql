@@ -94,6 +94,14 @@ CREATE TABLE IF NOT EXISTS deck_likes (
 );
 CREATE INDEX IF NOT EXISTS idx_deck_likes_share ON deck_likes(share_id);
 
+CREATE TABLE IF NOT EXISTS follows (
+    follower_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    creator_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL,
+    PRIMARY KEY (follower_id, creator_id)
+);
+CREATE INDEX IF NOT EXISTS idx_follows_creator ON follows(creator_id);
+
 CREATE TABLE IF NOT EXISTS deck_reports (
     id           TEXT PRIMARY KEY,
     deck_id      TEXT NOT NULL,

@@ -65,6 +65,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/push/register-token", s.withAuth(s.handlePushRegisterToken))
 	s.mux.HandleFunc("/v1/community/imports", s.withAuth(s.handleCommunityImport))
 	s.mux.HandleFunc("/v1/community/decks/like", s.withAuth(s.handleCommunityLike))
+	s.mux.HandleFunc("/v1/social/follow", s.withAuth(s.handleFollow))
 	// Endpoint público (sin auth) para resolver deeplinks `memorizar://deck/ID`.
 	// Solo expone shares con IsPublic=true.
 	s.mux.HandleFunc("/v1/public/shares/", s.handlePublicShare)
@@ -550,6 +551,31 @@ func (s *Server) handleCommunityReportResolve(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, report)
+}
+
+// handleFollow alterna que el usuario siga a un creador (relación de una vía).
+func (s *Server) handleFollow(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		CreatorID string `json:"creatorId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	following, count, err := s.service.ToggleFollow(userID, body.CreatorID)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, application.ErrUserNotFound) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"following": following, "followerCount": count})
 }
 
 // handleCommunityLike alterna el like del usuario sobre un deck público.

@@ -20,6 +20,7 @@ type state struct {
 	SharedResources   map[string]domain.SharedResource   `json:"sharedResources"`
 	ShareImports      map[string]map[string]domain.ShareImport `json:"shareImports"`
 	DeckLikes         map[string]map[string]time.Time          `json:"deckLikes"`
+	Follows           map[string]map[string]time.Time          `json:"follows"`
 	DeckReports       map[string]domain.DeckReport       `json:"deckReports"`
 	AnalyticsEvents   []domain.AnalyticsEvent            `json:"analyticsEvents"`
 	PremiumSubs       map[string]domain.PremiumSubscription `json:"premiumSubs"`
@@ -47,6 +48,7 @@ func NewRepository(path string) (*Repository, error) {
 			SharedResources:   map[string]domain.SharedResource{},
 			ShareImports:      map[string]map[string]domain.ShareImport{},
 		DeckLikes:         map[string]map[string]time.Time{},
+		Follows:           map[string]map[string]time.Time{},
 			DeckReports:       map[string]domain.DeckReport{},
 			Reactions:         map[string]domain.FeedReaction{},
 			Comments:          map[string]domain.FeedComment{},
@@ -339,6 +341,54 @@ func (r *Repository) ListLikedShareIDsByUser(userID string) ([]string, error) {
 		}
 	}
 	return liked, nil
+}
+
+func (r *Repository) SaveFollow(followerID, creatorID string, createdAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state.Follows == nil {
+		r.state.Follows = map[string]map[string]time.Time{}
+	}
+	byFollower, ok := r.state.Follows[creatorID]
+	if !ok {
+		byFollower = map[string]time.Time{}
+		r.state.Follows[creatorID] = byFollower
+	}
+	byFollower[followerID] = createdAt
+	return r.persistLocked()
+}
+
+func (r *Repository) DeleteFollow(followerID, creatorID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if byFollower, ok := r.state.Follows[creatorID]; ok {
+		delete(byFollower, followerID)
+	}
+	return r.persistLocked()
+}
+
+func (r *Repository) CountFollowers(creatorIDs []string) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	counts := map[string]int{}
+	for _, creatorID := range creatorIDs {
+		if byFollower, ok := r.state.Follows[creatorID]; ok {
+			counts[creatorID] = len(byFollower)
+		}
+	}
+	return counts, nil
+}
+
+func (r *Repository) ListFollowingByUser(followerID string) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	following := []string{}
+	for creatorID, byFollower := range r.state.Follows {
+		if _, ok := byFollower[followerID]; ok {
+			following = append(following, creatorID)
+		}
+	}
+	return following, nil
 }
 
 func (r *Repository) ListPublicSharedResourcesByUserIDs(userIDs []string) ([]domain.SharedResource, error) {

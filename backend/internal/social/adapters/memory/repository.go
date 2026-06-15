@@ -18,6 +18,7 @@ type Repository struct {
 	sharedResources   map[string]domain.SharedResource
 	shareImports      map[string]map[string]domain.ShareImport
 	deckLikes         map[string]map[string]time.Time
+	follows           map[string]map[string]time.Time
 	deckReports       map[string]domain.DeckReport
 	analyticsEvents   []domain.AnalyticsEvent
 	premiumSubs       map[string]domain.PremiumSubscription
@@ -37,6 +38,7 @@ func NewRepository() *Repository {
 		sharedResources:   map[string]domain.SharedResource{},
 		shareImports:      map[string]map[string]domain.ShareImport{},
 		deckLikes:         map[string]map[string]time.Time{},
+		follows:           map[string]map[string]time.Time{},
 		deckReports:       map[string]domain.DeckReport{},
 		reactions:         map[string]domain.FeedReaction{},
 		comments:          map[string]domain.FeedComment{},
@@ -302,6 +304,52 @@ func (r *Repository) ListLikedShareIDsByUser(userID string) ([]string, error) {
 		}
 	}
 	return liked, nil
+}
+
+// follows[creatorID][followerID] = createdAt
+func (r *Repository) SaveFollow(followerID, creatorID string, createdAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	byFollower, ok := r.follows[creatorID]
+	if !ok {
+		byFollower = map[string]time.Time{}
+		r.follows[creatorID] = byFollower
+	}
+	byFollower[followerID] = createdAt
+	return nil
+}
+
+func (r *Repository) DeleteFollow(followerID, creatorID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if byFollower, ok := r.follows[creatorID]; ok {
+		delete(byFollower, followerID)
+	}
+	return nil
+}
+
+func (r *Repository) CountFollowers(creatorIDs []string) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	counts := map[string]int{}
+	for _, creatorID := range creatorIDs {
+		if byFollower, ok := r.follows[creatorID]; ok {
+			counts[creatorID] = len(byFollower)
+		}
+	}
+	return counts, nil
+}
+
+func (r *Repository) ListFollowingByUser(followerID string) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	following := []string{}
+	for creatorID, byFollower := range r.follows {
+		if _, ok := byFollower[followerID]; ok {
+			following = append(following, creatorID)
+		}
+	}
+	return following, nil
 }
 
 func (r *Repository) SaveShareImport(shareImport domain.ShareImport) error {

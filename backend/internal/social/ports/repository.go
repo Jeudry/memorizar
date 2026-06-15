@@ -43,6 +43,11 @@ type Repository interface {
 	CountDeckLikes(shareIDs []string) (map[string]int, error)
 	ListLikedShareIDsByUser(userID string) ([]string, error)
 
+	SaveFollow(followerID, creatorID string, createdAt time.Time) error
+	DeleteFollow(followerID, creatorID string) error
+	CountFollowers(creatorIDs []string) (map[string]int, error)
+	ListFollowingByUser(followerID string) ([]string, error)
+
 	SaveDeckReport(report domain.DeckReport) error
 	FindDeckReportByID(reportID string) (*domain.DeckReport, error)
 	ListDeckReports() ([]domain.DeckReport, error)

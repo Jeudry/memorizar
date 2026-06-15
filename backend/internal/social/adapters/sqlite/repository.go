@@ -598,6 +598,74 @@ func (r *Repository) ListLikedShareIDsByUser(userID string) ([]string, error) {
 	return liked, nil
 }
 
+// ─── Follows (seguir creadores) ──────────────────────────────────────────
+
+func (r *Repository) SaveFollow(followerID, creatorID string, createdAt time.Time) error {
+	_, err := r.db.Exec(`
+		INSERT OR IGNORE INTO follows (follower_id, creator_id, created_at)
+		VALUES (?, ?, ?)`,
+		followerID, creatorID, formatTime(createdAt),
+	)
+	return err
+}
+
+func (r *Repository) DeleteFollow(followerID, creatorID string) error {
+	_, err := r.db.Exec(
+		`DELETE FROM follows WHERE follower_id = ? AND creator_id = ?`,
+		followerID, creatorID,
+	)
+	return err
+}
+
+func (r *Repository) CountFollowers(creatorIDs []string) (map[string]int, error) {
+	counts := map[string]int{}
+	if len(creatorIDs) == 0 {
+		return counts, nil
+	}
+	placeholders := strings.Repeat("?,", len(creatorIDs)-1) + "?"
+	args := make([]any, len(creatorIDs))
+	for i, v := range creatorIDs {
+		args[i] = v
+	}
+	rows, err := r.db.Query(`
+		SELECT creator_id, COUNT(*)
+		FROM follows
+		WHERE creator_id IN (`+placeholders+`)
+		GROUP BY creator_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var creatorID string
+		var count int
+		if err := rows.Scan(&creatorID, &count); err != nil {
+			return nil, err
+		}
+		counts[creatorID] = count
+	}
+	return counts, nil
+}
+
+func (r *Repository) ListFollowingByUser(followerID string) ([]string, error) {
+	rows, err := r.db.Query(
+		`SELECT creator_id FROM follows WHERE follower_id = ?`, followerID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	following := []string{}
+	for rows.Next() {
+		var creatorID string
+		if err := rows.Scan(&creatorID); err != nil {
+			return nil, err
+		}
+		following = append(following, creatorID)
+	}
+	return following, nil
+}
+
 // ─── Deck reports (moderación) ───────────────────────────────────────────
 
 func (r *Repository) SaveDeckReport(report domain.DeckReport) error {

@@ -684,6 +684,9 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
             '${(creator['deckCount'] as int?) ?? 0} ${((creator['deckCount'] as int?) ?? 0) == 1 ? 'mazo publicado' : 'mazos publicados'}',
             '${(creator['importCount'] as int?) ?? 0} 📥',
             cyan: true,
+            creatorId: (creator['userId'] as String?) ?? '',
+            following: (creator['followedByMe'] as bool?) ?? false,
+            followerCount: (creator['followerCount'] as int?) ?? 0,
           ),
       ],
     ];
@@ -1101,12 +1104,15 @@ class _CommunityHitState extends State<_CommunityHit> {
   }
 }
 
-class _Creator extends StatelessWidget {
+class _Creator extends StatefulWidget {
   final String initial;
   final String title;
   final String subtitle;
   final String stats;
   final bool cyan;
+  final String creatorId;
+  final bool following;
+  final int followerCount;
 
   const _Creator(
     this.initial,
@@ -1114,10 +1120,60 @@ class _Creator extends StatelessWidget {
     this.subtitle,
     this.stats, {
     this.cyan = false,
+    this.creatorId = '',
+    this.following = false,
+    this.followerCount = 0,
   });
 
   @override
+  State<_Creator> createState() => _CreatorState();
+}
+
+class _CreatorState extends State<_Creator> {
+  late bool _following = widget.following;
+  late int _followerCount = widget.followerCount;
+  bool _busy = false;
+
+  Future<void> _toggleFollow() async {
+    if (_busy || widget.creatorId.isEmpty) return;
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inicia sesión para seguir creadores.')),
+      );
+      return;
+    }
+    final prevFollowing = _following;
+    final prevCount = _followerCount;
+    setState(() {
+      _busy = true;
+      _following = !prevFollowing;
+      _followerCount = prevCount + (_following ? 1 : -1);
+    });
+    try {
+      final res = await store.api.toggleFollow(widget.creatorId);
+      if (!mounted) return;
+      setState(() {
+        _following = (res['following'] as bool?) ?? _following;
+        _followerCount = (res['followerCount'] as int?) ?? _followerCount;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _following = prevFollowing;
+        _followerCount = prevCount;
+      });
+      debugPrint('Error toggling follow: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final subtitle = _followerCount > 0
+        ? '${widget.subtitle} · $_followerCount ${_followerCount == 1 ? 'seguidor' : 'seguidores'}'
+        : widget.subtitle;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Glass(
@@ -1126,10 +1182,10 @@ class _Creator extends StatelessWidget {
         child: Row(
           children: [
             Fav(
-              initial,
-              gradient: cyan ? RefColors.cool : RefColors.primary,
+              widget.initial,
+              gradient: widget.cyan ? RefColors.cool : RefColors.primary,
               size: 42,
-              online: cyan,
+              online: widget.cyan,
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -1137,7 +1193,7 @@ class _Creator extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    title,
+                    widget.title,
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 13,
@@ -1153,14 +1209,39 @@ class _Creator extends StatelessWidget {
                 ],
               ),
             ),
-            Text(
-              stats,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: RefColors.muted,
+            if (widget.creatorId.isNotEmpty)
+              GestureDetector(
+                onTap: _toggleFollow,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    gradient: _following ? null : RefColors.primary,
+                    color: _following ? RefColors.glassStrong : null,
+                    borderRadius: BorderRadius.circular(10),
+                    border: _following
+                        ? Border.all(color: RefColors.border)
+                        : null,
+                  ),
+                  child: Text(
+                    _following ? 'Siguiendo' : '+ Seguir',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      color: _following ? RefColors.muted : Colors.white,
+                    ),
+                  ),
+                ),
+              )
+            else
+              Text(
+                widget.stats,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: RefColors.muted,
+                ),
               ),
-            ),
           ],
         ),
       ),

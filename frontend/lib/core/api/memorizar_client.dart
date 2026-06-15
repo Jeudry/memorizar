@@ -477,6 +477,17 @@ class MemorizarClient {
     return list.cast<Map<String, dynamic>>();
   }
 
+  /// Alterna seguir/dejar de seguir a un creador. Devuelve
+  /// {following, followerCount} con el estado resultante.
+  Future<Map<String, dynamic>> toggleFollow(String creatorId) async {
+    final r = await _http.post(
+      _uri('/v1/social/follow'),
+      headers: _headers,
+      body: jsonEncode({'creatorId': creatorId}),
+    );
+    return _decode(r);
+  }
+
   /// Alterna el "me gusta" del usuario sobre un deck comunitario.
   /// Devuelve {liked, likeCount} con el estado resultante.
   Future<Map<String, dynamic>> toggleDeckLike(String shareId) async {
