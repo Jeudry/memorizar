@@ -491,6 +491,11 @@ func (s *Server) handleAnalyticsSummary(w http.ResponseWriter, r *http.Request, 
 func (s *Server) handleCommunityReports(w http.ResponseWriter, r *http.Request, userID string) {
 	switch r.Method {
 	case http.MethodGet:
+		// Listar reportes es una acción de moderación: gate por rol.
+		if !s.service.IsModerator(userID) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "moderator role required"})
+			return
+		}
 		reports, err := s.service.ListDeckReports()
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -518,6 +523,11 @@ func (s *Server) handleCommunityReports(w http.ResponseWriter, r *http.Request, 
 func (s *Server) handleCommunityReportResolve(w http.ResponseWriter, r *http.Request, userID string) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	// Resolver un reporte solo lo puede hacer un moderador.
+	if !s.service.IsModerator(userID) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "moderator role required"})
 		return
 	}
 	var body struct {

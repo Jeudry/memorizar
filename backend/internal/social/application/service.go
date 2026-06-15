@@ -45,6 +45,10 @@ type Service struct {
 	repo     ports.Repository
 	now      func() time.Time
 	notifier notify.Notifier
+	// moderatorEmails es una allowlist (lowercase) de correos con permiso de
+	// moderación, inyectada desde env. Complementa el flag persistido
+	// User.IsModerator para que se pueda promover sin tocar la base.
+	moderatorEmails map[string]bool
 }
 
 func NewService(repo ports.Repository, opts ...Option) *Service {
@@ -78,6 +82,40 @@ func WithClock(now func() time.Time) Option {
 			s.now = now
 		}
 	}
+}
+
+// WithModeratorEmails registra la allowlist de correos que pueden moderar.
+// Se normaliza a lowercase y se ignoran entradas vacías.
+func WithModeratorEmails(emails []string) Option {
+	return func(s *Service) {
+		if s.moderatorEmails == nil {
+			s.moderatorEmails = map[string]bool{}
+		}
+		for _, e := range emails {
+			e = strings.ToLower(strings.TrimSpace(e))
+			if e != "" {
+				s.moderatorEmails[e] = true
+			}
+		}
+	}
+}
+
+// IsModerator decide si un usuario puede operar la cola de moderación.
+// Verdadero si su correo está en la allowlist de env o si el registro
+// persistido tiene el flag IsModerator.
+func (s *Service) IsModerator(userID string) bool {
+	user, err := s.repo.FindUserByID(userID)
+	if err != nil || user == nil {
+		return false
+	}
+	if user.IsModerator {
+		return true
+	}
+	if s.moderatorEmails != nil &&
+		s.moderatorEmails[strings.ToLower(strings.TrimSpace(user.Email))] {
+		return true
+	}
+	return false
 }
 
 // notifySafe envuelve s.notifier.Notify en una guarda nil — los seeds en
@@ -183,7 +221,7 @@ func (s *Service) SocialLogin(input SocialLoginInput) (*SocialLoginOutput, error
 		return nil, err
 	}
 
-	return &SocialLoginOutput{User: user.Sanitize(), Session: *session}, nil
+	return &SocialLoginOutput{User: s.withModeratorFlag(*user).Sanitize(), Session: *session}, nil
 }
 
 // createSession crea + persiste un Session token con TTL 30 días.
@@ -211,7 +249,23 @@ func (s *Service) Authenticate(token string) (*domain.User, error) {
 }
 
 func (s *Service) GetUser(userID string) (*domain.User, error) {
-	return s.repo.FindUserByID(strings.TrimSpace(userID))
+	user, err := s.repo.FindUserByID(strings.TrimSpace(userID))
+	if err != nil || user == nil {
+		return user, err
+	}
+	decorated := s.withModeratorFlag(*user)
+	return &decorated, nil
+}
+
+// withModeratorFlag devuelve una copia del usuario con IsModerator calculado
+// a partir de la allowlist de env (sin persistir). Se aplica en los límites
+// de lectura para que el cliente sepa si debe mostrar la cola de moderación.
+func (s *Service) withModeratorFlag(user domain.User) domain.User {
+	if !user.IsModerator && s.moderatorEmails != nil &&
+		s.moderatorEmails[strings.ToLower(strings.TrimSpace(user.Email))] {
+		user.IsModerator = true
+	}
+	return user
 }
 
 func (s *Service) RequestFriend(requesterID, addresseeID string) (*domain.Friendship, error) {
@@ -1568,7 +1622,7 @@ func (s *Service) RegisterEmail(input EmailRegisterInput) (*SocialLoginOutput, e
 	if err != nil {
 		return nil, err
 	}
-	return &SocialLoginOutput{User: user.Sanitize(), Session: *session}, nil
+	return &SocialLoginOutput{User: s.withModeratorFlag(user).Sanitize(), Session: *session}, nil
 }
 
 func (s *Service) LoginEmail(input EmailLoginInput) (*SocialLoginOutput, error) {
@@ -1587,7 +1641,7 @@ func (s *Service) LoginEmail(input EmailLoginInput) (*SocialLoginOutput, error) 
 	if err != nil {
 		return nil, err
 	}
-	return &SocialLoginOutput{User: user.Sanitize(), Session: *session}, nil
+	return &SocialLoginOutput{User: s.withModeratorFlag(*user).Sanitize(), Session: *session}, nil
 }
 
 // UpdateProfileInput permite editar nombre, avatar y locale del usuario

@@ -46,8 +46,12 @@ type User struct {
 	PasswordHash  string    `json:"-"`
 	Locale        string    `json:"locale,omitempty"`
 	EmailVerified bool      `json:"emailVerified"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	// IsModerator habilita la cola de moderación de comunidad. Se concede
+	// vía allowlist de correos (MEMORIZAR_MODERATOR_EMAILS) o seteando el
+	// campo persistido; el gate vive en application.Service.IsModerator.
+	IsModerator bool      `json:"isModerator"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 // Sanitize devuelve una copia del User sin campos sensibles.
