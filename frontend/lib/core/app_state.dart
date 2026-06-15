@@ -1055,6 +1055,11 @@ class AppStore extends ChangeNotifier {
   int _sessionCardsCompleted = 0;
   int _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
   bool _isPremium = false;
+  /// Toggle experimental: cuando está activo, cada tarjeta corre su flujo de
+  /// ejercicios DOS veces antes de avanzar (más práctica por versículo). Es
+  /// solo de sesión (no se persiste). `_currentCardPass` distingue 0 vs 1.
+  bool _doubleExercises = false;
+  int _currentCardPass = 0;
 
   List<MemoryDeckData> get decks => List.unmodifiable(_decks);
   List<BibleVerseData> get bibleVerses => List.unmodifiable(_bibleVerses);
@@ -1106,6 +1111,7 @@ class AppStore extends ChangeNotifier {
       (_sessionDailyTarget - _sessionCardsCompleted).clamp(0, 99999);
   bool get sessionFinished => _sessionCardsCompleted >= _sessionDailyTarget;
   bool get isPremium => _isPremium;
+  bool get doubleExercises => _doubleExercises;
 
   void setPremiumPreview(bool value) {
     if (_isPremium == value) return;
@@ -1475,6 +1481,7 @@ class AppStore extends ChangeNotifier {
   void configureSession({
     required int difficulty,
     required int dailyTarget,
+    bool doubleExercises = false,
   }) {
     _sessionDifficulty = difficulty.clamp(0, 2);
     // El total configurable siempre es el número real de tarjetas en el mazo.
@@ -1484,8 +1491,24 @@ class AppStore extends ChangeNotifier {
     _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
     _correctAnswers = 0;
     _wrongAnswers = 0;
+    _doubleExercises = doubleExercises;
+    _currentCardPass = 0;
     final deckId = activeDeck.id;
     _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));
+    notifyListeners();
+  }
+
+  /// Con "duplicar ejercicios" activo, una tarjeta debe repetir su flujo si
+  /// todavía está en la primera pasada. El árbol de progreso lo consulta al
+  /// finalizar para decidir entre repetir o avanzar de tarjeta.
+  bool shouldRepeatCardForDouble() =>
+      _doubleExercises && _currentCardPass == 0;
+
+  /// Arranca la segunda pasada de la tarjeta actual: cambia el namespace de
+  /// pasos completados (vía `_currentCardPass`) para que el árbol los muestre
+  /// frescos sin tocar rutas ni slugs.
+  void startSecondPass() {
+    _currentCardPass = 1;
     notifyListeners();
   }
 
@@ -1505,6 +1528,8 @@ class AppStore extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+    // Nueva tarjeta → vuelve a la primera pasada.
+    _currentCardPass = 0;
     // Limpia los pasos completados del deck para que la próxima tarjeta
     // arranque con el árbol fresco. Las claves usan deck:card:slug, así que
     // basta con quitar los del deck activo.
@@ -1532,7 +1557,8 @@ class AppStore extends ChangeNotifier {
   String _exerciseStepKey(String slug) {
     final deck = activeDeck;
     final card = activeCard;
-    return '${deck.id}:${card.id}:$slug';
+    // `_currentCardPass` namespacea la segunda pasada del modo "duplicar".
+    return '${deck.id}:${card.id}:p$_currentCardPass:$slug';
   }
 
   bool isExerciseStepCompleted(String slug) {
