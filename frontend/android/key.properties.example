@@ -1,0 +1,12 @@
+# Copia este archivo a android/key.properties (gitignored) y rellena con tu
+# keystore de release. Generar un keystore:
+#
+#   keytool -genkey -v -keystore ~/memorizar-release.jks \
+#     -keyalg RSA -keysize 2048 -validity 10000 -alias memorizar
+#
+# Luego apunta storeFile a esa ruta (absoluta o relativa a android/app).
+
+storePassword=CAMBIA_ESTO
+keyPassword=CAMBIA_ESTO
+keyAlias=memorizar
+storeFile=/ruta/absoluta/a/memorizar-release.jks
