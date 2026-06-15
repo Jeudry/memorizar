@@ -67,6 +67,9 @@ dependencies:
   # IA on-device para móvil (Android/iOS): el llama-server de escritorio no
   # puede spawnearse en móvil, así que la inferencia corre vía MediaPipe.
   flutter_gemma: ^0.16.5
+  # Compartir el recap cooperativo como imagen.
+  screenshot: ^3.0.0
+  share_plus: ^10.1.4
 
 dev_dependencies:
   flutter_test:

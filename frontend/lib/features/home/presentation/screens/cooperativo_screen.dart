@@ -20,7 +20,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
   bool _initialized = false;
   String? _currentUserId;
 
-  bool _isPublic = true;
+  final bool _isPublic = true;
   List<dynamic> _publicRooms = [];
   bool _loadingRooms = false;
   bool _creatingDeckInline = false;
@@ -311,10 +311,10 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
     Navigator.pushNamed(context, AppRoutes.cooperativoJuego);
   }
 
-  String _deckCreationTab = 'manual'; // 'manual' | 'biblia' | 'texto'
+  final String _deckCreationTab = 'manual'; // 'manual' | 'biblia' | 'texto'
   final _rawContentCtrl = TextEditingController();
   final _bibleSearchCtrl = TextEditingController();
-  List<BibleVerseData> _bibleSearchResults = [];
+  final List<BibleVerseData> _bibleSearchResults = [];
   final List<BibleVerseData> _inlineSelectedVerses = [];
 
   final _deckTitleCtrl = TextEditingController();
@@ -3714,7 +3714,7 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
                               ),
                             )
                           else
-                            Container(
+                            SizedBox(
                               height: 60,
                               child: ListView.builder(
                                 scrollDirection: Axis.horizontal,
@@ -5366,7 +5366,7 @@ class _CoopShareCard extends StatelessWidget {
                   style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
                 ),
                 Text(
-                  'Copia el resumen · sin cuenta necesaria',
+                  'Imagen o texto · sin cuenta necesaria',
                   style: TextStyle(
                     color: RefColors.muted,
                     fontSize: 10,
@@ -5388,14 +5388,34 @@ class _CoopShareCard extends StatelessWidget {
               );
             },
             child: Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: RefColors.glassStrong,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.copy_rounded,
+                  size: 16, color: RefColors.ink),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => shareCoopRecapAsImage(context),
+            child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
               decoration: BoxDecoration(
                 gradient: RefColors.primary,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Text(
-                'Compartir',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.image_rounded, size: 14, color: Colors.white),
+                  SizedBox(width: 5),
+                  Text(
+                    'Imagen',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+                  ),
+                ],
               ),
             ),
           ),

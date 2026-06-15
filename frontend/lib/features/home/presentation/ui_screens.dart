@@ -25,6 +25,7 @@ import '../../../core/app_state.dart';
 import '../../../core/db/app_database.dart';
 import 'package:drift/drift.dart' as drift;
 import '../../../core/import/csv_import.dart';
+import 'screens/coop_recap_share.dart';
 import '../../../core/services/local_llm_service.dart';
 import '../../../core/services/ai_quiz_models.dart';
 import '../../account/presentation/account_screen.dart';
