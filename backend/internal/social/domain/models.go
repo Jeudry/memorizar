@@ -60,6 +60,15 @@ func (u User) Sanitize() User {
 	return u
 }
 
+// PublicProfile devuelve una proyección segura para mostrar a OTROS usuarios:
+// además del hash, omite el email (PII). Usar en búsqueda de personas,
+// sugerencias y perfiles públicos, donde el solicitante no es el dueño.
+func (u User) PublicProfile() User {
+	u.PasswordHash = ""
+	u.Email = ""
+	return u
+}
+
 type Session struct {
 	Token     string         `json:"token"`
 	UserID    string         `json:"userId"`
