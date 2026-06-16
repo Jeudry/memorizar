@@ -808,6 +808,27 @@ func (r *Repository) SavePushToken(token domain.PushToken) error {
 	return err
 }
 
+func (r *Repository) ListPushTokensByUser(userID string) ([]domain.PushToken, error) {
+	rows, err := r.db.Query(`
+		SELECT user_id, token, platform, updated_at
+		FROM push_tokens WHERE user_id = ?`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.PushToken{}
+	for rows.Next() {
+		var t domain.PushToken
+		var ts string
+		if err := rows.Scan(&t.UserID, &t.Token, &t.Platform, &ts); err != nil {
+			return nil, err
+		}
+		t.UpdatedAt = parseTime(ts)
+		out = append(out, t)
+	}
+	return out, nil
+}
+
 // ─── Premium ─────────────────────────────────────────────────────────────
 
 func (r *Repository) SavePremiumSubscription(subscription domain.PremiumSubscription) error {

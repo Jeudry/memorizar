@@ -32,8 +32,13 @@ Future<void> main() async {
   AppRoutes.register(buildAppRoutes());
   ReferencePage.registerBackgroundBuilder(() => const AppAuroraBackground());
 
-  // Push: solo inicializa el plugin local, no requiere Firebase para correr.
+  // Push: inicializa el plugin local (recordatorios). No requiere Firebase.
   await PushService.instance.initialize();
+  // Si hay sesión, intenta registrar el token FCM para push remoto. Es no-op
+  // silencioso si Firebase no está configurado (devuelve null).
+  if (store.isLoggedIn) {
+    unawaited(PushService.instance.registerWithBackend(store.api));
+  }
 
   // Calienta la IA local en segundo plano si el modelo ya está descargado,
   // para que el primer quiz no espere la carga del modelo en GPU.
