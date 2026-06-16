@@ -43,9 +43,9 @@ type User struct {
 	// PasswordHash es bcrypt-encoded. Se setea solo cuando el usuario se
 	// registra con email+password. Nunca se serializa en respuestas HTTP
 	// (los handlers usan Sanitize() antes de devolver).
-	PasswordHash  string    `json:"-"`
-	Locale        string    `json:"locale,omitempty"`
-	EmailVerified bool      `json:"emailVerified"`
+	PasswordHash  string `json:"-"`
+	Locale        string `json:"locale,omitempty"`
+	EmailVerified bool   `json:"emailVerified"`
 	// IsModerator habilita la cola de moderación de comunidad. Se concede
 	// vía allowlist de correos (MEMORIZAR_MODERATOR_EMAILS) o seteando el
 	// campo persistido; el gate vive en application.Service.IsModerator.
@@ -96,6 +96,22 @@ type Activity struct {
 	Description string    `json:"description"`
 	DeckName    string    `json:"deckName,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
+}
+
+// Notification es una notificación in-app persistida para un destinatario.
+// A diferencia de Activity (feed social público que ven los amigos), esto es
+// privado del usuario: sus likes, follows, comentarios, etc. Se crea en el
+// mismo punto donde se dispara el push (notifySafe), así que cualquier evento
+// notificable queda también disponible en la campanita.
+type Notification struct {
+	ID        string            `json:"id"`
+	UserID    string            `json:"userId"` // destinatario
+	Type      string            `json:"type"`
+	Title     string            `json:"title"`
+	Body      string            `json:"body,omitempty"`
+	Data      map[string]string `json:"data,omitempty"` // deeplink / IDs
+	Read      bool              `json:"read"`
+	CreatedAt time.Time         `json:"createdAt"`
 }
 
 type SharedResource struct {

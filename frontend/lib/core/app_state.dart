@@ -552,6 +552,35 @@ class AppStore extends ChangeNotifier {
   int get unreadShares => _unreadShares;
   int get totalNotifications => _pendingFriendInvites + _unreadShares;
 
+  /// Conteo de notificaciones in-app no-leídas (campanita): likes, follows,
+  /// comentarios, etc. persistidos en el backend. Se refresca con
+  /// [refreshNotificationCount].
+  int _unreadNotifications = 0;
+  int get unreadNotifications => _unreadNotifications;
+
+  Future<void> refreshNotificationCount() async {
+    if (!isLoggedIn) {
+      if (_unreadNotifications != 0) {
+        _unreadNotifications = 0;
+        notifyListeners();
+      }
+      return;
+    }
+    try {
+      final result = await api.listNotifications();
+      _unreadNotifications = result.unread;
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  /// Setea el conteo localmente (p.ej. tras marcar leídas en la pantalla de
+  /// notificaciones) sin re-pegar al backend.
+  void setUnreadNotifications(int value) {
+    if (_unreadNotifications == value) return;
+    _unreadNotifications = value;
+    notifyListeners();
+  }
+
   Future<void> refreshPendingCount() async {
     if (!isLoggedIn) {
       _pendingFriendInvites = 0;

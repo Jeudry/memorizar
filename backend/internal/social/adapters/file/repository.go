@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -12,22 +13,23 @@ import (
 )
 
 type state struct {
-	Users             map[string]domain.User             `json:"users"`
-	Sessions          map[string]domain.Session          `json:"sessions"`
-	Friendships       map[string]domain.Friendship       `json:"friendships"`
-	Achievements      map[string]domain.Achievement      `json:"achievements"`
-	Activities        map[string]domain.Activity         `json:"activities"`
-	SharedResources   map[string]domain.SharedResource   `json:"sharedResources"`
+	Users             map[string]domain.User                   `json:"users"`
+	Sessions          map[string]domain.Session                `json:"sessions"`
+	Friendships       map[string]domain.Friendship             `json:"friendships"`
+	Achievements      map[string]domain.Achievement            `json:"achievements"`
+	Activities        map[string]domain.Activity               `json:"activities"`
+	Notifications     map[string]domain.Notification           `json:"notifications"`
+	SharedResources   map[string]domain.SharedResource         `json:"sharedResources"`
 	ShareImports      map[string]map[string]domain.ShareImport `json:"shareImports"`
 	DeckLikes         map[string]map[string]time.Time          `json:"deckLikes"`
 	Follows           map[string]map[string]time.Time          `json:"follows"`
-	DeckReports       map[string]domain.DeckReport       `json:"deckReports"`
-	AnalyticsEvents   []domain.AnalyticsEvent            `json:"analyticsEvents"`
-	PremiumSubs       map[string]domain.PremiumSubscription `json:"premiumSubs"`
-	PushTokens        map[string]domain.PushToken        `json:"pushTokens"`
-	Reactions         map[string]domain.FeedReaction     `json:"reactions"`
-	Comments          map[string]domain.FeedComment      `json:"comments"`
-	ProgressSnapshots map[string]domain.ProgressSnapshot `json:"progressSnapshots"`
+	DeckReports       map[string]domain.DeckReport             `json:"deckReports"`
+	AnalyticsEvents   []domain.AnalyticsEvent                  `json:"analyticsEvents"`
+	PremiumSubs       map[string]domain.PremiumSubscription    `json:"premiumSubs"`
+	PushTokens        map[string]domain.PushToken              `json:"pushTokens"`
+	Reactions         map[string]domain.FeedReaction           `json:"reactions"`
+	Comments          map[string]domain.FeedComment            `json:"comments"`
+	ProgressSnapshots map[string]domain.ProgressSnapshot       `json:"progressSnapshots"`
 }
 
 type Repository struct {
@@ -47,8 +49,8 @@ func NewRepository(path string) (*Repository, error) {
 			Activities:        map[string]domain.Activity{},
 			SharedResources:   map[string]domain.SharedResource{},
 			ShareImports:      map[string]map[string]domain.ShareImport{},
-		DeckLikes:         map[string]map[string]time.Time{},
-		Follows:           map[string]map[string]time.Time{},
+			DeckLikes:         map[string]map[string]time.Time{},
+			Follows:           map[string]map[string]time.Time{},
 			DeckReports:       map[string]domain.DeckReport{},
 			Reactions:         map[string]domain.FeedReaction{},
 			Comments:          map[string]domain.FeedComment{},
@@ -256,6 +258,76 @@ func (r *Repository) ListActivitiesByUserIDs(userIDs []string) ([]domain.Activit
 		}
 	}
 	return result, nil
+}
+
+func (r *Repository) SaveNotification(notification domain.Notification) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state.Notifications == nil {
+		r.state.Notifications = map[string]domain.Notification{}
+	}
+	r.state.Notifications[notification.ID] = notification
+	return r.persistLocked()
+}
+
+func (r *Repository) ListNotificationsByUser(userID string, limit int) ([]domain.Notification, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := []domain.Notification{}
+	for _, n := range r.state.Notifications {
+		if n.UserID == userID {
+			result = append(result, n)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
+	if limit > 0 && len(result) > limit {
+		result = result[:limit]
+	}
+	return result, nil
+}
+
+func (r *Repository) MarkNotificationsRead(userID string, ids []string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var only map[string]struct{}
+	if len(ids) > 0 {
+		only = make(map[string]struct{}, len(ids))
+		for _, id := range ids {
+			only[id] = struct{}{}
+		}
+	}
+	changed := false
+	for id, n := range r.state.Notifications {
+		if n.UserID != userID || n.Read {
+			continue
+		}
+		if only != nil {
+			if _, ok := only[id]; !ok {
+				continue
+			}
+		}
+		n.Read = true
+		r.state.Notifications[id] = n
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return r.persistLocked()
+}
+
+func (r *Repository) CountUnreadNotifications(userID string) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	count := 0
+	for _, n := range r.state.Notifications {
+		if n.UserID == userID && !n.Read {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (r *Repository) SaveSharedResource(resource domain.SharedResource) error {
@@ -629,6 +701,11 @@ func (r *Repository) DeleteUserCascade(userID string) error {
 	for id, a := range r.state.Activities {
 		if a.UserID == userID {
 			delete(r.state.Activities, id)
+		}
+	}
+	for id, n := range r.state.Notifications {
+		if n.UserID == userID {
+			delete(r.state.Notifications, id)
 		}
 	}
 	for id, s := range r.state.SharedResources {
