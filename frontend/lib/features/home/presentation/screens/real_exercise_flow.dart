@@ -10,129 +10,6 @@ class _RealExerciseFlowScreen extends StatefulWidget {
       _RealExerciseFlowScreenState();
 }
 
-/// Selección múltiple que reemplaza un ejercicio de micrófono omitido (F2):
-/// "¿Cuál es el texto de X?" con el texto correcto + 3 distractores random de
-/// otras tarjetas. Al acertar avanza; al fallar permite reintentar.
-class _OmitSelectExercise extends StatefulWidget {
-  final MemoryCardData card;
-  final MemoryDeckData deck;
-  final VoidCallback onCorrect;
-
-  const _OmitSelectExercise({
-    super.key,
-    required this.card,
-    required this.deck,
-    required this.onCorrect,
-  });
-
-  @override
-  State<_OmitSelectExercise> createState() => _OmitSelectExerciseState();
-}
-
-class _OmitSelectExerciseState extends State<_OmitSelectExercise> {
-  late final List<String> _options;
-  int? _wrongIndex;
-
-  @override
-  void initState() {
-    super.initState();
-    final correct = widget.card.back;
-    final distractors = widget.deck.cards
-        .where((c) => c.id != widget.card.id && c.back.trim().isNotEmpty)
-        .map((c) => c.back)
-        .toList()
-      ..shuffle();
-    final picked = distractors.take(3).toList();
-    var n = 1;
-    while (picked.length < 3) {
-      picked.add('${_firstWords(correct, 3)}… (opción ${n++})');
-    }
-    _options = [correct, ...picked]..shuffle();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final correct = widget.card.back;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Glass(
-          padding: const EdgeInsets.all(16),
-          color: RefColors.glassStrong,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('OMITIDO → ELIGE LA RESPUESTA',
-                  style: TextStyle(
-                      color: RefColors.muted,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.3)),
-              const SizedBox(height: 8),
-              Text(
-                '¿Cuál es el texto de ${widget.card.front}?',
-                style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w900, height: 1.2),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        for (var i = 0; i < _options.length; i++) ...[
-          GestureDetector(
-            onTap: () {
-              if (_options[i] == correct) {
-                widget.onCorrect();
-              } else {
-                setState(() => _wrongIndex = i);
-              }
-            },
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: _wrongIndex == i
-                    ? RefColors.urgent.withValues(alpha: .12)
-                    : RefColors.glassSoft,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: _wrongIndex == i ? RefColors.urgent : RefColors.border,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Text(String.fromCharCode(65 + i),
-                      style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                          color: RefColors.cyan)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _options[i],
-                      style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-        if (_wrongIndex != null)
-          const Text(
-            'Esa no es. Intenta con otra.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                color: RefColors.urgent,
-                fontSize: 12,
-                fontWeight: FontWeight.w700),
-          ),
-      ],
-    );
-  }
-}
-
 enum _QuizQuestionType { frontToBack, backToFront, trueFalse, matching, openQuestion }
 
 class _QuizRound {
@@ -203,11 +80,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   String? _aiDistractorCardId;
   bool _aiDistractorLoading = false;
   /// Pasos que el usuario "omitió": en vez de saltarlos, se transforman —
-  /// los de micrófono en una selección múltiple, el resto en una lectura.
-  /// La clave incluye la tarjeta para que el override sea per-tarjeta.
+  /// los de la fase Preparar en una lectura, el resto (Construir/Probar) en
+  /// "Elige la palabra". La clave incluye la tarjeta para que sea per-tarjeta.
   final Set<String> _omitOverride = {};
 
-  bool _isMicSlug(String slug) => isMicSlug(slug);
   String? _letterCardId;
   int _letterLevel = 1;
   List<String> _letterTargets = [];
@@ -1791,13 +1667,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
   }
 
-  /// Reemplazo de un paso omitido: lectura (no-mic) o selección múltiple (mic).
-  /// Cada variante trae su propio botón que cierra el override y avanza.
+  /// Reemplazo de un paso omitido: lectura (fase Preparar) o "Elige la palabra"
+  /// (Construir/Probar). Cada variante trae su botón que cierra el override y avanza.
   Widget _buildOmitReplacement(
     BuildContext context,
     AppStore store,
     MemoryCardData card,
-    MemoryDeckData deck,
     String slug,
   ) {
     void complete() {
@@ -1808,16 +1683,63 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       _completeStepAndNavigate(context, store, slug);
     }
 
-    if (_isMicSlug(slug)) {
-      return _OmitSelectExercise(
-        key: ValueKey('omit-sel-${card.id}-$slug'),
+    // Preparar → lectura simple. Construir/Probar → "Elige la palabra".
+    if (_phaseLabelFor(slug) != 'Preparar') {
+      return ChooseWordPracticeBody(
+        key: ValueKey('omit-choose-${card.id}-$slug'),
         card: card,
-        deck: deck,
-        onCorrect: complete,
+        onFinished: complete,
       );
     }
 
-    // No-micrófono → lectura simple del versículo.
+    final verses = _currentBatchVerses(context);
+    const textStyle = TextStyle(
+      fontSize: 20,
+      height: 1.55,
+      fontWeight: FontWeight.w800,
+      fontFamily: 'Outfit',
+    );
+
+    final Widget content;
+    if (verses.length == 1) {
+      content = Text(
+        verses.first.text,
+        textAlign: TextAlign.center,
+        style: textStyle,
+      );
+    } else {
+      content = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < verses.length; i++)
+            Padding(
+              padding: EdgeInsets.only(
+                bottom: i == verses.length - 1 ? 0 : 12,
+              ),
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: '${verses[i].number}  ',
+                      style: const TextStyle(
+                        color: RefColors.pink,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    TextSpan(
+                      text: verses[i].text,
+                      style: textStyle,
+                    ),
+                  ],
+                ),
+                textAlign: TextAlign.start,
+              ),
+            ),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1833,19 +1755,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           ),
           child: Column(
             children: [
-              const Text('📖 LEE EL VERSÍCULO',
-                  style: TextStyle(
-                      color: RefColors.muted,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.3)),
-              const SizedBox(height: 14),
               Text(
-                card.back,
-                textAlign: TextAlign.center,
+                verses.length > 1 ? '📖 LEE LOS VERSÍCULOS' : '📖 LEE EL VERSÍCULO',
                 style: const TextStyle(
-                    fontSize: 20, height: 1.55, fontWeight: FontWeight.w800),
+                  color: RefColors.muted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.3,
+                ),
               ),
+              const SizedBox(height: 14),
+              content,
             ],
           ),
         ),
@@ -1868,7 +1788,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     // o selección múltiple (mic) en lugar de saltarse. Mismo camino en solo
     // y coop (este motor es compartido).
     if (_omitOverride.contains('${card.id}:$slug')) {
-      return _buildOmitReplacement(context, store, card, deck, slug);
+      return _buildOmitReplacement(context, store, card, slug);
     }
 
     // Paso de práctica del bloque Preparar: "Elige la palabra" sin niveles ni
@@ -2150,7 +2070,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ReadAloudPracticeCard(
-            targetText: card.back,
+            targetText: _currentBatchText(context),
             source: card.front,
             completed: completed,
             onCompleted: (recognized, audioPath) {
@@ -2170,7 +2090,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ListenOwnVoicePracticeCard(
-            originalText: card.back,
+            originalText: _currentBatchText(context),
             voiceText: store.voiceReadForCurrentCard(),
             audioPath: store.voiceAudioPathForCurrentCard(),
             source: card.front,
@@ -2183,7 +2103,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_isFinalVoiceSlug(slug)) {
       _ensureFogState(card.id);
       return _FogStep(
-        targetText: card.back,
+        targetText: _currentBatchText(context),
         finished: _fogFinished || completed,
         level: 3, // Final voice test blurs 100% of the words!
         showHintTemp: _fogShowHintTemp,
@@ -2680,7 +2600,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_isFogSlug(slug)) {
       _ensureFogState(card.id);
       return _FogStep(
-        targetText: card.back,
+        targetText: _currentBatchText(context),
         finished: _fogFinished || completed,
         level: _fogLevelForSlug(slug),
         showHintTemp: _fogShowHintTemp,

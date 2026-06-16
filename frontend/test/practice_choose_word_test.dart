@@ -9,7 +9,14 @@ void main() {
   Future<void> pumpScreen(WidgetTester tester, AppStore store) async {
     await tester.pumpWidget(AppScope(
       store: store,
-      child: const MaterialApp(home: PracticeChooseWordScreen()),
+      child: MaterialApp(
+        home: Scaffold(
+          body: ChooseWordPracticeBody(
+            card: store.activeCard,
+            onFinished: () {},
+          ),
+        ),
+      ),
     ));
     await tester.pump();
   }

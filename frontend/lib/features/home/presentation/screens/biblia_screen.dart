@@ -1882,6 +1882,8 @@ String _cardStudyText(BuildContext context) {
 List<({int number, String text})> _currentBatchVerses(BuildContext context) {
   final store = AppScope.of(context);
   final deck = store.activeDeck;
+  // ignore: avoid_print
+  print('DATOSDEBUG batch: isBible=${deck.isBible} cards=${deck.cards.length} dailyTarget=${store.sessionDailyTarget} active=${store.activeCard.front}');
   final List<MemoryCardData> batch;
   if (deck.isBible && deck.cards.length > 1 && store.sessionDailyTarget > 1) {
     final count = store.sessionDailyTarget.clamp(1, deck.cards.length);
@@ -1898,6 +1900,12 @@ List<({int number, String text})> _currentBatchVerses(BuildContext context) {
       }()
   ];
 }
+
+/// El pasaje completo del lote (todos los versículos seleccionados) unido en un
+/// solo texto, para los pasos que recitan/practican el pasaje entero y no solo
+/// el versículo activo.
+String _currentBatchText(BuildContext context) =>
+    _currentBatchVerses(context).map((verse) => verse.text).join(' ');
 
 /// Widget reusable: un verso renderizado como fila — número anclado
 /// (color pink, llamativo) seguido de las palabras. El callback `wordStyle`
