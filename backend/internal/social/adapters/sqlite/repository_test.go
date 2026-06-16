@@ -1,7 +1,9 @@
 package sqlite_test
 
 import (
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -133,5 +135,66 @@ func TestProgressSnapshot(t *testing.T) {
 	}
 	if got == nil || got.ID != "s2" {
 		t.Errorf("got %+v", got)
+	}
+}
+
+// TestConcurrentNotificationsNoBusy verifica que, con busy_timeout/WAL en el
+// DSN, escrituras y lecturas concurrentes no devuelven SQLITE_BUSY — el bug
+// que apareció al enviar push (goroutine leyendo tokens) mientras se persistía
+// una notificación.
+func TestConcurrentNotificationsNoBusy(t *testing.T) {
+	repo := newTestRepo(t)
+	now := time.Now().UTC()
+	if err := repo.SaveUser(domain.User{
+		ID: "usr_c", Email: "c@x.io", DisplayName: "Carol",
+		Providers: map[string]string{}, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("save user: %v", err)
+	}
+
+	const writers, readers, iters = 6, 6, 40
+	errs := make(chan error, (writers+readers)*iters)
+	var wg sync.WaitGroup
+
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < iters; i++ {
+				err := repo.SaveNotification(domain.Notification{
+					ID:        fmt.Sprintf("ntf_%d_%d", w, i),
+					UserID:    "usr_c",
+					Type:      "deck_liked",
+					Title:     "hola",
+					CreatedAt: now,
+				})
+				if err != nil {
+					errs <- fmt.Errorf("write: %w", err)
+					return
+				}
+			}
+		}(w)
+	}
+	for r := 0; r < readers; r++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iters; i++ {
+				if _, err := repo.ListNotificationsByUser("usr_c", 50); err != nil {
+					errs <- fmt.Errorf("read list: %w", err)
+					return
+				}
+				if _, err := repo.CountUnreadNotifications("usr_c"); err != nil {
+					errs <- fmt.Errorf("read count: %w", err)
+					return
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("concurrent op failed: %v", err)
 	}
 }
