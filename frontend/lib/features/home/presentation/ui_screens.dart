@@ -239,7 +239,7 @@ const flowScreens = [
   ExerciseFlowData('05-bloques', 'Bloques', 'Ordena piezas clave'),
   ExerciseFlowData(
     _chooseWordPracticeSlug,
-    'Práctica',
+    'Elige la palabra Práctica',
     'Elige la palabra, sin presión',
   ),
   ExerciseFlowData('06-completar-n1', 'Elige la palabra · N1', 'Recuerdo con apoyo'),

@@ -1981,7 +1981,7 @@ int _flowStepNumber(String slug) {
 }
 
 String _realStepTitle(String slug) {
-  if (slug == _chooseWordPracticeSlug) return 'Práctica';
+  if (slug == _chooseWordPracticeSlug) return 'Elige la palabra Práctica';
   if (slug == '00-solo-lectura') return 'Solo lectura';
   if (slug == '01-escuchar') return 'Escuchar';
   if (slug == '02-niebla-n1') return 'Niebla N1';
