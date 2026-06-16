@@ -1064,7 +1064,35 @@ class _CommunityHit extends StatefulWidget {
 class _CommunityHitState extends State<_CommunityHit> {
   late bool _liked = (widget.share['likedByMe'] as bool?) ?? false;
   late int _likeCount = (widget.share['likeCount'] as int?) ?? 0;
+  late double _ratingAvg = ((widget.share['ratingAvg'] as num?) ?? 0).toDouble();
+  late int _ratingCount = (widget.share['ratingCount'] as int?) ?? 0;
+  late int _myRating = (widget.share['myRating'] as int?) ?? 0;
   bool _likeBusy = false;
+
+  Future<void> _openRatingSheet() async {
+    final shareId = (widget.share['id'] as String?) ?? '';
+    if (shareId.isEmpty) return;
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inicia sesión para valorar mazos.')),
+      );
+      return;
+    }
+    final result = await showDeckRatingSheet(
+      context,
+      shareId: shareId,
+      deckTitle: (widget.share['title'] as String?) ?? 'este mazo',
+      currentStars: _myRating,
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _ratingAvg = result.avg;
+        _ratingCount = result.count;
+        _myRating = result.myStars;
+      });
+    }
+  }
 
   Future<void> _toggleLike() async {
     if (_likeBusy) return;
@@ -1142,6 +1170,16 @@ class _CommunityHitState extends State<_CommunityHit> {
                       fontSize: 11,
                     ),
                   ),
+                const SizedBox(height: 4),
+                GestureDetector(
+                  onTap: _openRatingSheet,
+                  behavior: HitTestBehavior.opaque,
+                  child: RatingStarsRow(
+                    avg: _ratingAvg,
+                    count: _ratingCount,
+                    myRating: _myRating,
+                  ),
+                ),
               ],
             ),
           ),

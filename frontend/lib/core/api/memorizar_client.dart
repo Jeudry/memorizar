@@ -520,6 +520,32 @@ class MemorizarClient {
     return _decode(r);
   }
 
+  /// Valora un mazo comunitario (1-5 estrellas + reseña opcional). Devuelve
+  /// {ratingAvg, ratingCount} con el estado resultante.
+  Future<Map<String, dynamic>> rateDeck(
+    String shareId,
+    int stars, {
+    String review = '',
+  }) async {
+    final r = await _http.post(
+      _uri('/v1/community/decks/rate'),
+      headers: _headers,
+      body: jsonEncode({'shareId': shareId, 'stars': stars, 'review': review}),
+    );
+    return _decode(r);
+  }
+
+  /// Lista las reseñas de un mazo comunitario (con nombre del autor).
+  Future<List<Map<String, dynamic>>> listDeckReviews(String shareId) async {
+    final r = await _http.get(
+      _uri('/v1/community/decks/rate?shareId=$shareId'),
+      headers: _headers,
+    );
+    final body = await _decode(r);
+    final list = (body['reviews'] as List? ?? const []).cast<dynamic>();
+    return list.cast<Map<String, dynamic>>();
+  }
+
   /// Alterna el "me gusta" del usuario sobre un deck comunitario.
   /// Devuelve {liked, likeCount} con el estado resultante.
   Future<Map<String, dynamic>> toggleDeckLike(String shareId) async {
