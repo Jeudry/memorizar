@@ -23,6 +23,7 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
   late final TextEditingController _contentController;
   List<MemoryCardData> _segmentedCards = const [];
   bool _submitting = false;
+  bool _generatingAi = false;
   /// Grupo (carpeta) al que se asignará el mazo nuevo. null = sin grupo.
   String? _selectedGroupId;
 
@@ -202,6 +203,120 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
         SnackBar(content: Text('No se pudo leer el archivo: $e')),
       );
     }
+  }
+
+  /// Genera un mazo desde un tema con la IA local: pide el tema, llama a
+  /// Gemma y rellena la vista previa con las tarjetas generadas (editables).
+  Future<void> _generateWithAi() async {
+    if (_submitting || _generatingAi) return;
+    final llm = LocalLlmService.instance;
+    if (!await llm.isAvailable()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'La IA local no está lista. Actívala/descárgala desde Premium para generar mazos.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+    final topic = await _promptAiTopic(context);
+    if (topic == null || topic.trim().isEmpty || !mounted) return;
+
+    setState(() => _generatingAi = true);
+    try {
+      final cards =
+          await llm.generateCardsFromTopic(topic: topic.trim(), count: 8);
+      if (!mounted) return;
+      if (cards.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('La IA no devolvió tarjetas. Prueba con otro tema.'),
+          ),
+        );
+        return;
+      }
+      setState(() {
+        if (_titleController.text.trim().isEmpty) {
+          _titleController.text = topic.trim();
+        }
+        _segmentedCards = [
+          for (var i = 0; i < cards.length; i++)
+            MemoryCardData(
+              id: 'ai-${DateTime.now().microsecondsSinceEpoch}-$i',
+              front: cards[i].front,
+              back: cards[i].back,
+              source: 'IA · $topic',
+              icon: '✨',
+            ),
+        ];
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${cards.length} tarjetas generadas por IA. Revísalas y crea el mazo.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo generar con IA: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _generatingAi = false);
+    }
+  }
+
+  /// Diálogo para capturar el tema del mazo a generar.
+  Future<String?> _promptAiTopic(BuildContext context) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1430),
+        title: const Text(
+          '✨ Generar mazo con IA',
+          style: TextStyle(color: RefColors.ink, fontWeight: FontWeight.w900),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '¿Sobre qué tema?',
+              style: TextStyle(color: RefColors.muted, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              style: const TextStyle(color: RefColors.ink, fontSize: 13),
+              onSubmitted: (v) => Navigator.pop(ctx, v),
+              decoration: const InputDecoration(
+                hintText: 'Ej: Salmos de consuelo · Inglés B1: comida',
+                hintStyle: TextStyle(color: RefColors.dim, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar',
+                style: TextStyle(color: RefColors.muted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Generar',
+                style: TextStyle(
+                    color: RefColors.cyan, fontWeight: FontWeight.w900)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _updateSegmentedCard(int index, {String? front, String? back}) {
@@ -500,6 +615,15 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 6),
+                GestureDetector(
+                  onTap: _generatingAi ? null : _generateWithAi,
+                  child: _ToolChip(
+                    _generatingAi
+                        ? '✨ Generando…'
+                        : '✨ Generar con IA desde un tema',
+                  ),
                 ),
               ],
             ),
