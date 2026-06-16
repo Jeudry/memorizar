@@ -28,17 +28,34 @@ type Repository struct {
 
 // Open abre/crea la base en la ruta dada y aplica migraciones idempotentes.
 func Open(path string) (*Repository, error) {
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", buildDSN(path))
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
-	}
-	if _, err := db.Exec("PRAGMA foreign_keys = ON;"); err != nil {
-		return nil, fmt.Errorf("enable fk: %w", err)
 	}
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
 	return &Repository{db: db}, nil
+}
+
+// buildDSN añade pragmas a la ruta vía query params de modernc, que aplican a
+// CADA conexión del pool (a diferencia de `db.Exec("PRAGMA ...")`, que solo
+// afecta a una conexión y deja a las demás sin la config):
+//
+//   - busy_timeout(5000): una conexión espera hasta 5s por el lock en vez de
+//     fallar al instante con SQLITE_BUSY bajo escrituras concurrentes (p.ej.
+//     la goroutine de envío FCM leyendo tokens mientras se persiste algo).
+//   - journal_mode(WAL): lectores concurrentes con un escritor, mucho mejor
+//     bajo carga que el rollback journal por defecto.
+//   - foreign_keys(ON): las cascadas ON DELETE dependen de esto; antes solo se
+//     activaba en una conexión del pool — latente, ahora garantizado en todas.
+func buildDSN(path string) string {
+	pragmas := "_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)"
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return path + sep + pragmas
 }
 
 // Close cierra la DB. Llamarlo en shutdown del proceso.
