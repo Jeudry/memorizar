@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../core/api/models.dart';
 import '../../../core/app_state.dart';
 import '../../../core/i18n/strings.dart';
 import '../../../core/router/app_routes.dart';
@@ -21,6 +22,7 @@ class _AccountScreenState extends State<AccountScreen> {
   late final TextEditingController _avatarCtrl;
   bool _saving = false;
   bool _initialized = false;
+  List<RemoteAchievement> _achievements = const [];
 
   @override
   void initState() {
@@ -33,10 +35,22 @@ class _AccountScreenState extends State<AccountScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_initialized) {
-      final user = AppScope.of(context).currentUser;
+      final store = AppScope.of(context);
+      final user = store.currentUser;
       _nameCtrl.text = user?.displayName ?? '';
       _avatarCtrl.text = user?.avatarUrl ?? '';
       _initialized = true;
+      if (user != null) _loadAchievements(store, user.id);
+    }
+  }
+
+  Future<void> _loadAchievements(AppStore store, String userId) async {
+    try {
+      final profile = await store.api.getUser(userId);
+      if (!mounted) return;
+      setState(() => _achievements = profile.achievements);
+    } catch (_) {
+      // silencioso: los logros son secundarios al perfil
     }
   }
 
@@ -339,6 +353,8 @@ class _AccountScreenState extends State<AccountScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: 12),
+            _AchievementsCard(achievements: _achievements),
             if (!user.emailVerified) ...[
               const SizedBox(height: 8),
               GhostButton(
@@ -511,6 +527,94 @@ class _ChipSegment<T> extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Tarjeta de logros: muestra las insignias desbloqueadas como chips con emoji
+/// y título, o un estado vacío motivador.
+class _AchievementsCard extends StatelessWidget {
+  final List<RemoteAchievement> achievements;
+  const _AchievementsCard({required this.achievements});
+
+  @override
+  Widget build(BuildContext context) {
+    return Glass(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('🏆',
+                  style: TextStyle(fontSize: 16)),
+              const SizedBox(width: 8),
+              const Text('Tus logros',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
+              const Spacer(),
+              if (achievements.isNotEmpty)
+                Text('${achievements.length}',
+                    style: const TextStyle(
+                        color: RefColors.sun,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (achievements.isEmpty)
+            const Text(
+              'Aún no tienes logros. Practica a diario y completa sesiones para desbloquearlos.',
+              style: TextStyle(color: RefColors.muted, fontSize: 12, height: 1.4),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final a in achievements) _Badge(achievement: a),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  final RemoteAchievement achievement;
+  const _Badge({required this.achievement});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: achievement.description.isNotEmpty
+          ? '${achievement.title}\n${achievement.description}'
+          : achievement.title,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: RefColors.sun.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: RefColors.sun.withValues(alpha: .35)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(achievement.emoji.isNotEmpty ? achievement.emoji : '🏆',
+                style: const TextStyle(fontSize: 16)),
+            const SizedBox(width: 7),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 160),
+              child: Text(
+                achievement.title,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w800, color: RefColors.ink),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
