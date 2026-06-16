@@ -1169,141 +1169,123 @@ class _CommunityHitState extends State<_CommunityHit> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: HtmlRefColors.glassBorder),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Icon(Icons.public_rounded, color: RefColors.cyan, size: 22),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                if (summary.isNotEmpty)
-                  Text(
-                    summary,
-                    style: const TextStyle(
-                      color: RefColors.muted,
-                      fontSize: 11,
-                    ),
-                  ),
-                const SizedBox(height: 4),
-                Row(
+          // Encabezado: ícono + título/resumen + CTA importar.
+          Row(
+            children: [
+              const Icon(Icons.public_rounded, color: RefColors.cyan, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    GestureDetector(
-                      onTap: _openRatingSheet,
-                      behavior: HitTestBehavior.opaque,
-                      child: RatingStarsRow(
-                        avg: _ratingAvg,
-                        count: _ratingCount,
-                        myRating: _myRating,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    GestureDetector(
-                      onTap: _openCommentsSheet,
-                      behavior: HitTestBehavior.opaque,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.mode_comment_outlined,
-                              size: 12, color: RefColors.cyan),
-                          const SizedBox(width: 3),
-                          Text(
-                            _commentCount > 0 ? '$_commentCount' : 'Comentar',
-                            style: const TextStyle(
-                              color: RefColors.cyan,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          GestureDetector(
-            onTap: _toggleLike,
-            child: Container(
-              margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-              decoration: BoxDecoration(
-                color: _liked
-                    ? RefColors.pink.withValues(alpha: .18)
-                    : HtmlRefColors.glassSoft,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: _liked
-                      ? RefColors.pink.withValues(alpha: .55)
-                      : HtmlRefColors.glassBorder,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                    color: _liked ? RefColors.pink : RefColors.muted,
-                    size: 15,
-                  ),
-                  if (_likeCount > 0) ...[
-                    const SizedBox(width: 4),
                     Text(
-                      '$_likeCount',
-                      style: TextStyle(
-                        color: _liked ? RefColors.pink : RefColors.muted,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                      ),
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w900),
                     ),
+                    if (summary.isNotEmpty)
+                      Text(
+                        summary,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: RefColors.muted, fontSize: 11),
+                      ),
                   ],
-                ],
-              ),
-            ),
-          ),
-          GestureDetector(
-            onTap: onReport,
-            child: Container(
-              margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(
-                color: RefColors.urgent.withValues(alpha: .12),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: RefColors.urgent.withValues(alpha: .4)),
-              ),
-              child: const Icon(
-                Icons.copyright_rounded,
-                color: RefColors.urgent,
-                size: 16,
-              ),
-            ),
-          ),
-          GestureDetector(
-            onTap: onImport,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-              decoration: BoxDecoration(
-                color: RefColors.lime.withValues(alpha: .15),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
-              ),
-              child: const Text(
-                'Importar',
-                style: TextStyle(
-                  color: RefColors.lime,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
                 ),
               ),
-            ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: onImport,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: RefColors.lime.withValues(alpha: .15),
+                    borderRadius: BorderRadius.circular(10),
+                    border:
+                        Border.all(color: RefColors.lime.withValues(alpha: .55)),
+                  ),
+                  child: const Text('Importar',
+                      style: TextStyle(
+                          color: RefColors.lime,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Acciones secundarias: valorar · comentar — like · reportar.
+          Row(
+            children: [
+              GestureDetector(
+                onTap: _openRatingSheet,
+                behavior: HitTestBehavior.opaque,
+                child: RatingStarsRow(
+                  avg: _ratingAvg,
+                  count: _ratingCount,
+                  myRating: _myRating,
+                ),
+              ),
+              const SizedBox(width: 12),
+              GestureDetector(
+                onTap: _openCommentsSheet,
+                behavior: HitTestBehavior.opaque,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.mode_comment_outlined,
+                        size: 13, color: RefColors.cyan),
+                    const SizedBox(width: 3),
+                    Text(
+                      _commentCount > 0 ? '$_commentCount' : 'Comentar',
+                      style: const TextStyle(
+                          color: RefColors.cyan,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: _toggleLike,
+                behavior: HitTestBehavior.opaque,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _liked
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                      color: _liked ? RefColors.pink : RefColors.muted,
+                      size: 17,
+                    ),
+                    if (_likeCount > 0) ...[
+                      const SizedBox(width: 4),
+                      Text('$_likeCount',
+                          style: TextStyle(
+                              color: _liked ? RefColors.pink : RefColors.muted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800)),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              GestureDetector(
+                onTap: onReport,
+                behavior: HitTestBehavior.opaque,
+                child: const Icon(Icons.flag_outlined,
+                    color: RefColors.muted, size: 16),
+              ),
+            ],
           ),
         ],
       ),
