@@ -10,6 +10,7 @@ import '../features/moderation/data/report_models.dart';
 import 'api/memorizar_client.dart';
 import 'api/models.dart';
 import 'db/app_database.dart';
+import 'streak_logic.dart';
 import 'services/push_service.dart';
 import 'services/secure_store.dart';
 import 'srs/sm2.dart';
@@ -289,6 +290,7 @@ class AppStore extends ChangeNotifier {
         reviewedDelta: count,
       ));
     }
+    unawaited(_maybeAwardStreakFreeze());
   }
 
   /// Suma de actividad de los últimos [days] días (incluyendo hoy).
@@ -309,6 +311,8 @@ class AppStore extends ChangeNotifier {
   Future<void> loadDecksFromDatabase() async {
     if (db == null) return;
     await _loadDailyActivity();
+    await _loadStreakFreezeState();
+    await maybeConsumeStreakFreeze();
     final dbDecks = await db!.getAllDecks();
     if (dbDecks.isEmpty) {
       // Pre-cargar mazo de demostración de Filipenses 4
@@ -1321,19 +1325,70 @@ class AppStore extends ChangeNotifier {
   /// atrás desde hoy (o desde ayer, para no romper la racha antes de
   /// practicar hoy).
   int get streakDays {
-    if (_dailyActivity.isEmpty) return 0;
-    final activeDays = _dailyActivity.map((entry) => entry.day).toSet();
-    var cursor = DateTime.now();
-    if (!activeDays.contains(_dayKey(cursor))) {
-      cursor = cursor.subtract(const Duration(days: 1));
-      if (!activeDays.contains(_dayKey(cursor))) return 0;
+    if (_dailyActivity.isEmpty && _frozenDays.isEmpty) return 0;
+    final activeOrFrozen = {
+      ..._dailyActivity.map((entry) => entry.day),
+      ..._frozenDays,
+    };
+    return computeStreak(activeOrFrozen, DateTime.now());
+  }
+
+  // ── Streak freeze: protege la racha si te saltas UN día ────────────────
+  static const _kStreakFreezes = 'streak_freezes';
+  static const _kFrozenDays = 'frozen_days';
+  static const _maxStreakFreezes = 5;
+
+  int _streakFreezes = 0;
+  Set<String> _frozenDays = {};
+  int get streakFreezes => _streakFreezes;
+
+  Future<void> _loadStreakFreezeState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _streakFreezes = prefs.getInt(_kStreakFreezes) ?? 2;
+      _frozenDays = (prefs.getStringList(_kFrozenDays) ?? const []).toSet();
+    } catch (_) {
+      // Sin SharedPreferences (p.ej. tests): deja la racha sin freezes.
     }
-    var streak = 0;
-    while (activeDays.contains(_dayKey(cursor))) {
-      streak++;
-      cursor = cursor.subtract(const Duration(days: 1));
+  }
+
+  Future<void> _persistStreakFreezeState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_kStreakFreezes, _streakFreezes);
+      await prefs.setStringList(_kFrozenDays, _frozenDays.toList());
+    } catch (_) {}
+  }
+
+  /// Si ayer se perdió pero antier había racha y queda un freeze disponible,
+  /// lo consume para congelar ayer y salvar la racha. Llamar al arrancar.
+  Future<void> maybeConsumeStreakFreeze() async {
+    if (_streakFreezes <= 0) return;
+    final active = _dailyActivity.map((e) => e.day).toSet();
+    final candidate = freezeCandidateDay(active, DateTime.now());
+    if (candidate == null || _frozenDays.contains(candidate)) return;
+    _streakFreezes--;
+    _frozenDays.add(candidate);
+    await _persistStreakFreezeState();
+    notifyListeners();
+  }
+
+  /// Otorga un freeze al cruzar cada hito de 7 días de racha (máx
+  /// [_maxStreakFreezes]). Llamar tras registrar actividad.
+  Future<void> _maybeAwardStreakFreeze() async {
+    final s = streakDays;
+    if (s > 0 && s % 7 == 0 && _streakFreezes < _maxStreakFreezes) {
+      try {
+        // Marca el hito ya premiado para no repetirlo el mismo día.
+        final prefs = await SharedPreferences.getInstance();
+        final lastAwardedKey = 'streak_freeze_awarded_$s';
+        if (prefs.getBool(lastAwardedKey) ?? false) return;
+        _streakFreezes++;
+        await prefs.setBool(lastAwardedKey, true);
+        await _persistStreakFreezeState();
+        notifyListeners();
+      } catch (_) {}
     }
-    return streak;
   }
   int get totalCards =>
       _decks.fold(0, (total, deck) => total + deck.cards.length);
