@@ -6,6 +6,12 @@ import (
 	"github.com/Jeudry/memorizar/backend/internal/social/domain"
 )
 
+// RatingAgg agrega las valoraciones de un mazo: suma de estrellas y conteo.
+type RatingAgg struct {
+	Sum   int
+	Count int
+}
+
 type Repository interface {
 	FindUserByProvider(provider domain.SocialProvider, providerUserID string) (*domain.User, error)
 	FindUserByID(userID string) (*domain.User, error)
@@ -49,6 +55,17 @@ type Repository interface {
 	DeleteDeckLike(shareID, userID string) error
 	CountDeckLikes(shareIDs []string) (map[string]int, error)
 	ListLikedShareIDsByUser(userID string) ([]string, error)
+
+	SaveDeckRating(rating domain.DeckRating) error
+	FindDeckRating(shareID, userID string) (*domain.DeckRating, error)
+	ListDeckRatingsByShare(shareID string) ([]domain.DeckRating, error)
+	// AggregateDeckRatings devuelve, por shareID, la suma de estrellas y el
+	// conteo de valoraciones, para calcular el promedio.
+	AggregateDeckRatings(shareIDs []string) (map[string]RatingAgg, error)
+
+	SaveDeckComment(comment domain.DeckComment) error
+	ListDeckCommentsByShare(shareID string) ([]domain.DeckComment, error)
+	CountDeckComments(shareIDs []string) (map[string]int, error)
 
 	SaveFollow(followerID, creatorID string, createdAt time.Time) error
 	DeleteFollow(followerID, creatorID string) error

@@ -65,6 +65,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/push/register-token", s.withAuth(s.handlePushRegisterToken))
 	s.mux.HandleFunc("/v1/community/imports", s.withAuth(s.handleCommunityImport))
 	s.mux.HandleFunc("/v1/community/decks/like", s.withAuth(s.handleCommunityLike))
+	s.mux.HandleFunc("/v1/community/decks/rate", s.withAuth(s.handleCommunityRate))
+	s.mux.HandleFunc("/v1/community/decks/comment", s.withAuth(s.handleCommunityComment))
 	s.mux.HandleFunc("/v1/community/liked", s.withAuth(s.handleCommunityLiked))
 	s.mux.HandleFunc("/v1/notifications", s.withAuth(s.handleNotifications))
 	s.mux.HandleFunc("/v1/notifications/read", s.withAuth(s.handleNotificationsRead))
@@ -666,6 +668,78 @@ func (s *Server) handleCommunityLike(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"liked": liked, "likeCount": count})
+}
+
+// handleCommunityRate registra/actualiza la valoración del usuario (POST) o
+// lista las reseñas de un mazo (GET ?shareId=).
+func (s *Server) handleCommunityRate(w http.ResponseWriter, r *http.Request, userID string) {
+	switch r.Method {
+	case http.MethodGet:
+		shareID := r.URL.Query().Get("shareId")
+		reviews, err := s.service.ListDeckReviews(shareID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"reviews": reviews})
+	case http.MethodPost:
+		var body struct {
+			ShareID string `json:"shareId"`
+			Stars   int    `json:"stars"`
+			Review  string `json:"review"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+			return
+		}
+		avg, count, err := s.service.RateDeck(userID, body.ShareID, body.Stars, body.Review)
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, application.ErrShareNotFound) {
+				status = http.StatusNotFound
+			}
+			writeJSON(w, status, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ratingAvg": avg, "ratingCount": count})
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+	}
+}
+
+// handleCommunityComment agrega un comentario (POST) o lista los comentarios
+// de un mazo (GET ?shareId=).
+func (s *Server) handleCommunityComment(w http.ResponseWriter, r *http.Request, userID string) {
+	switch r.Method {
+	case http.MethodGet:
+		comments, err := s.service.ListDeckComments(r.URL.Query().Get("shareId"))
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"comments": comments})
+	case http.MethodPost:
+		var body struct {
+			ShareID string `json:"shareId"`
+			Body    string `json:"body"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+			return
+		}
+		comment, err := s.service.AddDeckComment(userID, body.ShareID, body.Body)
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, application.ErrShareNotFound) {
+				status = http.StatusNotFound
+			}
+			writeJSON(w, status, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{"comment": comment})
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+	}
 }
 
 // handleCommunityImport registra que el usuario importó un deck comunitario.

@@ -410,3 +410,94 @@ func TestNotificationsFromLikeAndMarkRead(t *testing.T) {
 		t.Errorf("expected 0 unread after mark-all-read, got %d", newUnread)
 	}
 }
+
+func TestRateDeckAndReviews(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	owner := makeUser(t, s, "ro@dev.io", "ro_u", "Owner")
+	r1 := makeUser(t, s, "r1@dev.io", "r1_u", "Rater One")
+	r2 := makeUser(t, s, "r2@dev.io", "r2_u", "Rater Two")
+	share := publishDeck(t, s, owner, "deck-r", "Rated deck", `{"icon":"⭐"}`)
+
+	// Estrellas inválidas y valorar propio mazo se rechazan.
+	if _, _, err := s.RateDeck(r1, share, 0, ""); err != ErrInvalidRating {
+		t.Errorf("expected ErrInvalidRating, got %v", err)
+	}
+	if _, _, err := s.RateDeck(owner, share, 5, ""); err != ErrCannotRateOwn {
+		t.Errorf("expected ErrCannotRateOwn, got %v", err)
+	}
+
+	// Dos valoraciones → promedio (4+2)/2 = 3.
+	if avg, count, err := s.RateDeck(r1, share, 4, "Muy bueno"); err != nil || count != 1 || avg != 4 {
+		t.Fatalf("rate r1: avg=%v count=%v err=%v", avg, count, err)
+	}
+	if avg, count, err := s.RateDeck(r2, share, 2, "Regular"); err != nil || count != 2 || avg != 3 {
+		t.Fatalf("rate r2: avg=%v count=%v err=%v", avg, count, err)
+	}
+
+	// Re-valorar de r1 actualiza (no suma): 5+2 → avg 3.5, count sigue 2.
+	if avg, count, err := s.RateDeck(r1, share, 5, "Mejoró"); err != nil || count != 2 || avg != 3.5 {
+		t.Fatalf("re-rate r1: avg=%v count=%v err=%v", avg, count, err)
+	}
+
+	// El stat se adjunta al mazo comunitario, con MyRating del solicitante.
+	decks, err := s.SearchCommunityDecks(r2, "Rated", "")
+	if err != nil || len(decks) != 1 {
+		t.Fatalf("search: %d decks, err=%v", len(decks), err)
+	}
+	d := decks[0]
+	if d.RatingCount != 2 || d.RatingAvg != 3.5 || d.MyRating != 2 {
+		t.Errorf("stats: avg=%v count=%v myRating=%v", d.RatingAvg, d.RatingCount, d.MyRating)
+	}
+
+	// Las reseñas traen el nombre del autor.
+	reviews, err := s.ListDeckReviews(share)
+	if err != nil || len(reviews) != 2 {
+		t.Fatalf("reviews: %d, err=%v", len(reviews), err)
+	}
+	names := map[string]bool{}
+	for _, rv := range reviews {
+		names[rv.ReviewerName] = true
+		if rv.Stars < 1 || rv.Stars > 5 {
+			t.Errorf("bad stars in review: %+v", rv)
+		}
+	}
+	if !names["Rater One"] || !names["Rater Two"] {
+		t.Errorf("reviewer names missing: %v", names)
+	}
+}
+
+func TestDeckComments(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	owner := makeUser(t, s, "co@dev.io", "co_u", "Owner")
+	c1 := makeUser(t, s, "c1@dev.io", "c1_u", "Commenter One")
+	share := publishDeck(t, s, owner, "deck-c", "Commented deck", `{"icon":"💬"}`)
+
+	// Comentario vacío se rechaza.
+	if _, err := s.AddDeckComment(c1, share, "   "); err != ErrEmptyComment {
+		t.Errorf("expected ErrEmptyComment, got %v", err)
+	}
+	// Un usuario puede dejar varios comentarios.
+	if _, err := s.AddDeckComment(c1, share, "Primer comentario"); err != nil {
+		t.Fatalf("comment 1: %v", err)
+	}
+	if _, err := s.AddDeckComment(c1, share, "Segundo comentario"); err != nil {
+		t.Fatalf("comment 2: %v", err)
+	}
+
+	comments, err := s.ListDeckComments(share)
+	if err != nil || len(comments) != 2 {
+		t.Fatalf("list: %d comments, err=%v", len(comments), err)
+	}
+	if comments[0].AuthorName != "Commenter One" || comments[0].Body == "" {
+		t.Errorf("comment view missing author/body: %+v", comments[0])
+	}
+
+	// El conteo se adjunta al mazo comunitario.
+	decks, err := s.SearchCommunityDecks(c1, "Commented", "")
+	if err != nil || len(decks) != 1 {
+		t.Fatalf("search: %d, err=%v", len(decks), err)
+	}
+	if decks[0].CommentCount != 2 {
+		t.Errorf("expected CommentCount=2, got %d", decks[0].CommentCount)
+	}
+}
