@@ -546,6 +546,31 @@ class MemorizarClient {
     return list.cast<Map<String, dynamic>>();
   }
 
+  /// Agrega un comentario a un mazo comunitario. Devuelve el comentario creado.
+  Future<Map<String, dynamic>> addDeckComment(
+    String shareId,
+    String body,
+  ) async {
+    final r = await _http.post(
+      _uri('/v1/community/decks/comment'),
+      headers: _headers,
+      body: jsonEncode({'shareId': shareId, 'body': body}),
+    );
+    final decoded = await _decode(r);
+    return (decoded['comment'] as Map<String, dynamic>?) ?? decoded;
+  }
+
+  /// Lista los comentarios de un mazo comunitario (con autor).
+  Future<List<Map<String, dynamic>>> listDeckComments(String shareId) async {
+    final r = await _http.get(
+      _uri('/v1/community/decks/comment?shareId=$shareId'),
+      headers: _headers,
+    );
+    final body = await _decode(r);
+    final list = (body['comments'] as List? ?? const []).cast<dynamic>();
+    return list.cast<Map<String, dynamic>>();
+  }
+
   /// Alterna el "me gusta" del usuario sobre un deck comunitario.
   /// Devuelve {liked, likeCount} con el estado resultante.
   Future<Map<String, dynamic>> toggleDeckLike(String shareId) async {

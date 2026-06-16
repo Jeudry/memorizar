@@ -26,6 +26,7 @@ const (
 	EventDeckLiked       EventType = "deck_liked"
 	EventFollowed        EventType = "followed"
 	EventDeckRated       EventType = "deck_rated"
+	EventDeckCommented   EventType = "deck_commented"
 )
 
 type Notification struct {

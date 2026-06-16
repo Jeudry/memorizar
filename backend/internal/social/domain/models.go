@@ -201,6 +201,16 @@ type DeckRating struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// DeckComment es un comentario de un usuario sobre un mazo comunitario. A
+// diferencia de DeckRating (uno por usuario), un usuario puede dejar varios.
+type DeckComment struct {
+	ID        string    `json:"id"`
+	ShareID   string    `json:"shareId"`
+	UserID    string    `json:"userId"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 // ShareImport registra que un usuario importó un deck comunitario a su
 // colección. Una fila por (share, usuario): re-importar no infla stats.
 type ShareImport struct {

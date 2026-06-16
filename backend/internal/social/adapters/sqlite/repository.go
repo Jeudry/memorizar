@@ -776,6 +776,68 @@ func (r *Repository) AggregateDeckRatings(shareIDs []string) (map[string]ports.R
 	return out, nil
 }
 
+// ─── Comentarios de mazos ────────────────────────────────────────────────
+
+func (r *Repository) SaveDeckComment(c domain.DeckComment) error {
+	_, err := r.db.Exec(`
+		INSERT INTO deck_comments (id, share_id, user_id, body, created_at)
+		VALUES (?, ?, ?, ?, ?)`,
+		c.ID, c.ShareID, c.UserID, c.Body, formatTime(c.CreatedAt),
+	)
+	return err
+}
+
+func (r *Repository) ListDeckCommentsByShare(shareID string) ([]domain.DeckComment, error) {
+	rows, err := r.db.Query(`
+		SELECT id, share_id, user_id, body, created_at
+		FROM deck_comments WHERE share_id = ?
+		ORDER BY created_at DESC`, shareID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.DeckComment{}
+	for rows.Next() {
+		var c domain.DeckComment
+		var created string
+		if err := rows.Scan(&c.ID, &c.ShareID, &c.UserID, &c.Body, &created); err != nil {
+			return nil, err
+		}
+		c.CreatedAt = parseTime(created)
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+func (r *Repository) CountDeckComments(shareIDs []string) (map[string]int, error) {
+	out := map[string]int{}
+	if len(shareIDs) == 0 {
+		return out, nil
+	}
+	placeholders := strings.Repeat("?,", len(shareIDs)-1) + "?"
+	args := make([]any, len(shareIDs))
+	for i, v := range shareIDs {
+		args[i] = v
+	}
+	rows, err := r.db.Query(`
+		SELECT share_id, COUNT(*)
+		FROM deck_comments WHERE share_id IN (`+placeholders+`)
+		GROUP BY share_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var shareID string
+		var count int
+		if err := rows.Scan(&shareID, &count); err != nil {
+			return nil, err
+		}
+		out[shareID] = count
+	}
+	return out, nil
+}
+
 // ─── Follows (seguir creadores) ──────────────────────────────────────────
 
 func (r *Repository) SaveFollow(followerID, creatorID string, createdAt time.Time) error {

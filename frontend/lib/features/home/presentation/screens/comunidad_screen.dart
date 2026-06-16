@@ -1067,7 +1067,29 @@ class _CommunityHitState extends State<_CommunityHit> {
   late double _ratingAvg = ((widget.share['ratingAvg'] as num?) ?? 0).toDouble();
   late int _ratingCount = (widget.share['ratingCount'] as int?) ?? 0;
   late int _myRating = (widget.share['myRating'] as int?) ?? 0;
+  late int _commentCount = (widget.share['commentCount'] as int?) ?? 0;
   bool _likeBusy = false;
+
+  Future<void> _openCommentsSheet() async {
+    final shareId = (widget.share['id'] as String?) ?? '';
+    if (shareId.isEmpty) return;
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inicia sesión para comentar mazos.')),
+      );
+      return;
+    }
+    await showDeckCommentsSheet(
+      context,
+      shareId: shareId,
+      deckTitle: (widget.share['title'] as String?) ?? 'este mazo',
+      initialCount: _commentCount,
+      onCountChanged: (n) {
+        if (mounted) setState(() => _commentCount = n);
+      },
+    );
+  }
 
   Future<void> _openRatingSheet() async {
     final shareId = (widget.share['id'] as String?) ?? '';
@@ -1171,14 +1193,39 @@ class _CommunityHitState extends State<_CommunityHit> {
                     ),
                   ),
                 const SizedBox(height: 4),
-                GestureDetector(
-                  onTap: _openRatingSheet,
-                  behavior: HitTestBehavior.opaque,
-                  child: RatingStarsRow(
-                    avg: _ratingAvg,
-                    count: _ratingCount,
-                    myRating: _myRating,
-                  ),
+                Row(
+                  children: [
+                    GestureDetector(
+                      onTap: _openRatingSheet,
+                      behavior: HitTestBehavior.opaque,
+                      child: RatingStarsRow(
+                        avg: _ratingAvg,
+                        count: _ratingCount,
+                        myRating: _myRating,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    GestureDetector(
+                      onTap: _openCommentsSheet,
+                      behavior: HitTestBehavior.opaque,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.mode_comment_outlined,
+                              size: 12, color: RefColors.cyan),
+                          const SizedBox(width: 3),
+                          Text(
+                            _commentCount > 0 ? '$_commentCount' : 'Comentar',
+                            style: const TextStyle(
+                              color: RefColors.cyan,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

@@ -465,3 +465,39 @@ func TestRateDeckAndReviews(t *testing.T) {
 		t.Errorf("reviewer names missing: %v", names)
 	}
 }
+
+func TestDeckComments(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	owner := makeUser(t, s, "co@dev.io", "co_u", "Owner")
+	c1 := makeUser(t, s, "c1@dev.io", "c1_u", "Commenter One")
+	share := publishDeck(t, s, owner, "deck-c", "Commented deck", `{"icon":"💬"}`)
+
+	// Comentario vacío se rechaza.
+	if _, err := s.AddDeckComment(c1, share, "   "); err != ErrEmptyComment {
+		t.Errorf("expected ErrEmptyComment, got %v", err)
+	}
+	// Un usuario puede dejar varios comentarios.
+	if _, err := s.AddDeckComment(c1, share, "Primer comentario"); err != nil {
+		t.Fatalf("comment 1: %v", err)
+	}
+	if _, err := s.AddDeckComment(c1, share, "Segundo comentario"); err != nil {
+		t.Fatalf("comment 2: %v", err)
+	}
+
+	comments, err := s.ListDeckComments(share)
+	if err != nil || len(comments) != 2 {
+		t.Fatalf("list: %d comments, err=%v", len(comments), err)
+	}
+	if comments[0].AuthorName != "Commenter One" || comments[0].Body == "" {
+		t.Errorf("comment view missing author/body: %+v", comments[0])
+	}
+
+	// El conteo se adjunta al mazo comunitario.
+	decks, err := s.SearchCommunityDecks(c1, "Commented", "")
+	if err != nil || len(decks) != 1 {
+		t.Fatalf("search: %d, err=%v", len(decks), err)
+	}
+	if decks[0].CommentCount != 2 {
+		t.Errorf("expected CommentCount=2, got %d", decks[0].CommentCount)
+	}
+}

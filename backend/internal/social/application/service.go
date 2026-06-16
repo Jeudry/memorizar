@@ -31,6 +31,7 @@ var (
 	ErrInvalidReportReason     = errors.New("invalid report reason")
 	ErrInvalidRating           = errors.New("rating must be 1-5 stars")
 	ErrCannotRateOwn           = errors.New("cannot rate your own deck")
+	ErrEmptyComment            = errors.New("comment cannot be empty")
 	ErrInvalidReportResolution = errors.New("invalid report resolution")
 	ErrReportNotFound          = errors.New("report not found")
 	ErrTrialAlreadyUsed        = errors.New("trial already used")
@@ -527,12 +528,13 @@ func (s *Service) ListSuggestedPeople(userID string) ([]domain.User, error) {
 // nivel comunidad (cuántos usuarios distintos lo importaron).
 type CommunityDeck struct {
 	domain.SharedResource
-	ImportCount int     `json:"importCount"`
-	LikeCount   int     `json:"likeCount"`
-	LikedByMe   bool    `json:"likedByMe"`
-	RatingAvg   float64 `json:"ratingAvg"`   // promedio de estrellas (0 si nadie valoró)
-	RatingCount int     `json:"ratingCount"` // número de valoraciones
-	MyRating    int     `json:"myRating"`    // estrellas que dio el usuario (0 = no valoró)
+	ImportCount  int     `json:"importCount"`
+	LikeCount    int     `json:"likeCount"`
+	LikedByMe    bool    `json:"likedByMe"`
+	RatingAvg    float64 `json:"ratingAvg"`    // promedio de estrellas (0 si nadie valoró)
+	RatingCount  int     `json:"ratingCount"`  // número de valoraciones
+	MyRating     int     `json:"myRating"`     // estrellas que dio el usuario (0 = no valoró)
+	CommentCount int     `json:"commentCount"` // número de comentarios
 }
 
 // attachCommunityStats enriquece recursos con sus contadores de importación,
@@ -564,6 +566,10 @@ func (s *Service) attachCommunityStats(userID string, resources []domain.SharedR
 	if err != nil {
 		return nil, err
 	}
+	commentCounts, err := s.repo.CountDeckComments(shareIDs)
+	if err != nil {
+		return nil, err
+	}
 	enriched := make([]CommunityDeck, 0, len(resources))
 	for _, resource := range resources {
 		var avg float64
@@ -586,6 +592,7 @@ func (s *Service) attachCommunityStats(userID string, resources []domain.SharedR
 			RatingAvg:      avg,
 			RatingCount:    count,
 			MyRating:       myRating,
+			CommentCount:   commentCounts[resource.ID],
 		})
 	}
 	return enriched, nil
@@ -732,6 +739,77 @@ func (s *Service) ListDeckReviews(shareID string) ([]DeckReview, error) {
 			rv.ReviewerAvatar = u.AvatarURL
 		}
 		out = append(out, rv)
+	}
+	return out, nil
+}
+
+// DeckCommentView es un comentario con los datos públicos de su autor.
+type DeckCommentView struct {
+	domain.DeckComment
+	AuthorName     string `json:"authorName"`
+	AuthorUsername string `json:"authorUsername"`
+	AuthorAvatar   string `json:"authorAvatar,omitempty"`
+}
+
+// AddDeckComment agrega un comentario a un mazo comunitario y notifica al
+// dueño (salvo que comente su propio mazo).
+func (s *Service) AddDeckComment(userID, shareID, body string) (*domain.DeckComment, error) {
+	shareID = strings.TrimSpace(shareID)
+	body = strings.TrimSpace(body)
+	if shareID == "" {
+		return nil, ErrShareNotFound
+	}
+	if body == "" {
+		return nil, ErrEmptyComment
+	}
+	share, err := s.repo.FindSharedResource(shareID)
+	if err != nil {
+		return nil, err
+	}
+	if share == nil || !share.IsPublic || share.Kind != domain.ShareKindDeck {
+		return nil, ErrShareNotFound
+	}
+	comment := domain.DeckComment{
+		ID:        newID("dcm"),
+		ShareID:   shareID,
+		UserID:    userID,
+		Body:      body,
+		CreatedAt: s.now().UTC(),
+	}
+	if err := s.repo.SaveDeckComment(comment); err != nil {
+		return nil, err
+	}
+	if share.OwnerUserID != userID {
+		s.notifySafe(notify.Notification{
+			Type:   notify.EventDeckCommented,
+			UserID: share.OwnerUserID,
+			Title:  s.userDisplay(userID) + " comentó tu mazo 💬",
+			Body:   share.Title,
+			Data: map[string]string{
+				"shareId":  shareID,
+				"deeplink": "memorizar://comunidad",
+			},
+		})
+	}
+	return &comment, nil
+}
+
+// ListDeckComments devuelve los comentarios de un mazo (más recientes primero)
+// con el nombre público de cada autor.
+func (s *Service) ListDeckComments(shareID string) ([]DeckCommentView, error) {
+	comments, err := s.repo.ListDeckCommentsByShare(strings.TrimSpace(shareID))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]DeckCommentView, 0, len(comments))
+	for _, c := range comments {
+		cv := DeckCommentView{DeckComment: c}
+		if u, err := s.repo.FindUserByID(c.UserID); err == nil && u != nil {
+			cv.AuthorName = u.DisplayName
+			cv.AuthorUsername = u.Username
+			cv.AuthorAvatar = u.AvatarURL
+		}
+		out = append(out, cv)
 	}
 	return out, nil
 }

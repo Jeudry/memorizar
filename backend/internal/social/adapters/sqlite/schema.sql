@@ -103,6 +103,15 @@ CREATE TABLE IF NOT EXISTS deck_ratings (
     PRIMARY KEY (share_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_deck_ratings_share ON deck_ratings(share_id);
+
+CREATE TABLE IF NOT EXISTS deck_comments (
+    id          TEXT PRIMARY KEY,
+    share_id    TEXT NOT NULL REFERENCES shared_resources(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body        TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_deck_comments_share ON deck_comments(share_id);
 CREATE INDEX IF NOT EXISTS idx_deck_likes_share ON deck_likes(share_id);
 
 CREATE TABLE IF NOT EXISTS follows (

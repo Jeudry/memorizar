@@ -63,6 +63,10 @@ type Repository interface {
 	// conteo de valoraciones, para calcular el promedio.
 	AggregateDeckRatings(shareIDs []string) (map[string]RatingAgg, error)
 
+	SaveDeckComment(comment domain.DeckComment) error
+	ListDeckCommentsByShare(shareID string) ([]domain.DeckComment, error)
+	CountDeckComments(shareIDs []string) (map[string]int, error)
+
 	SaveFollow(followerID, creatorID string, createdAt time.Time) error
 	DeleteFollow(followerID, creatorID string) error
 	CountFollowers(creatorIDs []string) (map[string]int, error)

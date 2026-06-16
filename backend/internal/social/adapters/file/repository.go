@@ -24,6 +24,7 @@ type state struct {
 	ShareImports      map[string]map[string]domain.ShareImport `json:"shareImports"`
 	DeckLikes         map[string]map[string]time.Time          `json:"deckLikes"`
 	DeckRatings       map[string]map[string]domain.DeckRating  `json:"deckRatings"`
+	DeckComments      map[string][]domain.DeckComment          `json:"deckComments"`
 	Follows           map[string]map[string]time.Time          `json:"follows"`
 	DeckReports       map[string]domain.DeckReport             `json:"deckReports"`
 	AnalyticsEvents   []domain.AnalyticsEvent                  `json:"analyticsEvents"`
@@ -473,6 +474,40 @@ func (r *Repository) AggregateDeckRatings(shareIDs []string) (map[string]ports.R
 		}
 		if agg.Count > 0 {
 			out[shareID] = agg
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) SaveDeckComment(comment domain.DeckComment) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state.DeckComments == nil {
+		r.state.DeckComments = map[string][]domain.DeckComment{}
+	}
+	r.state.DeckComments[comment.ShareID] = append(r.state.DeckComments[comment.ShareID], comment)
+	return r.persistLocked()
+}
+
+func (r *Repository) ListDeckCommentsByShare(shareID string) ([]domain.DeckComment, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	src := r.state.DeckComments[shareID]
+	result := make([]domain.DeckComment, len(src))
+	copy(result, src)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
+	return result, nil
+}
+
+func (r *Repository) CountDeckComments(shareIDs []string) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := map[string]int{}
+	for _, shareID := range shareIDs {
+		if n := len(r.state.DeckComments[shareID]); n > 0 {
+			out[shareID] = n
 		}
 	}
 	return out, nil
