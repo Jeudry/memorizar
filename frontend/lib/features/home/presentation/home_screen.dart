@@ -1518,7 +1518,7 @@ class _CommunitySlider extends StatelessWidget {
               title: deck.title,
               stats:
                   '${deck.cards.length} tarjetas · ${deck.retention}% retención',
-              rating: (4 + deck.retention / 100).toStringAsFixed(1),
+              weakCount: deck.weakCount,
               onTap: () {
                 AppScope.of(context).setActiveDeck(deck.id);
                 Navigator.pushNamed(context, '/iniciar');
@@ -1536,14 +1536,15 @@ class _CommunityCard extends StatelessWidget {
   final String emoji;
   final String title;
   final String stats;
-  final String rating;
+  /// Tarjetas débiles/por repasar del mazo. > 0 muestra un badge accionable.
+  final int weakCount;
   final VoidCallback? onTap;
 
   const _CommunityCard({
     required this.emoji,
     required this.title,
     required this.stats,
-    required this.rating,
+    this.weakCount = 0,
     this.onTap,
   });
 
@@ -1573,14 +1574,26 @@ class _CommunityCard extends StatelessWidget {
                   ),
                   child: Center(child: GlyphIcon(emoji, size: 18)),
                 ),
-                Text(
-                  '★ $rating',
-                  style: const TextStyle(
-                    color: AppColors.accentSun,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
+                if (weakCount > 0)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.urgent.withValues(alpha: .15),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: AppColors.urgent.withValues(alpha: .4),
+                      ),
+                    ),
+                    child: Text(
+                      '$weakCount por repasar',
+                      style: const TextStyle(
+                        color: AppColors.urgent,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ),
-                ),
               ],
             ),
             const Spacer(),
