@@ -112,6 +112,13 @@ CREATE TABLE IF NOT EXISTS deck_comments (
     created_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_deck_comments_share ON deck_comments(share_id);
+
+CREATE TABLE IF NOT EXISTS user_scores (
+    user_id     TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    streak      INTEGER NOT NULL DEFAULT 0,
+    points      INTEGER NOT NULL DEFAULT 0,
+    updated_at  TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_deck_likes_share ON deck_likes(share_id);
 
 CREATE TABLE IF NOT EXISTS follows (

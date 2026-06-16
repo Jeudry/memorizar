@@ -838,6 +838,50 @@ func (r *Repository) CountDeckComments(shareIDs []string) (map[string]int, error
 	return out, nil
 }
 
+// ─── User scores (leaderboard) ───────────────────────────────────────────
+
+func (r *Repository) SaveUserScore(s domain.UserScore) error {
+	_, err := r.db.Exec(`
+		INSERT INTO user_scores (user_id, streak, points, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(user_id) DO UPDATE SET
+			streak = excluded.streak,
+			points = excluded.points,
+			updated_at = excluded.updated_at`,
+		s.UserID, s.Streak, s.Points, formatTime(s.UpdatedAt),
+	)
+	return err
+}
+
+func (r *Repository) ListUserScores(userIDs []string) ([]domain.UserScore, error) {
+	out := []domain.UserScore{}
+	if len(userIDs) == 0 {
+		return out, nil
+	}
+	placeholders := strings.Repeat("?,", len(userIDs)-1) + "?"
+	args := make([]any, len(userIDs))
+	for i, v := range userIDs {
+		args[i] = v
+	}
+	rows, err := r.db.Query(`
+		SELECT user_id, streak, points, updated_at
+		FROM user_scores WHERE user_id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var s domain.UserScore
+		var ts string
+		if err := rows.Scan(&s.UserID, &s.Streak, &s.Points, &ts); err != nil {
+			return nil, err
+		}
+		s.UpdatedAt = parseTime(ts)
+		out = append(out, s)
+	}
+	return out, nil
+}
+
 // ─── Follows (seguir creadores) ──────────────────────────────────────────
 
 func (r *Repository) SaveFollow(followerID, creatorID string, createdAt time.Time) error {

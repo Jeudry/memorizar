@@ -71,6 +71,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/notifications", s.withAuth(s.handleNotifications))
 	s.mux.HandleFunc("/v1/notifications/read", s.withAuth(s.handleNotificationsRead))
 	s.mux.HandleFunc("/v1/social/follow", s.withAuth(s.handleFollow))
+	s.mux.HandleFunc("/v1/social/score", s.withAuth(s.handleUserScore))
+	s.mux.HandleFunc("/v1/social/leaderboard", s.withAuth(s.handleLeaderboard))
 	// Endpoint público (sin auth) para resolver deeplinks `memorizar://deck/ID`.
 	// Solo expone shares con IsPublic=true.
 	s.mux.HandleFunc("/v1/public/shares/", s.handlePublicShare)
@@ -643,6 +645,41 @@ func (s *Server) handleFollow(w http.ResponseWriter, r *http.Request, userID str
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"following": following, "followerCount": count})
+}
+
+// handleUserScore (POST) registra el puntaje público del usuario (racha+puntos).
+func (s *Server) handleUserScore(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var body struct {
+		Streak int `json:"streak"`
+		Points int `json:"points"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	if err := s.service.ReportUserScore(userID, body.Streak, body.Points); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleLeaderboard (GET) devuelve el ranking del usuario y sus amigos.
+func (s *Server) handleLeaderboard(w http.ResponseWriter, r *http.Request, userID string) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	entries, err := s.service.Leaderboard(userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"entries": entries})
 }
 
 // handleCommunityLike alterna el like del usuario sobre un deck público.

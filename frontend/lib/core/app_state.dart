@@ -984,6 +984,8 @@ class AppStore extends ChangeNotifier {
         deviceId: deviceId,
         payloadJson: _buildProgressPayload(),
       );
+      // Reporta el puntaje público para el leaderboard (best-effort).
+      unawaited(api.reportScore(streak: streakDays, points: correctAnswers));
       return true;
     } catch (_) {
       return false;

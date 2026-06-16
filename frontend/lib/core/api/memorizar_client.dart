@@ -509,6 +509,24 @@ class MemorizarClient {
     return list.cast<Map<String, dynamic>>();
   }
 
+  /// Reporta el puntaje público del usuario (racha + puntos) para el
+  /// leaderboard entre amigos. Best-effort.
+  Future<void> reportScore({required int streak, required int points}) async {
+    await _http.post(
+      _uri('/v1/social/score'),
+      headers: _headers,
+      body: jsonEncode({'streak': streak, 'points': points}),
+    );
+  }
+
+  /// Ranking del usuario y sus amigos (ya ordenado por puntos).
+  Future<List<Map<String, dynamic>>> leaderboard() async {
+    final r = await _http.get(_uri('/v1/social/leaderboard'), headers: _headers);
+    final body = await _decode(r);
+    final list = (body['entries'] as List? ?? const []).cast<dynamic>();
+    return list.cast<Map<String, dynamic>>();
+  }
+
   /// Alterna seguir/dejar de seguir a un creador. Devuelve
   /// {following, followerCount} con el estado resultante.
   Future<Map<String, dynamic>> toggleFollow(String creatorId) async {

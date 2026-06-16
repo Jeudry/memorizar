@@ -67,6 +67,9 @@ type Repository interface {
 	ListDeckCommentsByShare(shareID string) ([]domain.DeckComment, error)
 	CountDeckComments(shareIDs []string) (map[string]int, error)
 
+	SaveUserScore(score domain.UserScore) error
+	ListUserScores(userIDs []string) ([]domain.UserScore, error)
+
 	SaveFollow(followerID, creatorID string, createdAt time.Time) error
 	DeleteFollow(followerID, creatorID string) error
 	CountFollowers(creatorIDs []string) (map[string]int, error)
