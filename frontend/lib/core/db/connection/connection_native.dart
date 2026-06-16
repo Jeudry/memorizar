@@ -17,6 +17,11 @@ QueryExecutor connect({bool inMemory = false}) {
   return LazyDatabase(() async {
     final dir = await getApplicationSupportDirectory();
     final file = File(p.join(dir.path, _dbName));
-    return NativeDatabase.createInBackground(file);
+    // Antes usábamos NativeDatabase.createInBackground (isolate de fondo). En
+    // macOS desktop eso producía un SIGSEGV reproducible dentro de sqlite3 al
+    // cruzarse los streams (watch) con escrituras concurrentes en el isolate de
+    // fondo. Abrir sqlite en el isolate principal serializa todo en un hilo y
+    // elimina la carrera; a esta escala el costo de rendimiento es nulo.
+    return NativeDatabase(file);
   });
 }
