@@ -1706,6 +1706,8 @@ func (s *Service) ShareResource(userID string, input ShareResourceInput) (*domai
 
 	resourceID := newID("shr")
 	createdAt := s.now().UTC()
+	version := 1
+	isPublicUpdate := false
 	deckID := strings.TrimSpace(input.DeckID)
 	// Republicar el mismo deck actualiza la publicación existente en lugar
 	// de duplicarla en el catálogo comunitario.
@@ -1720,6 +1722,8 @@ func (s *Service) ShareResource(userID string, input ShareResourceInput) (*domai
 			if isSamePublicDeck {
 				resourceID = prior.ID
 				createdAt = prior.CreatedAt
+				version = prior.Version + 1
+				isPublicUpdate = true
 				break
 			}
 		}
@@ -1736,6 +1740,7 @@ func (s *Service) ShareResource(userID string, input ShareResourceInput) (*domai
 		PlanID:       strings.TrimSpace(input.PlanID),
 		PayloadJSON:  input.PayloadJSON,
 		IsPublic:     input.IsPublic,
+		Version:      version,
 		CreatedAt:    createdAt,
 	}
 	if err := s.repo.SaveSharedResource(resource); err != nil {
@@ -1755,6 +1760,28 @@ func (s *Service) ShareResource(userID string, input ShareResourceInput) (*domai
 				"deeplink": "memorizar://inbox",
 			},
 		})
+	}
+	// Al ACTUALIZAR un mazo ya publicado, avisa a quienes lo importaron para
+	// que sepan que hay una versión nueva.
+	if isPublicUpdate {
+		importers, err := s.repo.ListShareImporterIDs(resource.ID)
+		if err == nil {
+			for _, importerID := range importers {
+				if importerID == userID {
+					continue
+				}
+				s.notifySafe(notify.Notification{
+					Type:   notify.EventDeckUpdated,
+					UserID: importerID,
+					Title:  s.userDisplay(userID) + " actualizó un mazo que importaste 🔄",
+					Body:   resource.Title + " · v" + fmt.Sprintf("%d", version),
+					Data: map[string]string{
+						"shareId":  resource.ID,
+						"deeplink": "memorizar://comunidad",
+					},
+				})
+			}
+		}
 	}
 	return &resource, nil
 }

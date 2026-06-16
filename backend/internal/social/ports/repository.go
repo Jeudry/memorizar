@@ -49,6 +49,7 @@ type Repository interface {
 
 	SaveShareImport(shareImport domain.ShareImport) error
 	CountShareImports(shareIDs []string) (map[string]int, error)
+	ListShareImporterIDs(shareID string) ([]string, error)
 	CountShareImportsSince(shareIDs []string, since time.Time) (map[string]int, error)
 
 	SaveDeckLike(shareID, userID string, createdAt time.Time) error

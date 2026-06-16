@@ -562,6 +562,16 @@ func (r *Repository) CountShareImports(shareIDs []string) (map[string]int, error
 	return counts, nil
 }
 
+func (r *Repository) ListShareImporterIDs(shareID string) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := []string{}
+	for userID := range r.shareImports[shareID] {
+		out = append(out, userID)
+	}
+	return out, nil
+}
+
 func (r *Repository) CountShareImportsSince(shareIDs []string, since time.Time) (map[string]int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

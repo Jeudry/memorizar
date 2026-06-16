@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS shared_resources (
     plan_id         TEXT NOT NULL DEFAULT '',
     payload_json    TEXT NOT NULL DEFAULT '',
     is_public       INTEGER NOT NULL DEFAULT 0,
+    version         INTEGER NOT NULL DEFAULT 1,
     created_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_shares_owner ON shared_resources(owner_user_id);
