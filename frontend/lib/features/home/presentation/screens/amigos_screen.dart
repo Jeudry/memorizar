@@ -391,16 +391,18 @@ class _FriendshipRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  friend.displayName.isEmpty ? friend.email : friend.displayName,
+                  friend.displayName.isEmpty
+                      ? '@${friend.username}'
+                      : friend.displayName,
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 13,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (friend.email.isNotEmpty)
+                if (friend.username.isNotEmpty)
                   Text(
-                    friend.email,
+                    '@${friend.username}',
                     style: const TextStyle(
                       color: RefColors.muted,
                       fontSize: 11,
@@ -445,15 +447,17 @@ class _SuggestionRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  user.displayName.isEmpty ? user.email : user.displayName,
+                  user.displayName.isEmpty
+                      ? '@${user.username}'
+                      : user.displayName,
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 13,
                   ),
                 ),
-                if (user.email.isNotEmpty)
+                if (user.username.isNotEmpty)
                   Text(
-                    user.email,
+                    '@${user.username}',
                     style: const TextStyle(
                       color: RefColors.muted,
                       fontSize: 11,
@@ -759,15 +763,17 @@ class _SearchHitRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  user.displayName.isEmpty ? user.email : user.displayName,
+                  user.displayName.isEmpty
+                      ? '@${user.username}'
+                      : user.displayName,
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                if (user.email.isNotEmpty)
+                if (user.username.isNotEmpty)
                   Text(
-                    user.email,
+                    '@${user.username}',
                     style: const TextStyle(
                       color: RefColors.muted,
                       fontSize: 11,

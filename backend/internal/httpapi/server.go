@@ -260,7 +260,7 @@ func (s *Server) handleFriends(w http.ResponseWriter, r *http.Request, userID st
 	for i, f := range friends {
 		friendsList[i] = map[string]any{
 			"id":            f.ID,
-			"email":         f.Email,
+			"username":      f.Username,
 			"displayName":   f.DisplayName,
 			"avatarUrl":     f.AvatarURL,
 			"locale":        f.Locale,
@@ -285,7 +285,7 @@ func (s *Server) handleSuggestions(w http.ResponseWriter, r *http.Request, userI
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+	writeJSON(w, http.StatusOK, map[string]any{"users": publicProfiles(users)})
 }
 
 func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request, _ string) {
@@ -303,7 +303,7 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request, _ string)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 		return
 	}
-	sanitized := user.Sanitize()
+	sanitized := user.PublicProfile()
 
 	// Cargar logros e insignias del usuario
 	achievements, _ := s.service.ListAchievementsByUserIDs([]string{targetID})
@@ -336,7 +336,17 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request, userID str
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+	writeJSON(w, http.StatusOK, map[string]any{"users": publicProfiles(users)})
+}
+
+// publicProfiles proyecta una lista de usuarios a su forma pública (sin email
+// ni hash), para exponerla a terceros en búsqueda/sugerencias.
+func publicProfiles(users []domain.User) []domain.User {
+	out := make([]domain.User, len(users))
+	for i, u := range users {
+		out[i] = u.PublicProfile()
+	}
+	return out
 }
 
 func (s *Server) handlePublicShare(w http.ResponseWriter, r *http.Request) {
