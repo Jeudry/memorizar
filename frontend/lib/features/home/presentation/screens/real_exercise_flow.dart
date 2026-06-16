@@ -1871,6 +1871,15 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       return _buildOmitReplacement(context, store, card, deck, slug);
     }
 
+    // Paso de práctica del bloque Preparar: "Elige la palabra" sin niveles ni
+    // intentos. Reusa el body embebible y avanza como cualquier otro paso.
+    if (slug == _chooseWordPracticeSlug) {
+      return ChooseWordPracticeBody(
+        card: card,
+        onFinished: () => _completeStepAndNavigate(context, store, slug),
+      );
+    }
+
     if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
       _ensureQuizRounds(deck, card);
       if (_isAiQuizLoading) {
@@ -3433,24 +3442,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ],
       );
     }
-    final showOmitirForDefault =
-        slug == '05-bloques' ||
-        _isFirstLetterSlug(slug) ||
-        slug == '09-quiz' ||
-        slug == '09-quiz-avanzado';
-
     return Row(
       children: [
         SizedBox(
           width: 118,
           child: GhostButton(
-            showOmitirForDefault ? 'Omitir' : 'Pista',
+            'Pista',
             onTap: () {
-              if (showOmitirForDefault) {
-                ActiveMediaRegistry.stopAll();
-                setState(() => _omitOverride.add('${card.id}:$slug'));
-                return;
-              }
               if (slug == '05-bloques') {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(

@@ -610,44 +610,6 @@ class _IniciarScreenState extends State<IniciarScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          GestureDetector(
-            onTap: deck.cards.isEmpty
-                ? null
-                : () => Navigator.pushNamed(
-                      context,
-                      AppRoutes.practicaElegirPalabra,
-                    ),
-            child: Glass(
-              color: HtmlRefColors.glassBg,
-              border: Border.all(color: RefColors.cyan.withValues(alpha: .4)),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: const [
-                  Text('🎯', style: TextStyle(fontSize: 18)),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Practicar 'Elige la palabra'",
-                          style: TextStyle(
-                              fontSize: 12.5, fontWeight: FontWeight.w900),
-                        ),
-                        Text(
-                          'Sin niveles ni intentos · relajado',
-                          style: TextStyle(
-                              color: RefColors.muted, fontSize: 10.5),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.chevron_right_rounded, color: RefColors.cyan),
-                ],
-              ),
-            ),
-          ),
         ],
       ),
     );
