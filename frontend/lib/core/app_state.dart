@@ -640,6 +640,8 @@ class AppStore extends ChangeNotifier {
       notifyListeners();
       _startInviteTimer();
       unawaited(checkAndApplyPendingReferrer());
+      unawaited(refreshPendingCount());
+      unawaited(refreshNotificationCount());
     } catch (_) {
       await SecureStore.instance.delete(_kSessionTokenKey);
       await SecureStore.instance.delete(_kSessionUserKey);

@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../../core/api/models.dart';
 import '../../../core/app_state.dart';
+import '../../../core/router/app_routes.dart';
 import '../../../core/theme.dart';
 import 'glyph_icon.dart';
 import '../../../core/ui/main_tab_shell.dart';
@@ -739,11 +740,15 @@ class _AppHeader extends StatelessWidget {
           icon: Icons.settings_outlined,
         ),
         const SizedBox(width: 8),
-        _IconButton(
-          onPressed: () {},
-          icon: Icons.notifications_none_outlined,
-          hasDot: true,
-        ),
+        if (store.isLoggedIn)
+          _IconButton(
+            onPressed: () async {
+              await Navigator.pushNamed(context, AppRoutes.notificaciones);
+              store.refreshNotificationCount();
+            },
+            icon: Icons.notifications_none_outlined,
+            badgeCount: store.unreadNotifications,
+          ),
       ],
     );
   }
@@ -752,12 +757,14 @@ class _AppHeader extends StatelessWidget {
 class _IconButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onPressed;
-  final bool hasDot;
+  /// Cuando es > 0 muestra un badge con el número. Usado por la campana para
+  /// el conteo de no-leídas.
+  final int badgeCount;
 
   const _IconButton({
     required this.icon,
     required this.onPressed,
-    this.hasDot = false,
+    this.badgeCount = 0,
   });
 
   @override
@@ -766,6 +773,7 @@ class _IconButton extends StatelessWidget {
       onTap: onPressed,
       borderRadius: BorderRadius.circular(14),
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
           Container(
             width: 42,
@@ -777,19 +785,27 @@ class _IconButton extends StatelessWidget {
             ),
             child: Icon(icon, color: AppColors.ink, size: 20),
           ),
-          if (hasDot)
+          if (badgeCount > 0)
             Positioned(
-              top: 9,
-              right: 9,
+              top: -3,
+              right: -3,
               child: Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                decoration: BoxDecoration(
                   color: AppColors.accentPink,
-                  boxShadow: [
-                    BoxShadow(color: AppColors.accentPink, blurRadius: 10),
-                  ],
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: AppColors.bgBase, width: 1.5),
+                ),
+                child: Text(
+                  badgeCount > 9 ? '9+' : '$badgeCount',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                    height: 1.2,
+                  ),
                 ),
               ),
             ),
