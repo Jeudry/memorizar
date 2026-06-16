@@ -479,6 +479,18 @@ func (r *Repository) SavePushToken(token domain.PushToken) error {
 	return nil
 }
 
+func (r *Repository) ListPushTokensByUser(userID string) ([]domain.PushToken, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := []domain.PushToken{}
+	for _, t := range r.pushTokens {
+		if t.UserID == userID {
+			result = append(result, t)
+		}
+	}
+	return result, nil
+}
+
 func (r *Repository) SavePremiumSubscription(subscription domain.PremiumSubscription) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

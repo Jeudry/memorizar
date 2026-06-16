@@ -29,10 +29,10 @@ const (
 
 type Notification struct {
 	Type   EventType
-	UserID string                 // destinatario
+	UserID string // destinatario
 	Title  string
 	Body   string
-	Data   map[string]string      // payload adicional (deeplink, IDs)
+	Data   map[string]string // payload adicional (deeplink, IDs)
 }
 
 type Notifier interface {
@@ -48,8 +48,6 @@ func (LogNotifier) Notify(n Notification) {
 		n.Type, n.UserID, n.Title, n.Body, n.Data)
 }
 
-// TODO(fcm): implementar FcmNotifier cuando Firebase Admin SDK esté
-// configurado. Patrón:
-//
-//   type FcmNotifier struct { app *firebase.App; tokens TokenStore }
-//   func (n FcmNotifier) Notify(...) { /* lookup tokens + send */ }
+// FcmNotifier (fcm.go) implementa el envío real vía FCM HTTP v1. Se activa
+// desde cmd/api/main.go cuando hay credenciales de service account; si no, se
+// usa LogNotifier. El service layer no cambia: ambos cumplen Notifier.

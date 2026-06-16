@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"net/http"
@@ -63,11 +64,12 @@ func main() {
 		log.Fatalf("unknown MEMORIZAR_STORE driver: %q (use 'sqlite' or 'file')", driver)
 	}
 
-	// Notifier por defecto: LogNotifier (stdout). Cuando Firebase Admin esté
-	// configurado se cambia por FcmNotifier sin tocar el resto del wiring.
+	// Notifier: FcmNotifier (push real) si hay credenciales de service account
+	// en MEMORIZAR_FCM_CREDENTIALS_FILE; si no, LogNotifier (stdout).
+	notifier := buildNotifier(repo)
 	moderatorEmails := strings.Split(os.Getenv("MEMORIZAR_MODERATOR_EMAILS"), ",")
 	service := application.NewService(repo,
-		application.WithNotifier(notify.LogNotifier{}),
+		application.WithNotifier(notifier),
 		application.WithModeratorEmails(moderatorEmails),
 	)
 	server := httpapi.NewServer(service)
@@ -104,4 +106,41 @@ func envOrDefault(key, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+// buildNotifier devuelve un FcmNotifier (push real vía FCM HTTP v1) si está
+// configurado MEMORIZAR_FCM_CREDENTIALS_FILE con un service account válido; en
+// cualquier otro caso cae al LogNotifier (stdout), de modo que el servidor
+// arranca igual sin Firebase configurado.
+func buildNotifier(repo ports.Repository) notify.Notifier {
+	credPath := os.Getenv("MEMORIZAR_FCM_CREDENTIALS_FILE")
+	if credPath == "" {
+		log.Printf("push: LogNotifier (FCM no configurado; set MEMORIZAR_FCM_CREDENTIALS_FILE para push real)")
+		return notify.LogNotifier{}
+	}
+	creds, err := os.ReadFile(credPath)
+	if err != nil {
+		log.Printf("push: no se pudo leer %s (%v) — fallback a LogNotifier", credPath, err)
+		return notify.LogNotifier{}
+	}
+	tokensFor := func(userID string) ([]string, error) {
+		tokens, err := repo.ListPushTokensByUser(userID)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]string, 0, len(tokens))
+		for _, t := range tokens {
+			if t.Token != "" {
+				out = append(out, t.Token)
+			}
+		}
+		return out, nil
+	}
+	fcm, err := notify.NewFcmNotifier(context.Background(), creds, tokensFor)
+	if err != nil {
+		log.Printf("push: FCM inválido (%v) — fallback a LogNotifier", err)
+		return notify.LogNotifier{}
+	}
+	log.Printf("push: FcmNotifier habilitado (FCM HTTP v1)")
+	return fcm
 }
