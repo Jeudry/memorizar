@@ -1887,7 +1887,13 @@ List<({int number, String text})> _currentBatchVerses(BuildContext context) {
   final List<MemoryCardData> batch;
   if (deck.isBible && deck.cards.length > 1 && store.sessionDailyTarget > 1) {
     final count = store.sessionDailyTarget.clamp(1, deck.cards.length);
-    batch = deck.cards.take(count).toList();
+    final len = deck.cards.length;
+    final startCardIndex = ((store.currentCardIndex - store.sessionCardsCompleted) % len + len) % len;
+    final batchCards = <MemoryCardData>[];
+    for (var i = 0; i < count; i++) {
+      batchCards.add(deck.cards[(startCardIndex + i) % len]);
+    }
+    batch = batchCards;
   } else {
     batch = [store.activeCard];
   }
@@ -1906,6 +1912,23 @@ List<({int number, String text})> _currentBatchVerses(BuildContext context) {
 /// el versículo activo.
 String _currentBatchText(BuildContext context) =>
     _currentBatchVerses(context).map((verse) => verse.text).join(' ');
+
+/// La referencia combinada de la sesión/lote actual de versículos.
+String _currentBatchReference(BuildContext context) {
+  final store = AppScope.of(context);
+  final deck = store.activeDeck;
+  if (deck.isBible && deck.cards.length > 1 && store.sessionDailyTarget > 1) {
+    final count = store.sessionDailyTarget.clamp(1, deck.cards.length);
+    final len = deck.cards.length;
+    final startCardIndex = ((store.currentCardIndex - store.sessionCardsCompleted) % len + len) % len;
+    final refs = <String>[];
+    for (var i = 0; i < count; i++) {
+      refs.add(deck.cards[(startCardIndex + i) % len].front);
+    }
+    return collapseBibleReferences(refs);
+  }
+  return store.activeCard.front;
+}
 
 /// Widget reusable: un verso renderizado como fila — número anclado
 /// (color pink, llamativo) seguido de las palabras. El callback `wordStyle`
@@ -2133,6 +2156,9 @@ String _phaseLabelFor(String slug) {
       _isWordBankSlug(slug) ||
       _isFinalVoiceSlug(slug)) {
     return 'Probar';
+  }
+  if (slug.contains('niebla')) {
+    return 'Construir';
   }
   if (_flowStepNumber(slug) <= 4) return 'Preparar';
   return 'Construir';

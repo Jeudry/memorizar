@@ -12,7 +12,9 @@ void main() {
       child: MaterialApp(
         home: Scaffold(
           body: ChooseWordPracticeBody(
-            card: store.activeCard,
+            cardId: store.activeCard.id,
+            targetText: store.activeCard.back,
+            reference: store.activeCard.front,
             onFinished: () {},
           ),
         ),

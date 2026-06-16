@@ -2019,7 +2019,7 @@ class AppStore extends ChangeNotifier {
       subtitle = '31,102 versículos';
     } else {
       final refs = _selectedBibleVerses.map((v) => v.ref).toList();
-      title = _collapseBibleReferences(refs);
+      title = collapseBibleReferences(refs);
       if (title.length > 32) {
         final uniqueBooks = _selectedBibleVerses.map((v) => v.book).toSet();
         if (uniqueBooks.length == 1) {
@@ -2533,7 +2533,7 @@ const bibleBooks = [
   BibleBookData('Apocalipsis', 'Apoc', 22),
 ];
 
-String _collapseBibleReferences(List<String> references) {
+String collapseBibleReferences(List<String> references) {
   if (references.isEmpty) return '';
   if (references.length == 1) return references.first;
 

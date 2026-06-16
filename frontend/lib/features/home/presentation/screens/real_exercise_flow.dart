@@ -537,8 +537,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     });
   }
 
-  bool _completionCorrect(String slug, MemoryCardData card) {
-    _ensureCompletionState(card.id, card.back, _completionLevelForSlug(slug));
+  bool _completionCorrect(String slug, MemoryCardData card, {int? levelOverride}) {
+    final level = levelOverride ?? _completionLevelForSlug(slug);
+    _ensureCompletionState(card.id, card.back, level);
     return _completionComplete();
   }
 
@@ -659,8 +660,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     MemoryDeckData deck,
   ) {
     if (slug == '05-bloques') return _blocksAreCorrect();
-    if (_isCompletionSlug(slug)) {
-      return _completionCorrect(slug, card);
+    final isOmitted = _omitOverride.contains('${card.id}:$slug');
+    if (_isCompletionSlug(slug) || (isOmitted && _phaseLabelFor(slug) != 'Preparar')) {
+      final level = _isCompletionSlug(slug) ? _completionLevelForSlug(slug) : _omitTargetLevel(slug);
+      return _completionCorrect(slug, card, levelOverride: level);
     }
     if (_isFirstLetterSlug(slug)) {
       return _letterCorrect(slug, card);
@@ -1019,7 +1022,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             if (isLastStep) {
               _completeSessionCard(context, store, correct: true);
             } else {
-              store.answerCurrentCard(true);
               _completeStepAndNavigate(context, store, widget.data.slug);
             }
           }
@@ -1087,7 +1089,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   if (isLastStep) {
                     _completeSessionCard(context, store, correct: true);
                   } else {
-                    store.answerCurrentCard(true);
                     _completeStepAndNavigate(context, store, widget.data.slug);
                   }
                 }
@@ -1303,7 +1304,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             if (isLastStep) {
               _completeSessionCard(context, store, correct: true);
             } else {
-              store.answerCurrentCard(true);
               _completeStepAndNavigate(context, store, widget.data.slug);
             }
           }
@@ -1678,20 +1678,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     String slug,
   ) {
     void complete() {
-      if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
-        store.answerCurrentCard(true);
-      }
       setState(() => _omitOverride.remove('${card.id}:$slug'));
       _completeStepAndNavigate(context, store, slug);
     }
 
     // Preparar → lectura simple. Construir/Probar → "Elige la palabra".
     if (_phaseLabelFor(slug) != 'Preparar') {
-      return ChooseWordPracticeBody(
-        key: ValueKey('omit-choose-${card.id}-$slug'),
-        card: card,
-        onFinished: complete,
-      );
+      final level = _omitTargetLevel(slug);
+      return _buildCompletionBody(context, store, card, slug, levelOverride: level);
     }
 
     final verses = _currentBatchVerses(context);
@@ -1777,6 +1771,186 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
   }
 
+  int _omitTargetLevel(String slug) {
+    if (slug.contains('n3') || slug == '09-quiz-avanzado' || slug == '15-banco-completo') {
+      return 3;
+    }
+    if (slug.contains('n2') || slug == '09-quiz') {
+      return 2;
+    }
+    return 1;
+  }
+
+  Widget _buildCompletionBody(
+    BuildContext context,
+    AppStore store,
+    MemoryCardData card,
+    String slug, {
+    int? levelOverride,
+  }) {
+    final level = levelOverride ?? _completionLevelForSlug(slug);
+    final isHarder = level >= 2;
+    _ensureCompletionState(card.id, card.back, level);
+    _ensureAiDistractors(card);
+    final activeTarget = _completionTargets.isEmpty
+        ? _targetWord(card.back, level: level)
+        : _completionTargets[_activeCompletionIndex.clamp(
+            0,
+            _completionTargets.length - 1,
+          )];
+    final words = _completionOptions(
+      card.back,
+      activeTarget,
+      seed: _completionSeed,
+      aiPool: _aiDistractorPool,
+    );
+    final hasInput = _hasCompletionInput();
+    final complete = _completionComplete();
+    final remainingAttempts = (3 - _completionMistakes).clamp(0, 3);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _CompleteStatsCard(
+          level2: isHarder,
+          firstValue:
+              '${_completionAnswers.where((answer) => answer != null).length}/${_completionTargets.length}',
+          firstLabel: 'HUECOS',
+          secondValue: '$remainingAttempts/3',
+          secondLabel: 'INTENTOS',
+          timeValue: _formatMmSs(_completionSecondsLeft),
+        ),
+        const SizedBox(height: 14),
+        _CompletionPromptCard(
+          label: card.front,
+          text: card.back,
+          targets: _completionTargets,
+          answers: _completionAnswers,
+          activeIndex: _activeCompletionIndex,
+          onBlankTap: _activateCompletionBlank,
+        ),
+        const SizedBox(height: 14),
+        if (complete)
+          Glass(
+            padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+            color: RefColors.lime.withValues(alpha: .14),
+            border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
+            child: Column(
+              children: const [
+                Icon(
+                  Icons.check_circle_rounded,
+                  color: RefColors.lime,
+                  size: 36,
+                ),
+                SizedBox(height: 10),
+                Text(
+                  '¡Completado!',
+                  style: TextStyle(
+                    color: RefColors.lime,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Todos los huecos están correctos.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: RefColors.ink,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          )
+        else if (_completionLost)
+          _LostPanel(
+            title: '¡Tiempo agotado!',
+            subtitle: 'Se acabó el tiempo. Inténtalo de nuevo.',
+            onRetry: _retryCompletion,
+          )
+        else
+          Glass(
+            padding: const EdgeInsets.all(14),
+            color: RefColors.glassSoft,
+            child: Column(
+              children: [
+                const Text(
+                  'ELIGE LA PALABRA CORRECTA',
+                  style: TextStyle(
+                    color: RefColors.muted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.4,
+                  ),
+                ),
+                if (_aiDistractorLoading) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: RefColors.violet),
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'La IA está generando opciones más difíciles…',
+                        style: TextStyle(
+                            color: RefColors.violet,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    for (final word in words)
+                      GestureDetector(
+                        onTap: remainingAttempts == 0
+                            ? null
+                            : () => _selectCompletionWord(word),
+                        child: _WordChip(word, active: false),
+                      ),
+                  ],
+                ),
+                if (hasInput && !complete && remainingAttempts > 0) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Si fallas, las opciones se barajan de nuevo.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+                if (remainingAttempts == 0 && !complete) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Sin intentos restantes.',
+                    style: TextStyle(
+                      color: RefColors.urgent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _realExerciseBody(
     BuildContext context,
     AppStore store,
@@ -1797,7 +1971,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     // intentos. Reusa el body embebible y avanza como cualquier otro paso.
     if (slug == _chooseWordPracticeSlug) {
       return ChooseWordPracticeBody(
-        card: card,
+        key: ValueKey('practice-choose-${card.id}'),
+        cardId: card.id,
+        targetText: _currentBatchText(context),
+        reference: _currentBatchReference(context),
         onFinished: () => _completeStepAndNavigate(context, store, slug),
       );
     }
@@ -2111,7 +2288,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         showHintTemp: _fogShowHintTemp,
         onRoundCompleted: () {
           _onFogRoundCompleted();
-          store.answerCurrentCard(true); // completed!
         },
       );
     }
@@ -2218,167 +2394,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     }
 
     if (_isCompletionSlug(slug)) {
-      final level = _completionLevelForSlug(slug);
-      final isHarder = level >= 2;
-      _ensureCompletionState(card.id, card.back, level);
-      _ensureAiDistractors(card);
-      final activeTarget = _completionTargets.isEmpty
-          ? _targetWord(card.back, level: level)
-          : _completionTargets[_activeCompletionIndex.clamp(
-              0,
-              _completionTargets.length - 1,
-            )];
-      final words = _completionOptions(
-        card.back,
-        activeTarget,
-        seed: _completionSeed,
-        aiPool: _aiDistractorPool,
-      );
-      final hasInput = _hasCompletionInput();
-      final complete = _completionComplete();
-      final remainingAttempts = (3 - _completionMistakes).clamp(0, 3);
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _CompleteStatsCard(
-            level2: isHarder,
-            firstValue:
-                '${_completionAnswers.where((answer) => answer != null).length}/${_completionTargets.length}',
-            firstLabel: 'HUECOS',
-            secondValue: '$remainingAttempts/3',
-            secondLabel: 'INTENTOS',
-            timeValue: _formatMmSs(_completionSecondsLeft),
-          ),
-          const SizedBox(height: 14),
-          _CompletionPromptCard(
-            label: card.front,
-            text: card.back,
-            targets: _completionTargets,
-            answers: _completionAnswers,
-            activeIndex: _activeCompletionIndex,
-            onBlankTap: _activateCompletionBlank,
-          ),
-          const SizedBox(height: 14),
-          if (complete)
-            Glass(
-              padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
-              color: RefColors.lime.withValues(alpha: .14),
-              border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
-              child: Column(
-                children: const [
-                  Icon(
-                    Icons.check_circle_rounded,
-                    color: RefColors.lime,
-                    size: 36,
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    '¡Completado!',
-                    style: TextStyle(
-                      color: RefColors.lime,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    'Todos los huecos están correctos.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: RefColors.ink,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else if (_completionLost)
-            _LostPanel(
-              title: '¡Tiempo agotado!',
-              subtitle: 'Se acabó el tiempo. Inténtalo de nuevo.',
-              onRetry: _retryCompletion,
-            )
-          else
-            Glass(
-              padding: const EdgeInsets.all(14),
-              color: RefColors.glassSoft,
-              child: Column(
-                children: [
-                  const Text(
-                    'ELIGE LA PALABRA CORRECTA',
-                    style: TextStyle(
-                      color: RefColors.muted,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.4,
-                    ),
-                  ),
-                  if (_aiDistractorLoading) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: RefColors.violet),
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'La IA está generando opciones más difíciles…',
-                          style: TextStyle(
-                              color: RefColors.violet,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700),
-                        ),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      for (final word in words)
-                        GestureDetector(
-                          onTap: remainingAttempts == 0
-                              ? null
-                              : () => _selectCompletionWord(word),
-                          child: _WordChip(word, active: false),
-                        ),
-                    ],
-                  ),
-                  if (hasInput && !complete && remainingAttempts > 0) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      'Si fallas, las opciones se barajan de nuevo.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: RefColors.muted,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                  if (remainingAttempts == 0 && !complete) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      'Sin intentos restantes.',
-                      style: TextStyle(
-                        color: RefColors.urgent,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-        ],
-      );
+      return _buildCompletionBody(context, store, card, slug);
     }
 
     if (_isFirstLetterSlug(slug)) {
@@ -3267,8 +3283,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     MemoryDeckData deck,
     String slug,
   ) {
-    // F2: el reemplazo por omitir trae su propio botón de continuar.
-    if (_omitOverride.contains('${card.id}:$slug')) {
+    // F2: el reemplazo por omitir trae su propio botón de continuar solo para la fase Preparar.
+    if (_omitOverride.contains('${card.id}:$slug') && _phaseLabelFor(slug) == 'Preparar') {
       return const SizedBox.shrink();
     }
     final next = _nextFlowSlug(store, slug);
@@ -3425,7 +3441,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   _showQuizFailedDialog();
                   return;
                 }
-                store.answerCurrentCard(true);
                 _completeStepAndNavigate(context, store, slug);
                 return;
               }
@@ -3450,9 +3465,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 );
                 return;
               }
-              if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
-                store.answerCurrentCard(correct);
-              }
               _completeStepAndNavigate(context, store, slug);
             },
           ),
@@ -3469,8 +3481,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '05-bloques') {
       return _blocksAreCorrect();
     }
-    if (_isCompletionSlug(slug)) {
-      return _completionCorrect(slug, card);
+    final isOmitted = _omitOverride.contains('${card.id}:$slug');
+    if (_isCompletionSlug(slug) || (isOmitted && _phaseLabelFor(slug) != 'Preparar')) {
+      final level = _isCompletionSlug(slug) ? _completionLevelForSlug(slug) : _omitTargetLevel(slug);
+      return _completionCorrect(slug, card, levelOverride: level);
     }
     if (_isFirstLetterSlug(slug)) {
       return _letterCorrect(slug, card);
@@ -3507,7 +3521,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '05-bloques') {
       return _blocksAreCorrect() ? 'Siguiente →' : 'Ordena para continuar';
     }
-    if (_isCompletionSlug(slug)) {
+    final isOmitted = _omitOverride.contains('${AppScope.of(context).activeCard.id}:$slug');
+    if (_isCompletionSlug(slug) || (isOmitted && _phaseLabelFor(slug) != 'Preparar')) {
       return _completionComplete() ? 'Completado →' : 'Completa los huecos';
     }
     if (_isFirstLetterSlug(slug)) {
@@ -3537,11 +3552,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }) {
     if (slug == '01-escuchar') return completed;
     if (slug == '04-escuchar-voz') return completed;
+    final isOmitted = _omitOverride.contains('${AppScope.of(context).activeCard.id}:$slug');
     if (slug == '05-bloques' ||
         slug == '09-quiz' ||
         slug == '09-quiz-avanzado' ||
         _isCompletionSlug(slug) ||
-        _isFirstLetterSlug(slug)) {
+        _isFirstLetterSlug(slug) ||
+        (isOmitted && _phaseLabelFor(slug) != 'Preparar')) {
       return _canAdvanceAnsweredStep(
         slug,
         AppScope.of(context).activeCard,

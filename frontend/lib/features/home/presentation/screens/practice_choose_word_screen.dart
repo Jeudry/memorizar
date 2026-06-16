@@ -18,12 +18,16 @@ import '../exercise_logic.dart';
 /// lo envuelva el chrome del flujo. Al terminar (botón "Listo") invoca
 /// [onFinished], que el flujo usa para marcar el paso y avanzar.
 class ChooseWordPracticeBody extends StatefulWidget {
-  final MemoryCardData card;
+  final String cardId;
+  final String targetText;
+  final String reference;
   final VoidCallback onFinished;
 
   const ChooseWordPracticeBody({
     super.key,
-    required this.card,
+    required this.cardId,
+    required this.targetText,
+    required this.reference,
     required this.onFinished,
   });
 
@@ -55,16 +59,16 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
     return clean.split(' ');
   }
 
-  void _ensure(MemoryCardData card) {
-    if (_cardId == card.id) return;
-    _cardId = card.id;
-    _words = _splitWords(card.back);
+  void _ensure(String cardId, String targetText) {
+    if (_cardId == cardId) return;
+    _cardId = cardId;
+    _words = _splitWords(targetText);
     // 100% hidden: blank all words that have letters
     _blankPositions = [
       for (var i = 0; i < _words.length; i++)
         if (_norm(_words[i]).isNotEmpty) i,
     ];
-    _startPass(0, card.back);
+    _startPass(0, targetText);
   }
 
   void _startPass(int pass, String text) {
@@ -126,8 +130,7 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
 
   @override
   Widget build(BuildContext context) {
-    final card = widget.card;
-    _ensure(card);
+    _ensure(widget.cardId, widget.targetText);
     final activeBlank = _activeBlank;
 
     return Column(
@@ -138,7 +141,7 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
           passesRequired: _passesRequired,
           filled: _filled.length,
           total: _blankPositions.length,
-          reference: card.front,
+          reference: widget.reference,
         ),
         const SizedBox(height: 12),
         // El versículo con huecos.
@@ -232,7 +235,7 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
                   children: [
                     for (final word in _options)
                       GestureDetector(
-                        onTap: () => _tap(word, card.back),
+                        onTap: () => _tap(word, widget.targetText),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 14, vertical: 9),
