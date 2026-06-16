@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Jeudry/memorizar/backend/internal/social/domain"
+	"github.com/Jeudry/memorizar/backend/internal/social/ports"
 )
 
 type state struct {
@@ -22,6 +23,7 @@ type state struct {
 	SharedResources   map[string]domain.SharedResource         `json:"sharedResources"`
 	ShareImports      map[string]map[string]domain.ShareImport `json:"shareImports"`
 	DeckLikes         map[string]map[string]time.Time          `json:"deckLikes"`
+	DeckRatings       map[string]map[string]domain.DeckRating  `json:"deckRatings"`
 	Follows           map[string]map[string]time.Time          `json:"follows"`
 	DeckReports       map[string]domain.DeckReport             `json:"deckReports"`
 	AnalyticsEvents   []domain.AnalyticsEvent                  `json:"analyticsEvents"`
@@ -413,6 +415,67 @@ func (r *Repository) ListLikedShareIDsByUser(userID string) ([]string, error) {
 		}
 	}
 	return liked, nil
+}
+
+func (r *Repository) SaveDeckRating(rating domain.DeckRating) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state.DeckRatings == nil {
+		r.state.DeckRatings = map[string]map[string]domain.DeckRating{}
+	}
+	byUser, ok := r.state.DeckRatings[rating.ShareID]
+	if !ok {
+		byUser = map[string]domain.DeckRating{}
+		r.state.DeckRatings[rating.ShareID] = byUser
+	}
+	byUser[rating.UserID] = rating
+	return r.persistLocked()
+}
+
+func (r *Repository) FindDeckRating(shareID, userID string) (*domain.DeckRating, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if byUser, ok := r.state.DeckRatings[shareID]; ok {
+		if rating, ok := byUser[userID]; ok {
+			copy := rating
+			return &copy, nil
+		}
+	}
+	return nil, nil
+}
+
+func (r *Repository) ListDeckRatingsByShare(shareID string) ([]domain.DeckRating, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := []domain.DeckRating{}
+	for _, rating := range r.state.DeckRatings[shareID] {
+		result = append(result, rating)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].UpdatedAt.After(result[j].UpdatedAt)
+	})
+	return result, nil
+}
+
+func (r *Repository) AggregateDeckRatings(shareIDs []string) (map[string]ports.RatingAgg, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := map[string]ports.RatingAgg{}
+	for _, shareID := range shareIDs {
+		byUser, ok := r.state.DeckRatings[shareID]
+		if !ok {
+			continue
+		}
+		agg := ports.RatingAgg{}
+		for _, rating := range byUser {
+			agg.Sum += rating.Stars
+			agg.Count++
+		}
+		if agg.Count > 0 {
+			out[shareID] = agg
+		}
+	}
+	return out, nil
 }
 
 func (r *Repository) SaveFollow(followerID, creatorID string, createdAt time.Time) error {

@@ -189,6 +189,18 @@ type DeckReport struct {
 	CreatedAt  time.Time        `json:"createdAt"`
 }
 
+// DeckRating es la valoración (1-5 estrellas) y reseña opcional de un usuario
+// sobre un mazo comunitario. Una fila por (share, usuario): re-valorar
+// actualiza la existente.
+type DeckRating struct {
+	ShareID   string    `json:"shareId"`
+	UserID    string    `json:"userId"`
+	Stars     int       `json:"stars"`
+	Review    string    `json:"review,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 // ShareImport registra que un usuario importó un deck comunitario a su
 // colección. Una fila por (share, usuario): re-importar no infla stats.
 type ShareImport struct {

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Jeudry/memorizar/backend/internal/social/domain"
+	"github.com/Jeudry/memorizar/backend/internal/social/ports"
 	_ "modernc.org/sqlite"
 )
 
@@ -687,6 +688,92 @@ func (r *Repository) ListLikedShareIDsByUser(userID string) ([]string, error) {
 		liked = append(liked, shareID)
 	}
 	return liked, nil
+}
+
+// ─── Ratings (valoraciones de mazos) ─────────────────────────────────────
+
+func (r *Repository) SaveDeckRating(rating domain.DeckRating) error {
+	_, err := r.db.Exec(`
+		INSERT INTO deck_ratings (share_id, user_id, stars, review, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(share_id, user_id) DO UPDATE SET
+			stars = excluded.stars,
+			review = excluded.review,
+			updated_at = excluded.updated_at`,
+		rating.ShareID, rating.UserID, rating.Stars, rating.Review,
+		formatTime(rating.CreatedAt), formatTime(rating.UpdatedAt),
+	)
+	return err
+}
+
+func (r *Repository) FindDeckRating(shareID, userID string) (*domain.DeckRating, error) {
+	var rt domain.DeckRating
+	var created, updated string
+	err := r.db.QueryRow(`
+		SELECT share_id, user_id, stars, review, created_at, updated_at
+		FROM deck_ratings WHERE share_id = ? AND user_id = ?`, shareID, userID,
+	).Scan(&rt.ShareID, &rt.UserID, &rt.Stars, &rt.Review, &created, &updated)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rt.CreatedAt = parseTime(created)
+	rt.UpdatedAt = parseTime(updated)
+	return &rt, nil
+}
+
+func (r *Repository) ListDeckRatingsByShare(shareID string) ([]domain.DeckRating, error) {
+	rows, err := r.db.Query(`
+		SELECT share_id, user_id, stars, review, created_at, updated_at
+		FROM deck_ratings WHERE share_id = ?
+		ORDER BY updated_at DESC`, shareID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.DeckRating{}
+	for rows.Next() {
+		var rt domain.DeckRating
+		var created, updated string
+		if err := rows.Scan(&rt.ShareID, &rt.UserID, &rt.Stars, &rt.Review, &created, &updated); err != nil {
+			return nil, err
+		}
+		rt.CreatedAt = parseTime(created)
+		rt.UpdatedAt = parseTime(updated)
+		out = append(out, rt)
+	}
+	return out, nil
+}
+
+func (r *Repository) AggregateDeckRatings(shareIDs []string) (map[string]ports.RatingAgg, error) {
+	out := map[string]ports.RatingAgg{}
+	if len(shareIDs) == 0 {
+		return out, nil
+	}
+	placeholders := strings.Repeat("?,", len(shareIDs)-1) + "?"
+	args := make([]any, len(shareIDs))
+	for i, v := range shareIDs {
+		args[i] = v
+	}
+	rows, err := r.db.Query(`
+		SELECT share_id, SUM(stars), COUNT(*)
+		FROM deck_ratings WHERE share_id IN (`+placeholders+`)
+		GROUP BY share_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var shareID string
+		var sum, count int
+		if err := rows.Scan(&shareID, &sum, &count); err != nil {
+			return nil, err
+		}
+		out[shareID] = ports.RatingAgg{Sum: sum, Count: count}
+	}
+	return out, nil
 }
 
 // ─── Follows (seguir creadores) ──────────────────────────────────────────
