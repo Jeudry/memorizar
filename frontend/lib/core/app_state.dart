@@ -703,6 +703,7 @@ class AppStore extends ChangeNotifier {
     unawaited(pullProgressSnapshot());
     unawaited(refreshPremiumStatus());
     unawaited(refreshPendingCount());
+    unawaited(PushService.instance.registerWithBackend(api));
   }
 
   Future<void> logout() async {
@@ -738,6 +739,7 @@ class AppStore extends ChangeNotifier {
     unawaited(pullProgressSnapshot());
     unawaited(refreshPremiumStatus());
     unawaited(refreshPendingCount());
+    unawaited(PushService.instance.registerWithBackend(api));
   }
 
   Future<void> loginWithEmail({
@@ -755,6 +757,7 @@ class AppStore extends ChangeNotifier {
     unawaited(pullProgressSnapshot());
     unawaited(refreshPremiumStatus());
     unawaited(refreshPendingCount());
+    unawaited(PushService.instance.registerWithBackend(api));
   }
 
   /// Setter directo para refrescar el user en memoria sin re-autenticar

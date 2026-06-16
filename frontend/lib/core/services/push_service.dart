@@ -1,27 +1,33 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
-/// Servicio de notificaciones push.
+import '../api/memorizar_client.dart';
+
+/// Servicio de notificaciones push (locales + remotas vía FCM).
 ///
-/// **Estado actual**: integración solo de plumbing — el plugin se inicializa
-/// y muestra notificaciones locales. Para PUSH remotas (FCM) hay que:
+/// Las notificaciones **locales** (recordatorios diarios) funcionan siempre,
+/// sin config nativa. Las **remotas (FCM)** se activan automáticamente en
+/// cuanto el proyecto Firebase del usuario esté configurado: el código real ya
+/// está aquí ([getDeviceToken] llama a `FirebaseMessaging.getToken()` y
+/// [registerWithBackend] lo persiste vía `POST /v1/push/register-token`).
 ///
-/// 1. Crear proyecto en https://console.firebase.google.com.
-/// 2. Bajar `GoogleService-Info.plist` y meterlo en `ios/Runner/`.
-/// 3. Bajar `google-services.json` y meterlo en `android/app/`.
-/// 4. Habilitar APNs en Apple Developer (key + bundle id) y subir la key
-///    al proyecto Firebase.
-/// 5. Llamar `Firebase.initializeApp()` en main.dart antes de runApp.
-/// 6. Inyectar `FirebaseMessaging.instance` aquí y registrar `getToken()`.
+/// Único paso que falta — y que solo puede hacer el dueño del proyecto porque
+/// embebe sus credenciales:
 ///
-/// Mientras esos pasos no estén, la app funciona sin push remoto pero las
-/// notificaciones locales (recordatorios diarios) ya quedan operativas
-/// sin config nativa.
+/// 1. `flutterfire configure` (genera `firebase_options.dart`,
+///    `android/app/google-services.json`, `ios/Runner/GoogleService-Info.plist`).
+/// 2. Habilitar APNs en Apple Developer y subir la key a Firebase (iOS).
+/// 3. En el backend, setear `MEMORIZAR_FCM_CREDENTIALS_FILE` al service account.
+///
+/// Sin esos archivos, `Firebase.initializeApp()` falla de forma controlada y
+/// la app sigue corriendo solo con notificaciones locales (getToken → null).
 class PushService {
   PushService._();
   static final PushService instance = PushService._();
@@ -30,6 +36,8 @@ class PushService {
       FlutterLocalNotificationsPlugin();
   bool _initialized = false;
   bool _timezoneReady = false;
+  bool _firebaseChecked = false;
+  bool _firebaseReady = false;
 
   static const int _dailyReminderId = 7001;
 
@@ -152,15 +160,63 @@ class PushService {
     );
   }
 
-  /// TODO: cuando Firebase esté configurado (requiere proyecto FCM externo),
-  /// reemplazar por `FirebaseMessaging.instance.getToken()`. El resto del
-  /// pipeline YA existe: `MemorizarClient.registerPushToken` y el endpoint
-  /// `POST /v1/push/register-token` persisten el token en el backend.
-  Future<String?> getDeviceToken() async {
-    if (kDebugMode) {
-      debugPrint('[PushService] Firebase no configurado todavía — '
-          'devolvemos null. Ver docs en push_service.dart.');
+  /// Inicializa Firebase una sola vez, de forma tolerante a fallos: si el
+  /// proyecto no está configurado (sin `google-services.json` /
+  /// `GoogleService-Info.plist`), `initializeApp` lanza y devolvemos false sin
+  /// romper la app. Web queda fuera (FCM web requiere vapidKey aparte).
+  Future<bool> _ensureFirebase() async {
+    if (_firebaseChecked) return _firebaseReady;
+    _firebaseChecked = true;
+    if (kIsWeb) return false;
+    try {
+      await Firebase.initializeApp();
+      _firebaseReady = true;
+    } catch (e) {
+      _firebaseReady = false;
+      debugPrint('[PushService] Firebase no configurado ($e) — '
+          'push remoto inactivo; corre `flutterfire configure`.');
     }
-    return null;
+    return _firebaseReady;
+  }
+
+  /// Devuelve el token FCM real del dispositivo, o null si Firebase no está
+  /// configurado / falla. Pide permiso de notificaciones en el proceso.
+  Future<String?> getDeviceToken() async {
+    if (!await _ensureFirebase()) return null;
+    try {
+      await FirebaseMessaging.instance.requestPermission();
+      return await FirebaseMessaging.instance.getToken();
+    } catch (e) {
+      debugPrint('[PushService] No se pudo obtener el token FCM: $e');
+      return null;
+    }
+  }
+
+  /// Obtiene el token del dispositivo y lo registra en el backend para que las
+  /// notificaciones (likes, follows, etc.) lleguen como push. No-op silencioso
+  /// si no hay token (Firebase sin configurar) o si falla el registro. Llamar
+  /// tras tener sesión iniciada.
+  Future<void> registerWithBackend(MemorizarClient api) async {
+    final token = await getDeviceToken();
+    if (token == null || token.isEmpty) return;
+    try {
+      await api.registerPushToken(token: token, platform: _platformLabel());
+      debugPrint('[PushService] Token FCM registrado en el backend.');
+    } catch (e) {
+      debugPrint('[PushService] No se pudo registrar el token push: $e');
+    }
+  }
+
+  String _platformLabel() {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return 'android';
+      case TargetPlatform.iOS:
+        return 'ios';
+      case TargetPlatform.macOS:
+        return 'macos';
+      default:
+        return 'other';
+    }
   }
 }
