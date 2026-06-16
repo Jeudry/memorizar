@@ -11,6 +11,7 @@ import 'api/memorizar_client.dart';
 import 'api/models.dart';
 import 'db/app_database.dart';
 import 'streak_logic.dart';
+import 'srs_forecast.dart';
 import 'services/push_service.dart';
 import 'services/secure_store.dart';
 import 'srs/sm2.dart';
@@ -1428,6 +1429,17 @@ class AppStore extends ChangeNotifier {
     cards.sort((a, b) => a.retention.compareTo(b.retention));
     return cards.take(5).toList();
   }
+
+  /// Pronóstico de repasos: vencidas ahora + cuántas vencen cada día de los
+  /// próximos 7, según el SM-2.
+  ReviewForecast get reviewForecast => computeForecast(
+        [
+          for (final deck in _decks)
+            for (final card in deck.cards)
+              (isDue: card.isDueForReview, next: card.nextReviewAt),
+        ],
+        DateTime.now(),
+      );
 
   /// Total de tarjetas con repaso vencido hoy (sin límite).
   int get dueTodayCount => _decks.fold(

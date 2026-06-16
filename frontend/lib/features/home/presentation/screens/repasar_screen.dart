@@ -113,6 +113,8 @@ class RepasarScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
+          _ForecastStrip(forecast: store.reviewForecast),
+          const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
@@ -217,6 +219,84 @@ class _GroupHeader extends StatelessWidget {
                 color: RefColors.muted,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tira de pronóstico SRS: cuántas tarjetas vencen hoy, mañana y en 7 días,
+/// con un mini-gráfico de barras de los próximos 7 días.
+class _ForecastStrip extends StatelessWidget {
+  final ReviewForecast forecast;
+  const _ForecastStrip({required this.forecast});
+
+  @override
+  Widget build(BuildContext context) {
+    final maxBar = [
+      forecast.dueNow,
+      ...forecast.next7,
+      1,
+    ].reduce((a, b) => a > b ? a : b);
+    const labels = ['Hoy', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do', '+7'];
+    final values = [forecast.dueNow, ...forecast.next7];
+    return Glass(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const GlyphIcon('📅', size: 18),
+              const SizedBox(width: 8),
+              const Text('Próximos repasos',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
+              const Spacer(),
+              Text(
+                '${forecast.weekTotal} en 7 días',
+                style: const TextStyle(
+                    fontSize: 11, color: RefColors.muted, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              for (var i = 0; i < values.length; i++)
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(
+                        '${values[i]}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          color: i == 0 ? RefColors.urgent : RefColors.muted,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Container(
+                        height: 6 + 34 * (values[i] / maxBar),
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        decoration: BoxDecoration(
+                          color: i == 0
+                              ? RefColors.urgent.withValues(alpha: .85)
+                              : RefColors.cyan.withValues(alpha: .6),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        labels[i],
+                        style: const TextStyle(
+                            fontSize: 9, color: RefColors.dim),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
         ],
       ),
