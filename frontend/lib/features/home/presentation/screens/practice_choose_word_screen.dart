@@ -6,23 +6,34 @@ import '../../../../core/app_state.dart';
 import '../../../../core/theme/ref_colors.dart';
 import '../../../../core/ui/widgets.dart';
 
-/// Práctica suelta de "Elige la palabra correcta" sobre la tarjeta activa.
+/// Práctica de "Elige la palabra correcta" sobre una tarjeta, embebida como un
+/// paso del flujo de estudio (bloque Preparar).
 ///
-/// A diferencia del ejercicio de la sesión (con niveles, intentos, cronómetro
-/// y distractores de IA), esta versión es relajada:
+/// A diferencia de los ejercicios con nivel de la sesión (intentos, cronómetro
+/// y distractores de IA), esta versión es de práctica:
 ///  - sin niveles ni límite de intentos (fallar no penaliza, solo no avanza);
 ///  - banco COMPLETO con todas las palabras del versículo, en orden aleatorio
 ///    (sin IA eligiendo palabras tramposas);
 ///  - hay que completarlo DOS veces para terminar.
-class PracticeChooseWordScreen extends StatefulWidget {
-  const PracticeChooseWordScreen({super.key});
+///
+/// No incluye scaffold ni top bar propios: devuelve solo el contenido para que
+/// lo envuelva el chrome del flujo. Al terminar (botón "Listo") invoca
+/// [onFinished], que el flujo usa para marcar el paso y avanzar.
+class ChooseWordPracticeBody extends StatefulWidget {
+  final MemoryCardData card;
+  final VoidCallback onFinished;
+
+  const ChooseWordPracticeBody({
+    super.key,
+    required this.card,
+    required this.onFinished,
+  });
 
   @override
-  State<PracticeChooseWordScreen> createState() =>
-      _PracticeChooseWordScreenState();
+  State<ChooseWordPracticeBody> createState() => _ChooseWordPracticeBodyState();
 }
 
-class _PracticeChooseWordScreenState extends State<PracticeChooseWordScreen> {
+class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
   static const int _passesRequired = 2;
 
   String? _cardId;
@@ -110,140 +121,134 @@ class _PracticeChooseWordScreenState extends State<PracticeChooseWordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final store = AppScope.of(context);
-    final card = store.activeCard;
+    final card = widget.card;
     _ensure(card);
     final activeBlank = _activeBlank;
 
-    return ReferencePage(
-      showBottomNav: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const RefTopBar(title: 'Práctica · Elige la palabra'),
-          _PracticeHeader(
-            pass: _pass,
-            passesRequired: _passesRequired,
-            filled: _filled.length,
-            total: _blankPositions.length,
-            reference: card.front,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _PracticeHeader(
+          pass: _pass,
+          passesRequired: _passesRequired,
+          filled: _filled.length,
+          total: _blankPositions.length,
+          reference: card.front,
+        ),
+        const SizedBox(height: 12),
+        // El versículo con huecos.
+        Glass(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 26),
+          gradient: LinearGradient(
+            colors: [
+              RefColors.violet.withValues(alpha: .26),
+              RefColors.cyan.withValues(alpha: .20),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
-          const SizedBox(height: 12),
-          // El versículo con huecos.
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 6,
+            runSpacing: 10,
+            children: [
+              for (var i = 0; i < _words.length; i++)
+                _WordSlot(
+                  word: _words[i],
+                  isBlank: _blankPositions.contains(i),
+                  filled: _filled[i],
+                  isActive: i == activeBlank,
+                  isWrong: i == _wrongFlashPos,
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (_finished)
           Glass(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 26),
-            gradient: LinearGradient(
-              colors: [
-                RefColors.violet.withValues(alpha: .26),
-                RefColors.cyan.withValues(alpha: .20),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            child: Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 6,
-              runSpacing: 10,
+            padding: const EdgeInsets.all(18),
+            child: Column(
               children: [
-                for (var i = 0; i < _words.length; i++)
-                  _WordSlot(
-                    word: _words[i],
-                    isBlank: _blankPositions.contains(i),
-                    filled: _filled[i],
-                    isActive: i == activeBlank,
-                    isWrong: i == _wrongFlashPos,
-                  ),
+                const Text('🎉', style: TextStyle(fontSize: 40)),
+                const SizedBox(height: 8),
+                const Text(
+                  '¡Lo completaste 2 veces!',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Practicaste sin presión. Tu memoria lo agradece.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: RefColors.muted, fontSize: 12),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GhostButton(
+                        'Otra vez',
+                        onTap: () => setState(() {
+                          _cardId = null; // fuerza re-init
+                        }),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Cta(
+                        'Listo',
+                        onTap: widget.onFinished,
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
-          ),
-          const SizedBox(height: 14),
-          if (_finished)
-            Glass(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                children: [
-                  const Text('🎉', style: TextStyle(fontSize: 40)),
-                  const SizedBox(height: 8),
-                  const Text(
-                    '¡Lo completaste 2 veces!',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+          )
+        else
+          Glass(
+            padding: const EdgeInsets.all(14),
+            color: RefColors.glassSoft,
+            child: Column(
+              children: [
+                const Text(
+                  'BANCO COMPLETO · TOCA LA PALABRA',
+                  style: TextStyle(
+                    color: RefColors.muted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.3,
                   ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Practicaste sin presión. Tu memoria lo agradece.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: RefColors.muted, fontSize: 12),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: GhostButton(
-                          'Otra vez',
-                          onTap: () => setState(() {
-                            _cardId = null; // fuerza re-init
-                          }),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Cta(
-                          'Listo',
-                          onTap: () => Navigator.pop(context),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            )
-          else
-            Glass(
-              padding: const EdgeInsets.all(14),
-              color: RefColors.glassSoft,
-              child: Column(
-                children: [
-                  const Text(
-                    'BANCO COMPLETO · TOCA LA PALABRA',
-                    style: TextStyle(
-                      color: RefColors.muted,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.3,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      for (final word in _bank)
-                        GestureDetector(
-                          onTap: () => _tap(word),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 9),
-                            decoration: BoxDecoration(
-                              color: RefColors.glassStrong,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: RefColors.border),
-                            ),
-                            child: Text(
-                              word,
-                              style: const TextStyle(
-                                  fontSize: 14, fontWeight: FontWeight.w900),
-                            ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    for (final word in _bank)
+                      GestureDetector(
+                        onTap: () => _tap(word),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 9),
+                          decoration: BoxDecoration(
+                            color: RefColors.glassStrong,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: RefColors.border),
+                          ),
+                          child: Text(
+                            word,
+                            style: const TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w900),
                           ),
                         ),
-                    ],
-                  ),
-                ],
-              ),
+                      ),
+                  ],
+                ),
+              ],
             ),
-        ],
-      ),
+          ),
+      ],
     );
   }
 }

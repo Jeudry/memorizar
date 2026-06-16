@@ -212,7 +212,6 @@ Map<String, WidgetBuilder> buildAppRoutes() => {
   AppRoutes.legalDmca: (_) => const DmcaScreen(),
   AppRoutes.legalCommunity: (_) => const CommunityGuidelinesScreen(),
   AppRoutes.moderationQueue: (_) => const ModerationQueueScreen(),
-  AppRoutes.practicaElegirPalabra: (_) => const PracticeChooseWordScreen(),
   AppRoutes.login: (_) => const LoginScreen(),
   AppRoutes.account: (_) => const AccountScreen(),
   AppRoutes.settings: (_) => const SettingsScreen(),
@@ -238,6 +237,11 @@ const flowScreens = [
   ExerciseFlowData('03-leer-voz', 'Leer en voz', 'Activa memoria auditiva'),
   ExerciseFlowData('04-escuchar-voz', 'Escuchar voz', 'Reconoce sin mirar'),
   ExerciseFlowData('05-bloques', 'Bloques', 'Ordena piezas clave'),
+  ExerciseFlowData(
+    _chooseWordPracticeSlug,
+    'Práctica',
+    'Elige la palabra, sin presión',
+  ),
   ExerciseFlowData('06-completar-n1', 'Elige la palabra · N1', 'Recuerdo con apoyo'),
   ExerciseFlowData(
     '07-primera-letra-n1',

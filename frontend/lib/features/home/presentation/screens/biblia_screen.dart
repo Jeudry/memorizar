@@ -1973,6 +1973,7 @@ int _flowStepNumber(String slug) {
 }
 
 String _realStepTitle(String slug) {
+  if (slug == _chooseWordPracticeSlug) return 'Práctica';
   if (slug == '00-solo-lectura') return 'Solo lectura';
   if (slug == '01-escuchar') return 'Escuchar';
   if (slug == '02-niebla-n1') return 'Niebla N1';
@@ -1998,6 +1999,11 @@ ExerciseFlowData _flowData(String slug) {
 
 
 
+/// Paso de práctica "Elige la palabra" que cierra el bloque Preparar (sin
+/// niveles ni intentos). El prefijo "04b" mantiene `_flowStepNumber` <= 4 para
+/// que caiga en la fase Preparar.
+const _chooseWordPracticeSlug = '04b-practica-palabra';
+
 List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
   final difficulty = store.sessionDifficulty.clamp(0, 2);
   final seed = store.sessionFlowSeed;
@@ -2014,6 +2020,7 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     '01-escuchar',
     '03-leer-voz',
     '04-escuchar-voz',
+    _chooseWordPracticeSlug, // práctica suave que cierra Preparar
     '05-bloques',
   ];
   final level1 = <String>[
@@ -2101,6 +2108,9 @@ int _letterLevelForSlug(String slug) {
 }
 
 String _phaseLabelFor(String slug) {
+  if (slug == _chooseWordPracticeSlug) {
+    return 'Preparar';
+  }
   if (slug == '16-niebla' || slug == '16-niebla-n3') {
     return 'Probar';
   }
