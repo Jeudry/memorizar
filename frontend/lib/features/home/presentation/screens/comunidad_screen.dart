@@ -923,6 +923,7 @@ class _MyCommunityDeckCard extends StatelessWidget {
     final title = (share['title'] as String?) ?? 'Sin título';
     final summary = (share['summary'] as String?) ?? '';
     final importCount = (share['importCount'] as int?) ?? 0;
+    final version = (share['version'] as int?) ?? 1;
     final cardCount = _cardCount();
 
     return Container(
@@ -945,6 +946,15 @@ class _MyCommunityDeckCard extends StatelessWidget {
                     style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
                   ),
                 ),
+                if (version > 1) ...[
+                  RefChip(
+                    'v$version',
+                    dense: true,
+                    color: const Color(0x22FFB400),
+                    textColor: RefColors.sun,
+                  ),
+                  const SizedBox(width: 6),
+                ],
                 RefChip(
                   '🌍 PÚBLICO',
                   dense: true,

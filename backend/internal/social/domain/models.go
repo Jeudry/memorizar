@@ -134,6 +134,7 @@ type SharedResource struct {
 	PlanID       string    `json:"planId,omitempty"`
 	PayloadJSON  string    `json:"payloadJson"`
 	IsPublic     bool      `json:"isPublic"`
+	Version      int       `json:"version"` // se incrementa al actualizar un mazo publicado
 	CreatedAt    time.Time `json:"createdAt"`
 }
 

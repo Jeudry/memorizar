@@ -554,3 +554,47 @@ func TestLeaderboard(t *testing.T) {
 		}
 	}
 }
+
+func TestDeckVersioningNotifiesImporters(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	owner := makeUser(t, s, "vo@dev.io", "vo_u", "Owner")
+	importer := makeUser(t, s, "vi@dev.io", "vi_u", "Importer")
+
+	share := publishDeck(t, s, owner, "deck-v1", "Versionado", `{"icon":"📚","v":1}`)
+	if err := s.RegisterCommunityImport(importer, share); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+
+	// Re-publicar el MISMO deckID actualiza en sitio y sube la versión.
+	updated, err := s.ShareResource(owner, ShareResourceInput{
+		Kind: domain.ShareKindDeck, DeckID: "deck-v1",
+		Title: "Versionado", PayloadJSON: `{"icon":"📚","v":2}`, IsPublic: true,
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if updated.ID != share {
+		t.Errorf("update should reuse the same share id; got %s want %s", updated.ID, share)
+	}
+	if updated.Version != 2 {
+		t.Errorf("expected version 2, got %d", updated.Version)
+	}
+
+	// El importador recibió una notificación deck_updated; el dueño no.
+	imp, _, _ := s.ListNotifications(importer, 50)
+	var got bool
+	for _, n := range imp {
+		if n.Type == "deck_updated" {
+			got = true
+		}
+	}
+	if !got {
+		t.Error("importer should have a deck_updated notification")
+	}
+	own, _, _ := s.ListNotifications(owner, 50)
+	for _, n := range own {
+		if n.Type == "deck_updated" {
+			t.Error("owner should NOT be notified of their own update")
+		}
+	}
+}

@@ -36,6 +36,17 @@ func Open(path string) (*Repository, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
+	// Migraciones aditivas idempotentes para bases ya existentes (CREATE TABLE
+	// IF NOT EXISTS no agrega columnas nuevas). El error "duplicate column" se
+	// ignora a propósito cuando la columna ya existe.
+	for _, alter := range []string{
+		`ALTER TABLE shared_resources ADD COLUMN version INTEGER NOT NULL DEFAULT 1`,
+	} {
+		if _, err := db.Exec(alter); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column") {
+			return nil, fmt.Errorf("migrate (%s): %w", alter, err)
+		}
+	}
 	return &Repository{db: db}, nil
 }
 
@@ -475,10 +486,10 @@ func (r *Repository) SaveSharedResource(s domain.SharedResource) error {
 	_, err := r.db.Exec(`
 		INSERT OR REPLACE INTO shared_resources
 		    (id, owner_user_id, target_user_id, kind, title, summary,
-		     deck_id, plan_id, payload_json, is_public, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		     deck_id, plan_id, payload_json, is_public, version, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		s.ID, s.OwnerUserID, s.TargetUserID, string(s.Kind), s.Title, s.Summary,
-		s.DeckID, s.PlanID, s.PayloadJSON, isPublic, formatTime(s.CreatedAt),
+		s.DeckID, s.PlanID, s.PayloadJSON, isPublic, s.Version, formatTime(s.CreatedAt),
 	)
 	return err
 }
@@ -489,7 +500,7 @@ func (r *Repository) scanShare(scan func(...any) error) (*domain.SharedResource,
 	var isPublic int
 	if err := scan(
 		&s.ID, &s.OwnerUserID, &s.TargetUserID, &kind, &s.Title, &s.Summary,
-		&s.DeckID, &s.PlanID, &s.PayloadJSON, &isPublic, &ts,
+		&s.DeckID, &s.PlanID, &s.PayloadJSON, &isPublic, &s.Version, &ts,
 	); err != nil {
 		return nil, err
 	}
@@ -502,7 +513,7 @@ func (r *Repository) scanShare(scan func(...any) error) (*domain.SharedResource,
 func (r *Repository) ListSharedResourcesForUser(userID string) ([]domain.SharedResource, error) {
 	rows, err := r.db.Query(`
 		SELECT id, owner_user_id, target_user_id, kind, title, summary,
-		       deck_id, plan_id, payload_json, is_public, created_at
+		       deck_id, plan_id, payload_json, is_public, version, created_at
 		FROM shared_resources
 		WHERE owner_user_id = ? OR target_user_id = ?
 		ORDER BY created_at DESC`,
@@ -526,7 +537,7 @@ func (r *Repository) ListSharedResourcesForUser(userID string) ([]domain.SharedR
 func (r *Repository) FindSharedResource(id string) (*domain.SharedResource, error) {
 	row := r.db.QueryRow(`
 		SELECT id, owner_user_id, target_user_id, kind, title, summary,
-		       deck_id, plan_id, payload_json, is_public, created_at
+		       deck_id, plan_id, payload_json, is_public, version, created_at
 		FROM shared_resources
 		WHERE id = ?`, id)
 	s, err := r.scanShare(row.Scan)
@@ -555,7 +566,7 @@ func (r *Repository) ListPublicSharedResourcesByUserIDs(userIDs []string) ([]dom
 	}
 	rows, err := r.db.Query(`
 		SELECT id, owner_user_id, target_user_id, kind, title, summary,
-		       deck_id, plan_id, payload_json, is_public, created_at
+		       deck_id, plan_id, payload_json, is_public, version, created_at
 		FROM shared_resources
 		WHERE is_public = 1 AND owner_user_id IN (`+placeholders+`)
 		ORDER BY created_at DESC`, args...)
@@ -585,6 +596,24 @@ func (r *Repository) SaveShareImport(shareImport domain.ShareImport) error {
 
 func (r *Repository) CountShareImports(shareIDs []string) (map[string]int, error) {
 	return r.countShareImportsWhere(shareIDs, "", nil)
+}
+
+func (r *Repository) ListShareImporterIDs(shareID string) ([]string, error) {
+	rows, err := r.db.Query(
+		`SELECT user_id FROM share_imports WHERE share_id = ?`, shareID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, nil
 }
 
 func (r *Repository) CountShareImportsSince(shareIDs []string, since time.Time) (map[string]int, error) {
