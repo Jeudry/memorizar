@@ -52,6 +52,7 @@ class AppRoutes {
   static const account = '/account';
   static const settings = '/settings';
   static const shareInbox = '/inbox';
+  static const notificaciones = '/notificaciones';
   static const verifyEmail = '/verify-email';
   static const passwordReset = '/password-reset';
 

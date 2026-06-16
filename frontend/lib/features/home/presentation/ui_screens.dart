@@ -35,6 +35,7 @@ import '../../auth/presentation/password_reset_screen.dart';
 import '../../auth/presentation/verify_email_screen.dart';
 import '../../cooperativo/data/coop_service.dart';
 import '../../share_inbox/presentation/share_inbox_screen.dart';
+import '../../notifications/presentation/notifications_screen.dart';
 import '../../legal/presentation/community_guidelines_screen.dart';
 import '../../legal/presentation/dmca_screen.dart';
 import '../../legal/presentation/legal_menu_screen.dart';
@@ -213,6 +214,7 @@ Map<String, WidgetBuilder> buildAppRoutes() => {
   AppRoutes.account: (_) => const AccountScreen(),
   AppRoutes.settings: (_) => const SettingsScreen(),
   AppRoutes.shareInbox: (_) => const ShareInboxScreen(),
+  AppRoutes.notificaciones: (_) => const NotificationsScreen(),
   AppRoutes.verifyEmail: (_) => const VerifyEmailScreen(),
   AppRoutes.passwordReset: (_) => const PasswordResetScreen(),
 };

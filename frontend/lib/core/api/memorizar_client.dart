@@ -315,6 +315,30 @@ class MemorizarClient {
         .toList();
   }
 
+  /// Notificaciones in-app del usuario (campanita): lista más reciente primero
+  /// y conteo de no-leídas.
+  Future<({List<Map<String, dynamic>> items, int unread})>
+      listNotifications() async {
+    final r = await _http.get(_uri('/v1/notifications'), headers: _headers);
+    final body = await _decode(r);
+    final list = (body['notifications'] as List? ?? const [])
+        .cast<dynamic>()
+        .cast<Map<String, dynamic>>();
+    return (items: list, unread: (body['unread'] as int?) ?? 0);
+  }
+
+  /// Marca notificaciones como leídas. Lista vacía = marcar todas. Devuelve el
+  /// nuevo conteo de no-leídas.
+  Future<int> markNotificationsRead([List<String> ids = const []]) async {
+    final r = await _http.post(
+      _uri('/v1/notifications/read'),
+      headers: _headers,
+      body: jsonEncode({'ids': ids}),
+    );
+    final body = await _decode(r);
+    return (body['unread'] as int?) ?? 0;
+  }
+
   Future<void> recordActivity({
     required String code,
     required String title,
