@@ -23,6 +23,7 @@ type Repository struct {
 	deckLikes         map[string]map[string]time.Time
 	deckRatings       map[string]map[string]domain.DeckRating
 	deckComments      map[string][]domain.DeckComment
+	userScores        map[string]domain.UserScore
 	follows           map[string]map[string]time.Time
 	deckReports       map[string]domain.DeckReport
 	analyticsEvents   []domain.AnalyticsEvent
@@ -46,6 +47,7 @@ func NewRepository() *Repository {
 		deckLikes:         map[string]map[string]time.Time{},
 		deckRatings:       map[string]map[string]domain.DeckRating{},
 		deckComments:      map[string][]domain.DeckComment{},
+		userScores:        map[string]domain.UserScore{},
 		follows:           map[string]map[string]time.Time{},
 		deckReports:       map[string]domain.DeckReport{},
 		reactions:         map[string]domain.FeedReaction{},
@@ -460,6 +462,25 @@ func (r *Repository) CountDeckComments(shareIDs []string) (map[string]int, error
 	for _, shareID := range shareIDs {
 		if n := len(r.deckComments[shareID]); n > 0 {
 			out[shareID] = n
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) SaveUserScore(score domain.UserScore) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.userScores[score.UserID] = score
+	return nil
+}
+
+func (r *Repository) ListUserScores(userIDs []string) ([]domain.UserScore, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := []domain.UserScore{}
+	for _, id := range userIDs {
+		if sc, ok := r.userScores[id]; ok {
+			out = append(out, sc)
 		}
 	}
 	return out, nil

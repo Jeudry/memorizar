@@ -25,6 +25,7 @@ type state struct {
 	DeckLikes         map[string]map[string]time.Time          `json:"deckLikes"`
 	DeckRatings       map[string]map[string]domain.DeckRating  `json:"deckRatings"`
 	DeckComments      map[string][]domain.DeckComment          `json:"deckComments"`
+	UserScores        map[string]domain.UserScore              `json:"userScores"`
 	Follows           map[string]map[string]time.Time          `json:"follows"`
 	DeckReports       map[string]domain.DeckReport             `json:"deckReports"`
 	AnalyticsEvents   []domain.AnalyticsEvent                  `json:"analyticsEvents"`
@@ -508,6 +509,28 @@ func (r *Repository) CountDeckComments(shareIDs []string) (map[string]int, error
 	for _, shareID := range shareIDs {
 		if n := len(r.state.DeckComments[shareID]); n > 0 {
 			out[shareID] = n
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) SaveUserScore(score domain.UserScore) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state.UserScores == nil {
+		r.state.UserScores = map[string]domain.UserScore{}
+	}
+	r.state.UserScores[score.UserID] = score
+	return r.persistLocked()
+}
+
+func (r *Repository) ListUserScores(userIDs []string) ([]domain.UserScore, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := []domain.UserScore{}
+	for _, id := range userIDs {
+		if sc, ok := r.state.UserScores[id]; ok {
+			out = append(out, sc)
 		}
 	}
 	return out, nil

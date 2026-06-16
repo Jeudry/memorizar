@@ -501,3 +501,56 @@ func TestDeckComments(t *testing.T) {
 		t.Errorf("expected CommentCount=2, got %d", decks[0].CommentCount)
 	}
 }
+
+func TestLeaderboard(t *testing.T) {
+	s := NewService(memory.NewRepository())
+	me := makeUser(t, s, "me@dev.io", "me_u", "Me")
+	f1 := makeUser(t, s, "f1@dev.io", "f1_u", "Friend One")
+	f2 := makeUser(t, s, "f2@dev.io", "f2_u", "Friend Two")
+	stranger := makeUser(t, s, "st@dev.io", "st_u", "Stranger")
+
+	// me se hace amigo de f1 y f2 (aceptados).
+	for _, fr := range []string{f1, f2} {
+		req, err := s.RequestFriend(me, fr)
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		if _, err := s.AcceptFriend(fr, req.ID); err != nil {
+			t.Fatalf("accept: %v", err)
+		}
+	}
+
+	if err := s.ReportUserScore(me, 5, 100); err != nil {
+		t.Fatalf("score me: %v", err)
+	}
+	if err := s.ReportUserScore(f1, 10, 300); err != nil {
+		t.Fatalf("score f1: %v", err)
+	}
+	// f2 no reporta puntaje → debe aparecer en 0. stranger NO debe aparecer.
+	if err := s.ReportUserScore(stranger, 99, 9999); err != nil {
+		t.Fatalf("score stranger: %v", err)
+	}
+
+	board, err := s.Leaderboard(me)
+	if err != nil {
+		t.Fatalf("leaderboard: %v", err)
+	}
+	if len(board) != 3 {
+		t.Fatalf("expected 3 entries (me + 2 friends), got %d", len(board))
+	}
+	// Orden por puntos: f1 (300) > me (100) > f2 (0).
+	if board[0].Username != "f1_u" || board[0].Rank != 1 {
+		t.Errorf("rank1 should be f1, got %+v", board[0])
+	}
+	if !board[1].IsMe || board[1].Points != 100 {
+		t.Errorf("rank2 should be me with 100, got %+v", board[1])
+	}
+	if board[2].Username != "f2_u" || board[2].Points != 0 {
+		t.Errorf("rank3 should be f2 with 0, got %+v", board[2])
+	}
+	for _, e := range board {
+		if e.Username == "st_u" {
+			t.Error("stranger leaked into leaderboard")
+		}
+	}
+}

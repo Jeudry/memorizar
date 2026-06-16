@@ -189,6 +189,16 @@ type DeckReport struct {
 	CreatedAt  time.Time        `json:"createdAt"`
 }
 
+// UserScore es el puntaje público de un usuario para el leaderboard entre
+// amigos: racha de días y puntos acumulados (auto-reportado por el cliente).
+// Una fila por usuario; reportar actualiza.
+type UserScore struct {
+	UserID    string    `json:"userId"`
+	Streak    int       `json:"streak"`
+	Points    int       `json:"points"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 // DeckRating es la valoración (1-5 estrellas) y reseña opcional de un usuario
 // sobre un mazo comunitario. Una fila por (share, usuario): re-valorar
 // actualiza la existente.

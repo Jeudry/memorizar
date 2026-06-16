@@ -814,6 +814,88 @@ func (s *Service) ListDeckComments(shareID string) ([]DeckCommentView, error) {
 	return out, nil
 }
 
+// LeaderboardEntry es la posición de un usuario en el ranking entre amigos.
+type LeaderboardEntry struct {
+	domain.UserScore
+	DisplayName string `json:"displayName"`
+	Username    string `json:"username"`
+	AvatarURL   string `json:"avatarUrl,omitempty"`
+	IsMe        bool   `json:"isMe"`
+	Rank        int    `json:"rank"`
+}
+
+// ReportUserScore guarda/actualiza el puntaje público del usuario (racha +
+// puntos), auto-reportado por el cliente, para el leaderboard.
+func (s *Service) ReportUserScore(userID string, streak, points int) error {
+	if streak < 0 {
+		streak = 0
+	}
+	if points < 0 {
+		points = 0
+	}
+	return s.repo.SaveUserScore(domain.UserScore{
+		UserID:    userID,
+		Streak:    streak,
+		Points:    points,
+		UpdatedAt: s.now().UTC(),
+	})
+}
+
+// Leaderboard devuelve el ranking del usuario y sus amigos aceptados, ordenado
+// por puntos (desempate por racha). Incluye amigos aún sin puntaje (en 0).
+func (s *Service) Leaderboard(userID string) ([]LeaderboardEntry, error) {
+	ids := map[string]struct{}{userID: {}}
+	friendships, err := s.repo.ListFriendships(userID, domain.FriendshipAccepted)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range friendships {
+		other := f.RequesterID
+		if other == userID {
+			other = f.AddresseeID
+		}
+		ids[other] = struct{}{}
+	}
+	idList := make([]string, 0, len(ids))
+	for id := range ids {
+		idList = append(idList, id)
+	}
+	scores, err := s.repo.ListUserScores(idList)
+	if err != nil {
+		return nil, err
+	}
+	byUser := make(map[string]domain.UserScore, len(scores))
+	for _, sc := range scores {
+		byUser[sc.UserID] = sc
+	}
+	entries := make([]LeaderboardEntry, 0, len(idList))
+	for _, id := range idList {
+		u, err := s.repo.FindUserByID(id)
+		if err != nil || u == nil {
+			continue
+		}
+		sc := byUser[id]
+		sc.UserID = id
+		entries = append(entries, LeaderboardEntry{
+			UserScore:   sc,
+			DisplayName: u.DisplayName,
+			Username:    u.Username,
+			AvatarURL:   u.AvatarURL,
+			IsMe:        id == userID,
+		})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Points != entries[j].Points {
+			return entries[i].Points > entries[j].Points
+		}
+		return entries[i].Streak > entries[j].Streak
+	})
+	for i := range entries {
+		entries[i].Rank = i + 1
+	}
+	return entries, nil
+}
+
 // RegisterCommunityImport registra que `userID` importó el deck comunitario
 // `shareID`. Idempotente por usuario; el dueño no puede inflar sus stats.
 func (s *Service) RegisterCommunityImport(userID, shareID string) error {
