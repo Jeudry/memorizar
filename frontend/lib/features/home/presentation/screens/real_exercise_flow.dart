@@ -1637,19 +1637,21 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                           ),
                       ],
                     ),
-                  const SizedBox(height: 10),
-                  if (isCoop) ...[
-                    AbsorbPointer(
-                      absorbing: isBlocked,
-                      child: _coopExerciseFooter(context, store, card, deck, slug),
-                    ),
+                  if (slug != _chooseWordPracticeSlug) ...[
                     const SizedBox(height: 10),
-                    const _CoopGameChat(),
-                  ] else
-                    AbsorbPointer(
-                      absorbing: isBlocked,
-                      child: _realExerciseFooter(context, store, card, deck, slug),
-                    ),
+                    if (isCoop) ...[
+                      AbsorbPointer(
+                        absorbing: isBlocked,
+                        child: _coopExerciseFooter(context, store, card, deck, slug),
+                      ),
+                      const SizedBox(height: 10),
+                      const _CoopGameChat(),
+                    ] else
+                      AbsorbPointer(
+                        absorbing: isBlocked,
+                        child: _realExerciseFooter(context, store, card, deck, slug),
+                      ),
+                  ],
                 ],
               );
 
