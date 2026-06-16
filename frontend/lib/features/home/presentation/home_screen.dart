@@ -716,7 +716,8 @@ class _AppHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '🔥 Racha ${store.streakDays} días',
+                '🔥 Racha ${store.streakDays} días'
+                '${store.streakFreezes > 0 ? '  ❄️ ${store.streakFreezes}' : ''}',
                 style: const TextStyle(
                   color: AppColors.inkMuted,
                   fontSize: 12,
