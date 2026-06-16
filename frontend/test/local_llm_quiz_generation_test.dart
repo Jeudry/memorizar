@@ -104,4 +104,24 @@ void main() {
     },
     timeout: const Timeout(Duration(minutes: 4)),
   );
+
+  test(
+    'generateCardsFromTopic devuelve tarjetas front/back reales del modelo',
+    () async {
+      if (!await engineAvailable()) {
+        markTestSkipped('llama-server no está corriendo; test omitido.');
+        return;
+      }
+      final cards = await LocalLlmService.instance.generateCardsFromTopic(
+        topic: 'Capitales de países de Sudamérica',
+        count: 6,
+      );
+      expect(cards, isNotEmpty);
+      for (final c in cards) {
+        expect(c.front.trim(), isNotEmpty);
+        expect(c.back.trim(), isNotEmpty);
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 4)),
+  );
 }

@@ -358,6 +358,63 @@ class LocalLlmService {
     return AiOpenAnswerEvaluation.fromJson(_decodeJsonObject(content));
   }
 
+  static const Map<String, dynamic> _deckSchema = {
+    'type': 'object',
+    'properties': {
+      'cards': {
+        'type': 'array',
+        'items': {
+          'type': 'object',
+          'properties': {
+            'front': {'type': 'string'},
+            'back': {'type': 'string'},
+          },
+          'required': ['front', 'back'],
+        },
+        'minItems': 1,
+        'maxItems': 30,
+      },
+    },
+    'required': ['cards'],
+  };
+
+  /// Genera con la IA local un mazo de tarjetas frente/dorso a partir de un
+  /// tema libre (p.ej. "Salmos de consuelo", "Inglés B1: comida", "Fechas de
+  /// la Reforma"). Devuelve pares front/back listos para editar. Una sola
+  /// llamada; el llamador valida disponibilidad con [isAvailable] antes.
+  Future<List<({String front, String back})>> generateCardsFromTopic({
+    required String topic,
+    int count = 8,
+  }) async {
+    final n = count.clamp(3, 20);
+    final prompt =
+        'Eres un generador de tarjetas de memorización (flashcards).\n'
+        'Tema: "$topic".\n\n'
+        'Genera exactamente $n tarjetas en "cards". Cada tarjeta tiene:\n'
+        '- "front": el anverso — una palabra, pregunta o concepto CORTO a recordar.\n'
+        '- "back": el reverso — la respuesta, definición o traducción CORTA.\n'
+        'Hazlas variadas, correctas y concretas; nada de relleno. Usa el idioma '
+        'que el tema sugiera (por defecto español). Responde únicamente con el JSON.';
+    final content = await _chat(
+      prompt,
+      temperature: 0.8,
+      maxTokens: 80 + n * 40,
+      jsonSchema: _deckSchema,
+    );
+    final decoded = _decodeJsonObject(content);
+    final raw = (decoded['cards'] as List?) ?? const [];
+    final cards = <({String front, String back})>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final front = (item['front']?.toString() ?? '').trim();
+      final back = (item['back']?.toString() ?? '').trim();
+      if (front.isNotEmpty && back.isNotEmpty) {
+        cards.add((front: front, back: back));
+      }
+    }
+    return cards;
+  }
+
   /// Inferencia base contra el servidor llama.cpp local (API OpenAI-compatible).
   Future<String> _chat(
     String prompt, {
