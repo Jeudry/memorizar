@@ -3283,8 +3283,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     MemoryDeckData deck,
     String slug,
   ) {
+    final isOmitted = _omitOverride.contains('${card.id}:$slug');
     // F2: el reemplazo por omitir trae su propio botón de continuar solo para la fase Preparar.
-    if (_omitOverride.contains('${card.id}:$slug') && _phaseLabelFor(slug) == 'Preparar') {
+    if (isOmitted && _phaseLabelFor(slug) == 'Preparar') {
       return const SizedBox.shrink();
     }
     final next = _nextFlowSlug(store, slug);
@@ -3351,7 +3352,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ],
       );
     }
-    if (_isFogSlug(slug) || _isFinalVoiceSlug(slug)) {
+    if ((_isFogSlug(slug) || _isFinalVoiceSlug(slug)) && !isOmitted) {
       final label = _footerLabel(slug, checked: _checked, completed: completed);
       final enabled = completed;
       return Row(
@@ -3500,6 +3501,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     required bool checked,
     required bool completed,
   }) {
+    final isOmitted = _omitOverride.contains('${AppScope.of(context).activeCard.id}:$slug');
     if (slug == '00-solo-lectura') {
       return completed ? 'Siguiente →' : 'Toca el texto para revelar palabras';
     }
@@ -3512,16 +3514,15 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '04-escuchar-voz') {
       return completed ? 'Siguiente →' : 'Escucha tu lectura para continuar';
     }
-    if (_isFogSlug(slug)) {
+    if (_isFogSlug(slug) && !isOmitted) {
       return completed ? 'Siguiente →' : 'Recita para continuar';
     }
-    if (_isFinalVoiceSlug(slug)) {
+    if (_isFinalVoiceSlug(slug) && !isOmitted) {
       return completed ? 'Review final →' : 'Recita final para cerrar';
     }
     if (slug == '05-bloques') {
       return _blocksAreCorrect() ? 'Siguiente →' : 'Ordena para continuar';
     }
-    final isOmitted = _omitOverride.contains('${AppScope.of(context).activeCard.id}:$slug');
     if (_isCompletionSlug(slug) || (isOmitted && _phaseLabelFor(slug) != 'Preparar')) {
       return _completionComplete() ? 'Completado →' : 'Completa los huecos';
     }
@@ -3840,12 +3841,12 @@ class _CompletionBlank extends StatelessWidget {
         : active
         ? RefColors.cyan
         : RefColors.border;
-    final length = wordLength.clamp(1, 14);
+    final displayLength = complete ? wordLength.clamp(1, 14) : 6;
     return GestureDetector(
       onTap: complete ? null : onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        constraints: BoxConstraints(minWidth: (length * 10.0).clamp(28, 160)),
+        constraints: BoxConstraints(minWidth: (displayLength * 10.0).clamp(28, 160)),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
         decoration: BoxDecoration(
           color: accent.withValues(alpha: complete || active ? .16 : .08),
@@ -3853,7 +3854,7 @@ class _CompletionBlank extends StatelessWidget {
           border: Border.all(color: accent.withValues(alpha: .62), width: 1.5),
         ),
         child: Text(
-          answer ?? '_' * length,
+          answer ?? '______',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: complete ? RefColors.lime : RefColors.ink,

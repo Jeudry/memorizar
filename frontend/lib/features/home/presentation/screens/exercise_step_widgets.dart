@@ -398,12 +398,12 @@ class _LetterBlankState extends State<_LetterBlank> {
         : widget.active
         ? RefColors.cyan
         : RefColors.border;
-    final length = widget.wordLength.clamp(1, 14);
+    final displayLength = complete ? widget.wordLength.clamp(1, 14) : 6;
     return GestureDetector(
       onTap: complete ? null : widget.onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        constraints: BoxConstraints(minWidth: (length * 10.0).clamp(28, 160)),
+        constraints: BoxConstraints(minWidth: (displayLength * 10.0).clamp(28, 160)),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
         decoration: BoxDecoration(
           color: widget.active
@@ -425,7 +425,7 @@ class _LetterBlankState extends State<_LetterBlank> {
               : null,
         ),
         child: Text(
-          widget.answer ?? '_' * length,
+          widget.answer ?? '______',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: complete ? RefColors.lime : RefColors.ink,
