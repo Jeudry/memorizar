@@ -23,7 +23,7 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('completar el versículo 2 veces muestra el éxito',
+  testWidgets('completar el versículo muestra el éxito',
       (tester) async {
     final store = AppStore(enableDatabasePersistence: false);
     store.createDeckFromCards(
@@ -44,19 +44,17 @@ void main() {
 
     // El banco se muestra y arranca en la vuelta 1.
     expect(find.text('ELIGE LA PALABRA CORRECTA'), findsOneWidget);
-    expect(find.textContaining('Vuelta 1/2'), findsOneWidget);
+    expect(find.textContaining('Vuelta 1/1'), findsOneWidget);
 
     // Huecos = todas las palabras, en orden: "Jehová", "es", "mi", "pastor".
     // (En el banco las palabras son únicas; .last desambigua del hueco lleno.)
-    for (var pass = 0; pass < 2; pass++) {
-      for (final word in ['Jehová', 'es', 'mi', 'pastor']) {
-        await tester.tap(find.text(word).last);
-        await tester.pump();
-      }
+    for (final word in ['Jehová', 'es', 'mi', 'pastor']) {
+      await tester.tap(find.text(word).last);
+      await tester.pump();
     }
 
     expect(find.text('🎉'), findsOneWidget);
-    expect(find.text('¡Lo completaste 2 veces!'), findsOneWidget);
+    expect(find.text('¡Lo completaste!'), findsOneWidget);
   });
 
   testWidgets('tocar una palabra incorrecta no avanza (sin penalización)',
@@ -88,7 +86,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.textContaining('· 0/4'), findsOneWidget);
-    expect(find.text('¡Lo completaste 2 veces!'), findsNothing);
+    expect(find.text('¡Lo completaste!'), findsNothing);
 
     // Tocar el correcto sí avanza a 1/4.
     await tester.tap(find.text('Jehová').last);

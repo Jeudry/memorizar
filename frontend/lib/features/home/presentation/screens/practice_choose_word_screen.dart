@@ -36,7 +36,7 @@ class ChooseWordPracticeBody extends StatefulWidget {
 }
 
 class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
-  static const int _passesRequired = 2;
+  static const int _passesRequired = 1;
 
   String? _cardId;
   List<String> _words = [];
@@ -180,7 +180,7 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
                 const Text('🎉', style: TextStyle(fontSize: 40)),
                 const SizedBox(height: 8),
                 const Text(
-                  '¡Lo completaste 2 veces!',
+                  '¡Lo completaste!',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 4),
