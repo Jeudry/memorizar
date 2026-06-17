@@ -55,6 +55,7 @@ class _QuizRound {
 }
 
 class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
+  int _subCardIndex = 0;
   bool _checked = false;
   int _fragmentVisibleWords = 8;
   int _soloLecturaVisibleChars = 0;
@@ -679,6 +680,40 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_isWordBankSlug(slug)) return _bankComplete();
     if (_isFogSlug(slug)) return _fogFinished;
     return true;
+  }
+
+  List<MemoryCardData> _sessionBatchCards(BuildContext context) {
+    final store = AppScope.of(context);
+    final deck = store.activeDeck;
+    if (deck.isBible && deck.cards.length > 1 && store.sessionDailyTarget > 1) {
+      final count = store.sessionDailyTarget.clamp(1, deck.cards.length);
+      final len = deck.cards.length;
+      final startCardIndex = ((store.currentCardIndex - store.sessionCardsCompleted) % len + len) % len;
+      final batchCards = <MemoryCardData>[];
+      for (var i = 0; i < count; i++) {
+        batchCards.add(deck.cards[(startCardIndex + i) % len]);
+      }
+      return batchCards;
+    } else {
+      return [store.activeCard];
+    }
+  }
+
+  void _resetSubCardState() {
+    _completionCardId = null;
+    _letterCardId = null;
+    _blockOrderCardId = null;
+    _quizCardId = null;
+    _bankCardId = null;
+    _fogCardId = null;
+    _aiDistractorCardId = null;
+    _matchingSelectedLeft = null;
+    _matchingSelectedRight = null;
+    _matchingCompletedLeft.clear();
+    _matchingCompletedRight.clear();
+    _checked = false;
+    _fragmentVisibleWords = 8;
+    _soloLecturaVisibleChars = 0;
   }
 
   void _ensureBlockOrder(String cardId, List<String> blocks) {
@@ -1394,7 +1429,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
-    final card = store.activeCard;
+    final batch = _sessionBatchCards(context);
+    final card = batch[_subCardIndex.clamp(0, batch.length - 1)];
     final deck = store.activeDeck;
     final slug = widget.data.slug;
     if (slug == 'final-review') return _RealFinalReview(store: store);
@@ -1498,7 +1534,19 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               _FlowStepHeader(
                 step: '$step',
                 totalSteps: totalSteps,
-                title: _realStepTitle(slug),
+                title: () {
+                  final showSubCardProgress = batch.length > 1 &&
+                      slug != '00-solo-lectura' &&
+                      slug != '01-escuchar' &&
+                      slug != '03-leer-voz' &&
+                      slug != '04-escuchar-voz' &&
+                      slug != _chooseWordPracticeSlug &&
+                      !_isFogSlug(slug) &&
+                      !_isFinalVoiceSlug(slug);
+                  return showSubCardProgress
+                      ? '${_realStepTitle(slug)} (${_subCardIndex + 1}/${batch.length})'
+                      : _realStepTitle(slug);
+                }(),
                 progress: step.clamp(1, totalSteps),
               ),
             
@@ -3327,7 +3375,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           slug == '03-leer-voz' ||
           slug == '04-escuchar-voz';
       final cta = _ActionCta(
-        label: _footerLabel(slug, checked: _checked, completed: completed),
+        label: _footerLabel(slug, card, checked: _checked, completed: completed),
         enabled: completed,
         onTap: () {
           ActiveMediaRegistry.stopAll();
@@ -3353,7 +3401,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       );
     }
     if ((_isFogSlug(slug) || _isFinalVoiceSlug(slug)) && !isOmitted) {
-      final label = _footerLabel(slug, checked: _checked, completed: completed);
+      final label = _footerLabel(slug, card, checked: _checked, completed: completed);
       final enabled = completed;
       return Row(
         children: [
@@ -3407,9 +3455,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         const SizedBox(width: 10),
         Expanded(
           child: _ActionCta(
-            label: _footerLabel(slug, checked: _checked, completed: completed),
+            label: _footerLabel(slug, card, checked: _checked, completed: completed),
             enabled: _footerEnabled(
               slug,
+              card,
               checked: _checked,
               completed: completed,
             ),
@@ -3442,31 +3491,44 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   _showQuizFailedDialog();
                   return;
                 }
+                final batch = _sessionBatchCards(context);
+                if (_subCardIndex + 1 < batch.length) {
+                  setState(() {
+                    _subCardIndex++;
+                    _resetSubCardState();
+                  });
+                  return;
+                }
+                _subCardIndex = 0;
                 _completeStepAndNavigate(context, store, slug);
                 return;
               }
-              if (!_checked) {
-                if (slug == '05-bloques') {
-                  if (_blocksAreCorrect()) {
-                    _completeStepAndNavigate(context, store, slug);
-                    return;
-                  }
-                  setState(() => _checked = true);
+
+              final correct = _currentStepCorrect(slug, card, deck);
+              if (correct) {
+                final batch = _sessionBatchCards(context);
+                if (_subCardIndex + 1 < batch.length) {
+                  setState(() {
+                    _subCardIndex++;
+                    _resetSubCardState();
+                  });
                   return;
                 }
+                _subCardIndex = 0;
+                _completeStepAndNavigate(context, store, slug);
+                return;
+              }
+
+              if (!_checked) {
                 setState(() => _checked = true);
                 return;
               }
-              final correct = _currentStepCorrect(slug, card, deck);
-              if (!correct && slug != '09-quiz' && slug != '09-quiz-avanzado') {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Corrige el ejercicio para avanzar.'),
-                  ),
-                );
-                return;
-              }
-              _completeStepAndNavigate(context, store, slug);
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Corrige el ejercicio para avanzar.'),
+                ),
+              );
             },
           ),
         ),
@@ -3497,11 +3559,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 
   String _footerLabel(
-    String slug, {
+    String slug,
+    MemoryCardData card, {
     required bool checked,
     required bool completed,
   }) {
-    final isOmitted = _omitOverride.contains('${AppScope.of(context).activeCard.id}:$slug');
+    final isOmitted = _omitOverride.contains('${card.id}:$slug');
     if (slug == '00-solo-lectura') {
       return completed ? 'Siguiente →' : 'Toca el texto para revelar palabras';
     }
@@ -3547,13 +3610,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 
   bool _footerEnabled(
-    String slug, {
+    String slug,
+    MemoryCardData card, {
     required bool checked,
     required bool completed,
   }) {
     if (slug == '01-escuchar') return completed;
     if (slug == '04-escuchar-voz') return completed;
-    final isOmitted = _omitOverride.contains('${AppScope.of(context).activeCard.id}:$slug');
+    final isOmitted = _omitOverride.contains('${card.id}:$slug');
     if (slug == '05-bloques' ||
         slug == '09-quiz' ||
         slug == '09-quiz-avanzado' ||
@@ -3562,7 +3626,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         (isOmitted && _phaseLabelFor(slug) != 'Preparar')) {
       return _canAdvanceAnsweredStep(
         slug,
-        AppScope.of(context).activeCard,
+        card,
         AppScope.of(context).activeDeck,
       );
     }

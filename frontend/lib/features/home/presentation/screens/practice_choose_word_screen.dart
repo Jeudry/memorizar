@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/app_state.dart';
 import '../../../../core/theme/ref_colors.dart';
 import '../../../../core/ui/widgets.dart';
 import '../exercise_logic.dart';

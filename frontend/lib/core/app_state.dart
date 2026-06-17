@@ -1701,23 +1701,14 @@ class AppStore extends ChangeNotifier {
   /// Retorna `true` si todavía queda otra tarjeta dentro del target diario;
   /// `false` cuando la sesión ya completó su cuota y debe ir al review final.
   bool advanceToNextSessionCard({required bool correct}) {
-    answerCurrentCard(correct);
-    // (feature "biblia combinada" deshabilitada)
-    _sessionCardsCompleted += 1;
-    if (sessionFinished) {
-      unawaited(_recordSessionAchievements());
-      notifyListeners();
-      return false;
+    final count = _sessionDailyTarget - _sessionCardsCompleted;
+    for (var i = 0; i < count; i++) {
+      answerCurrentCard(correct);
     }
-    // Nueva tarjeta → vuelve a la primera pasada.
-    _currentCardPass = 0;
-    // Limpia los pasos completados del deck para que la próxima tarjeta
-    // arranque con el árbol fresco. Las claves usan deck:card:slug, así que
-    // basta con quitar los del deck activo.
-    final deckId = activeDeck.id;
-    _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));
+    _sessionCardsCompleted = _sessionDailyTarget;
+    unawaited(_recordSessionAchievements());
     notifyListeners();
-    return true;
+    return false;
   }
 
   void setSessionCardsCompleted(int value) {
