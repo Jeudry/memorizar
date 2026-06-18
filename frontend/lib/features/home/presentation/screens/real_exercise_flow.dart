@@ -567,6 +567,32 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     AppStore store, {
     required bool correct,
   }) {
+    if (CoopService.active == null && store.shouldRepeatCardForDouble()) {
+      store.startSecondPass();
+      setState(() {
+        _completionCardId = null;
+        _letterCardId = null;
+        _bankCardId = null;
+        _fogCardId = null;
+        _quizCardId = null;
+        _blockOrderCardId = null;
+        _checked = false;
+        _subCardIndex = 0;
+      });
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '${AppRoutes.flow}/progress-tree',
+        (route) => route.isFirst,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(milliseconds: 1600),
+          content: Text('Completada pasada 1/2 · repitiendo ejercicios'),
+        ),
+      );
+      return;
+    }
+
     final keepGoing = store.advanceToNextSessionCard(correct: correct);
     // Sync best-effort: empuja snapshot al backend si hay sesión. No bloquea
     // la navegación.
