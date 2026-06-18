@@ -1130,10 +1130,8 @@ class AppStore extends ChangeNotifier {
   int _sessionCardsCompleted = 0;
   int _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
   bool _isPremium = false;
-  /// Toggle experimental: cuando está activo, cada tarjeta corre su flujo de
-  /// ejercicios DOS veces antes de avanzar (más práctica por versículo). Es
-  /// solo de sesión (no se persiste). `_currentCardPass` distingue 0 vs 1.
   bool _doubleExercises = false;
+  bool _hideFiftyPercentPractice = false;
   int _currentCardPass = 0;
 
   List<MemoryDeckData> get decks => List.unmodifiable(_decks);
@@ -1235,6 +1233,7 @@ class AppStore extends ChangeNotifier {
   bool get sessionFinished => _sessionCardsCompleted >= _sessionDailyTarget;
   bool get isPremium => _isPremium;
   bool get doubleExercises => _doubleExercises;
+  bool get hideFiftyPercentPractice => _hideFiftyPercentPractice;
 
   void setPremiumPreview(bool value) {
     if (_isPremium == value) return;
@@ -1667,6 +1666,7 @@ class AppStore extends ChangeNotifier {
     required int difficulty,
     required int dailyTarget,
     bool doubleExercises = false,
+    bool hideFiftyPercentPractice = false,
   }) {
     _sessionDifficulty = difficulty.clamp(0, 2);
     // El total configurable siempre es el número real de tarjetas en el mazo.
@@ -1677,6 +1677,7 @@ class AppStore extends ChangeNotifier {
     _correctAnswers = 0;
     _wrongAnswers = 0;
     _doubleExercises = doubleExercises;
+    _hideFiftyPercentPractice = hideFiftyPercentPractice;
     _currentCardPass = 0;
     final deckId = activeDeck.id;
     _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));

@@ -669,7 +669,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (isLastStep) {
       _completeSessionCard(context, store, correct: true);
     } else {
-      Navigator.push(
+      Navigator.pushReplacement(
         context,
         AppRoutes.slideRoute('${AppRoutes.flow}/progress-tree'),
       );
@@ -677,6 +677,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 
   void _completeStepAndNavigate(BuildContext context, AppStore store, String slug) {
+    _omitOverride.remove(slug);
     store.markExerciseStepCompleted(slug);
     _navigateToNextStepOrComplete(context, store, slug);
   }
@@ -687,7 +688,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     MemoryDeckData deck,
   ) {
     if (slug == '05-bloques') return _blocksAreCorrect();
-    final isOmitted = _omitOverride.contains('${card.id}:$slug');
+    final isOmitted = _omitOverride.contains(slug);
     if (_isCompletionSlug(slug) || (isOmitted && _phaseLabelFor(slug) != 'Preparar')) {
       final level = _isCompletionSlug(slug) ? _completionLevelForSlug(slug) : _omitTargetLevel(slug);
       return _completionCorrect(slug, card, levelOverride: level);
@@ -1752,7 +1753,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     String slug,
   ) {
     void complete() {
-      setState(() => _omitOverride.remove('${card.id}:$slug'));
+      setState(() => _omitOverride.remove(slug));
       _completeStepAndNavigate(context, store, slug);
     }
 
@@ -1855,6 +1856,15 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     return 1;
   }
 
+  void _showPista(BuildContext context, MemoryCardData card) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Pista: ${_firstWords(card.back, 6)}'),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   Widget _buildCompletionBody(
     BuildContext context,
     AppStore store,
@@ -1892,6 +1902,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           secondValue: '$remainingAttempts/3',
           secondLabel: 'INTENTOS',
           timeValue: _formatMmSs(_completionSecondsLeft),
+          onPistaTap: () => _showPista(context, card),
         ),
         const SizedBox(height: 14),
         _CompletionPromptCard(
@@ -2037,7 +2048,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     // F2: si el usuario omitió este paso, se transforma en lectura (no-mic)
     // o selección múltiple (mic) en lugar de saltarse. Mismo camino en solo
     // y coop (este motor es compartido).
-    if (_omitOverride.contains('${card.id}:$slug')) {
+    if (_omitOverride.contains(slug)) {
       return _buildOmitReplacement(context, store, card, slug);
     }
 
@@ -2488,6 +2499,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             secondValue: '$remainingAttempts/3',
             secondLabel: 'INTENTOS',
             timeValue: _formatMmSs(_letterSecondsLeft),
+            onPistaTap: () => _showPista(context, card),
           ),
           const SizedBox(height: 12),
           Expanded(
@@ -3357,7 +3369,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     MemoryDeckData deck,
     String slug,
   ) {
-    final isOmitted = _omitOverride.contains('${card.id}:$slug');
+    final isOmitted = _omitOverride.contains(slug);
     // F2: el reemplazo por omitir trae su propio botón de continuar solo para la fase Preparar.
     if (isOmitted && _phaseLabelFor(slug) == 'Preparar') {
       return const SizedBox.shrink();
@@ -3417,7 +3429,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               'Omitir',
               onTap: () {
                 ActiveMediaRegistry.stopAll();
-                setState(() => _omitOverride.add('${card.id}:$slug'));
+                setState(() => _omitOverride.add(slug));
               },
             ),
           ),
@@ -3437,7 +3449,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               'Omitir',
               onTap: () {
                 ActiveMediaRegistry.stopAll();
-                setState(() => _omitOverride.add('${card.id}:$slug'));
+                setState(() => _omitOverride.add(slug));
               },
             ),
           ),
@@ -3455,6 +3467,113 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ],
       );
     }
+    if (_isFirstLetterSlug(slug)) {
+      if (!_letterComplete()) {
+        return const SizedBox.shrink();
+      }
+      return _ActionCta(
+        label: 'Siguiente →',
+        enabled: true,
+        onTap: () {
+          ActiveMediaRegistry.stopAll();
+          final correct = _currentStepCorrect(slug, card, deck);
+          if (correct) {
+            final batch = _sessionBatchCards(context);
+            if (_subCardIndex + 1 < batch.length) {
+              setState(() {
+                _subCardIndex++;
+                _resetSubCardState();
+              });
+              return;
+            }
+            _subCardIndex = 0;
+            _completeStepAndNavigate(context, store, slug);
+            return;
+          }
+        },
+      );
+    }
+
+    if (slug != '05-bloques') {
+      return _ActionCta(
+        label: _footerLabel(slug, card, checked: _checked, completed: completed),
+        enabled: _footerEnabled(
+          slug,
+          card,
+          checked: _checked,
+          completed: completed,
+        ),
+        onTap: () {
+          ActiveMediaRegistry.stopAll();
+          if (_isPassiveStep(slug)) {
+            if (!completed) {
+              store.markExerciseStepCompleted(slug);
+              return;
+            }
+            if (_isFinalVoiceSlug(slug)) {
+              _completeSessionCard(context, store, correct: true);
+              return;
+            }
+            Navigator.pushReplacement(
+              context,
+              AppRoutes.slideRoute('${AppRoutes.flow}/$next'),
+            );
+            return;
+          }
+          if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
+            if (_quizRounds.isEmpty) return;
+            final round = _quizRounds[_quizRoundIndex];
+            if (!round.answered) return;
+            if (!_quizFinished) {
+              _advanceQuizRound();
+              return;
+            }
+            if (!_quizPassed) {
+              _showQuizFailedDialog();
+              return;
+            }
+            final batch = _sessionBatchCards(context);
+            if (_subCardIndex + 1 < batch.length) {
+              setState(() {
+                _subCardIndex++;
+                _resetSubCardState();
+              });
+              return;
+            }
+            _subCardIndex = 0;
+            _completeStepAndNavigate(context, store, slug);
+            return;
+          }
+
+          final correct = _currentStepCorrect(slug, card, deck);
+          if (correct) {
+            final batch = _sessionBatchCards(context);
+            if (_subCardIndex + 1 < batch.length) {
+              setState(() {
+                _subCardIndex++;
+                _resetSubCardState();
+              });
+              return;
+            }
+            _subCardIndex = 0;
+            _completeStepAndNavigate(context, store, slug);
+            return;
+          }
+
+          if (!_checked) {
+            setState(() => _checked = true);
+            return;
+          }
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Corrige el ejercicio para avanzar.'),
+            ),
+          );
+        },
+      );
+    }
+
     return Row(
       children: [
         SizedBox(
@@ -3499,7 +3618,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   _completeSessionCard(context, store, correct: true);
                   return;
                 }
-                Navigator.push(
+                Navigator.pushReplacement(
                   context,
                   AppRoutes.slideRoute('${AppRoutes.flow}/$next'),
                 );
@@ -3570,7 +3689,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '05-bloques') {
       return _blocksAreCorrect();
     }
-    final isOmitted = _omitOverride.contains('${card.id}:$slug');
+    final isOmitted = _omitOverride.contains(slug);
     if (_isCompletionSlug(slug) || (isOmitted && _phaseLabelFor(slug) != 'Preparar')) {
       final level = _isCompletionSlug(slug) ? _completionLevelForSlug(slug) : _omitTargetLevel(slug);
       return _completionCorrect(slug, card, levelOverride: level);
@@ -3590,7 +3709,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     required bool checked,
     required bool completed,
   }) {
-    final isOmitted = _omitOverride.contains('${card.id}:$slug');
+    final isOmitted = _omitOverride.contains(slug);
     if (slug == '00-solo-lectura') {
       return completed ? 'Siguiente →' : 'Toca el texto para revelar palabras';
     }
@@ -3643,7 +3762,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }) {
     if (slug == '01-escuchar') return completed;
     if (slug == '04-escuchar-voz') return completed;
-    final isOmitted = _omitOverride.contains('${card.id}:$slug');
+    final isOmitted = _omitOverride.contains(slug);
     if (slug == '05-bloques' ||
         slug == '09-quiz' ||
         slug == '09-quiz-avanzado' ||

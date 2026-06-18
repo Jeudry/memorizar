@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/app_state.dart';
 import '../../../../core/theme/ref_colors.dart';
 import '../../../../core/ui/widgets.dart';
 import '../exercise_logic.dart';
@@ -58,15 +59,28 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
     return clean.split(' ');
   }
 
-  void _ensure(String cardId, String targetText) {
+  void _ensure(String cardId, String targetText, BuildContext context) {
     if (_cardId == cardId) return;
     _cardId = cardId;
     _words = _splitWords(targetText);
-    // 100% hidden: blank all words that have letters
-    _blankPositions = [
+    final hideFifty = AppScope.of(context).hideFiftyPercentPractice;
+    final allWordPositions = [
       for (var i = 0; i < _words.length; i++)
         if (_norm(_words[i]).isNotEmpty) i,
     ];
+    if (hideFifty) {
+      _blankPositions = [];
+      for (var i = 0; i < allWordPositions.length; i++) {
+        if (i % 2 == 0) {
+          _blankPositions.add(allWordPositions[i]);
+        }
+      }
+      if (_blankPositions.isEmpty && allWordPositions.isNotEmpty) {
+        _blankPositions.add(allWordPositions.first);
+      }
+    } else {
+      _blankPositions = allWordPositions;
+    }
     _startPass(0, targetText);
   }
 
@@ -129,7 +143,7 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
 
   @override
   Widget build(BuildContext context) {
-    _ensure(widget.cardId, widget.targetText);
+    _ensure(widget.cardId, widget.targetText, context);
     final activeBlank = _activeBlank;
 
     return Column(

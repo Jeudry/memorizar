@@ -18,6 +18,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
   int _difficulty = 1;
   int? _dailyTarget;
   bool _doubleExercises = false;
+  bool _hideFiftyPercentPractice = false;
   _DailyQuickPick _quickPick = _DailyQuickPick.recomendado;
   String? _deckId;
   String _selectedIcon = '✝️';
@@ -134,6 +135,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
       difficulty: _difficulty,
       dailyTarget: target,
       doubleExercises: _doubleExercises,
+      hideFiftyPercentPractice: _hideFiftyPercentPractice,
     );
     Navigator.pushNamed(context, '${AppRoutes.flow}/progress-tree');
   }
@@ -574,6 +576,68 @@ class _IniciarScreenState extends State<IniciarScreen> {
                     ),
                     child: Align(
                       alignment: _doubleExercises
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
+                      child: Container(
+                        width: 20,
+                        height: 20,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () => setState(() => _hideFiftyPercentPractice = !_hideFiftyPercentPractice),
+            child: Glass(
+              color: HtmlRefColors.glassBg,
+              border: Border.all(
+                color: _hideFiftyPercentPractice
+                    ? RefColors.violet
+                    : HtmlRefColors.glassBorder,
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  const Text('🧩', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Ocultar 50% en práctica',
+                          style: TextStyle(
+                              fontSize: 12.5, fontWeight: FontWeight.w900),
+                        ),
+                        Text(
+                          _hideFiftyPercentPractice
+                              ? 'Oculta solo la mitad de las palabras.'
+                              : 'Oculta todas las palabras (100%).',
+                          style: const TextStyle(
+                              color: RefColors.muted, fontSize: 10.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    width: 42,
+                    height: 24,
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: _hideFiftyPercentPractice
+                          ? RefColors.violet
+                          : HtmlRefColors.glassStrong,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Align(
+                      alignment: _hideFiftyPercentPractice
                           ? Alignment.centerRight
                           : Alignment.centerLeft,
                       child: Container(

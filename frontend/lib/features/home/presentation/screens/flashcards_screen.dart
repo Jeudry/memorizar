@@ -794,9 +794,8 @@ class _FlashcardStatsStrip extends StatelessWidget {
 class _FlashStat extends StatelessWidget {
   final String value;
   final String label;
-  final Color? valueColor;
 
-  const _FlashStat(this.value, this.label, {this.valueColor});
+  const _FlashStat(this.value, this.label);
 
   @override
   Widget build(BuildContext context) {
@@ -804,8 +803,7 @@ class _FlashStat extends StatelessWidget {
       children: [
         Text(
           value,
-          style: TextStyle(
-            color: valueColor,
+          style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w900,
           ),

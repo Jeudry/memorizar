@@ -604,6 +604,7 @@ class _FogStepState extends State<_FogStep>
   Widget build(BuildContext context) {
     if (_isCheckingModel || (_isModelInitializing && !_isDownloadingModel)) {
       return Glass(
+        width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
         radius: 24,
         child: const Center(
@@ -646,6 +647,7 @@ class _FogStepState extends State<_FogStep>
                       : _modelStatus;
 
       return Glass(
+        width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
         radius: 24,
         gradient: LinearGradient(
