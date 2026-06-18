@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/app_state.dart';
@@ -69,14 +71,12 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
         if (_norm(_words[i]).isNotEmpty) i,
     ];
     if (hideFifty) {
-      _blankPositions = [];
-      for (var i = 0; i < allWordPositions.length; i++) {
-        if (i % 2 == 0) {
-          _blankPositions.add(allWordPositions[i]);
-        }
-      }
-      if (_blankPositions.isEmpty && allWordPositions.isNotEmpty) {
-        _blankPositions.add(allWordPositions.first);
+      if (allWordPositions.isEmpty) {
+        _blankPositions = [];
+      } else {
+        final list = [...allWordPositions]..shuffle(math.Random());
+        final count = (allWordPositions.length / 2).round().clamp(1, allWordPositions.length);
+        _blankPositions = list.take(count).toList()..sort();
       }
     } else {
       _blankPositions = allWordPositions;
