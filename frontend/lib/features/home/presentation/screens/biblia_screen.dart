@@ -94,6 +94,10 @@ class _BibliaScreenState extends State<BibliaScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    final store = AppScope.of(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      store.clearBibleSelection();
+    });
     super.dispose();
   }
 

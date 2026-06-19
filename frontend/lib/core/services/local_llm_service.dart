@@ -344,10 +344,11 @@ class LocalLlmService {
         'Texto de referencia: "$verseText"\n'
         'Pregunta abierta: "$question"\n'
         'Respuesta del usuario: "${userAnswer.trim()}"\n\n'
-        'Marca "isCorrect" como true solo si la respuesta demuestra comprensión real del texto '
-        '(aunque esté escrita con sus propias palabras). Una respuesta vacía de contenido, '
-        'fuera de tema o sin relación con el texto es incorrecta.\n'
-        'En "feedback" escribe 1 o 2 frases breves, cálidas y concretas explicando el veredicto.\n'
+        'Criterio de Evaluación:\n'
+        '- Sé muy flexible e indulgente: si la respuesta del usuario es básicamente correcta, aproximada o demuestra un entendimiento general/básico, márcala como CORRECTA ("isCorrect": true). No exijas explicaciones exhaustivas o teología profunda.\n'
+        '- Si la respuesta está bien pero es muy simple o le falta profundizar, márcala igualmente como CORRECTA ("isCorrect": true), y usa el "feedback" para añadir detalles adicionales o aclaraciones de forma amable e instructiva (envía la profundidad como una aclaración, no como un motivo de fallo).\n'
+        '- Solo marca "isCorrect" como false si la respuesta es completamente errónea, vacía o totalmente fuera de tema.\n'
+        '- En "feedback" escribe 1 o 2 frases breves y amigables explicando el veredicto o complementando la respuesta.\n'
         'Responde únicamente con el JSON.';
 
     final content = await _chat(
