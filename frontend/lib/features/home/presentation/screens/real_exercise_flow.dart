@@ -1437,6 +1437,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         slug == '06-completar-n1' ||
         slug == '07-primera-letra-n1' ||
         slug == '09-quiz' ||
+        slug == '18-palabras-intrusas' ||
         slug == '10-completar-n2' ||
         slug == '11-primera-letra-n2' ||
         slug == '12-completar-n3' ||
@@ -1841,7 +1842,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 
   int _omitTargetLevel(String slug) {
-    if (slug.contains('n3') || slug == '15-banco-completo') {
+    if (slug.contains('n3') || slug == '15-banco-completo' || slug == '18-palabras-intrusas') {
       return 3;
     }
     if (slug.contains('n2') || slug == '09-quiz') {
@@ -2055,6 +2056,25 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         targetText: _currentBatchText(context),
         reference: _currentBatchReference(context),
         onFinished: () => _completeStepAndNavigate(context, store, slug),
+      );
+    }
+
+    if (slug == '18-palabras-intrusas') {
+      return IntruderWordsBody(
+        key: ValueKey('intruder-words-${card.id}'),
+        card: card,
+        onFinished: () {
+          final batch = _sessionBatchCards(context);
+          if (_subCardIndex + 1 < batch.length) {
+            setState(() {
+              _subCardIndex++;
+              _resetSubCardState();
+            });
+            return;
+          }
+          _subCardIndex = 0;
+          _completeStepAndNavigate(context, store, slug);
+        },
       );
     }
 
@@ -3363,6 +3383,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     MemoryDeckData deck,
     String slug,
   ) {
+    if (slug == '18-palabras-intrusas') {
+      return const SizedBox.shrink();
+    }
     final isOmitted = _omitOverride.contains(slug);
     // F2: el reemplazo por omitir trae su propio botón de continuar solo para la fase Preparar.
     if (isOmitted && _phaseLabelFor(slug) == 'Preparar') {

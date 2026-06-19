@@ -57,6 +57,7 @@ import '../../../core/theme/ref_colors.dart';
 import '../../../core/ui/widgets.dart';
 import '../../../core/ui/main_tab_shell.dart';
 import '../../../core/services/whisper_service.dart';
+import 'screens/intruder_words_step.dart';
 
 part 'screens/biblia_screen.dart';
 part 'screens/especificar_screen.dart';
@@ -252,6 +253,7 @@ const flowScreens = [
   ExerciseFlowData('10-completar-n2', 'Elige la palabra · N2', 'Recuerdo más fuerte'),
   ExerciseFlowData('11-primera-letra-n2', 'Primera letra N2', 'Casi sin ayuda'),
   ExerciseFlowData('09-quiz', 'Quiz', 'Elige la respuesta correcta'),
+  ExerciseFlowData('18-palabras-intrusas', 'Palabras intrusas', 'Identifica alteraciones de la IA'),
   ExerciseFlowData('12-completar-n3', 'Elige la palabra · N3', 'Más huecos visibles'),
   ExerciseFlowData(
     '13-primera-letra-n3',
@@ -285,7 +287,7 @@ class ExerciseFlowScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (data.slug == '09-quiz') {
+    if (data.slug == '09-quiz' || data.slug == '18-palabras-intrusas') {
       final store = AppScope.of(context);
       final llmService = LocalLlmService.instance;
       if (!store.isPremium) {

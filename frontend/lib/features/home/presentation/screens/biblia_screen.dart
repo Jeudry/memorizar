@@ -2075,6 +2075,7 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
   final slugs = <String>[
     if (store.debugForceQuizFirst) ...[
       '09-quiz',
+      '18-palabras-intrusas',
     ],
     ...intro,
     // Nivel 1: práctica activa + niebla N1 al final del nivel 1
@@ -2092,8 +2093,10 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     if (difficulty >= 1) ...[
       ...pick(level3Optional, difficulty == 1 ? 1 : 2),
       '16-niebla-n3',
+      if (!store.debugForceQuizFirst) '18-palabras-intrusas',
     ],
   ];
+
   return slugs.map(_flowData).toList();
 }
 

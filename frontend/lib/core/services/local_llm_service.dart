@@ -75,6 +75,22 @@ class LocalLlmService {
     'required': ['isCorrect', 'feedback'],
   };
 
+  static const Map<String, dynamic> _intruderVerseSchema = {
+    'type': 'object',
+    'properties': {
+      'alteredVerse': {'type': 'string'},
+      'intruderWords': {
+        'type': 'array',
+        'items': {'type': 'string'},
+        'minItems': 1,
+        'maxItems': 3,
+      },
+      'explanation': {'type': 'string'},
+    },
+    'required': ['alteredVerse', 'intruderWords', 'explanation'],
+  };
+
+
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 5),
     receiveTimeout: _generationTimeout,
@@ -281,6 +297,50 @@ class LocalLlmService {
       jsonSchema: _quizRoundSetSchema,
     );
     return AiQuizRoundSet.fromJson(_decodeJsonObject(content));
+  }
+
+  /// Genera un versículo alterado con palabras intrusas según el nivel de dificultad:
+  /// - Nivel 1: Cambia exactamente 1 palabra. Error obvio o sinónimo simple.
+  /// - Nivel 2: Cambia exactamente 2 palabras. Sinónimos sutiles o palabras parecidas.
+  /// - Nivel 3: Cambia exactamente 3 palabras. Conectores sutiles o teología ligeramente alterada de forma casi imperceptible.
+  Future<IntruderVerseSet> generateIntruderVerse({
+    required String reference,
+    required String verseText,
+    required int level,
+  }) async {
+    String levelInstruction = '';
+    if (level == 1) {
+      levelInstruction = 'Reemplaza exactamente 1 palabra del versículo por una palabra incorrecta (un "intruso"). '
+          'La alteración debe ser sutil y plausible (no obvia), como un sinónimo cercano o una palabra que encaje en el contexto gramatical pero cambie el significado sutilmente.';
+    } else if (level == 2) {
+      levelInstruction = 'Reemplaza exactamente 2 palabras del versículo por dos palabras incorrectas ("intrusos"). '
+          'Las alteraciones deben ser de dificultad alta y muy parecidas a las originales (longitud similar, letras similares, raíces compartidas o sinónimos extremadamente cercanos) que se confundan fácilmente al leer rápido.';
+    } else {
+      levelInstruction = 'Reemplaza exactamente 3 palabras del versículo por tres palabras incorrectas ("intrusos"). '
+          'Las alteraciones deben ser sumamente difíciles de identificar a simple vista: cambia conectores gramaticales pequeños (ej: "por" en vez de "para", "con" en vez de "en"), o palabras con un significado teológico casi idéntico pero incorrecto (ej: "Señor" en vez de "Dios" si el original decía Dios).';
+    }
+
+
+    final prompt = 'Eres un creador de desafíos premium de memorización de la Biblia en español.\n'
+        'Tu tarea es tomar el versículo indicado y generar una versión alterada del mismo.\n\n'
+        'Versículo original ($reference): "$verseText"\n\n'
+        'Instrucciones específicas:\n'
+        '- $levelInstruction\n'
+        '- Las palabras intrusas nuevas no deben existir en el versículo original en esa misma posición.\n'
+        '- El resto de palabras del versículo deben permanecer idénticas al original.\n'
+        '- Devuelve exactamente en "alteredVerse" el versículo modificado completo conservando signos de puntuación originales donde sea posible.\n'
+        '- Devuelve exactamente en "intruderWords" la lista de las palabras intrusas (tal y como aparecen en el versículo alterado, sin puntuación pegada si es posible).\n'
+        '- Devuelve en "explanation" una explicación interactiva de alta calidad que indique qué palabras se cambiaron y por qué el texto original usa esas palabras (con un matiz teológico o lingüístico interesante).\n\n'
+        'Responde únicamente con el objeto JSON estructurado. Todo en español.';
+
+    final content = await _chat(
+      prompt,
+      temperature: 0.8,
+      maxTokens: 600,
+      jsonSchema: _intruderVerseSchema,
+    );
+
+    return IntruderVerseSet.fromJson(_decodeJsonObject(content));
   }
 
   static const Map<String, dynamic> _distractorSchema = {

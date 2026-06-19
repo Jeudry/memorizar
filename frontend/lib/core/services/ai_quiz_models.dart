@@ -122,3 +122,38 @@ class AiOpenAnswerEvaluation {
     );
   }
 }
+
+/// Set de versículo alterado con palabras intrusas generado por la IA local.
+class IntruderVerseSet {
+  final String alteredVerse;
+  final List<String> intruderWords;
+  final String explanation;
+
+  const IntruderVerseSet({
+    required this.alteredVerse,
+    required this.intruderWords,
+    required this.explanation,
+  });
+
+  factory IntruderVerseSet.fromJson(Map<String, dynamic> json) {
+    final alteredVerse = AiTrueFalseRound.requireText(json, 'alteredVerse');
+    final explanation = AiTrueFalseRound.requireText(json, 'explanation');
+    final rawIntruderWords = json['intruderWords'];
+    if (rawIntruderWords is! List) {
+      throw const FormatException('El ejercicio no trae la lista de palabras intrusas.');
+    }
+    final intruderWords = rawIntruderWords
+        .map((w) => w.toString().trim())
+        .where((w) => w.isNotEmpty)
+        .toList();
+    if (intruderWords.isEmpty) {
+      throw const FormatException('La lista de palabras intrusas está vacía.');
+    }
+    return IntruderVerseSet(
+      alteredVerse: alteredVerse,
+      intruderWords: intruderWords,
+      explanation: explanation,
+    );
+  }
+}
+
