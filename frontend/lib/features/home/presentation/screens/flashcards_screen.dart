@@ -229,7 +229,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        status.isEmpty ? 'Requiere descarga única (~3.02 GB · Gemma 4 E2B Q2 QAT)' : status,
+                                        status.isEmpty ? 'Requiere descarga única (${llmService.modelDescription})' : status,
                                         style: const TextStyle(color: RefColors.muted, fontSize: 11, fontWeight: FontWeight.w700),
                                       ),
                                     ],

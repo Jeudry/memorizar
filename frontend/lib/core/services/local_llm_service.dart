@@ -104,6 +104,14 @@ class LocalLlmService {
 
   bool get isReady => _initialized;
 
+  String get modelDescription {
+    if (_useMobileBackend) {
+      return 'Gemma 4 E2B LiteRT (~2.58 GB)';
+    } else {
+      return 'Gemma 4 E2B Q2 QAT (~3.02 GB)';
+    }
+  }
+
   /// En móvil la inferencia corre on-device vía flutter_gemma (no hay
   /// llama-server). El resto de plataformas usan el motor llama.cpp.
   bool get _useMobileBackend =>

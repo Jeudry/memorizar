@@ -16,11 +16,11 @@ class FlutterGemmaBackend {
 
   /// Modelo Gemma para móvil. Configurable por dart-define para poder apuntar
   /// a otra variante/cuantización sin recompilar el código. Por defecto un
-  /// Gemma 3 1B IT en formato `.task` (ligero, apto para teléfono).
+  /// Gemma 4 E2B IT en formato `.litertlm` (optimizado para LiteRT-LM en móvil).
   static const String _modelUrl = String.fromEnvironment(
     'GEMMA_MOBILE_MODEL_URL',
     defaultValue:
-        'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q8_ekv1280.task',
+        'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
   );
 
   /// Token de Hugging Face si el modelo está detrás de gate. Vacío = público.
