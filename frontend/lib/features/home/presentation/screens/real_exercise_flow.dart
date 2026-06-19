@@ -972,7 +972,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       await llm.initLlm();
       if (!mounted) return;
       setState(() {
-        _aiQuizLoadingText = 'Gemma 4 está creando preguntas únicas sobre ${card.front}…';
+        _aiQuizLoadingText = llm.isMockFallback
+            ? 'Cargando preguntas simuladas sobre ${card.front}…'
+            : 'Gemma 4 está creando preguntas únicas sobre ${card.front}…';
       });
       final roundSet = await llm.generateQuizRoundSet(
         reference: card.front,
@@ -1021,7 +1023,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           id: 'quiz-ai-mc-distractor-$idx-${card.id}',
           front: multipleChoice.question,
           back: multipleChoice.distractors[idx],
-          source: 'IA local',
+          source: LocalLlmService.instance.isMockFallback
+              ? 'IA Simulada (Simulator)'
+              : 'IA local',
           icon: card.icon,
         ),
     ]..shuffle();
@@ -2114,13 +2118,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                const Text(
-                  'Preguntas generadas en vivo por la IA local · sin internet',
+                Text(
+                  LocalLlmService.instance.isMockFallback
+                      ? 'Preguntas simuladas · Fallback del simulador'
+                      : 'Preguntas generadas en vivo por la IA local · sin internet',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: RefColors.muted,
+                    color: LocalLlmService.instance.isMockFallback
+                        ? RefColors.urgent
+                        : RefColors.muted,
                   ),
                 ),
               ],

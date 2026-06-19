@@ -101,10 +101,15 @@ class LocalLlmService {
   Future<void>? _initInFlight;
   final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0.0);
   final ValueNotifier<String> statusNotifier = ValueNotifier<String>('');
+  bool _isMockFallback = false;
 
   bool get isReady => _initialized;
+  bool get isMockFallback => _isMockFallback;
 
   String get modelDescription {
+    if (_isMockFallback) {
+      return 'IA Simulada (Modo Desarrollo)';
+    }
     if (_useMobileBackend) {
       return 'Gemma 4 E2B LiteRT (~2.58 GB)';
     } else {
@@ -247,9 +252,23 @@ class LocalLlmService {
     statusNotifier.value = 'Inicializando IA local en el dispositivo…';
 
     if (_useMobileBackend) {
-      await FlutterGemmaBackend.instance
-          .init(onStatus: (s) => statusNotifier.value = s);
-      _initialized = true;
+      try {
+        await FlutterGemmaBackend.instance
+            .init(onStatus: (s) => statusNotifier.value = s)
+            .timeout(const Duration(seconds: 4));
+        _initialized = true;
+        _isMockFallback = false;
+      } catch (e) {
+        debugPrint('Fallo al inicializar Gemma nativo ($e).');
+        if (!kIsWeb && Platform.isIOS) {
+          debugPrint('Activando fallback de IA simulada para desarrollo (Simulador iOS).');
+          _initialized = true;
+          _isMockFallback = true;
+          statusNotifier.value = 'IA Simulada (Modo Simulador)';
+        } else {
+          rethrow;
+        }
+      }
       return;
     }
 
@@ -517,6 +536,10 @@ class LocalLlmService {
       await initLlm();
     }
 
+    if (_isMockFallback) {
+      return _generateMockFallbackResponse(prompt, jsonSchema);
+    }
+
     if (_useMobileBackend) {
       // flutter_gemma no aplica grammar JSON como llama.cpp: el prompt ya pide
       // "responde únicamente con el JSON" y _decodeJsonObject lo sanea.
@@ -562,5 +585,101 @@ class LocalLlmService {
     final decoded = jsonDecode(sanitized);
     if (decoded is Map<String, dynamic>) return decoded;
     throw const FormatException('La IA local no devolvió un objeto JSON.');
+  }
+
+  String _generateMockFallbackResponse(String prompt, Map<String, dynamic>? jsonSchema) {
+    if (jsonSchema == null) return '{}';
+
+    // 1. Quiz Round Set
+    if (jsonSchema == _quizRoundSetSchema) {
+      return '''
+      {
+        "trueFalse": {
+          "statement": "El versículo enseña la importancia de confiar en Dios en medio de cualquier circunstancia.",
+          "isTrue": true
+        },
+        "multipleChoice": {
+          "question": "¿Cuál es la enseñanza central reflejada en este texto?",
+          "correct": "La providencia divina y la fidelidad eterna de Dios.",
+          "distractors": [
+            "La necesidad de acumular riquezas materiales.",
+            "El aislamiento absoluto del mundo exterior.",
+            "La búsqueda del éxito personal sobre el servicio a los demás."
+          ]
+        },
+        "openQuestion": {
+          "question": "¿Cómo aplicarías este versículo en tu vida cotidiana?"
+        }
+      }
+      ''';
+    }
+
+    // 2. Intruder Verse
+    if (jsonSchema == _intruderVerseSchema) {
+      String verseText = "En el principio creó Dios los cielos y la tierra.";
+      final match = RegExp(r'Texto \([^)]+\):\s*"([^"]+)"').firstMatch(prompt);
+      if (match != null) {
+        verseText = match.group(1) ?? verseText;
+      }
+      final words = verseText.split(' ');
+      List<String> intruders = [];
+      String altered = verseText;
+      if (words.length > 4) {
+        if (prompt.contains('1 palabra') || prompt.contains('Nivel 1')) {
+          intruders = ['creó'];
+          altered = verseText.replaceAll('creó', 'estableció');
+        } else if (prompt.contains('2 palabras') || prompt.contains('Nivel 2')) {
+          intruders = ['creó', 'tierra'];
+          altered = verseText.replaceAll('creó', 'estableció').replaceAll('tierra', 'luna');
+        } else {
+          intruders = ['creó', 'cielos', 'tierra'];
+          altered = verseText.replaceAll('creó', 'estableció').replaceAll('cielos', 'mundos').replaceAll('tierra', 'luna');
+        }
+      } else {
+        intruders = ['incorrecto'];
+        altered = '\$verseText (alterado)';
+      }
+      return '''
+      {
+        "alteredVerse": "$altered",
+        "intruderWords": ${jsonEncode(intruders)},
+        "explanation": "Simulación: Se cambiaron palabras clave para evaluar la memorización del versículo."
+      }
+      ''';
+    }
+
+    // 3. Distractor Schema
+    if (jsonSchema == _distractorSchema) {
+      return '''
+      {
+        "distractors": ["amor", "paz", "justicia", "verdad", "esperanza", "fe", "gracia", "vida"]
+      }
+      ''';
+    }
+
+    // 4. Open Answer Evaluation
+    if (jsonSchema == _openAnswerEvaluationSchema) {
+      return '''
+      {
+        "isCorrect": true,
+        "feedback": "Excelente reflexión. Tu respuesta capta muy bien la esencia espiritual y el contexto doctrinal del versículo."
+      }
+      ''';
+    }
+
+    // 5. Deck Schema (Flashcards)
+    if (jsonSchema == _deckSchema) {
+      return '''
+      {
+        "cards": [
+          {"front": "Fe", "back": "La certeza de lo que se espera, la convicción de lo que no se ve (Hebreos 11:1)."},
+          {"front": "Amor", "back": "El vínculo perfecto y el cumplimiento de la ley."},
+          {"front": "Gracia", "back": "Favor inmerecido otorgado por Dios."}
+        ]
+      }
+      ''';
+    }
+
+    return '{}';
   }
 }
