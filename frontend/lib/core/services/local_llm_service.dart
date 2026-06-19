@@ -136,14 +136,21 @@ class LocalLlmService {
     return length >= _minValidModelBytes;
   }
 
-  /// La IA está disponible si ya hay un motor sano respondiendo (otra
-  /// instancia o proceso externo lo levantó — único camino en web) o si el
-  /// modelo está descargado y podemos arrancarlo nosotros.
+  /// La IA está disponible si el modelo está descargado localmente
+  /// (o si estamos en web y ya hay un motor sano respondiendo).
   Future<bool> isAvailable() async {
+    if (kIsWeb) {
+      return LlamaServerManager.instance.isHealthy();
+    }
     if (_useMobileBackend) return FlutterGemmaBackend.instance.isInstalled();
-    final engineAlreadyUp = await LlamaServerManager.instance.isHealthy();
-    if (engineAlreadyUp) return true;
-    return checkModelExists();
+    final modelExists = await checkModelExists();
+    if (!modelExists) {
+      // Si el archivo no existe localmente en escritorio, nos aseguramos de apagar
+      // cualquier proceso huérfano para evitar falsos positivos de salud.
+      await LlamaServerManager.instance.stop();
+      return false;
+    }
+    return true;
   }
 
   /// Descarga única del modelo Gemma 4 E2B QAT Q2_K (~3.0 GB).
