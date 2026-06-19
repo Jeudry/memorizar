@@ -193,16 +193,32 @@ class LocalLlmService {
     }
   }
 
-  /// El modelo Gemma 2 antiguo ya no se usa; liberar sus ~1.4 GB.
+  /// Elimina físicamente el archivo del modelo activo actual y limpia el estado para forzar re-descarga.
+  Future<String> deleteModelFile() async {
+    _initialized = false;
+    // Si el servidor local está corriendo, lo detenemos para poder borrar el archivo sin bloqueos
+    await LlamaServerManager.instance.ensureRunning('');
+    final path = await _modelPath;
+    final file = File(path);
+    if (await file.exists()) {
+      await file.delete();
+    }
+    downloadProgress.value = 0.0;
+    statusNotifier.value = 'Modelo eliminado localmente.';
+    return path;
+  }
+
+  /// El modelo Gemma 3 antiguo ya no se usa; liberar sus ~2.4 GB.
   Future<void> _deleteLegacyModel() async {
     final dir = await _llmDirectory;
     final legacyFile = File('${dir.path}/$_legacyModelFileName');
     final legacyExists = await legacyFile.exists();
     if (legacyExists) {
       await legacyFile.delete();
-      debugPrint('Modelo legado Gemma 2 eliminado.');
+      debugPrint('Modelo legado Gemma 3 eliminado.');
     }
   }
+
 
   /// Levanta (o reutiliza) el motor llama.cpp con el modelo cargado.
   Future<void> initLlm() {

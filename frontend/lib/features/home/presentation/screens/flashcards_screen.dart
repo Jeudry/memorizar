@@ -282,6 +282,35 @@ class _PremiumScreenState extends State<PremiumScreen> {
                                   }
                                 },
                               ),
+                              const SizedBox(height: 10),
+                              if (!_downloading)
+                                GhostButton(
+                                  'Limpiar y volver a descargar modelado',
+                                  onTap: () async {
+                                    setState(() {
+                                      _downloading = true;
+                                    });
+                                    try {
+                                      // Eliminar el archivo actual del modelo para forzar la re-descarga de Gemma 4
+                                      final path = await llmService.deleteModelFile();
+                                      debugPrint('Modelo antiguo limpiado en: $path');
+                                      await llmService.downloadModel();
+                                    } catch (e) {
+                                      debugPrint('Error re-descargando: $e');
+                                    } finally {
+                                      setState(() {
+                                        _downloading = false;
+                                      });
+                                    }
+                                  },
+                                )
+                              else
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 8),
+                                  child: Center(
+                                    child: CircularProgressIndicator(color: RefColors.pink),
+                                  ),
+                                ),
                             ],
                           ],
                         ),

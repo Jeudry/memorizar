@@ -51,12 +51,24 @@ class LlamaServerManager {
     }
   }
 
+  /// Detiene el proceso del servidor si está corriendo.
+  Future<void> stop() async {
+    _process?.kill();
+    _process = null;
+    _processExited = true;
+    await Future.delayed(const Duration(milliseconds: 500));
+  }
+
   /// Garantiza que haya un `llama-server` sirviendo [modelPath]. Si ya hay
   /// uno sano lo reutiliza; si no, lo arranca y espera a que cargue el modelo.
   Future<void> ensureRunning(
     String modelPath, {
     void Function(String status)? onStatus,
   }) async {
+    if (modelPath.isEmpty) {
+      await stop();
+      return;
+    }
     if (!isSupportedPlatform) {
       throw UnsupportedError(
         'La IA local solo está disponible en escritorio por ahora.',
