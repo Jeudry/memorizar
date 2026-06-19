@@ -10,8 +10,8 @@ import 'ai_quiz_models.dart';
 import 'flutter_gemma_backend.dart';
 import 'llama_server_manager.dart';
 
-/// Servicio local offline de inferencia de IA (Gemma 3 4B IT, cuantizado QAT
-/// Q4_0 en formato GGUF). Descarga el modelo una sola vez y ejecuta toda la
+/// Servicio local offline de inferencia de IA (Gemma 4 E2B IT, cuantizado QAT
+/// Q2_K en formato GGUF). Descarga el modelo una sola vez y ejecuta toda la
 /// generación de preguntas 100% en el dispositivo vía llama.cpp (Metal/GPU),
 /// sin internet y sin datos precocinados: cada set de preguntas sale del
 /// modelo en el momento.
@@ -19,12 +19,12 @@ class LocalLlmService {
   LocalLlmService._privateConstructor();
   static final LocalLlmService instance = LocalLlmService._privateConstructor();
 
-  // Espejo público (sin gate de licencia) del GGUF QAT oficial de Google.
+  // Gemma 4 E2B QAT GGUF con cuantización Q2_K por bartowski para uso móvil.
   static const String _modelUrl =
-      'https://huggingface.co/ggml-org/gemma-3-4b-it-qat-GGUF/resolve/main/gemma-3-4b-it-qat-Q4_0.gguf';
-  static const String _modelFileName = 'gemma-3-4b-it-qat-Q4_0.gguf';
-  static const String _legacyModelFileName = 'gemma-2b-it-gpu-int4.bin';
-  static const int _minValidModelBytes = 2000 * 1024 * 1024;
+      'https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q2_K.gguf';
+  static const String _modelFileName = 'google_gemma-4-E2B-it-Q2_K.gguf';
+  static const String _legacyModelFileName = 'gemma-3-4b-it-qat-Q4_0.gguf';
+  static const int _minValidModelBytes = 3000 * 1024 * 1024; // 3.02 GB
   static const Duration _generationTimeout = Duration(minutes: 3);
   static const double _quizTemperature = 1.0;
   static const int _quizMaxTokens = 900;
@@ -146,7 +146,7 @@ class LocalLlmService {
     return checkModelExists();
   }
 
-  /// Descarga única del modelo Gemma 3 4B QAT Q4_0 (~2.4 GB).
+  /// Descarga única del modelo Gemma 4 E2B QAT Q2_K (~3.0 GB).
   /// Acción 100% controlada por el usuario y opcional.
   Future<void> downloadModel() async {
     if (_useMobileBackend) {
@@ -166,7 +166,7 @@ class LocalLlmService {
       return;
     }
 
-    statusNotifier.value = 'Iniciando descarga de Gemma 3 4B (QAT Q4_0)…';
+    statusNotifier.value = 'Iniciando descarga de Gemma 4 E2B (QAT Q2_K)…';
     downloadProgress.value = 0.0;
 
     try {

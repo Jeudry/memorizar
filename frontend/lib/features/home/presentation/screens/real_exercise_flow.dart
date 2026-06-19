@@ -972,7 +972,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       await llm.initLlm();
       if (!mounted) return;
       setState(() {
-        _aiQuizLoadingText = 'Gemma 3 está creando preguntas únicas sobre ${card.front}…';
+        _aiQuizLoadingText = 'Gemma 4 está creando preguntas únicas sobre ${card.front}…';
       });
       final roundSet = await llm.generateQuizRoundSet(
         reference: card.front,

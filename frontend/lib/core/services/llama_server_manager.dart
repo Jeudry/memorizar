@@ -77,7 +77,7 @@ class LlamaServerManager {
     onStatus?.call('Arrancando motor de IA local…');
     await _spawn(binaryPath, modelPath);
 
-    onStatus?.call('Cargando Gemma 3 (QAT) en GPU…');
+    onStatus?.call('Cargando Gemma 4 E2B (QAT) en GPU…');
     await _waitUntilHealthy();
   }
 

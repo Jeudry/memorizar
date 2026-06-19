@@ -229,7 +229,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        status.isEmpty ? 'Requiere descarga única (~2.4 GB · Gemma 3 QAT)' : status,
+                                        status.isEmpty ? 'Requiere descarga única (~3.0 GB · Gemma 4 QAT)' : status,
                                         style: const TextStyle(color: RefColors.muted, fontSize: 11, fontWeight: FontWeight.w700),
                                       ),
                                     ],

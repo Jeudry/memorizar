@@ -415,7 +415,7 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Gemma 3 está procesando…',
+              'Gemma 4 está procesando…',
               style: TextStyle(
                 fontSize: 10.5,
                 color: RefColors.muted,
