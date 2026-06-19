@@ -39,7 +39,31 @@ class FlutterGemmaBackend {
       await FlutterGemma.initialize(
         huggingFaceToken: _hfToken.isEmpty ? null : _hfToken,
       );
-      return FlutterGemma.hasActiveModel();
+
+      final filename = 'gemma-4-E2B-it.litertlm';
+      final isFilePresent = await FlutterGemma.isModelInstalled(filename);
+
+      if (isFilePresent) {
+        if (FlutterGemma.hasActiveModel()) {
+          final activeModel = FlutterGemmaPlugin.instance.modelManager.activeInferenceModel;
+          if (activeModel is InferenceModelSpec &&
+              activeModel.fileType == ModelFileType.litertlm &&
+              activeModel.modelType == ModelType.gemma4) {
+            return true;
+          }
+        }
+
+        debugPrint('Configurando modelo activo a litertlm/gemma4...');
+        await FlutterGemma.installModel(
+          modelType: ModelType.gemma4,
+          fileType: ModelFileType.litertlm,
+        )
+            .fromNetwork(_modelUrl, token: _hfToken.isEmpty ? null : _hfToken)
+            .install();
+        return true;
+      }
+
+      return false;
     } catch (e) {
       debugPrint('flutter_gemma isInstalled falló: $e');
       return false;
@@ -59,13 +83,16 @@ class FlutterGemmaBackend {
       huggingFaceToken: _hfToken.isEmpty ? null : _hfToken,
     );
 
-    if (FlutterGemma.hasActiveModel()) {
+    if (await isInstalled()) {
       onProgress?.call(1.0);
       onStatus?.call('Modelo listo.');
       return;
     }
 
-    await FlutterGemma.installModel(modelType: ModelType.gemmaIt)
+    await FlutterGemma.installModel(
+      modelType: ModelType.gemma4,
+      fileType: ModelFileType.litertlm,
+    )
         .fromNetwork(_modelUrl, token: _hfToken.isEmpty ? null : _hfToken)
         .withProgress((percent) {
       final progress = (percent / 100).clamp(0.0, 1.0);
@@ -90,13 +117,22 @@ class FlutterGemmaBackend {
     await FlutterGemma.initialize(
       huggingFaceToken: _hfToken.isEmpty ? null : _hfToken,
     );
-    if (!FlutterGemma.hasActiveModel()) {
+    if (!await isInstalled()) {
       throw StateError('El modelo de IA on-device no está instalado.');
     }
-    _model = await FlutterGemma.getActiveModel(
-      maxTokens: _maxTokens,
-      preferredBackend: PreferredBackend.gpu,
-    );
+    try {
+      debugPrint('Intentando cargar modelo en GPU...');
+      _model = await FlutterGemma.getActiveModel(
+        maxTokens: _maxTokens,
+        preferredBackend: PreferredBackend.gpu,
+      );
+    } catch (e) {
+      debugPrint('Fallo al inicializar GPU ($e). Reintentando en CPU...');
+      _model = await FlutterGemma.getActiveModel(
+        maxTokens: _maxTokens,
+        preferredBackend: PreferredBackend.cpu,
+      );
+    }
     _initialized = true;
     onStatus?.call('IA lista offline.');
   }
