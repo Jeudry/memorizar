@@ -140,18 +140,18 @@ class MemoryDeckData {
   /// Grupo (carpeta) al que pertenece el mazo. null = sin grupo.
   final String? groupId;
 
-  const MemoryDeckData({
+  MemoryDeckData({
     required this.id,
     required this.title,
     required this.subtitle,
     required this.icon,
-    required this.cards,
+    required List<MemoryCardData> cards,
     required this.createdAt,
     this.isBible = false,
     this.visibility = DeckVisibility.private,
     this.rightsAcknowledged = false,
     this.groupId,
-  });
+  }) : cards = _maybeSortCards(cards, isBible);
 
   int get retention {
     if (cards.isEmpty) return 0;
@@ -1577,80 +1577,7 @@ class AppStore extends ChangeNotifier {
         .toList();
   }
 
-  String _canonicalBookName(String rawBook) {
-    final normalized = _bookKey(rawBook);
-    const aliases = {
-      'gen': 'Génesis',
-      'exo': 'Éxodo',
-      'num': 'Números',
-      'deut': 'Deuteronomio',
-      '1sam': '1 Samuel',
-      '2sam': '2 Samuel',
-      '1re': '1 Reyes',
-      '2re': '2 Reyes',
-      '1cr': '1 Crónicas',
-      '2cr': '2 Crónicas',
-      'prov': 'Proverbios',
-      'ecl': 'Eclesiastés',
-      'cant': 'Cantares',
-      'isa': 'Isaías',
-      'jer': 'Jeremías',
-      'lam': 'Lamentaciones',
-      'eze': 'Ezequiel',
-      'ose': 'Oseas',
-      'miq': 'Miqueas',
-      'zac': 'Zacarías',
-      'mat': 'Mateo',
-      'mar': 'Marcos',
-      'luc': 'Lucas',
-      'hech': 'Hechos',
-      'rom': 'Romanos',
-      '1cor': '1 Corintios',
-      '2cor': '2 Corintios',
-      'gal': 'Gálatas',
-      'ef': 'Efesios',
-      'fil': 'Filipenses',
-      'col': 'Colosenses',
-      '1tes': '1 Tesalonicenses',
-      '2tes': '2 Tesalonicenses',
-      '1tim': '1 Timoteo',
-      '2tim': '2 Timoteo',
-      'tit': 'Tito',
-      'flm': 'Filemón',
-      'heb': 'Hebreos',
-      'stg': 'Santiago',
-      '1pe': '1 Pedro',
-      '2pe': '2 Pedro',
-      '1jn': '1 Juan',
-      '2jn': '2 Juan',
-      '3jn': '3 Juan',
-      'jud': 'Judas',
-      'apoc': 'Apocalipsis',
-    };
-    final alias = aliases[normalized];
-    if (alias != null) return alias;
-    return bibleBooks
-        .firstWhere(
-          (book) =>
-              _bookKey(book.name) == normalized ||
-              _bookKey(book.shortName) == normalized,
-          orElse: () => BibleBookData(rawBook.trim(), rawBook.trim(), 0),
-        )
-        .name;
-  }
 
-  String _bookKey(String value) {
-    return value
-        .trim()
-        .toLowerCase()
-        .replaceAll('á', 'a')
-        .replaceAll('é', 'e')
-        .replaceAll('í', 'i')
-        .replaceAll('ó', 'o')
-        .replaceAll('ú', 'u')
-        .replaceAll('ü', 'u')
-        .replaceAll(RegExp(r'\s+'), '');
-  }
 
   void setActiveDeck(String id) {
     if (_activeDeckId == id) return;
@@ -2587,5 +2514,118 @@ String collapseBibleReferences(List<String> references) {
   }
 
   return formattedGroups.join('; ');
+}
+
+List<MemoryCardData> _maybeSortCards(List<MemoryCardData> list, bool isBible) {
+  if (!isBible || list.isEmpty) return list;
+  final sorted = List<MemoryCardData>.from(list);
+  sorted.sort(_compareBibleCards);
+  return sorted;
+}
+
+int _compareBibleCards(MemoryCardData a, MemoryCardData b) {
+  final seedA = _BibleReferenceSeed.tryParse(a.front);
+  final seedB = _BibleReferenceSeed.tryParse(b.front);
+  if (seedA == null && seedB == null) return 0;
+  if (seedA == null) return 1;
+  if (seedB == null) return -1;
+
+  final idxA = _bibleBookIndex(seedA.book);
+  final idxB = _bibleBookIndex(seedB.book);
+
+  if (idxA != idxB) {
+    return idxA.compareTo(idxB);
+  }
+
+  if (seedA.chapter != seedB.chapter) {
+    return seedA.chapter.compareTo(seedB.chapter);
+  }
+
+  return seedA.startVerse.compareTo(seedB.startVerse);
+}
+
+int _bibleBookIndex(String rawBook) {
+  final canonical = _canonicalBookName(rawBook);
+  for (var i = 0; i < bibleBooks.length; i++) {
+    if (bibleBooks[i].name.toLowerCase() == canonical.toLowerCase()) {
+      return i;
+    }
+  }
+  return 999;
+}
+
+String _canonicalBookName(String rawBook) {
+  final normalized = _bookKey(rawBook);
+  const aliases = {
+    'gen': 'Génesis',
+    'exo': 'Éxodo',
+    'num': 'Números',
+    'deut': 'Deuteronomio',
+    '1sam': '1 Samuel',
+    '2sam': '2 Samuel',
+    '1re': '1 Reyes',
+    '2re': '2 Reyes',
+    '1cr': '1 Crónicas',
+    '2cr': '2 Crónicas',
+    'prov': 'Proverbios',
+    'ecl': 'Eclesiastés',
+    'cant': 'Cantares',
+    'isa': 'Isaías',
+    'jer': 'Jeremías',
+    'lam': 'Lamentaciones',
+    'eze': 'Ezequiel',
+    'ose': 'Oseas',
+    'miq': 'Miqueas',
+    'zac': 'Zacarías',
+    'mat': 'Mateo',
+    'mar': 'Marcos',
+    'luc': 'Lucas',
+    'hech': 'Hechos',
+    'rom': 'Romanos',
+    '1cor': '1 Corintios',
+    '2cor': '2 Corintios',
+    'gal': 'Gálatas',
+    'ef': 'Efesios',
+    'fil': 'Filipenses',
+    'col': 'Colosenses',
+    '1tes': '1 Tesalonicenses',
+    '2tes': '2 Tesalonicenses',
+    '1tim': '1 Timoteo',
+    '2tim': '2 Timoteo',
+    'tit': 'Tito',
+    'flm': 'Filemón',
+    'heb': 'Hebreos',
+    'stg': 'Santiago',
+    '1pe': '1 Pedro',
+    '2pe': '2 Pedro',
+    '1jn': '1 Juan',
+    '2jn': '2 Juan',
+    '3jn': '3 Juan',
+    'jud': 'Judas',
+    'apoc': 'Apocalipsis',
+  };
+  final alias = aliases[normalized];
+  if (alias != null) return alias;
+  return bibleBooks
+      .firstWhere(
+        (book) =>
+            _bookKey(book.name) == normalized ||
+            _bookKey(book.shortName) == normalized,
+        orElse: () => BibleBookData(rawBook.trim(), rawBook.trim(), 0),
+      )
+      .name;
+}
+
+String _bookKey(String value) {
+  return value
+      .trim()
+      .toLowerCase()
+      .replaceAll('á', 'a')
+      .replaceAll('é', 'e')
+      .replaceAll('í', 'i')
+      .replaceAll('ó', 'o')
+      .replaceAll('ú', 'u')
+      .replaceAll('ü', 'u')
+      .replaceAll(RegExp(r'\s+'), '');
 }
 
