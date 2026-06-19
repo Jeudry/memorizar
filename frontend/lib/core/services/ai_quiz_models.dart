@@ -13,22 +13,45 @@ class AiQuizRoundSet {
   });
 
   factory AiQuizRoundSet.fromJson(Map<String, dynamic> json) {
-    return AiQuizRoundSet(
-      trueFalse: AiTrueFalseRound.fromJson(_requireMap(json, 'trueFalse')),
-      multipleChoice:
-          AiMultipleChoiceRound.fromJson(_requireMap(json, 'multipleChoice')),
-      openQuestion:
-          AiOpenQuestionRound.fromJson(_requireMap(json, 'openQuestion')),
-    );
-  }
+    // 1. Extraer trueFalse (tolerar Map o String directa)
+    final rawTrueFalse = json['trueFalse'];
+    final AiTrueFalseRound trueFalseRound;
+    if (rawTrueFalse is Map<String, dynamic>) {
+      trueFalseRound = AiTrueFalseRound.fromJson(rawTrueFalse);
+    } else if (rawTrueFalse is String && rawTrueFalse.trim().isNotEmpty) {
+      final isTrueRoot = json['isTrue'];
+      final derivedIsTrue = isTrueRoot is bool ? isTrueRoot : true;
+      trueFalseRound = AiTrueFalseRound(
+        statement: rawTrueFalse.trim(),
+        isTrue: derivedIsTrue,
+      );
+    } else {
+      throw const FormatException('La IA no devolvió un bloque "trueFalse" válido.');
+    }
 
-  static Map<String, dynamic> _requireMap(
-    Map<String, dynamic> json,
-    String key,
-  ) {
-    final value = json[key];
-    if (value is Map<String, dynamic>) return value;
-    throw FormatException('La IA no devolvió el bloque "$key".');
+    // 2. Extraer multipleChoice (requiere Map)
+    final rawMultipleChoice = json['multipleChoice'];
+    if (rawMultipleChoice is! Map<String, dynamic>) {
+      throw const FormatException('La IA no devolvió un bloque "multipleChoice" válido.');
+    }
+    final multipleChoiceRound = AiMultipleChoiceRound.fromJson(rawMultipleChoice);
+
+    // 3. Extraer openQuestion (tolerar Map o String directa)
+    final rawOpen = json['openQuestion'];
+    final AiOpenQuestionRound openQuestionRound;
+    if (rawOpen is Map<String, dynamic>) {
+      openQuestionRound = AiOpenQuestionRound.fromJson(rawOpen);
+    } else if (rawOpen is String && rawOpen.trim().isNotEmpty) {
+      openQuestionRound = AiOpenQuestionRound(question: rawOpen.trim());
+    } else {
+      throw const FormatException('La IA no devolvió un bloque "openQuestion" válido.');
+    }
+
+    return AiQuizRoundSet(
+      trueFalse: trueFalseRound,
+      multipleChoice: multipleChoiceRound,
+      openQuestion: openQuestionRound,
+    );
   }
 }
 
@@ -40,9 +63,12 @@ class AiTrueFalseRound {
 
   factory AiTrueFalseRound.fromJson(Map<String, dynamic> json) {
     final statement = requireText(json, 'statement');
-    final isTrue = json['isTrue'];
-    if (isTrue is! bool) {
-      throw const FormatException('La afirmación V/F no trae "isTrue".');
+    final isTrueVal = json['isTrue'];
+    bool isTrue = true;
+    if (isTrueVal is bool) {
+      isTrue = isTrueVal;
+    } else if (isTrueVal is String) {
+      isTrue = isTrueVal.trim().toLowerCase() == 'true';
     }
     return AiTrueFalseRound(statement: statement, isTrue: isTrue);
   }

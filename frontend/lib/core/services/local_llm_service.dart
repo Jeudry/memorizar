@@ -346,7 +346,10 @@ class LocalLlmService {
       maxTokens: _quizMaxTokens,
       jsonSchema: _quizRoundSetSchema,
     );
-    return AiQuizRoundSet.fromJson(_decodeJsonObject(content));
+    debugPrint('=== RESPUESTA IA LOCAL QUIZ CRUDA ===\n$content\n=====================================');
+    final decoded = _decodeJsonObject(content);
+    debugPrint('=== RESPUESTA IA LOCAL DECODIFICADA ===\n$decoded\n=====================================');
+    return AiQuizRoundSet.fromJson(decoded);
   }
 
   /// Genera un versículo alterado con palabras intrusas según el nivel de dificultad:

@@ -1441,7 +1441,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         slug == '06-completar-n1' ||
         slug == '07-primera-letra-n1' ||
         slug == '09-quiz' ||
-        slug == '18-palabras-intrusas' ||
+        slug.startsWith('18-palabras-intrusas') ||
         slug == '10-completar-n2' ||
         slug == '11-primera-letra-n2' ||
         slug == '12-completar-n3' ||
@@ -1846,7 +1846,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 
   int _omitTargetLevel(String slug) {
-    if (slug.contains('n3') || slug == '15-banco-completo' || slug == '18-palabras-intrusas') {
+    if (slug.contains('n3') || slug == '15-banco-completo' || slug.startsWith('18-palabras-intrusas')) {
       return 3;
     }
     if (slug.contains('n2') || slug == '09-quiz') {
@@ -2063,10 +2063,20 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       );
     }
 
-    if (slug == '18-palabras-intrusas') {
+    if (slug.startsWith('18-palabras-intrusas')) {
+      int? level;
+      if (slug.endsWith('-n1')) {
+        level = 1;
+      } else if (slug.endsWith('-n2')) {
+        level = 2;
+      } else if (slug.endsWith('-n3')) {
+        level = 3;
+      }
+
       return IntruderWordsBody(
-        key: ValueKey('intruder-words-${card.id}'),
+        key: ValueKey('intruder-words-${card.id}-${level ?? 0}'),
         card: card,
+        level: level,
         onFinished: () {
           final batch = _sessionBatchCards(context);
           if (_subCardIndex + 1 < batch.length) {
@@ -3391,7 +3401,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     MemoryDeckData deck,
     String slug,
   ) {
-    if (slug == '18-palabras-intrusas') {
+    if (slug.startsWith('18-palabras-intrusas')) {
       return const SizedBox.shrink();
     }
     final isOmitted = _omitOverride.contains(slug);

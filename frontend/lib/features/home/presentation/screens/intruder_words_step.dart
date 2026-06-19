@@ -13,11 +13,13 @@ enum _IntruderPhase { selectLevel, loadingLlm, playing, result }
 class IntruderWordsBody extends StatefulWidget {
   final MemoryCardData card;
   final VoidCallback onFinished;
+  final int? level;
 
   const IntruderWordsBody({
     super.key,
     required this.card,
     required this.onFinished,
+    this.level,
   });
 
   @override
@@ -25,7 +27,9 @@ class IntruderWordsBody extends StatefulWidget {
 }
 
 class _IntruderWordsBodyState extends State<IntruderWordsBody> {
-  _IntruderPhase _phase = _IntruderPhase.selectLevel;
+  late _IntruderPhase _phase = widget.level != null
+      ? _IntruderPhase.loadingLlm
+      : _IntruderPhase.selectLevel;
   int _level = 1; // 1, 2, or 3
   String _loadingText = 'Despertando la IA local…';
   String? _errorMessage;
@@ -48,6 +52,17 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
     'Preparando la cacería de errores…',
   ];
   int _loadingMsgIdx = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.level != null) {
+      _level = widget.level!;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _generateVerse();
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -300,6 +315,59 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
   }
 
   Widget _buildLevelSelection() {
+    if (widget.level != null && _errorMessage != null) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 40),
+            Center(
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: RefColors.urgent,
+                ),
+                child: const Icon(
+                  Icons.error_outline,
+                  size: 32,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            const Center(
+              child: Text(
+                'Error de Generación',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Center(
+              child: Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  color: RefColors.muted,
+                  height: 1.4,
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+            Cta(
+              'Reintentar Nivel $_level',
+              onTap: _generateVerse,
+            ),
+          ],
+        ),
+      );
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -785,15 +853,17 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
               'Reintentar Nivel $_level',
               onTap: _generateVerse,
             ),
-            const SizedBox(height: 14),
-            GhostButton(
-              'Cambiar Dificultad',
-              onTap: () {
-                setState(() {
-                  _phase = _IntruderPhase.selectLevel;
-                });
-              },
-            ),
+            if (widget.level == null) ...[
+              const SizedBox(height: 14),
+              GhostButton(
+                'Cambiar Dificultad',
+                onTap: () {
+                  setState(() {
+                    _phase = _IntruderPhase.selectLevel;
+                  });
+                },
+              ),
+            ],
           ],
         ),
       );

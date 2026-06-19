@@ -2022,6 +2022,7 @@ String _realStepTitle(String slug) {
   if (slug == '17-niebla-n2') return 'Niebla N2';
   if (slug == '16-niebla' || slug == '16-niebla-n3') return 'Niebla N3';
   if (slug.contains('voz')) return 'Recitación';
+  if (slug.startsWith('18-palabras-intrusas')) return 'Palabras intrusas';
   return 'Estudio activo';
 }
 
@@ -2061,21 +2062,26 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
   final level1 = <String>[
     '06-completar-n1',
     '07-primera-letra-n1',
+    '18-palabras-intrusas-n1',
   ];
   final level2 = <String>[
     '10-completar-n2',
     '11-primera-letra-n2',
+    '18-palabras-intrusas-n2',
   ];
   final level3Optional = <String>[
     '12-completar-n3',
     '13-primera-letra-n3',
     '15-banco-completo',
+    '18-palabras-intrusas-n3',
   ];
 
   final slugs = <String>[
     if (store.debugForceQuizFirst) ...[
       '09-quiz',
-      '18-palabras-intrusas',
+      '18-palabras-intrusas-n1',
+      '18-palabras-intrusas-n2',
+      '18-palabras-intrusas-n3',
     ],
     ...intro,
     // Nivel 1: práctica activa + niebla N1 al final del nivel 1
@@ -2093,7 +2099,6 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     if (difficulty >= 1) ...[
       ...pick(level3Optional, difficulty == 1 ? 1 : 2),
       '16-niebla-n3',
-      if (!store.debugForceQuizFirst) '18-palabras-intrusas',
     ],
   ];
 
