@@ -676,13 +676,13 @@ class _IniciarScreenState extends State<IniciarScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'Forzar Quizzes al inicio (Debug)',
+                          'Forzar Quiz al inicio (Debug)',
                           style: TextStyle(
                               fontSize: 12.5, fontWeight: FontWeight.w900),
                         ),
                         Text(
                           _debugForceQuizFirst
-                              ? 'Quiz y Quiz Avanzado saldrán como los 2 primeros pasos.'
+                              ? 'El Quiz saldrá como el primer paso de la sesión.'
                               : 'Flujo de pasos estándar de la sesión.',
                           style: const TextStyle(
                               color: RefColors.muted, fontSize: 10.5),

@@ -284,7 +284,6 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
           final set = await llm.generateQuizRoundSet(
             reference: card.front,
             verseText: card.back,
-            advanced: false,
           );
           final mc = set.multipleChoice;
           final options = <String>[mc.correct, ...mc.distractors]..shuffle();

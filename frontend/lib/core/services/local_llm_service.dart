@@ -256,14 +256,12 @@ class LocalLlmService {
   Future<AiQuizRoundSet> generateQuizRoundSet({
     required String reference,
     required String verseText,
-    required bool advanced,
   }) async {
-    final depthInstruction = advanced
-        ? 'Las preguntas deben ser de análisis teológico profundo: doctrina, '
-            'contexto histórico, implicaciones espirituales y aplicación práctica. '
-            'Los distractores deben ser errores teológicos sutiles pero claramente incorrectos.'
-        : 'Las preguntas deben ser simples y directas, centradas en comprender '
-            'el contenido del texto. Los distractores deben ser plausibles pero claramente incorrectos.';
+    const depthInstruction = 'Las preguntas deben ser de comprensión directa y clara, '
+        'pero ricas en contenido: evalúa el significado literal, así como aspectos prácticos, '
+        'implicaciones espirituales o doctrina clave de forma accesible. '
+        'Los distractores deben ser opciones plausibles pero claramente incorrectas para quien '
+        'comprenda bien el versículo.';
 
     final prompt = 'Eres un generador de cuestionarios en español para una app de memorización de versículos bíblicos.\n'
         'Texto a evaluar ($reference): "$verseText"\n\n'

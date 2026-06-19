@@ -696,7 +696,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_isFirstLetterSlug(slug)) {
       return _letterCorrect(slug, card);
     }
-    if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
+    if (slug == '09-quiz') {
       if (_quizRounds.isEmpty) return false;
       if (!_quizFinished) {
         // Se avanza automáticamente de manera fluida, por lo que deshabilitamos el botón físico
@@ -952,16 +952,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     _isAiQuizLoading = true;
     _aiQuizError = null;
     _aiQuizLoadingText = 'Despertando la IA local…';
-    unawaited(_loadAiQuizRounds(
-      card,
-      advanced: widget.data.slug == '09-quiz-avanzado',
-    ));
+    unawaited(_loadAiQuizRounds(card));
   }
 
   Future<void> _loadAiQuizRounds(
-    MemoryCardData card, {
-    required bool advanced,
-  }) async {
+    MemoryCardData card,
+  ) async {
     final llm = LocalLlmService.instance;
     void onEngineStatus() {
       if (!mounted || !_isAiQuizLoading) return;
@@ -976,14 +972,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       await llm.initLlm();
       if (!mounted) return;
       setState(() {
-        _aiQuizLoadingText = advanced
-            ? 'Gemma 3 está razonando preguntas teológicas sobre ${card.front}…'
-            : 'Gemma 3 está creando preguntas únicas sobre ${card.front}…';
+        _aiQuizLoadingText = 'Gemma 3 está creando preguntas únicas sobre ${card.front}…';
       });
       final roundSet = await llm.generateQuizRoundSet(
         reference: card.front,
         verseText: card.back,
-        advanced: advanced,
       );
       if (!mounted) return;
       setState(() {
@@ -1444,7 +1437,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         slug == '06-completar-n1' ||
         slug == '07-primera-letra-n1' ||
         slug == '09-quiz' ||
-        slug == '09-quiz-avanzado' ||
         slug == '10-completar-n2' ||
         slug == '11-primera-letra-n2' ||
         slug == '12-completar-n3' ||
@@ -1849,7 +1841,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 
   int _omitTargetLevel(String slug) {
-    if (slug.contains('n3') || slug == '09-quiz-avanzado' || slug == '15-banco-completo') {
+    if (slug.contains('n3') || slug == '15-banco-completo') {
       return 3;
     }
     if (slug.contains('n2') || slug == '09-quiz') {
@@ -2066,7 +2058,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       );
     }
 
-    if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
+    if (slug == '09-quiz') {
       _ensureQuizRounds(deck, card);
       if (_isAiQuizLoading) {
         return Center(
@@ -3522,7 +3514,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             );
             return;
           }
-          if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
+          if (slug == '09-quiz') {
             if (_quizRounds.isEmpty) return;
             final round = _quizRounds[_quizRoundIndex];
             if (!round.answered) return;
@@ -3626,7 +3618,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 );
                 return;
               }
-              if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
+              if (slug == '09-quiz') {
                 if (_quizRounds.isEmpty) return;
                 final round = _quizRounds[_quizRoundIndex];
                 if (!round.answered) return;
@@ -3699,7 +3691,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_isFirstLetterSlug(slug)) {
       return _letterCorrect(slug, card);
     }
-    if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
+    if (slug == '09-quiz') {
       return _quizCorrect(card, deck);
     }
     return true;
@@ -3739,7 +3731,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_isFirstLetterSlug(slug)) {
       return _letterComplete() ? 'Completado →' : 'Elige primeras letras';
     }
-    if (slug == '09-quiz' || slug == '09-quiz-avanzado') {
+    if (slug == '09-quiz') {
       if (_quizRounds.isEmpty) return 'Cargando…';
       final round = _quizRounds[_quizRoundIndex];
       if (!round.answered) {
@@ -3767,7 +3759,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     final isOmitted = _omitOverride.contains(slug);
     if (slug == '05-bloques' ||
         slug == '09-quiz' ||
-        slug == '09-quiz-avanzado' ||
         _isCompletionSlug(slug) ||
         _isFirstLetterSlug(slug) ||
         (isOmitted && _phaseLabelFor(slug) != 'Preparar')) {

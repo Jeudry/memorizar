@@ -39,7 +39,6 @@ void main() {
       final first = await service.generateQuizRoundSet(
         reference: reference,
         verseText: verse,
-        advanced: false,
       );
 
       expect(first.trueFalse.statement, isNotEmpty);
@@ -55,7 +54,6 @@ void main() {
       final second = await service.generateQuizRoundSet(
         reference: reference,
         verseText: verse,
-        advanced: false,
       );
 
       final identicalSets = first.trueFalse.statement ==

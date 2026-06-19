@@ -2070,13 +2070,11 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     '12-completar-n3',
     '13-primera-letra-n3',
     '15-banco-completo',
-    if (!store.debugForceQuizFirst) '09-quiz-avanzado',
   ];
 
   final slugs = <String>[
     if (store.debugForceQuizFirst) ...[
       '09-quiz',
-      '09-quiz-avanzado',
     ],
     ...intro,
     // Nivel 1: práctica activa + niebla N1 al final del nivel 1

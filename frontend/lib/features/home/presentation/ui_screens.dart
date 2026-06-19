@@ -252,7 +252,6 @@ const flowScreens = [
   ExerciseFlowData('10-completar-n2', 'Elige la palabra · N2', 'Recuerdo más fuerte'),
   ExerciseFlowData('11-primera-letra-n2', 'Primera letra N2', 'Casi sin ayuda'),
   ExerciseFlowData('09-quiz', 'Quiz', 'Elige la respuesta correcta'),
-  ExerciseFlowData('09-quiz-avanzado', 'Quiz Avanzado', 'Desafía tu teología con IA de razonamiento'),
   ExerciseFlowData('12-completar-n3', 'Elige la palabra · N3', 'Más huecos visibles'),
   ExerciseFlowData(
     '13-primera-letra-n3',
@@ -286,13 +285,6 @@ class ExerciseFlowScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (data.slug == '09-quiz-avanzado') {
-      final store = AppScope.of(context);
-      if (!store.isPremium) {
-        return const PremiumScreen();
-      }
-      return _RealExerciseFlowScreen(data: data);
-    }
     if (data.slug == '09-quiz') {
       final store = AppScope.of(context);
       final llmService = LocalLlmService.instance;
