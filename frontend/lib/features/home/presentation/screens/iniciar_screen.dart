@@ -57,7 +57,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
   int _recommendedTarget(int total) {
     if (total <= 0) return 0;
     if (total <= 1) return 1;
-    return ((total / 12).ceil()).clamp(2, 3);
+    return 2;
   }
 
   /// Pick the chip whose value the current daily target lands on, so the

@@ -272,6 +272,7 @@ class LocalLlmService {
         'Decide al azar si la haces verdadera o falsa; si es falsa, introduce un error sutil.\n'
         '2. "multipleChoice": una pregunta con "correct" (respuesta correcta) y "distractors" (exactamente 3 incorrectas).\n'
         '3. "openQuestion": una pregunta abierta corta para que el usuario explique el texto con sus palabras.\n\n'
+        'IMPORTANTE: Cada una de las 3 secciones (trueFalse, multipleChoice y openQuestion) debe evaluar aspectos, detalles o conceptos COMPLETAMENTE DIFERENTES del texto. Evita a toda costa que pregunten sobre el mismo tema o el mismo detalle para garantizar variedad.\n\n'
         '$depthInstruction\n'
         'Todo en español. Responde únicamente con el JSON.';
 
