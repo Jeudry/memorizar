@@ -2066,10 +2066,14 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     '12-completar-n3',
     '13-primera-letra-n3',
     '15-banco-completo',
-    '09-quiz-avanzado',
+    if (!store.debugForceQuizFirst) '09-quiz-avanzado',
   ];
 
   final slugs = <String>[
+    if (store.debugForceQuizFirst) ...[
+      '09-quiz',
+      '09-quiz-avanzado',
+    ],
     ...intro,
     // Nivel 1: práctica activa + niebla N1 al final del nivel 1
     ...pick(level1, difficulty == 0 ? 1 : 2),
@@ -2079,7 +2083,7 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     if (difficulty >= 0) ...[
       ...pick(level2, difficulty == 0 ? 1 : (difficulty == 1 ? 2 : 3)),
       '17-niebla-n2',
-      '09-quiz', // Quiz clásico de consolidación al final del nivel 2
+      if (!store.debugForceQuizFirst) '09-quiz',
     ],
     
     // Nivel 3: práctica premium/avanzada + niebla N3 al final del nivel 3

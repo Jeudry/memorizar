@@ -19,6 +19,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
   int? _dailyTarget;
   bool _doubleExercises = false;
   bool _hideFiftyPercentPractice = false;
+  bool _debugForceQuizFirst = false;
   _DailyQuickPick _quickPick = _DailyQuickPick.recomendado;
   String? _deckId;
   String _selectedIcon = '✝️';
@@ -136,6 +137,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
       dailyTarget: target,
       doubleExercises: _doubleExercises,
       hideFiftyPercentPractice: _hideFiftyPercentPractice,
+      debugForceQuizFirst: _debugForceQuizFirst,
     );
     Navigator.pushNamed(context, '${AppRoutes.flow}/progress-tree');
   }
@@ -638,6 +640,68 @@ class _IniciarScreenState extends State<IniciarScreen> {
                     ),
                     child: Align(
                       alignment: _hideFiftyPercentPractice
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
+                      child: Container(
+                        width: 20,
+                        height: 20,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () => setState(() => _debugForceQuizFirst = !_debugForceQuizFirst),
+            child: Glass(
+              color: HtmlRefColors.glassBg,
+              border: Border.all(
+                color: _debugForceQuizFirst
+                    ? RefColors.violet
+                    : HtmlRefColors.glassBorder,
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  const Text('🧠', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Forzar Quizzes al inicio (Debug)',
+                          style: TextStyle(
+                              fontSize: 12.5, fontWeight: FontWeight.w900),
+                        ),
+                        Text(
+                          _debugForceQuizFirst
+                              ? 'Quiz y Quiz Avanzado saldrán como los 2 primeros pasos.'
+                              : 'Flujo de pasos estándar de la sesión.',
+                          style: const TextStyle(
+                              color: RefColors.muted, fontSize: 10.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    width: 42,
+                    height: 24,
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: _debugForceQuizFirst
+                          ? RefColors.violet
+                          : HtmlRefColors.glassStrong,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Align(
+                      alignment: _debugForceQuizFirst
                           ? Alignment.centerRight
                           : Alignment.centerLeft,
                       child: Container(

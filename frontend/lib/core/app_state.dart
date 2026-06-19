@@ -1132,6 +1132,7 @@ class AppStore extends ChangeNotifier {
   bool _isPremium = false;
   bool _doubleExercises = false;
   bool _hideFiftyPercentPractice = false;
+  bool _debugForceQuizFirst = false;
   int _currentCardPass = 0;
 
   List<MemoryDeckData> get decks => List.unmodifiable(_decks);
@@ -1234,6 +1235,7 @@ class AppStore extends ChangeNotifier {
   bool get isPremium => _isPremium;
   bool get doubleExercises => _doubleExercises;
   bool get hideFiftyPercentPractice => _hideFiftyPercentPractice;
+  bool get debugForceQuizFirst => _debugForceQuizFirst;
 
   void setPremiumPreview(bool value) {
     if (_isPremium == value) return;
@@ -1594,6 +1596,7 @@ class AppStore extends ChangeNotifier {
     required int dailyTarget,
     bool doubleExercises = false,
     bool hideFiftyPercentPractice = false,
+    bool debugForceQuizFirst = false,
   }) {
     _sessionDifficulty = difficulty.clamp(0, 2);
     // El total configurable siempre es el número real de tarjetas en el mazo.
@@ -1605,6 +1608,7 @@ class AppStore extends ChangeNotifier {
     _wrongAnswers = 0;
     _doubleExercises = doubleExercises;
     _hideFiftyPercentPractice = hideFiftyPercentPractice;
+    _debugForceQuizFirst = debugForceQuizFirst;
     _currentCardPass = 0;
     final deckId = activeDeck.id;
     _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));

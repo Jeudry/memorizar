@@ -1526,10 +1526,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       child: ReferencePage(
         showBottomNav: false,
         scrollable:
-            slug != '01-escuchar' &&
+            (slug != '01-escuchar' &&
             !_isFirstLetterSlug(slug) &&
             !_isFogSlug(slug) &&
-            !_isFinalVoiceSlug(slug),
+            !_isFinalVoiceSlug(slug)) ||
+            _omitOverride.contains(slug),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1578,10 +1579,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               ),
             
             (() {
-              final isScrollable = slug != '01-escuchar' &&
+              final isScrollable = (slug != '01-escuchar' &&
                   !_isFirstLetterSlug(slug) &&
                   !_isFogSlug(slug) &&
-                  !_isFinalVoiceSlug(slug);
+                  !_isFinalVoiceSlug(slug)) ||
+                  _omitOverride.contains(slug);
 
               final isMyTurnActive = isCoop && coopState != null && (
                 coopState.mode == 'libre'
