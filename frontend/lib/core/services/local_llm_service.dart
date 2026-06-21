@@ -329,7 +329,9 @@ class LocalLlmService {
         'Los distractores deben ser opciones plausibles pero claramente incorrectas para quien '
         'comprenda bien el versículo.';
 
+    final entropy = _seedRandom.nextInt(100000);
     final prompt = 'Eres un generador de cuestionarios en español para una app de memorización de versículos bíblicos.\n'
+        'Semilla de variación aleatoria: $entropy\n'
         'Texto a evaluar ($reference): "$verseText"\n\n'
         'Genera exactamente:\n'
         '1. "trueFalse": una afirmación sobre el contenido del texto con su veredicto "isTrue". '
@@ -374,7 +376,9 @@ class LocalLlmService {
     }
 
 
+    final entropy = _seedRandom.nextInt(100000);
     final prompt = 'Eres un creador de desafíos premium de memorización de la Biblia en español.\n'
+        'Semilla de variación aleatoria: $entropy\n'
         'Tu tarea es tomar el versículo indicado y generar una versión alterada del mismo.\n\n'
         'Versículo original ($reference): "$verseText"\n\n'
         'Instrucciones específicas:\n'
@@ -419,8 +423,10 @@ class LocalLlmService {
     required String verseText,
     int count = 8,
   }) async {
+    final entropy = _seedRandom.nextInt(100000);
     final prompt =
         'Eres un tutor de memorización de versículos en español.\n'
+        'Semilla de variación aleatoria: $entropy\n'
         'Texto ($reference): "$verseText"\n\n'
         'Devuelve "distractors": una lista de exactamente $count PALABRAS sueltas '
         '(una sola palabra cada una, sin frases) que sirvan como opciones '
@@ -500,8 +506,10 @@ class LocalLlmService {
     int count = 8,
   }) async {
     final n = count.clamp(3, 20);
+    final entropy = _seedRandom.nextInt(100000);
     final prompt =
         'Eres un generador de tarjetas de memorización (flashcards).\n'
+        'Semilla de variación aleatoria: $entropy\n'
         'Tema: "$topic".\n\n'
         'Genera exactamente $n tarjetas en "cards". Cada tarjeta tiene:\n'
         '- "front": el anverso — una palabra, pregunta o concepto CORTO a recordar.\n'

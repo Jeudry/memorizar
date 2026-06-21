@@ -150,7 +150,7 @@ class FlutterGemmaBackend {
     }
     final session = await _model!.createSession(
       temperature: temperature,
-      topK: 1,
+      topK: 40,
       randomSeed: randomSeed,
     );
     try {
