@@ -374,7 +374,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
               ),
               (
                 Icons.verified_rounded,
-                'Completo',
+                'Equilibrado',
                 '~${_difficultyMinutes(1, dailyTarget)} min · recomendado',
               ),
               (
