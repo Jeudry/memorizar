@@ -501,46 +501,131 @@ class LocalLlmService {
         );
         debugPrint('=== RESPUESTA IA LOCAL INTRUSO CRUDA (intento $attempt) ===\n$content\n=====================================');
         final set = IntruderVerseSet.lenient(_decodeJsonStructure(content));
-        _validateIntruderSet(set, verseText); // lanza si no hubo alteración real
+        validateIntruderSet(set, verseText, level); // lanza si no es jugable
         return set;
       } catch (e) {
         lastError = e;
         debugPrint('Generación de palabras intrusas falló (intento $attempt/$_quizMaxAttempts): $e');
       }
     }
-    throw StateError('No se pudo generar el ejercicio de palabras intrusas tras $_quizMaxAttempts intentos: $lastError');
+    // Garantía a nivel de código: si la IA no logró un ejercicio válido, lo
+    // construimos nosotros para que NUNCA salga roto (ni idéntico al original).
+    debugPrint('Intrusas: usando fallback de código tras fallar la IA ($lastError).');
+    return buildFallbackIntruderVerse(verseText, level, _seedRandom);
   }
 
-  /// Verifica que el modelo de verdad alteró el versículo: que el texto cambió y
-  /// que las "palabras intrusas" son palabras NUEVAS (no estaban en el original).
-  /// Atrapa el caso roto en que el modelo devuelve el versículo idéntico o marca
-  /// como intrusa una palabra que ya estaba (ej. "principio" → "principio").
-  void _validateIntruderSet(IntruderVerseSet set, String original) {
-    String norm(String w) =>
-        w.toLowerCase().replaceAll(RegExp(r'[^0-9a-záéíóúüñ]'), '');
+  static String _intruderNorm(String w) =>
+      w.toLowerCase().replaceAll(RegExp(r'[^0-9a-záéíóúüñ]'), '');
 
-    final originalWords =
-        original.split(RegExp(r'\s+')).map(norm).where((w) => w.isNotEmpty).toList();
-    final alteredWords = set.alteredVerse
-        .split(RegExp(r'\s+'))
-        .map(norm)
-        .where((w) => w.isNotEmpty)
-        .toList();
+  /// Verifica que el ejercicio es JUGABLE y real, tal como lo consume el juego:
+  /// el versículo cambió, las palabras intrusas son NUEVAS (no estaban en el
+  /// original) y aparecen EXACTAMENTE [level] veces en el texto alterado.
+  @visibleForTesting
+  static void validateIntruderSet(IntruderVerseSet set, String original, int level) {
+    final originalWords = original.split(RegExp(r'\s+')).map(_intruderNorm).where((w) => w.isNotEmpty).toList();
+    final alteredWords = set.alteredVerse.split(RegExp(r'\s+')).map(_intruderNorm).where((w) => w.isNotEmpty).toList();
 
     if (alteredWords.join(' ') == originalWords.join(' ')) {
-      throw const FormatException('El versículo alterado es idéntico al original (sin intrusos).');
+      throw const FormatException('El versículo alterado es idéntico al original.');
     }
 
     final originalSet = originalWords.toSet();
-    final alteredSet = alteredWords.toSet();
-    // Una intrusa real aparece en el texto alterado pero NO en el original.
-    final genuineIntruders = set.intruderWords
-        .map(norm)
-        .where((w) => w.isNotEmpty && alteredSet.contains(w) && !originalSet.contains(w))
-        .toList();
-    if (genuineIntruders.isEmpty) {
-      throw const FormatException('Las palabras marcadas como intrusas ya estaban en el versículo.');
+    final intruderNorms = set.intruderWords.map(_intruderNorm).where((w) => w.isNotEmpty).toSet();
+    if (intruderNorms.isEmpty) {
+      throw const FormatException('No hay palabras intrusas.');
     }
+    for (final w in intruderNorms) {
+      if (originalSet.contains(w)) {
+        throw FormatException('La intrusa "$w" ya estaba en el versículo original.');
+      }
+    }
+    final positions = alteredWords.where(intruderNorms.contains).length;
+    if (positions != level) {
+      throw FormatException('Se esperaban $level intrusas en el texto, hay $positions.');
+    }
+  }
+
+  /// Sinónimos cercanos (registro bíblico) para construir un intruso plausible
+  /// sin la IA. Sólo se usa como red de seguridad cuando el modelo no coopera.
+  static const Map<String, String> _intruderSynonyms = {
+    'principio': 'comienzo', 'comienzo': 'principio', 'creó': 'formó', 'creo': 'formo',
+    'creado': 'formado', 'hizo': 'creó', 'dios': 'señor', 'señor': 'dios',
+    'cielo': 'firmamento', 'cielos': 'firmamentos', 'tierra': 'mundo', 'mundo': 'tierra',
+    'luz': 'claridad', 'tinieblas': 'sombras', 'oscuridad': 'tinieblas', 'aguas': 'mares',
+    'agua': 'mar', 'mar': 'océano', 'espíritu': 'aliento', 'bueno': 'agradable',
+    'día': 'jornada', 'noche': 'oscuridad', 'grande': 'enorme', 'todo': 'cada',
+    'todos': 'cada', 'siempre': 'eternamente', 'nunca': 'jamás', 'amor': 'cariño',
+    'vida': 'existencia', 'muerte': 'final', 'palabra': 'verbo', 'verdad': 'certeza',
+    'camino': 'sendero', 'fuerza': 'poder', 'poder': 'fuerza', 'corazón': 'alma',
+    'alma': 'corazón', 'pueblo': 'nación', 'hombre': 'varón', 'mujer': 'dama',
+    'hijo': 'descendiente', 'padre': 'progenitor', 'rey': 'monarca', 'gloria': 'honra',
+    'paz': 'calma', 'fe': 'confianza', 'gracia': 'favor', 'pecado': 'falta',
+    'santo': 'sagrado', 'eterno': 'perpetuo', 'gozo': 'alegría', 'temor': 'miedo',
+  };
+
+  /// Pool genérico para cuando una palabra no tiene sinónimo en el mapa.
+  static const List<String> _intruderGenericPool = [
+    'firmamento', 'sendero', 'aliento', 'sombra', 'certeza', 'jornada', 'sustento',
+    'vínculo', 'designio', 'clamor', 'umbral', 'sosiego', 'anhelo', 'vigilia',
+  ];
+
+  /// Construye un ejercicio de intrusas válido en puro código: reemplaza
+  /// exactamente [level] palabras del versículo por otras DISTINTAS y nuevas.
+  @visibleForTesting
+  static IntruderVerseSet buildFallbackIntruderVerse(String original, int level, math.Random rng) {
+    final clean = original.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final tokens = clean.split(' ');
+    final originalNorms = tokens.map(_intruderNorm).toSet();
+    final usedNew = <String>{...originalNorms};
+
+    String replaceCore(String token, String newCore) {
+      final m = RegExp(r'^([^0-9a-záéíóúüñ]*)(.*?)([^0-9a-záéíóúüñ]*)$', caseSensitive: false)
+          .firstMatch(token);
+      final lead = m?.group(1) ?? '';
+      final trail = m?.group(3) ?? '';
+      final core = m?.group(2) ?? token;
+      // Conservar la capitalización inicial.
+      final cased = core.isNotEmpty && core[0] == core[0].toUpperCase()
+          ? newCore[0].toUpperCase() + newCore.substring(1)
+          : newCore;
+      return '$lead$cased$trail';
+    }
+
+    // Candidatos: índices de palabras de contenido (>= 4 letras), barajados, y
+    // con prioridad para las que tienen sinónimo.
+    final candidates = [
+      for (var i = 0; i < tokens.length; i++)
+        if (_intruderNorm(tokens[i]).length >= 4) i,
+    ]..shuffle(rng);
+    candidates.sort((a, b) {
+      final aHas = _intruderSynonyms.containsKey(_intruderNorm(tokens[a])) ? 0 : 1;
+      final bHas = _intruderSynonyms.containsKey(_intruderNorm(tokens[b])) ? 0 : 1;
+      return aHas.compareTo(bHas);
+    });
+    // Si no hay suficientes de >=4 letras, completar con cualquier palabra.
+    for (var i = 0; i < tokens.length; i++) {
+      if (!candidates.contains(i) && _intruderNorm(tokens[i]).isNotEmpty) candidates.add(i);
+    }
+
+    final intruders = <String>[];
+    for (final idx in candidates) {
+      if (intruders.length >= level) break;
+      final core = _intruderNorm(tokens[idx]);
+      var newCore = _intruderSynonyms[core];
+      if (newCore == null || usedNew.contains(newCore)) {
+        newCore = _intruderGenericPool.firstWhere((w) => !usedNew.contains(w), orElse: () => '');
+      }
+      if (newCore.isEmpty || usedNew.contains(newCore)) continue;
+      tokens[idx] = replaceCore(tokens[idx], newCore);
+      usedNew.add(newCore);
+      intruders.add(newCore);
+    }
+
+    return IntruderVerseSet(
+      alteredVerse: tokens.join(' '),
+      intruderWords: intruders,
+      explanation: '',
+    );
   }
 
   static const Map<String, dynamic> _distractorSchema = {
