@@ -26,9 +26,9 @@ class LocalLlmService {
   static const String _legacyModelFileName = 'gemma-3-4b-it-qat-Q4_0.gguf';
   static const int _minValidModelBytes = 3000 * 1024 * 1024; // 3.02 GB
   static const Duration _generationTimeout = Duration(minutes: 3);
-  // 0.85: buena variedad entre generaciones (con la rotación de estilo/enfoque)
-  // sin llegar a la "creatividad" de 1.0 que inventaba hechos y degeneraba.
-  static const double _quizTemperature = 0.85;
+  // 0.9: prioriza la variedad (con la rotación de estilo/enfoque) manteniéndose
+  // por debajo del 1.0 que inventaba hechos y degeneraba.
+  static const double _quizTemperature = 0.9;
   static const int _quizMaxTokens = 900;
 
   /// Estilo del cuestionario, elegido al azar por generación para que no se
@@ -371,9 +371,10 @@ class LocalLlmService {
     required List<({String reference, String verseText})> verses,
   }) async {
     assert(verses.isNotEmpty, 'Se requiere al menos un versículo.');
-    const depthInstruction = 'Las preguntas y respuestas deben ser CORTAS: UNA sola idea por '
-        'pregunta, frases breves (idealmente menos de 15 palabras), sin enunciados largos ni '
-        'términos teológicos complicados. '
+    const depthInstruction = 'Las preguntas deben ser CLARAS y fáciles de leer y responder (una idea '
+        'principal, redacción directa, sin rodeos ni enredos), PERO con SUSTANCIA: pueden explorar el '
+        'significado, una implicación, una relación o un matiz del texto. NO las hagas triviales, '
+        'obvias ni infantiles. '
         'EXACTITUD: la respuesta correcta debe poder verificarse SIEMPRE con el texto dado y ser '
         'inequívoca; nunca inventes datos que no estén en el texto ni hagas preguntas sin respuesta '
         'clara. Dentro de eso está PERMITIDO ser astuto: trampas sutiles, enunciados falsos con un '
@@ -416,7 +417,7 @@ class LocalLlmService {
           'Genera exactamente 3 preguntas sobre el texto:\n'
           '1. "trueFalse": afirmación CORTA con su veredicto "isTrue". Si es falsa, el error debe ser comprobable con el texto (puede ser sutil).\n'
           '2. "multipleChoice": pregunta CORTA con "correct" (breve) y "distractors" (exactamente 3, breves).\n'
-          '3. "openQuestion": pregunta abierta CORTA y sencilla.\n'
+          '3. "openQuestion": pregunta abierta CORTA y clara que invite a explicar o reflexionar (no de respuesta obvia de una palabra).\n'
           'Cada sección debe evaluar un aspecto DIFERENTE del texto.\n'
           'Formato de salida OBLIGATORIO: un ÚNICO objeto JSON, sin envolturas, sin "questions", sin arrays:\n'
           '{"trueFalse":{"statement":"...","isTrue":true},"multipleChoice":{"question":"...","correct":"...","distractors":["...","...","..."]},"openQuestion":{"question":"..."}}';
@@ -433,8 +434,9 @@ class LocalLlmService {
       final mcFocus = _quizFocusAngles[_seedRandom.nextInt(_quizFocusAngles.length)];
       final varietyHint =
           'VARIEDAD: cada cuestionario debe ser DISTINTO a los anteriores; no repitas el mismo '
-          'patrón ni la misma frase de siempre. Esta vez parte la pregunta de verdadero/falso desde '
-          '$tfFocus, y la de opción múltiple desde $mcFocus. $style';
+          'patrón ni la misma frase de siempre. EVITA la pregunta más obvia: elige un ángulo MENOS '
+          'evidente del texto. Esta vez parte la pregunta de verdadero/falso desde $tfFocus, y la de '
+          'opción múltiple desde $mcFocus. $style';
       final prompt = 'Eres un generador de cuestionarios en español para una app de memorización de versículos bíblicos.\n'
           'Semilla de variación aleatoria: $entropy\n'
           '$textBlock\n\n'
