@@ -547,9 +547,9 @@ class LocalLlmService {
           jsonSchema: _openAnswerEvaluationSchema,
         );
         debugPrint('=== RESPUESTA IA EVALUACION CRUDA (intento $attempt) ===\n$content\n=====================================');
-        final decoded = _decodeJsonObject(content);
+        final decoded = _decodeJsonStructure(content);
         debugPrint('=== RESPUESTA IA EVALUACION DECODIFICADA ===\n$decoded\n=====================================');
-        return AiOpenAnswerEvaluation.fromJson(decoded);
+        return AiOpenAnswerEvaluation.lenient(decoded);
       } catch (e) {
         lastError = e;
         debugPrint('Evaluación de respuesta abierta falló (intento $attempt/$_evaluationMaxAttempts): $e');

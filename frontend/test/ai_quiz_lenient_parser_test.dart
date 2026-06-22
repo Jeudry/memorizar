@@ -117,4 +117,62 @@ void main() {
       expect(set.multipleChoice.distractors, hasLength(3));
     });
   });
+
+  group('AiOpenAnswerEvaluation.lenient', () {
+    test('forma estándar {isCorrect, feedback}', () {
+      final decoded = jsonDecode('{"isCorrect": true, "feedback": "Bien explicado."}');
+      final ev = AiOpenAnswerEvaluation.lenient(decoded);
+      expect(ev.isCorrect, isTrue);
+      expect(ev.feedback, 'Bien explicado.');
+    });
+
+    test('isCorrect como string y feedback bajo "explanation"', () {
+      final decoded =
+          jsonDecode('{"isCorrect": "false", "explanation": "No se relaciona con el versículo."}');
+      final ev = AiOpenAnswerEvaluation.lenient(decoded);
+      expect(ev.isCorrect, isFalse);
+      expect(ev.feedback, contains('versículo'));
+    });
+
+    test('claves alternativas {correct, reason}', () {
+      final decoded = jsonDecode('{"correct": true, "reason": "Correcto."}');
+      final ev = AiOpenAnswerEvaluation.lenient(decoded);
+      expect(ev.isCorrect, isTrue);
+      expect(ev.feedback, 'Correcto.');
+    });
+
+    test('veredicto textual {verdict:"incorrect"} sin booleano', () {
+      final decoded = jsonDecode('{"verdict": "incorrect", "comentario": "Respuesta vacía."}');
+      final ev = AiOpenAnswerEvaluation.lenient(decoded);
+      expect(ev.isCorrect, isFalse);
+      expect(ev.feedback, 'Respuesta vacía.');
+    });
+
+    test('score numérico decide el veredicto', () {
+      final decoded = jsonDecode('{"score": 0.8, "feedback": "Buena respuesta."}');
+      final ev = AiOpenAnswerEvaluation.lenient(decoded);
+      expect(ev.isCorrect, isTrue);
+    });
+
+    test('wrapper {evaluation:{...}} se desenvuelve', () {
+      final decoded = jsonDecode('{"evaluation": {"isCorrect": false, "feedback": "Mal."}}');
+      final ev = AiOpenAnswerEvaluation.lenient(decoded);
+      expect(ev.isCorrect, isFalse);
+      expect(ev.feedback, 'Mal.');
+    });
+
+    test('feedback ausente usa un valor por defecto en vez de fallar', () {
+      final decoded = jsonDecode('{"isCorrect": true}');
+      final ev = AiOpenAnswerEvaluation.lenient(decoded);
+      expect(ev.isCorrect, isTrue);
+      expect(ev.feedback, isNotEmpty);
+    });
+
+    test('array con un único objeto de evaluación', () {
+      final decoded = jsonDecode('[{"isCorrect": true, "feedback": "Ok."}]');
+      final ev = AiOpenAnswerEvaluation.lenient(decoded);
+      expect(ev.isCorrect, isTrue);
+      expect(ev.feedback, 'Ok.');
+    });
+  });
 }

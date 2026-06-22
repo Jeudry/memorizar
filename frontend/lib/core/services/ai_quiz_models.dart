@@ -318,9 +318,6 @@ class AiOpenAnswerEvaluation {
   });
 
   factory AiOpenAnswerEvaluation.fromJson(Map<String, dynamic> json) {
-    // En móvil flutter_gemma no fuerza la gramática JSON, así que el modelo a
-    // veces devuelve "isCorrect" como string ("true"/"sí") o número en vez de
-    // un booleano estricto. Coercionamos con tolerancia en lugar de reventar.
     final isCorrect = _llmBool(json['isCorrect']);
     if (isCorrect == null) {
       throw const FormatException('La evaluación de la IA no trae "isCorrect".');
@@ -329,6 +326,86 @@ class AiOpenAnswerEvaluation {
       isCorrect: isCorrect,
       feedback: AiTrueFalseRound.requireText(json, 'feedback'),
     );
+  }
+
+  /// Parser tolerante para la evaluación: igual que el quiz, en móvil el modelo
+  /// no sigue una estructura fija. Acepta el veredicto bajo muchas claves
+  /// (isCorrect/correct/valid/aprobado…), derivado de un veredicto textual
+  /// ("correcto"/"incorrecto") o de un score numérico, desenvuelve wrappers
+  /// comunes ({"evaluation": {...}}) y el feedback bajo varias claves (con un
+  /// valor por defecto si falta, porque no es crítico).
+  factory AiOpenAnswerEvaluation.lenient(dynamic decoded) {
+    Map<String, dynamic>? map;
+    if (decoded is List) {
+      final maps = decoded.whereType<Map<String, dynamic>>().toList();
+      map = maps.isEmpty ? null : maps.first;
+    } else if (decoded is Map<String, dynamic>) {
+      map = decoded;
+    }
+    if (map == null) {
+      throw const FormatException('La evaluación no es un objeto JSON.');
+    }
+
+    // Desenvolver wrappers comunes.
+    for (final key in const [
+      'evaluation', 'evaluacion', 'evaluación', 'result', 'resultado', 'response'
+    ]) {
+      final inner = map![key];
+      if (inner is Map<String, dynamic>) {
+        map = inner;
+        break;
+      }
+    }
+
+    bool? isCorrect = _llmBool(map!['isCorrect'] ??
+        map['correct'] ??
+        map['is_correct'] ??
+        map['isValid'] ??
+        map['valid'] ??
+        map['aprobado'] ??
+        map['approved'] ??
+        map['passed'] ??
+        map['esCorrecta'] ??
+        map['correcta'] ??
+        map['acierto']);
+
+    // Derivar de un veredicto textual (chequear lo negativo primero porque
+    // "incorrecto" contiene "correcto").
+    if (isCorrect == null) {
+      final verdict = _llmText(map, const [
+        'verdict', 'veredicto', 'result', 'resultado', 'evaluation', 'status', 'estado'
+      ])?.toLowerCase();
+      if (verdict != null) {
+        if (verdict.contains('incorrect') || verdict.contains('inválid') ||
+            verdict.contains('invalid') || verdict.contains('rechaz') ||
+            verdict.contains('fallo') || verdict == 'mal') {
+          isCorrect = false;
+        } else if (verdict.contains('correct') || verdict.contains('aprob') ||
+            verdict.contains('válid') || verdict.contains('valid') ||
+            verdict.contains('bien') || verdict.contains('acept')) {
+          isCorrect = true;
+        }
+      }
+    }
+
+    // Derivar de un score numérico (0..1 o 0..100).
+    if (isCorrect == null) {
+      final score = map['score'] ?? map['puntaje'] ?? map['puntuacion'] ?? map['rating'];
+      if (score is num) isCorrect = score >= (score > 1 ? 50 : 0.5);
+    }
+
+    if (isCorrect == null) {
+      throw const FormatException('La evaluación no indica si la respuesta es correcta.');
+    }
+
+    final feedback = _llmText(map, const [
+          'feedback', 'explanation', 'explicacion', 'explicación', 'reason', 'razon',
+          'razón', 'justification', 'justificacion', 'justificación', 'comment',
+          'comentario', 'message', 'mensaje', 'retroalimentacion', 'retroalimentación',
+        ]) ??
+        (isCorrect ? '¡Respuesta correcta!' : 'Respuesta no válida. Inténtalo de nuevo.');
+
+    return AiOpenAnswerEvaluation(isCorrect: isCorrect, feedback: feedback);
   }
 }
 
