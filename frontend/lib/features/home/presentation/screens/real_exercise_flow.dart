@@ -1025,10 +1025,16 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       }
     }
 
+    // Barajar el orden de los versículos UNA vez por generación para que la
+    // asignación a rondas no sea predecible (no siempre V/F=1º, opción=2º,
+    // abierta=3º). Se baraja aquí —no en build— para no cambiar la clave del
+    // grupo y evitar regeneraciones infinitas. El mismo orden alimenta el prompt
+    // y _roundsFromAi, así la referencia mostrada coincide con la pregunta.
+    final quizGroup = [...group]..shuffle();
     llm.statusNotifier.addListener(onEngineStatus);
     try {
-      debugPrint('=== QUIZ GROUP (${group.length} versículos): '
-          '${group.map((c) => c.front).join(" | ")} ===');
+      debugPrint('=== QUIZ GROUP (${quizGroup.length} versículos, orden aleatorio): '
+          '${quizGroup.map((c) => c.front).join(" | ")} ===');
       await llm.initLlm();
       if (!mounted) return;
       setState(() {
@@ -1038,13 +1044,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       });
       final roundSet = await llm.generateQuizRoundSet(
         verses: [
-          for (final card in group)
+          for (final card in quizGroup)
             (reference: card.front, verseText: card.back),
         ],
       );
       if (!mounted) return;
       setState(() {
-        _quizRounds = _roundsFromAi(group, roundSet);
+        _quizRounds = _roundsFromAi(quizGroup, roundSet);
         _isAiQuizLoading = false;
       });
     } catch (e) {
