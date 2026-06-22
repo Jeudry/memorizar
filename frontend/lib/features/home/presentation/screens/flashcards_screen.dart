@@ -229,7 +229,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        status.isEmpty ? 'Requiere descarga única (~2.4 GB · Gemma 3 QAT)' : status,
+                                        status.isEmpty ? 'Requiere descarga única (${llmService.modelDescription})' : status,
                                         style: const TextStyle(color: RefColors.muted, fontSize: 11, fontWeight: FontWeight.w700),
                                       ),
                                     ],
@@ -282,6 +282,35 @@ class _PremiumScreenState extends State<PremiumScreen> {
                                   }
                                 },
                               ),
+                              const SizedBox(height: 10),
+                              if (!_downloading)
+                                GhostButton(
+                                  'Limpiar y volver a descargar modelado',
+                                  onTap: () async {
+                                    setState(() {
+                                      _downloading = true;
+                                    });
+                                    try {
+                                      // Eliminar el archivo actual del modelo para forzar la re-descarga de Gemma 4
+                                      final path = await llmService.deleteModelFile();
+                                      debugPrint('Modelo antiguo limpiado en: $path');
+                                      await llmService.downloadModel();
+                                    } catch (e) {
+                                      debugPrint('Error re-descargando: $e');
+                                    } finally {
+                                      setState(() {
+                                        _downloading = false;
+                                      });
+                                    }
+                                  },
+                                )
+                              else
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 8),
+                                  child: Center(
+                                    child: CircularProgressIndicator(color: RefColors.pink),
+                                  ),
+                                ),
                             ],
                           ],
                         ),
@@ -794,9 +823,8 @@ class _FlashcardStatsStrip extends StatelessWidget {
 class _FlashStat extends StatelessWidget {
   final String value;
   final String label;
-  final Color? valueColor;
 
-  const _FlashStat(this.value, this.label, {this.valueColor});
+  const _FlashStat(this.value, this.label);
 
   @override
   Widget build(BuildContext context) {
@@ -804,8 +832,7 @@ class _FlashStat extends StatelessWidget {
       children: [
         Text(
           value,
-          style: TextStyle(
-            color: valueColor,
+          style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w900,
           ),

@@ -39,7 +39,6 @@ void main() {
       final first = await service.generateQuizRoundSet(
         reference: reference,
         verseText: verse,
-        advanced: false,
       );
 
       expect(first.trueFalse.statement, isNotEmpty);
@@ -55,7 +54,6 @@ void main() {
       final second = await service.generateQuizRoundSet(
         reference: reference,
         verseText: verse,
-        advanced: false,
       );
 
       final identicalSets = first.trueFalse.statement ==
@@ -120,6 +118,37 @@ void main() {
       for (final c in cards) {
         expect(c.front.trim(), isNotEmpty);
         expect(c.back.trim(), isNotEmpty);
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 4)),
+  );
+
+  test(
+    'generateIntruderVerse devuelve un versículo alterado con palabras intrusas',
+    () async {
+      final available = await engineAvailable();
+      if (!available) {
+        markTestSkipped('llama-server no está corriendo; test omitido.');
+        return;
+      }
+
+      final service = LocalLlmService.instance;
+      const reference = 'Filipenses 4:13';
+      const verse = 'Todo lo puedo en Cristo que me fortalece.';
+
+      final intruderSet = await service.generateIntruderVerse(
+        reference: reference,
+        verseText: verse,
+        level: 1,
+      );
+
+      expect(intruderSet.alteredVerse, isNotEmpty);
+      expect(intruderSet.intruderWords, isNotEmpty);
+      expect(intruderSet.explanation, isNotEmpty);
+      
+      final alteredLower = intruderSet.alteredVerse.toLowerCase();
+      for (final word in intruderSet.intruderWords) {
+        expect(alteredLower, contains(word.toLowerCase()));
       }
     },
     timeout: const Timeout(Duration(minutes: 4)),

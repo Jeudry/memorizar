@@ -164,6 +164,41 @@ class _LostPanel extends StatelessWidget {
   }
 }
 
+class _InlineFlashStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  const _InlineFlashStat(this.label, this.value, {this.valueColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          '${label.toUpperCase()}: ',
+          style: const TextStyle(
+            color: RefColors.muted,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            letterSpacing: .5,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: valueColor ?? RefColors.ink,
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _CompleteStatsCard extends StatelessWidget {
   final bool level2;
   final String firstValue;
@@ -171,6 +206,7 @@ class _CompleteStatsCard extends StatelessWidget {
   final String secondValue;
   final String secondLabel;
   final String timeValue;
+  final VoidCallback? onPistaTap;
 
   const _CompleteStatsCard({
     this.level2 = false,
@@ -179,13 +215,14 @@ class _CompleteStatsCard extends StatelessWidget {
     this.secondValue = '2/2',
     this.secondLabel = 'INTENTOS',
     this.timeValue = '00:45',
+    this.onPistaTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Glass(
       radius: 18,
-      padding: const EdgeInsets.symmetric(vertical: 15),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
       gradient: LinearGradient(
         colors: const [Color(0x55372B86), Color(0x668B5B21)],
         begin: Alignment.topLeft,
@@ -194,10 +231,42 @@ class _CompleteStatsCard extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _FlashStat(firstValue, firstLabel),
-          _FlashStat(secondValue, secondLabel),
+          _InlineFlashStat(firstLabel, firstValue),
+          _InlineFlashStat(secondLabel, secondValue),
           if (level2)
-            _FlashStat(timeValue, 'TIEMPO', valueColor: RefColors.sun),
+            _InlineFlashStat('TIEMPO', timeValue, valueColor: RefColors.sun),
+          if (onPistaTap != null)
+            GestureDetector(
+              onTap: onPistaTap,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: RefColors.cyan.withValues(alpha: .15),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: RefColors.cyan.withValues(alpha: .3)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.lightbulb_outline_rounded,
+                      size: 13,
+                      color: RefColors.cyan,
+                    ),
+                    SizedBox(width: 4),
+                    Text(
+                      'PISTA',
+                      style: TextStyle(
+                        color: RefColors.cyan,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -398,12 +467,12 @@ class _LetterBlankState extends State<_LetterBlank> {
         : widget.active
         ? RefColors.cyan
         : RefColors.border;
-    final length = widget.wordLength.clamp(1, 14);
+    final displayLength = complete ? widget.wordLength.clamp(1, 14) : 6;
     return GestureDetector(
       onTap: complete ? null : widget.onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        constraints: BoxConstraints(minWidth: (length * 10.0).clamp(28, 160)),
+        constraints: BoxConstraints(minWidth: (displayLength * 10.0).clamp(28, 160)),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
         decoration: BoxDecoration(
           color: widget.active
@@ -425,7 +494,7 @@ class _LetterBlankState extends State<_LetterBlank> {
               : null,
         ),
         child: Text(
-          widget.answer ?? '_' * length,
+          widget.answer ?? '______',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: complete ? RefColors.lime : RefColors.ink,

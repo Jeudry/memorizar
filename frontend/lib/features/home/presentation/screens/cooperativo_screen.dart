@@ -280,11 +280,10 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
         for (var i = 0; i < cardCount; i++) {
           final card = deck.cards[i];
           progress.value =
-              'Generando pregunta ${i + 1} de $cardCount con Gemma 3…';
+              'Generando pregunta ${i + 1} de $cardCount con Gemma 4…';
           final set = await llm.generateQuizRoundSet(
             reference: card.front,
             verseText: card.back,
-            advanced: false,
           );
           final mc = set.multipleChoice;
           final options = <String>[mc.correct, ...mc.distractors]..shuffle();

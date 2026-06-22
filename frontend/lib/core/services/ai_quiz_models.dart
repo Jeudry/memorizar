@@ -13,22 +13,45 @@ class AiQuizRoundSet {
   });
 
   factory AiQuizRoundSet.fromJson(Map<String, dynamic> json) {
-    return AiQuizRoundSet(
-      trueFalse: AiTrueFalseRound.fromJson(_requireMap(json, 'trueFalse')),
-      multipleChoice:
-          AiMultipleChoiceRound.fromJson(_requireMap(json, 'multipleChoice')),
-      openQuestion:
-          AiOpenQuestionRound.fromJson(_requireMap(json, 'openQuestion')),
-    );
-  }
+    // 1. Extraer trueFalse (tolerar Map o String directa)
+    final rawTrueFalse = json['trueFalse'];
+    final AiTrueFalseRound trueFalseRound;
+    if (rawTrueFalse is Map<String, dynamic>) {
+      trueFalseRound = AiTrueFalseRound.fromJson(rawTrueFalse);
+    } else if (rawTrueFalse is String && rawTrueFalse.trim().isNotEmpty) {
+      final isTrueRoot = json['isTrue'];
+      final derivedIsTrue = isTrueRoot is bool ? isTrueRoot : true;
+      trueFalseRound = AiTrueFalseRound(
+        statement: rawTrueFalse.trim(),
+        isTrue: derivedIsTrue,
+      );
+    } else {
+      throw const FormatException('La IA no devolvió un bloque "trueFalse" válido.');
+    }
 
-  static Map<String, dynamic> _requireMap(
-    Map<String, dynamic> json,
-    String key,
-  ) {
-    final value = json[key];
-    if (value is Map<String, dynamic>) return value;
-    throw FormatException('La IA no devolvió el bloque "$key".');
+    // 2. Extraer multipleChoice (requiere Map)
+    final rawMultipleChoice = json['multipleChoice'];
+    if (rawMultipleChoice is! Map<String, dynamic>) {
+      throw const FormatException('La IA no devolvió un bloque "multipleChoice" válido.');
+    }
+    final multipleChoiceRound = AiMultipleChoiceRound.fromJson(rawMultipleChoice);
+
+    // 3. Extraer openQuestion (tolerar Map o String directa)
+    final rawOpen = json['openQuestion'];
+    final AiOpenQuestionRound openQuestionRound;
+    if (rawOpen is Map<String, dynamic>) {
+      openQuestionRound = AiOpenQuestionRound.fromJson(rawOpen);
+    } else if (rawOpen is String && rawOpen.trim().isNotEmpty) {
+      openQuestionRound = AiOpenQuestionRound(question: rawOpen.trim());
+    } else {
+      throw const FormatException('La IA no devolvió un bloque "openQuestion" válido.');
+    }
+
+    return AiQuizRoundSet(
+      trueFalse: trueFalseRound,
+      multipleChoice: multipleChoiceRound,
+      openQuestion: openQuestionRound,
+    );
   }
 }
 
@@ -40,9 +63,12 @@ class AiTrueFalseRound {
 
   factory AiTrueFalseRound.fromJson(Map<String, dynamic> json) {
     final statement = requireText(json, 'statement');
-    final isTrue = json['isTrue'];
-    if (isTrue is! bool) {
-      throw const FormatException('La afirmación V/F no trae "isTrue".');
+    final isTrueVal = json['isTrue'];
+    bool isTrue = true;
+    if (isTrueVal is bool) {
+      isTrue = isTrueVal;
+    } else if (isTrueVal is String) {
+      isTrue = isTrueVal.trim().toLowerCase() == 'true';
     }
     return AiTrueFalseRound(statement: statement, isTrue: isTrue);
   }
@@ -122,3 +148,38 @@ class AiOpenAnswerEvaluation {
     );
   }
 }
+
+/// Set de versículo alterado con palabras intrusas generado por la IA local.
+class IntruderVerseSet {
+  final String alteredVerse;
+  final List<String> intruderWords;
+  final String explanation;
+
+  const IntruderVerseSet({
+    required this.alteredVerse,
+    required this.intruderWords,
+    required this.explanation,
+  });
+
+  factory IntruderVerseSet.fromJson(Map<String, dynamic> json) {
+    final alteredVerse = AiTrueFalseRound.requireText(json, 'alteredVerse');
+    final explanation = AiTrueFalseRound.requireText(json, 'explanation');
+    final rawIntruderWords = json['intruderWords'];
+    if (rawIntruderWords is! List) {
+      throw const FormatException('El ejercicio no trae la lista de palabras intrusas.');
+    }
+    final intruderWords = rawIntruderWords
+        .map((w) => w.toString().trim())
+        .where((w) => w.isNotEmpty)
+        .toList();
+    if (intruderWords.isEmpty) {
+      throw const FormatException('La lista de palabras intrusas está vacía.');
+    }
+    return IntruderVerseSet(
+      alteredVerse: alteredVerse,
+      intruderWords: intruderWords,
+      explanation: explanation,
+    );
+  }
+}
+

@@ -94,6 +94,10 @@ class _BibliaScreenState extends State<BibliaScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    final store = AppScope.of(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      store.clearBibleSelection();
+    });
     super.dispose();
   }
 
@@ -1882,10 +1886,18 @@ String _cardStudyText(BuildContext context) {
 List<({int number, String text})> _currentBatchVerses(BuildContext context) {
   final store = AppScope.of(context);
   final deck = store.activeDeck;
+  // ignore: avoid_print
+  print('DATOSDEBUG batch: isBible=${deck.isBible} cards=${deck.cards.length} dailyTarget=${store.sessionDailyTarget} active=${store.activeCard.front}');
   final List<MemoryCardData> batch;
   if (deck.isBible && deck.cards.length > 1 && store.sessionDailyTarget > 1) {
     final count = store.sessionDailyTarget.clamp(1, deck.cards.length);
-    batch = deck.cards.take(count).toList();
+    final len = deck.cards.length;
+    final startCardIndex = ((store.currentCardIndex - store.sessionCardsCompleted) % len + len) % len;
+    final batchCards = <MemoryCardData>[];
+    for (var i = 0; i < count; i++) {
+      batchCards.add(deck.cards[(startCardIndex + i) % len]);
+    }
+    batch = batchCards;
   } else {
     batch = [store.activeCard];
   }
@@ -1897,6 +1909,29 @@ List<({int number, String text})> _currentBatchVerses(BuildContext context) {
         return (number: num, text: batch[i].back);
       }()
   ];
+}
+
+/// El pasaje completo del lote (todos los versículos seleccionados) unido en un
+/// solo texto, para los pasos que recitan/practican el pasaje entero y no solo
+/// el versículo activo.
+String _currentBatchText(BuildContext context) =>
+    _currentBatchVerses(context).map((verse) => verse.text).join(' ');
+
+/// La referencia combinada de la sesión/lote actual de versículos.
+String _currentBatchReference(BuildContext context) {
+  final store = AppScope.of(context);
+  final deck = store.activeDeck;
+  if (deck.isBible && deck.cards.length > 1 && store.sessionDailyTarget > 1) {
+    final count = store.sessionDailyTarget.clamp(1, deck.cards.length);
+    final len = deck.cards.length;
+    final startCardIndex = ((store.currentCardIndex - store.sessionCardsCompleted) % len + len) % len;
+    final refs = <String>[];
+    for (var i = 0; i < count; i++) {
+      refs.add(deck.cards[(startCardIndex + i) % len].front);
+    }
+    return collapseBibleReferences(refs);
+  }
+  return store.activeCard.front;
 }
 
 /// Widget reusable: un verso renderizado como fila — número anclado
@@ -1973,7 +2008,7 @@ int _flowStepNumber(String slug) {
 }
 
 String _realStepTitle(String slug) {
-  if (slug == _chooseWordPracticeSlug) return 'Práctica';
+  if (slug == _chooseWordPracticeSlug) return 'Elige la palabra Práctica';
   if (slug == '00-solo-lectura') return 'Solo lectura';
   if (slug == '01-escuchar') return 'Escuchar';
   if (slug == '02-niebla-n1') return 'Niebla N1';
@@ -1987,6 +2022,7 @@ String _realStepTitle(String slug) {
   if (slug == '17-niebla-n2') return 'Niebla N2';
   if (slug == '16-niebla' || slug == '16-niebla-n3') return 'Niebla N3';
   if (slug.contains('voz')) return 'Recitación';
+  if (slug.startsWith('18-palabras-intrusas')) return 'Palabras intrusas';
   return 'Estudio activo';
 }
 
@@ -2026,19 +2062,27 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
   final level1 = <String>[
     '06-completar-n1',
     '07-primera-letra-n1',
+    '18-palabras-intrusas-n1',
   ];
   final level2 = <String>[
     '10-completar-n2',
     '11-primera-letra-n2',
+    '18-palabras-intrusas-n2',
   ];
   final level3Optional = <String>[
     '12-completar-n3',
     '13-primera-letra-n3',
     '15-banco-completo',
-    '09-quiz-avanzado',
+    '18-palabras-intrusas-n3',
   ];
 
   final slugs = <String>[
+    if (store.debugForceQuizFirst) ...[
+      '09-quiz',
+      '18-palabras-intrusas-n1',
+      '18-palabras-intrusas-n2',
+      '18-palabras-intrusas-n3',
+    ],
     ...intro,
     // Nivel 1: práctica activa + niebla N1 al final del nivel 1
     ...pick(level1, difficulty == 0 ? 1 : 2),
@@ -2048,7 +2092,7 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     if (difficulty >= 0) ...[
       ...pick(level2, difficulty == 0 ? 1 : (difficulty == 1 ? 2 : 3)),
       '17-niebla-n2',
-      '09-quiz', // Quiz clásico de consolidación al final del nivel 2
+      if (!store.debugForceQuizFirst) '09-quiz',
     ],
     
     // Nivel 3: práctica premium/avanzada + niebla N3 al final del nivel 3
@@ -2057,6 +2101,7 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
       '16-niebla-n3',
     ],
   ];
+
   return slugs.map(_flowData).toList();
 }
 
@@ -2125,6 +2170,9 @@ String _phaseLabelFor(String slug) {
       _isWordBankSlug(slug) ||
       _isFinalVoiceSlug(slug)) {
     return 'Probar';
+  }
+  if (slug.contains('niebla')) {
+    return 'Construir';
   }
   if (_flowStepNumber(slug) <= 4) return 'Preparar';
   return 'Construir';

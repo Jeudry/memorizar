@@ -9,12 +9,21 @@ void main() {
   Future<void> pumpScreen(WidgetTester tester, AppStore store) async {
     await tester.pumpWidget(AppScope(
       store: store,
-      child: const MaterialApp(home: PracticeChooseWordScreen()),
+      child: MaterialApp(
+        home: Scaffold(
+          body: ChooseWordPracticeBody(
+            cardId: store.activeCard.id,
+            targetText: store.activeCard.back,
+            reference: store.activeCard.front,
+            onFinished: () {},
+          ),
+        ),
+      ),
     ));
     await tester.pump();
   }
 
-  testWidgets('completar el versículo 2 veces muestra el éxito',
+  testWidgets('completar el versículo muestra el éxito',
       (tester) async {
     final store = AppStore(enableDatabasePersistence: false);
     store.createDeckFromCards(
@@ -34,20 +43,18 @@ void main() {
     await pumpScreen(tester, store);
 
     // El banco se muestra y arranca en la vuelta 1.
-    expect(find.text('BANCO COMPLETO · TOCA LA PALABRA'), findsOneWidget);
-    expect(find.textContaining('Vuelta 1/2'), findsOneWidget);
+    expect(find.text('ELIGE LA PALABRA CORRECTA'), findsOneWidget);
+    expect(find.textContaining('Vuelta 1/1'), findsOneWidget);
 
-    // Huecos = palabras de >3 letras, en orden: "Jehová", "pastor".
+    // Huecos = todas las palabras, en orden: "Jehová", "es", "mi", "pastor".
     // (En el banco las palabras son únicas; .last desambigua del hueco lleno.)
-    for (var pass = 0; pass < 2; pass++) {
-      for (final word in ['Jehová', 'pastor']) {
-        await tester.tap(find.text(word).last);
-        await tester.pump();
-      }
+    for (final word in ['Jehová', 'es', 'mi', 'pastor']) {
+      await tester.tap(find.text(word).last);
+      await tester.pump();
     }
 
     expect(find.text('🎉'), findsOneWidget);
-    expect(find.text('¡Lo completaste 2 veces!'), findsOneWidget);
+    expect(find.text('¡Lo completaste!'), findsOneWidget);
   });
 
   testWidgets('tocar una palabra incorrecta no avanza (sin penalización)',
@@ -70,7 +77,7 @@ void main() {
     await pumpScreen(tester, store);
 
     // Arranca con 0 huecos llenos.
-    expect(find.textContaining('· 0/2'), findsOneWidget);
+    expect(find.textContaining('· 0/4'), findsOneWidget);
 
     // El primer hueco correcto es "Jehová"; tocar "pastor" es incorrecto:
     // no llena nada (sin penalización pero sin avanzar). El parpadeo rojo usa
@@ -78,12 +85,12 @@ void main() {
     await tester.tap(find.text('pastor').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    expect(find.textContaining('· 0/2'), findsOneWidget);
-    expect(find.text('¡Lo completaste 2 veces!'), findsNothing);
+    expect(find.textContaining('· 0/4'), findsOneWidget);
+    expect(find.text('¡Lo completaste!'), findsNothing);
 
-    // Tocar el correcto sí avanza a 1/2.
+    // Tocar el correcto sí avanza a 1/4.
     await tester.tap(find.text('Jehová').last);
     await tester.pump();
-    expect(find.textContaining('· 1/2'), findsOneWidget);
+    expect(find.textContaining('· 1/4'), findsOneWidget);
   });
 }

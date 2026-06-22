@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/app_state.dart';
 import '../../../../core/theme/ref_colors.dart';
 import '../../../../core/ui/widgets.dart';
+import '../exercise_logic.dart';
 
 /// Práctica de "Elige la palabra correcta" sobre una tarjeta, embebida como un
 /// paso del flujo de estudio (bloque Preparar).
@@ -12,20 +13,23 @@ import '../../../../core/ui/widgets.dart';
 /// A diferencia de los ejercicios con nivel de la sesión (intentos, cronómetro
 /// y distractores de IA), esta versión es de práctica:
 ///  - sin niveles ni límite de intentos (fallar no penaliza, solo no avanza);
-///  - banco COMPLETO con todas las palabras del versículo, en orden aleatorio
-///    (sin IA eligiendo palabras tramposas);
+///  - 100% de las palabras ocultas;
 ///  - hay que completarlo DOS veces para terminar.
 ///
 /// No incluye scaffold ni top bar propios: devuelve solo el contenido para que
 /// lo envuelva el chrome del flujo. Al terminar (botón "Listo") invoca
 /// [onFinished], que el flujo usa para marcar el paso y avanzar.
 class ChooseWordPracticeBody extends StatefulWidget {
-  final MemoryCardData card;
+  final String cardId;
+  final String targetText;
+  final String reference;
   final VoidCallback onFinished;
 
   const ChooseWordPracticeBody({
     super.key,
-    required this.card,
+    required this.cardId,
+    required this.targetText,
+    required this.reference,
     required this.onFinished,
   });
 
@@ -34,13 +38,13 @@ class ChooseWordPracticeBody extends StatefulWidget {
 }
 
 class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
-  static const int _passesRequired = 2;
+  static const int _passesRequired = 1;
 
   String? _cardId;
   List<String> _words = [];
   List<int> _blankPositions = [];
   Map<int, String> _filled = {};
-  List<String> _bank = [];
+  List<String> _options = [];
   int _pass = 0;
   bool _finished = false;
   int? _wrongFlashPos; // resalta en rojo brevemente al fallar
@@ -57,32 +61,45 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
     return clean.split(' ');
   }
 
-  void _ensure(MemoryCardData card) {
-    if (_cardId == card.id) return;
-    _cardId = card.id;
-    _words = _splitWords(card.back);
-    // Huecos = palabras de contenido (>3 letras). Si no hay, blanqueamos todas.
-    _blankPositions = [
+  void _ensure(String cardId, String targetText, BuildContext context) {
+    if (_cardId == cardId) return;
+    _cardId = cardId;
+    _words = _splitWords(targetText);
+    final hideFifty = AppScope.of(context).hideFiftyPercentPractice;
+    final allWordPositions = [
       for (var i = 0; i < _words.length; i++)
-        if (_norm(_words[i]).length > 3) i,
+        if (_norm(_words[i]).isNotEmpty) i,
     ];
-    if (_blankPositions.isEmpty) {
-      _blankPositions = List<int>.generate(_words.length, (i) => i);
+    if (hideFifty) {
+      if (allWordPositions.isEmpty) {
+        _blankPositions = [];
+      } else {
+        final list = [...allWordPositions]..shuffle(math.Random());
+        final count = (allWordPositions.length / 2).round().clamp(1, allWordPositions.length);
+        _blankPositions = list.take(count).toList()..sort();
+      }
+    } else {
+      _blankPositions = allWordPositions;
     }
-    _startPass(0);
+    _startPass(0, targetText);
   }
 
-  void _startPass(int pass) {
+  void _startPass(int pass, String text) {
     _pass = pass;
     _filled = {};
     _finished = false;
     _wrongFlashPos = null;
-    // Banco completo: todas las palabras distintas del versículo, barajadas.
-    final distinct = <String>[];
-    for (final w in _words) {
-      if (!distinct.any((d) => _norm(d) == _norm(w))) distinct.add(w);
+    _updateOptionsForActiveBlank(text);
+  }
+
+  void _updateOptionsForActiveBlank(String text) {
+    final pos = _activeBlank;
+    if (pos == null) {
+      _options = [];
+      return;
     }
-    _bank = [...distinct]..shuffle(math.Random());
+    final target = _words[pos];
+    _options = completionOptions(text, target);
   }
 
   int? get _activeBlank {
@@ -92,7 +109,7 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
     return null;
   }
 
-  void _tap(String word) {
+  void _tap(String word, String text) {
     final pos = _activeBlank;
     if (pos == null || _finished) return;
     if (_norm(word) == _norm(_words[pos])) {
@@ -100,13 +117,18 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
         _filled[pos] = _words[pos];
         _wrongFlashPos = null;
       });
-      if (_activeBlank == null) {
+      final next = _activeBlank;
+      if (next == null) {
         // Pasada completa.
         if (_pass + 1 < _passesRequired) {
-          setState(() => _startPass(_pass + 1));
+          setState(() => _startPass(_pass + 1, text));
         } else {
           setState(() => _finished = true);
         }
+      } else {
+        setState(() {
+          _updateOptionsForActiveBlank(text);
+        });
       }
     } else {
       // Práctica: sin penalización, solo feedback visual breve.
@@ -121,8 +143,7 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
 
   @override
   Widget build(BuildContext context) {
-    final card = widget.card;
-    _ensure(card);
+    _ensure(widget.cardId, widget.targetText, context);
     final activeBlank = _activeBlank;
 
     return Column(
@@ -133,7 +154,7 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
           passesRequired: _passesRequired,
           filled: _filled.length,
           total: _blankPositions.length,
-          reference: card.front,
+          reference: widget.reference,
         ),
         const SizedBox(height: 12),
         // El versículo con huecos.
@@ -172,7 +193,7 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
                 const Text('🎉', style: TextStyle(fontSize: 40)),
                 const SizedBox(height: 8),
                 const Text(
-                  '¡Lo completaste 2 veces!',
+                  '¡Lo completaste!',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 4),
@@ -211,7 +232,7 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
             child: Column(
               children: [
                 const Text(
-                  'BANCO COMPLETO · TOCA LA PALABRA',
+                  'ELIGE LA PALABRA CORRECTA',
                   style: TextStyle(
                     color: RefColors.muted,
                     fontSize: 10,
@@ -225,9 +246,9 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
                   runSpacing: 8,
                   alignment: WrapAlignment.center,
                   children: [
-                    for (final word in _bank)
+                    for (final word in _options)
                       GestureDetector(
-                        onTap: () => _tap(word),
+                        onTap: () => _tap(word, widget.targetText),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 14, vertical: 9),

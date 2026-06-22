@@ -10,8 +10,8 @@ import 'ai_quiz_models.dart';
 import 'flutter_gemma_backend.dart';
 import 'llama_server_manager.dart';
 
-/// Servicio local offline de inferencia de IA (Gemma 3 4B IT, cuantizado QAT
-/// Q4_0 en formato GGUF). Descarga el modelo una sola vez y ejecuta toda la
+/// Servicio local offline de inferencia de IA (Gemma 4 E2B IT, cuantizado QAT
+/// Q2_K en formato GGUF). Descarga el modelo una sola vez y ejecuta toda la
 /// generación de preguntas 100% en el dispositivo vía llama.cpp (Metal/GPU),
 /// sin internet y sin datos precocinados: cada set de preguntas sale del
 /// modelo en el momento.
@@ -19,12 +19,12 @@ class LocalLlmService {
   LocalLlmService._privateConstructor();
   static final LocalLlmService instance = LocalLlmService._privateConstructor();
 
-  // Espejo público (sin gate de licencia) del GGUF QAT oficial de Google.
+  // Gemma 4 E2B QAT GGUF con cuantización Q2_K por bartowski para uso móvil.
   static const String _modelUrl =
-      'https://huggingface.co/ggml-org/gemma-3-4b-it-qat-GGUF/resolve/main/gemma-3-4b-it-qat-Q4_0.gguf';
-  static const String _modelFileName = 'gemma-3-4b-it-qat-Q4_0.gguf';
-  static const String _legacyModelFileName = 'gemma-2b-it-gpu-int4.bin';
-  static const int _minValidModelBytes = 2000 * 1024 * 1024;
+      'https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q2_K.gguf';
+  static const String _modelFileName = 'google_gemma-4-E2B-it-Q2_K.gguf';
+  static const String _legacyModelFileName = 'gemma-3-4b-it-qat-Q4_0.gguf';
+  static const int _minValidModelBytes = 3000 * 1024 * 1024; // 3.02 GB
   static const Duration _generationTimeout = Duration(minutes: 3);
   static const double _quizTemperature = 1.0;
   static const int _quizMaxTokens = 900;
@@ -75,6 +75,22 @@ class LocalLlmService {
     'required': ['isCorrect', 'feedback'],
   };
 
+  static const Map<String, dynamic> _intruderVerseSchema = {
+    'type': 'object',
+    'properties': {
+      'alteredVerse': {'type': 'string'},
+      'intruderWords': {
+        'type': 'array',
+        'items': {'type': 'string'},
+        'minItems': 1,
+        'maxItems': 3,
+      },
+      'explanation': {'type': 'string'},
+    },
+    'required': ['alteredVerse', 'intruderWords', 'explanation'],
+  };
+
+
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 5),
     receiveTimeout: _generationTimeout,
@@ -85,8 +101,21 @@ class LocalLlmService {
   Future<void>? _initInFlight;
   final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0.0);
   final ValueNotifier<String> statusNotifier = ValueNotifier<String>('');
+  bool _isMockFallback = false;
 
   bool get isReady => _initialized;
+  bool get isMockFallback => _isMockFallback;
+
+  String get modelDescription {
+    if (_isMockFallback) {
+      return 'IA Simulada (Modo Desarrollo)';
+    }
+    if (_useMobileBackend) {
+      return 'Gemma 4 E2B LiteRT (~2.58 GB)';
+    } else {
+      return 'Gemma 4 E2B Q2 QAT (~3.02 GB)';
+    }
+  }
 
   /// En móvil la inferencia corre on-device vía flutter_gemma (no hay
   /// llama-server). El resto de plataformas usan el motor llama.cpp.
@@ -120,17 +149,24 @@ class LocalLlmService {
     return length >= _minValidModelBytes;
   }
 
-  /// La IA está disponible si ya hay un motor sano respondiendo (otra
-  /// instancia o proceso externo lo levantó — único camino en web) o si el
-  /// modelo está descargado y podemos arrancarlo nosotros.
+  /// La IA está disponible si el modelo está descargado localmente
+  /// (o si estamos en web y ya hay un motor sano respondiendo).
   Future<bool> isAvailable() async {
+    if (kIsWeb) {
+      return LlamaServerManager.instance.isHealthy();
+    }
     if (_useMobileBackend) return FlutterGemmaBackend.instance.isInstalled();
-    final engineAlreadyUp = await LlamaServerManager.instance.isHealthy();
-    if (engineAlreadyUp) return true;
-    return checkModelExists();
+    final modelExists = await checkModelExists();
+    if (!modelExists) {
+      // Si el archivo no existe localmente en escritorio, nos aseguramos de apagar
+      // cualquier proceso huérfano para evitar falsos positivos de salud.
+      await LlamaServerManager.instance.stop();
+      return false;
+    }
+    return true;
   }
 
-  /// Descarga única del modelo Gemma 3 4B QAT Q4_0 (~2.4 GB).
+  /// Descarga única del modelo Gemma 4 E2B QAT Q2_K (~3.0 GB).
   /// Acción 100% controlada por el usuario y opcional.
   Future<void> downloadModel() async {
     if (_useMobileBackend) {
@@ -150,7 +186,7 @@ class LocalLlmService {
       return;
     }
 
-    statusNotifier.value = 'Iniciando descarga de Gemma 3 4B (QAT Q4_0)…';
+    statusNotifier.value = 'Iniciando descarga de Gemma 4 E2B (QAT Q2_K)…';
     downloadProgress.value = 0.0;
 
     try {
@@ -177,16 +213,32 @@ class LocalLlmService {
     }
   }
 
-  /// El modelo Gemma 2 antiguo ya no se usa; liberar sus ~1.4 GB.
+  /// Elimina físicamente el archivo del modelo activo actual y limpia el estado para forzar re-descarga.
+  Future<String> deleteModelFile() async {
+    _initialized = false;
+    // Si el servidor local está corriendo, lo detenemos para poder borrar el archivo sin bloqueos
+    await LlamaServerManager.instance.ensureRunning('');
+    final path = await _modelPath;
+    final file = File(path);
+    if (await file.exists()) {
+      await file.delete();
+    }
+    downloadProgress.value = 0.0;
+    statusNotifier.value = 'Modelo eliminado localmente.';
+    return path;
+  }
+
+  /// El modelo Gemma 3 antiguo ya no se usa; liberar sus ~2.4 GB.
   Future<void> _deleteLegacyModel() async {
     final dir = await _llmDirectory;
     final legacyFile = File('${dir.path}/$_legacyModelFileName');
     final legacyExists = await legacyFile.exists();
     if (legacyExists) {
       await legacyFile.delete();
-      debugPrint('Modelo legado Gemma 2 eliminado.');
+      debugPrint('Modelo legado Gemma 3 eliminado.');
     }
   }
+
 
   /// Levanta (o reutiliza) el motor llama.cpp con el modelo cargado.
   Future<void> initLlm() {
@@ -200,9 +252,23 @@ class LocalLlmService {
     statusNotifier.value = 'Inicializando IA local en el dispositivo…';
 
     if (_useMobileBackend) {
-      await FlutterGemmaBackend.instance
-          .init(onStatus: (s) => statusNotifier.value = s);
-      _initialized = true;
+      try {
+        await FlutterGemmaBackend.instance
+            .init(onStatus: (s) => statusNotifier.value = s)
+            .timeout(const Duration(seconds: 4));
+        _initialized = true;
+        _isMockFallback = false;
+      } catch (e) {
+        debugPrint('Fallo al inicializar Gemma nativo ($e).');
+        if (!kIsWeb && Platform.isIOS) {
+          debugPrint('Activando fallback de IA simulada para desarrollo (Simulador iOS).');
+          _initialized = true;
+          _isMockFallback = true;
+          statusNotifier.value = 'IA Simulada (Modo Simulador)';
+        } else {
+          rethrow;
+        }
+      }
       return;
     }
 
@@ -256,22 +322,23 @@ class LocalLlmService {
   Future<AiQuizRoundSet> generateQuizRoundSet({
     required String reference,
     required String verseText,
-    required bool advanced,
   }) async {
-    final depthInstruction = advanced
-        ? 'Las preguntas deben ser de análisis teológico profundo: doctrina, '
-            'contexto histórico, implicaciones espirituales y aplicación práctica. '
-            'Los distractores deben ser errores teológicos sutiles pero claramente incorrectos.'
-        : 'Las preguntas deben ser simples y directas, centradas en comprender '
-            'el contenido del texto. Los distractores deben ser plausibles pero claramente incorrectos.';
+    const depthInstruction = 'Las preguntas deben ser de comprensión directa y clara, '
+        'pero ricas en contenido: evalúa el significado literal, así como aspectos prácticos, '
+        'implicaciones espirituales o doctrina clave de forma accesible. '
+        'Los distractores deben ser opciones plausibles pero claramente incorrectas para quien '
+        'comprenda bien el versículo.';
 
+    final entropy = _seedRandom.nextInt(100000);
     final prompt = 'Eres un generador de cuestionarios en español para una app de memorización de versículos bíblicos.\n'
+        'Semilla de variación aleatoria: $entropy\n'
         'Texto a evaluar ($reference): "$verseText"\n\n'
         'Genera exactamente:\n'
         '1. "trueFalse": una afirmación sobre el contenido del texto con su veredicto "isTrue". '
         'Decide al azar si la haces verdadera o falsa; si es falsa, introduce un error sutil.\n'
         '2. "multipleChoice": una pregunta con "correct" (respuesta correcta) y "distractors" (exactamente 3 incorrectas).\n'
         '3. "openQuestion": una pregunta abierta corta para que el usuario explique el texto con sus palabras.\n\n'
+        'IMPORTANTE: Cada una de las 3 secciones (trueFalse, multipleChoice y openQuestion) debe evaluar aspectos, detalles o conceptos COMPLETAMENTE DIFERENTES del texto. Evita a toda costa que pregunten sobre el mismo tema o el mismo detalle para garantizar variedad.\n\n'
         '$depthInstruction\n'
         'Todo en español. Responde únicamente con el JSON.';
 
@@ -281,7 +348,56 @@ class LocalLlmService {
       maxTokens: _quizMaxTokens,
       jsonSchema: _quizRoundSetSchema,
     );
-    return AiQuizRoundSet.fromJson(_decodeJsonObject(content));
+    debugPrint('=== RESPUESTA IA LOCAL QUIZ CRUDA ===\n$content\n=====================================');
+    final decoded = _decodeJsonObject(content);
+    debugPrint('=== RESPUESTA IA LOCAL DECODIFICADA ===\n$decoded\n=====================================');
+    return AiQuizRoundSet.fromJson(decoded);
+  }
+
+  /// Genera un versículo alterado con palabras intrusas según el nivel de dificultad:
+  /// - Nivel 1: Cambia exactamente 1 palabra. Error obvio o sinónimo simple.
+  /// - Nivel 2: Cambia exactamente 2 palabras. Sinónimos sutiles o palabras parecidas.
+  /// - Nivel 3: Cambia exactamente 3 palabras. Conectores sutiles o teología ligeramente alterada de forma casi imperceptible.
+  Future<IntruderVerseSet> generateIntruderVerse({
+    required String reference,
+    required String verseText,
+    required int level,
+  }) async {
+    String levelInstruction = '';
+    if (level == 1) {
+      levelInstruction = 'Reemplaza exactamente 1 palabra del versículo por una palabra incorrecta (un "intruso"). '
+          'La alteración debe ser sutil y plausible (no obvia), como un sinónimo cercano o una palabra que encaje en el contexto gramatical pero cambie el significado sutilmente.';
+    } else if (level == 2) {
+      levelInstruction = 'Reemplaza exactamente 2 palabras del versículo por dos palabras incorrectas ("intrusos"). '
+          'Las alteraciones deben ser de dificultad alta y muy parecidas a las originales (longitud similar, letras similares, raíces compartidas o sinónimos extremadamente cercanos) que se confundan fácilmente al leer rápido.';
+    } else {
+      levelInstruction = 'Reemplaza exactamente 3 palabras del versículo por tres palabras incorrectas ("intrusos"). '
+          'Las alteraciones deben ser sumamente difíciles de identificar a simple vista: cambia conectores gramaticales pequeños (ej: "por" en vez de "para", "con" en vez de "en"), o palabras con un significado teológico casi idéntico pero incorrecto (ej: "Señor" en vez de "Dios" si el original decía Dios).';
+    }
+
+
+    final entropy = _seedRandom.nextInt(100000);
+    final prompt = 'Eres un creador de desafíos premium de memorización de la Biblia en español.\n'
+        'Semilla de variación aleatoria: $entropy\n'
+        'Tu tarea es tomar el versículo indicado y generar una versión alterada del mismo.\n\n'
+        'Versículo original ($reference): "$verseText"\n\n'
+        'Instrucciones específicas:\n'
+        '- $levelInstruction\n'
+        '- Las palabras intrusas nuevas no deben existir en el versículo original en esa misma posición.\n'
+        '- El resto de palabras del versículo deben permanecer idénticas al original.\n'
+        '- Devuelve exactamente en "alteredVerse" el versículo modificado completo conservando signos de puntuación originales donde sea posible.\n'
+        '- Devuelve exactamente en "intruderWords" la lista de las palabras intrusas (tal y como aparecen en el versículo alterado, sin puntuación pegada si es posible).\n'
+        '- Devuelve en "explanation" una explicación interactiva de alta calidad que indique qué palabras se cambiaron y por qué el texto original usa esas palabras (con un matiz teológico o lingüístico interesante).\n\n'
+        'Responde únicamente con el objeto JSON estructurado. Todo en español.';
+
+    final content = await _chat(
+      prompt,
+      temperature: 0.8,
+      maxTokens: 600,
+      jsonSchema: _intruderVerseSchema,
+    );
+
+    return IntruderVerseSet.fromJson(_decodeJsonObject(content));
   }
 
   static const Map<String, dynamic> _distractorSchema = {
@@ -307,8 +423,10 @@ class LocalLlmService {
     required String verseText,
     int count = 8,
   }) async {
+    final entropy = _seedRandom.nextInt(100000);
     final prompt =
         'Eres un tutor de memorización de versículos en español.\n'
+        'Semilla de variación aleatoria: $entropy\n'
         'Texto ($reference): "$verseText"\n\n'
         'Devuelve "distractors": una lista de exactamente $count PALABRAS sueltas '
         '(una sola palabra cada una, sin frases) que sirvan como opciones '
@@ -339,14 +457,16 @@ class LocalLlmService {
     required String verseText,
     required String userAnswer,
   }) async {
-    final prompt = 'Eres un tutor de memorización bíblica. Evalúa en español la respuesta del usuario.\n'
-        'Texto de referencia: "$verseText"\n'
+    final entropy = _seedRandom.nextInt(100000);
+    final prompt = 'Eres un evaluador de respuestas de cuestionarios de memorización bíblica. Evalúa de forma estricta y lógica la respuesta del usuario.\n'
+        'Semilla de variación aleatoria: $entropy\n'
+        'Texto de referencia del versículo: "$verseText"\n'
         'Pregunta abierta: "$question"\n'
         'Respuesta del usuario: "${userAnswer.trim()}"\n\n'
-        'Marca "isCorrect" como true solo si la respuesta demuestra comprensión real del texto '
-        '(aunque esté escrita con sus propias palabras). Una respuesta vacía de contenido, '
-        'fuera de tema o sin relación con el texto es incorrecta.\n'
-        'En "feedback" escribe 1 o 2 frases breves, cálidas y concretas explicando el veredicto.\n'
+        'Instrucciones de Evaluación:\n'
+        '1. La respuesta del usuario DEBE estar directamente relacionada con la pregunta y el versículo de referencia. Si el usuario habla de deportes, fútbol, comida, películas, o responde con frases vacías, de evasión o incoherencias, debes responder "isCorrect": false.\n'
+        '2. Si la respuesta es relevante y demuestra que el usuario entendió el mensaje del versículo (aunque la explicación sea sencilla, corta o informal), responde "isCorrect": true.\n'
+        '3. En "feedback" escribe una frase corta explicando lógicamente por qué es correcta o por qué es incorrecta.\n'
         'Responde únicamente con el JSON.';
 
     final content = await _chat(
@@ -355,7 +475,10 @@ class LocalLlmService {
       maxTokens: _evaluationMaxTokens,
       jsonSchema: _openAnswerEvaluationSchema,
     );
-    return AiOpenAnswerEvaluation.fromJson(_decodeJsonObject(content));
+    debugPrint('=== RESPUESTA IA EVALUACION CRUDA ===\n$content\n=====================================');
+    final decoded = _decodeJsonObject(content);
+    debugPrint('=== RESPUESTA IA EVALUACION DECODIFICADA ===\n$decoded\n=====================================');
+    return AiOpenAnswerEvaluation.fromJson(decoded);
   }
 
   static const Map<String, dynamic> _deckSchema = {
@@ -387,8 +510,10 @@ class LocalLlmService {
     int count = 8,
   }) async {
     final n = count.clamp(3, 20);
+    final entropy = _seedRandom.nextInt(100000);
     final prompt =
         'Eres un generador de tarjetas de memorización (flashcards).\n'
+        'Semilla de variación aleatoria: $entropy\n'
         'Tema: "$topic".\n\n'
         'Genera exactamente $n tarjetas en "cards". Cada tarjeta tiene:\n'
         '- "front": el anverso — una palabra, pregunta o concepto CORTO a recordar.\n'
@@ -424,6 +549,10 @@ class LocalLlmService {
   }) async {
     if (!_initialized) {
       await initLlm();
+    }
+
+    if (_isMockFallback) {
+      return _generateMockFallbackResponse(prompt, jsonSchema);
     }
 
     if (_useMobileBackend) {
@@ -464,12 +593,118 @@ class LocalLlmService {
   }
 
   Map<String, dynamic> _decodeJsonObject(String content) {
+    var cleaned = content.trim();
+
+    // Extraer el objeto JSON buscando el primer '{' y el último '}'
+    // Esto limpia cualquier markdown block wrapper (```json ... ```) u otro texto extra.
+    final startIdx = cleaned.indexOf('{');
+    final endIdx = cleaned.lastIndexOf('}');
+    if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
+      cleaned = cleaned.substring(startIdx, endIdx + 1);
+    }
+
     // La gramática de llama.cpp permite saltos de línea crudos dentro de
     // strings JSON; jsonDecode los rechaza. Normalizarlos a espacios es
     // inocuo fuera de strings y repara el JSON dentro de ellas.
-    final sanitized = content.replaceAll(RegExp(r'[\x00-\x1F]'), ' ');
+    final sanitized = cleaned.replaceAll(RegExp(r'[\x00-\x1F]'), ' ');
     final decoded = jsonDecode(sanitized);
     if (decoded is Map<String, dynamic>) return decoded;
     throw const FormatException('La IA local no devolvió un objeto JSON.');
+  }
+
+  String _generateMockFallbackResponse(String prompt, Map<String, dynamic>? jsonSchema) {
+    if (jsonSchema == null) return '{}';
+
+    // 1. Quiz Round Set
+    if (jsonSchema == _quizRoundSetSchema) {
+      return '''
+      {
+        "trueFalse": {
+          "statement": "El versículo enseña la importancia de confiar en Dios en medio de cualquier circunstancia.",
+          "isTrue": true
+        },
+        "multipleChoice": {
+          "question": "¿Cuál es la enseñanza central reflejada en este texto?",
+          "correct": "La providencia divina y la fidelidad eterna de Dios.",
+          "distractors": [
+            "La necesidad de acumular riquezas materiales.",
+            "El aislamiento absoluto del mundo exterior.",
+            "La búsqueda del éxito personal sobre el servicio a los demás."
+          ]
+        },
+        "openQuestion": {
+          "question": "¿Cómo aplicarías este versículo en tu vida cotidiana?"
+        }
+      }
+      ''';
+    }
+
+    // 2. Intruder Verse
+    if (jsonSchema == _intruderVerseSchema) {
+      String verseText = "En el principio creó Dios los cielos y la tierra.";
+      final match = RegExp(r'Texto \([^)]+\):\s*"([^"]+)"').firstMatch(prompt);
+      if (match != null) {
+        verseText = match.group(1) ?? verseText;
+      }
+      final words = verseText.split(' ');
+      List<String> intruders = [];
+      String altered = verseText;
+      if (words.length > 4) {
+        if (prompt.contains('1 palabra') || prompt.contains('Nivel 1')) {
+          intruders = ['creó'];
+          altered = verseText.replaceAll('creó', 'estableció');
+        } else if (prompt.contains('2 palabras') || prompt.contains('Nivel 2')) {
+          intruders = ['creó', 'tierra'];
+          altered = verseText.replaceAll('creó', 'estableció').replaceAll('tierra', 'luna');
+        } else {
+          intruders = ['creó', 'cielos', 'tierra'];
+          altered = verseText.replaceAll('creó', 'estableció').replaceAll('cielos', 'mundos').replaceAll('tierra', 'luna');
+        }
+      } else {
+        intruders = ['incorrecto'];
+        altered = '\$verseText (alterado)';
+      }
+      return '''
+      {
+        "alteredVerse": "$altered",
+        "intruderWords": ${jsonEncode(intruders)},
+        "explanation": "Simulación: Se cambiaron palabras clave para evaluar la memorización del versículo."
+      }
+      ''';
+    }
+
+    // 3. Distractor Schema
+    if (jsonSchema == _distractorSchema) {
+      return '''
+      {
+        "distractors": ["amor", "paz", "justicia", "verdad", "esperanza", "fe", "gracia", "vida"]
+      }
+      ''';
+    }
+
+    // 4. Open Answer Evaluation
+    if (jsonSchema == _openAnswerEvaluationSchema) {
+      return '''
+      {
+        "isCorrect": true,
+        "feedback": "Excelente reflexión. Tu respuesta capta muy bien la esencia espiritual y el contexto doctrinal del versículo."
+      }
+      ''';
+    }
+
+    // 5. Deck Schema (Flashcards)
+    if (jsonSchema == _deckSchema) {
+      return '''
+      {
+        "cards": [
+          {"front": "Fe", "back": "La certeza de lo que se espera, la convicción de lo que no se ve (Hebreos 11:1)."},
+          {"front": "Amor", "back": "El vínculo perfecto y el cumplimiento de la ley."},
+          {"front": "Gracia", "back": "Favor inmerecido otorgado por Dios."}
+        ]
+      }
+      ''';
+    }
+
+    return '{}';
   }
 }

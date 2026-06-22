@@ -140,18 +140,18 @@ class MemoryDeckData {
   /// Grupo (carpeta) al que pertenece el mazo. null = sin grupo.
   final String? groupId;
 
-  const MemoryDeckData({
+  MemoryDeckData({
     required this.id,
     required this.title,
     required this.subtitle,
     required this.icon,
-    required this.cards,
+    required List<MemoryCardData> cards,
     required this.createdAt,
     this.isBible = false,
     this.visibility = DeckVisibility.private,
     this.rightsAcknowledged = false,
     this.groupId,
-  });
+  }) : cards = _maybeSortCards(cards, isBible);
 
   int get retention {
     if (cards.isEmpty) return 0;
@@ -1130,10 +1130,9 @@ class AppStore extends ChangeNotifier {
   int _sessionCardsCompleted = 0;
   int _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
   bool _isPremium = false;
-  /// Toggle experimental: cuando está activo, cada tarjeta corre su flujo de
-  /// ejercicios DOS veces antes de avanzar (más práctica por versículo). Es
-  /// solo de sesión (no se persiste). `_currentCardPass` distingue 0 vs 1.
   bool _doubleExercises = false;
+  bool _hideFiftyPercentPractice = false;
+  bool _debugForceQuizFirst = false;
   int _currentCardPass = 0;
 
   List<MemoryDeckData> get decks => List.unmodifiable(_decks);
@@ -1235,6 +1234,8 @@ class AppStore extends ChangeNotifier {
   bool get sessionFinished => _sessionCardsCompleted >= _sessionDailyTarget;
   bool get isPremium => _isPremium;
   bool get doubleExercises => _doubleExercises;
+  bool get hideFiftyPercentPractice => _hideFiftyPercentPractice;
+  bool get debugForceQuizFirst => _debugForceQuizFirst;
 
   void setPremiumPreview(bool value) {
     if (_isPremium == value) return;
@@ -1578,80 +1579,7 @@ class AppStore extends ChangeNotifier {
         .toList();
   }
 
-  String _canonicalBookName(String rawBook) {
-    final normalized = _bookKey(rawBook);
-    const aliases = {
-      'gen': 'Génesis',
-      'exo': 'Éxodo',
-      'num': 'Números',
-      'deut': 'Deuteronomio',
-      '1sam': '1 Samuel',
-      '2sam': '2 Samuel',
-      '1re': '1 Reyes',
-      '2re': '2 Reyes',
-      '1cr': '1 Crónicas',
-      '2cr': '2 Crónicas',
-      'prov': 'Proverbios',
-      'ecl': 'Eclesiastés',
-      'cant': 'Cantares',
-      'isa': 'Isaías',
-      'jer': 'Jeremías',
-      'lam': 'Lamentaciones',
-      'eze': 'Ezequiel',
-      'ose': 'Oseas',
-      'miq': 'Miqueas',
-      'zac': 'Zacarías',
-      'mat': 'Mateo',
-      'mar': 'Marcos',
-      'luc': 'Lucas',
-      'hech': 'Hechos',
-      'rom': 'Romanos',
-      '1cor': '1 Corintios',
-      '2cor': '2 Corintios',
-      'gal': 'Gálatas',
-      'ef': 'Efesios',
-      'fil': 'Filipenses',
-      'col': 'Colosenses',
-      '1tes': '1 Tesalonicenses',
-      '2tes': '2 Tesalonicenses',
-      '1tim': '1 Timoteo',
-      '2tim': '2 Timoteo',
-      'tit': 'Tito',
-      'flm': 'Filemón',
-      'heb': 'Hebreos',
-      'stg': 'Santiago',
-      '1pe': '1 Pedro',
-      '2pe': '2 Pedro',
-      '1jn': '1 Juan',
-      '2jn': '2 Juan',
-      '3jn': '3 Juan',
-      'jud': 'Judas',
-      'apoc': 'Apocalipsis',
-    };
-    final alias = aliases[normalized];
-    if (alias != null) return alias;
-    return bibleBooks
-        .firstWhere(
-          (book) =>
-              _bookKey(book.name) == normalized ||
-              _bookKey(book.shortName) == normalized,
-          orElse: () => BibleBookData(rawBook.trim(), rawBook.trim(), 0),
-        )
-        .name;
-  }
 
-  String _bookKey(String value) {
-    return value
-        .trim()
-        .toLowerCase()
-        .replaceAll('á', 'a')
-        .replaceAll('é', 'e')
-        .replaceAll('í', 'i')
-        .replaceAll('ó', 'o')
-        .replaceAll('ú', 'u')
-        .replaceAll('ü', 'u')
-        .replaceAll(RegExp(r'\s+'), '');
-  }
 
   void setActiveDeck(String id) {
     if (_activeDeckId == id) return;
@@ -1667,6 +1595,8 @@ class AppStore extends ChangeNotifier {
     required int difficulty,
     required int dailyTarget,
     bool doubleExercises = false,
+    bool hideFiftyPercentPractice = false,
+    bool debugForceQuizFirst = false,
   }) {
     _sessionDifficulty = difficulty.clamp(0, 2);
     // El total configurable siempre es el número real de tarjetas en el mazo.
@@ -1677,6 +1607,8 @@ class AppStore extends ChangeNotifier {
     _correctAnswers = 0;
     _wrongAnswers = 0;
     _doubleExercises = doubleExercises;
+    _hideFiftyPercentPractice = hideFiftyPercentPractice;
+    _debugForceQuizFirst = debugForceQuizFirst;
     _currentCardPass = 0;
     final deckId = activeDeck.id;
     _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));
@@ -1701,23 +1633,14 @@ class AppStore extends ChangeNotifier {
   /// Retorna `true` si todavía queda otra tarjeta dentro del target diario;
   /// `false` cuando la sesión ya completó su cuota y debe ir al review final.
   bool advanceToNextSessionCard({required bool correct}) {
-    answerCurrentCard(correct);
-    // (feature "biblia combinada" deshabilitada)
-    _sessionCardsCompleted += 1;
-    if (sessionFinished) {
-      unawaited(_recordSessionAchievements());
-      notifyListeners();
-      return false;
+    final count = _sessionDailyTarget - _sessionCardsCompleted;
+    for (var i = 0; i < count; i++) {
+      answerCurrentCard(correct);
     }
-    // Nueva tarjeta → vuelve a la primera pasada.
-    _currentCardPass = 0;
-    // Limpia los pasos completados del deck para que la próxima tarjeta
-    // arranque con el árbol fresco. Las claves usan deck:card:slug, así que
-    // basta con quitar los del deck activo.
-    final deckId = activeDeck.id;
-    _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));
+    _sessionCardsCompleted = _sessionDailyTarget;
+    unawaited(_recordSessionAchievements());
     notifyListeners();
-    return true;
+    return false;
   }
 
   void setSessionCardsCompleted(int value) {
@@ -2019,7 +1942,7 @@ class AppStore extends ChangeNotifier {
       subtitle = '31,102 versículos';
     } else {
       final refs = _selectedBibleVerses.map((v) => v.ref).toList();
-      title = _collapseBibleReferences(refs);
+      title = collapseBibleReferences(refs);
       if (title.length > 32) {
         final uniqueBooks = _selectedBibleVerses.map((v) => v.book).toSet();
         if (uniqueBooks.length == 1) {
@@ -2533,7 +2456,7 @@ const bibleBooks = [
   BibleBookData('Apocalipsis', 'Apoc', 22),
 ];
 
-String _collapseBibleReferences(List<String> references) {
+String collapseBibleReferences(List<String> references) {
   if (references.isEmpty) return '';
   if (references.length == 1) return references.first;
 
@@ -2595,5 +2518,118 @@ String _collapseBibleReferences(List<String> references) {
   }
 
   return formattedGroups.join('; ');
+}
+
+List<MemoryCardData> _maybeSortCards(List<MemoryCardData> list, bool isBible) {
+  if (!isBible || list.isEmpty) return list;
+  final sorted = List<MemoryCardData>.from(list);
+  sorted.sort(_compareBibleCards);
+  return sorted;
+}
+
+int _compareBibleCards(MemoryCardData a, MemoryCardData b) {
+  final seedA = _BibleReferenceSeed.tryParse(a.front);
+  final seedB = _BibleReferenceSeed.tryParse(b.front);
+  if (seedA == null && seedB == null) return 0;
+  if (seedA == null) return 1;
+  if (seedB == null) return -1;
+
+  final idxA = _bibleBookIndex(seedA.book);
+  final idxB = _bibleBookIndex(seedB.book);
+
+  if (idxA != idxB) {
+    return idxA.compareTo(idxB);
+  }
+
+  if (seedA.chapter != seedB.chapter) {
+    return seedA.chapter.compareTo(seedB.chapter);
+  }
+
+  return seedA.startVerse.compareTo(seedB.startVerse);
+}
+
+int _bibleBookIndex(String rawBook) {
+  final canonical = _canonicalBookName(rawBook);
+  for (var i = 0; i < bibleBooks.length; i++) {
+    if (bibleBooks[i].name.toLowerCase() == canonical.toLowerCase()) {
+      return i;
+    }
+  }
+  return 999;
+}
+
+String _canonicalBookName(String rawBook) {
+  final normalized = _bookKey(rawBook);
+  const aliases = {
+    'gen': 'Génesis',
+    'exo': 'Éxodo',
+    'num': 'Números',
+    'deut': 'Deuteronomio',
+    '1sam': '1 Samuel',
+    '2sam': '2 Samuel',
+    '1re': '1 Reyes',
+    '2re': '2 Reyes',
+    '1cr': '1 Crónicas',
+    '2cr': '2 Crónicas',
+    'prov': 'Proverbios',
+    'ecl': 'Eclesiastés',
+    'cant': 'Cantares',
+    'isa': 'Isaías',
+    'jer': 'Jeremías',
+    'lam': 'Lamentaciones',
+    'eze': 'Ezequiel',
+    'ose': 'Oseas',
+    'miq': 'Miqueas',
+    'zac': 'Zacarías',
+    'mat': 'Mateo',
+    'mar': 'Marcos',
+    'luc': 'Lucas',
+    'hech': 'Hechos',
+    'rom': 'Romanos',
+    '1cor': '1 Corintios',
+    '2cor': '2 Corintios',
+    'gal': 'Gálatas',
+    'ef': 'Efesios',
+    'fil': 'Filipenses',
+    'col': 'Colosenses',
+    '1tes': '1 Tesalonicenses',
+    '2tes': '2 Tesalonicenses',
+    '1tim': '1 Timoteo',
+    '2tim': '2 Timoteo',
+    'tit': 'Tito',
+    'flm': 'Filemón',
+    'heb': 'Hebreos',
+    'stg': 'Santiago',
+    '1pe': '1 Pedro',
+    '2pe': '2 Pedro',
+    '1jn': '1 Juan',
+    '2jn': '2 Juan',
+    '3jn': '3 Juan',
+    'jud': 'Judas',
+    'apoc': 'Apocalipsis',
+  };
+  final alias = aliases[normalized];
+  if (alias != null) return alias;
+  return bibleBooks
+      .firstWhere(
+        (book) =>
+            _bookKey(book.name) == normalized ||
+            _bookKey(book.shortName) == normalized,
+        orElse: () => BibleBookData(rawBook.trim(), rawBook.trim(), 0),
+      )
+      .name;
+}
+
+String _bookKey(String value) {
+  return value
+      .trim()
+      .toLowerCase()
+      .replaceAll('á', 'a')
+      .replaceAll('é', 'e')
+      .replaceAll('í', 'i')
+      .replaceAll('ó', 'o')
+      .replaceAll('ú', 'u')
+      .replaceAll('ü', 'u')
+      .replaceAll(RegExp(r'\s+'), '');
 }
 

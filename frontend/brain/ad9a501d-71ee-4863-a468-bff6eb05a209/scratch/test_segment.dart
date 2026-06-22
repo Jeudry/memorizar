@@ -1,4 +1,4 @@
-import '/Users/sargon/Documents/Coding/Memorizar/frontend/lib/core/app_state.dart';
+import 'package:frontend/core/app_state.dart';
 
 void main() {
   final store = AppStore();
@@ -9,8 +9,8 @@ Porque para siempre es Su misericordia.
 A quienes ha redimido de la mano del adversario,
 ''';
   final cards = store.segmentContent(text);
-  print('Cards length: ' + cards.length.toString());
+  print('Cards length: ${cards.length}');
   for (var i = 0; i < cards.length; i++) {
-    print('Card ' + (i + 1).toString() + ': ' + cards[i].front + ' -> ' + cards[i].back);
+    print('Card ${i + 1}: ${cards[i].front} -> ${cards[i].back}');
   }
 }
