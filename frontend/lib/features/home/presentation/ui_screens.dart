@@ -254,6 +254,12 @@ const flowScreens = [
   ExerciseFlowData('11-primera-letra-n2', 'Primera letra N2', 'Casi sin ayuda'),
   ExerciseFlowData('09-quiz', 'Quiz', 'Elige la respuesta correcta'),
   ExerciseFlowData('18-palabras-intrusas', 'Palabras intrusas', 'Identifica alteraciones de la IA'),
+  // El flujo real usa las variantes por nivel (-n1/-n2/-n3); sin estas entradas
+  // sus rutas no se registran y al tocarlas en el árbol de progreso "no pasa
+  // nada" (generateRoute no encuentra el builder y devuelve null).
+  ExerciseFlowData('18-palabras-intrusas-n1', 'Palabras intrusas N1', 'Identifica alteraciones de la IA'),
+  ExerciseFlowData('18-palabras-intrusas-n2', 'Palabras intrusas N2', 'Identifica alteraciones de la IA'),
+  ExerciseFlowData('18-palabras-intrusas-n3', 'Palabras intrusas N3', 'Identifica alteraciones de la IA'),
   ExerciseFlowData('12-completar-n3', 'Elige la palabra · N3', 'Más huecos visibles'),
   ExerciseFlowData(
     '13-primera-letra-n3',
@@ -287,7 +293,7 @@ class ExerciseFlowScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (data.slug == '09-quiz' || data.slug == '18-palabras-intrusas') {
+    if (data.slug == '09-quiz' || data.slug.startsWith('18-palabras-intrusas')) {
       final store = AppScope.of(context);
       final llmService = LocalLlmService.instance;
       if (!store.isPremium) {
