@@ -6,8 +6,9 @@ import '../theme/ref_colors.dart';
 class SectionHead extends StatelessWidget {
   final String title;
   final String? action;
+  final VoidCallback? onAction;
 
-  const SectionHead(this.title, {super.key, this.action});
+  const SectionHead(this.title, {super.key, this.action, this.onAction});
 
   @override
   Widget build(BuildContext context) {
@@ -22,9 +23,17 @@ class SectionHead extends StatelessWidget {
             ),
           ),
           if (action != null)
-            Text(
-              action!,
-              style: const TextStyle(color: RefColors.muted, fontSize: 12),
+            GestureDetector(
+              onTap: onAction,
+              behavior: HitTestBehavior.opaque,
+              child: Text(
+                action!,
+                style: TextStyle(
+                  color: onAction != null ? RefColors.cyan : RefColors.muted,
+                  fontSize: 12,
+                  fontWeight: onAction != null ? FontWeight.w800 : FontWeight.w500,
+                ),
+              ),
             ),
         ],
       ),

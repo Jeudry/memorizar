@@ -8,7 +8,6 @@ class RepasarScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
-    final dueCards = store.dueCards;
     final weakCount = store.dueTodayCount;
     return ReferencePage(
       active: AppRoutes.repasar,
@@ -112,41 +111,11 @@ class RepasarScreen extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          _ForecastStrip(forecast: store.reviewForecast),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: HtmlRefColors.glassSoft,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _SegmentTab(
-                    'Por tarjeta · ${dueCards.length}',
-                    active: true,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: _SegmentTab('Por mazo · ${store.decks.length}'),
-                ),
-              ],
-            ),
+          SectionHead(
+            'Tus mazos',
+            action: '＋ Grupo',
+            onAction: () => _createGroupSheet(context, store),
           ),
-          const SectionHead('⚠ Tarjetas más débiles', action: 'Ver todas'),
-          for (final group in _groupReviewCards(_attachDecks(dueCards, store)))
-            _ReviewItem(
-              group.icon,
-              group.front,
-              '${group.source} · ${group.totalLapses} ${group.totalLapses == 1 ? "fallo" : "fallos"}',
-              '${group.avgRetention}%',
-              urgent: group.avgRetention < 60,
-              onTap: () => Navigator.pushNamed(context, AppRoutes.flashcards),
-            ),
-          const SectionHead('Tus mazos'),
           ..._buildGroupedDecks(context, store),
         ],
       ),
@@ -162,6 +131,7 @@ class RepasarScreen extends StatelessWidget {
           '${deck.weakCount} débiles · ${deck.cards.length} tarjetas',
           deck.retention / 100,
           onExport: () => exportDeckToCsv(context, deck),
+          onMenu: () => _moveToGroupSheet(context, store, deck),
         );
 
     final widgets = <Widget>[];
@@ -180,6 +150,111 @@ class RepasarScreen extends StatelessWidget {
       widgets.addAll(ungrouped.map(deckTile));
     }
     return widgets;
+  }
+
+  /// Pide un nombre de grupo en un diálogo. Devuelve el nombre o null.
+  Future<String?> _promptGroupName(BuildContext context) async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF0F0C1B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Nuevo grupo',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: 'Nombre del grupo',
+            hintStyle: TextStyle(color: RefColors.muted),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar', style: TextStyle(color: RefColors.muted)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Crear'),
+          ),
+        ],
+      ),
+    );
+    final trimmed = name?.trim() ?? '';
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  Future<void> _createGroupSheet(BuildContext context, AppStore store) async {
+    final name = await _promptGroupName(context);
+    if (name != null) await store.createGroup(name);
+  }
+
+  /// Hoja para mover un mazo a un grupo (o sin grupo / crear uno nuevo).
+  Future<void> _moveToGroupSheet(
+      BuildContext context, AppStore store, MemoryDeckData deck) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF0F0C1B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+              child: Text(
+                'Mover "${deck.title}" a…',
+                style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.folder_off_rounded, color: RefColors.muted),
+              title: const Text('Sin grupo', style: TextStyle(color: Colors.white)),
+              trailing: deck.groupId == null
+                  ? const Icon(Icons.check_rounded, color: RefColors.lime)
+                  : null,
+              onTap: () {
+                store.assignDeckToGroup(deck.id, null);
+                Navigator.pop(ctx);
+              },
+            ),
+            for (final g in store.groups)
+              ListTile(
+                leading: Text(g.icon, style: const TextStyle(fontSize: 18)),
+                title: Text(g.name, style: const TextStyle(color: Colors.white)),
+                trailing: deck.groupId == g.id
+                    ? const Icon(Icons.check_rounded, color: RefColors.lime)
+                    : null,
+                onTap: () {
+                  store.assignDeckToGroup(deck.id, g.id);
+                  Navigator.pop(ctx);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.add_rounded, color: RefColors.cyan),
+              title: const Text('Nuevo grupo…', style: TextStyle(color: RefColors.cyan)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final name = await _promptGroupName(context);
+                if (name != null) {
+                  final id = await store.createGroup(name);
+                  await store.assignDeckToGroup(deck.id, id);
+                }
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -226,246 +301,16 @@ class _GroupHeader extends StatelessWidget {
   }
 }
 
-/// Tira de pronóstico SRS: cuántas tarjetas vencen hoy, mañana y en 7 días,
-/// con un mini-gráfico de barras de los próximos 7 días.
-class _ForecastStrip extends StatelessWidget {
-  final ReviewForecast forecast;
-  const _ForecastStrip({required this.forecast});
-
-  @override
-  Widget build(BuildContext context) {
-    final maxBar = [
-      forecast.dueNow,
-      ...forecast.next7,
-      1,
-    ].reduce((a, b) => a > b ? a : b);
-    const labels = ['Hoy', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do', '+7'];
-    final values = [forecast.dueNow, ...forecast.next7];
-    return Glass(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const GlyphIcon('📅', size: 18),
-              const SizedBox(width: 8),
-              const Text('Próximos repasos',
-                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
-              const Spacer(),
-              Text(
-                '${forecast.weekTotal} en 7 días',
-                style: const TextStyle(
-                    fontSize: 11, color: RefColors.muted, fontWeight: FontWeight.w700),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              for (var i = 0; i < values.length; i++)
-                Expanded(
-                  child: Column(
-                    children: [
-                      Text(
-                        '${values[i]}',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                          color: i == 0 ? RefColors.urgent : RefColors.muted,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Container(
-                        height: 6 + 34 * (values[i] / maxBar),
-                        margin: const EdgeInsets.symmetric(horizontal: 3),
-                        decoration: BoxDecoration(
-                          color: i == 0
-                              ? RefColors.urgent.withValues(alpha: .85)
-                              : RefColors.cyan.withValues(alpha: .6),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        labels[i],
-                        style: const TextStyle(
-                            fontSize: 9, color: RefColors.dim),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SegmentTab extends StatelessWidget {
-  final String text;
-  final bool active;
-
-  const _SegmentTab(this.text, {this.active = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: BoxDecoration(
-        color: active ? HtmlRefColors.glassStrong : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-        border: active ? Border.all(color: HtmlRefColors.glassBorder) : null,
-      ),
-      child: Center(
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            color: active ? RefColors.ink : RefColors.muted,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ReviewItem extends StatelessWidget {
-  final String emoji;
-  final String title;
-  final String subtitle;
-  final String pct;
-  final bool urgent;
-  final VoidCallback? onTap;
-
-  const _ReviewItem(
-    this.emoji,
-    this.title,
-    this.subtitle,
-    this.pct, {
-    this.urgent = false,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: urgent
-              ? RefColors.urgent.withValues(alpha: .08)
-              : RefColors.glassSoft,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: urgent
-                ? RefColors.urgent.withValues(alpha: .4)
-                : RefColors.border,
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: RefColors.glassStrong,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: RefColors.border),
-              ),
-              child: Center(child: GlyphIcon(emoji, size: 18)),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          subtitle,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: RefColors.muted,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      _PercentBadge(pct, urgent: urgent),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              '›',
-              style: TextStyle(color: RefColors.muted, fontSize: 20),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PercentBadge extends StatelessWidget {
-  final String pct;
-  final bool urgent;
-
-  const _PercentBadge(this.pct, {required this.urgent});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: urgent
-            ? RefColors.urgent.withValues(alpha: .18)
-            : RefColors.sun.withValues(alpha: .15),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: urgent
-              ? RefColors.urgent.withValues(alpha: .4)
-              : RefColors.sun.withValues(alpha: .4),
-        ),
-      ),
-      child: Text(
-        pct,
-        style: TextStyle(
-          color: urgent ? RefColors.urgent : RefColors.sun,
-          fontSize: 10,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
-}
-
 class _DeckRetention extends StatelessWidget {
   final String emoji;
   final String title;
   final String subtitle;
   final double value;
   final VoidCallback? onExport;
+  final VoidCallback? onMenu;
 
   const _DeckRetention(this.emoji, this.title, this.subtitle, this.value,
-      {this.onExport});
+      {this.onExport, this.onMenu});
 
   @override
   Widget build(BuildContext context) {
@@ -507,6 +352,21 @@ class _DeckRetention extends StatelessWidget {
                 ),
                 child: const Icon(Icons.ios_share_rounded,
                     size: 17, color: RefColors.cyan),
+              ),
+            ),
+          if (onMenu != null)
+            GestureDetector(
+              onTap: onMenu,
+              child: Container(
+                margin: const EdgeInsets.only(left: 8),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: RefColors.glassStrong,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: RefColors.border),
+                ),
+                child: const Icon(Icons.more_vert_rounded,
+                    size: 17, color: RefColors.muted),
               ),
             ),
         ],
