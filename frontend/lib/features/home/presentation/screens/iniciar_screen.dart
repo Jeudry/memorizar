@@ -362,22 +362,25 @@ class _IniciarScreenState extends State<IniciarScreen> {
           ),
           const SizedBox(height: 12),
           _OptionGroup(
-            title: 'Dificultad',
+            title: 'A tu medida',
+            subtitle:
+                'Ajustamos cuánto refuerzo para apoyar tu memoria: menos si retienes fácil, '
+                'más si quieres asegurarlo del todo.',
             options: [
               (
-                Icons.spa_rounded,
-                'Fácil',
-                '~${_difficultyMinutes(0, dailyTarget)} min · con pistas',
+                Icons.bolt_rounded,
+                'Rápido',
+                '~${_difficultyMinutes(0, dailyTarget)} min · para memoria ágil',
               ),
               (
-                Icons.psychology_alt_rounded,
-                'Intermedio',
-                '~${_difficultyMinutes(1, dailyTarget)} min · balanceado',
+                Icons.verified_rounded,
+                'Completo',
+                '~${_difficultyMinutes(1, dailyTarget)} min · recomendado',
               ),
               (
-                Icons.timer_rounded,
-                'Experto',
-                '~${_difficultyMinutes(2, dailyTarget)} min · intenso',
+                Icons.local_fire_department_rounded,
+                'Intensivo',
+                '~${_difficultyMinutes(2, dailyTarget)} min · máximo refuerzo',
               ),
             ],
             active: _difficulty,
@@ -749,12 +752,14 @@ class _IniciarScreenState extends State<IniciarScreen> {
 
 class _OptionGroup extends StatelessWidget {
   final String title;
+  final String? subtitle;
   final List<(IconData, String, String)> options;
   final int active;
   final ValueChanged<int>? onSelect;
 
   const _OptionGroup({
     required this.title,
+    this.subtitle,
     required this.options,
     required this.active,
     this.onSelect,
@@ -778,6 +783,18 @@ class _OptionGroup extends StatelessWidget {
               letterSpacing: 1.5,
             ),
           ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              subtitle!,
+              style: const TextStyle(
+                color: RefColors.dim,
+                fontWeight: FontWeight.w600,
+                fontSize: 11.5,
+                height: 1.35,
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
