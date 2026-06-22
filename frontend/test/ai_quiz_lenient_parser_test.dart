@@ -89,6 +89,26 @@ void main() {
       expect(set.openQuestion.question, contains('sin forma'));
     });
 
+    test('{questions:[{trueFalse:{}},{multipleChoice:{}},{openQuestion:{}}]} híbrido', () {
+      // Forma real del dispositivo: questions con un wrapper keyed por elemento.
+      final decoded = jsonDecode('''
+        {
+          "questions": [
+            {"trueFalse": {"statement": "Génesis 1:1 afirma que Dios creó todo.", "isTrue": false}},
+            {"multipleChoice": {"question": "¿Estado inicial de la tierra?",
+              "correct": "Sin forma y vacía", "distractors": ["Perfecta", "Llena de vida", "Con luz"]}},
+            {"openQuestion": {"question": "Explica la acción de Dios.", "answer_guideline": "Dios es el agente creador."}}
+          ]
+        }
+      ''');
+      final set = AiQuizRoundSet.lenient(decoded);
+      expect(set.trueFalse.statement, contains('Dios creó'));
+      expect(set.trueFalse.isTrue, isFalse);
+      expect(set.multipleChoice.correct, 'Sin forma y vacía');
+      expect(set.multipleChoice.distractors, hasLength(3));
+      expect(set.openQuestion.question, 'Explica la acción de Dios.');
+    });
+
     test('array de preguntas tipadas sin envoltura', () {
       final decoded = jsonDecode('''
         [

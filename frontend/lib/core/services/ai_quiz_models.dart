@@ -103,17 +103,54 @@ class AiQuizRoundSet {
     );
   }
 
-  /// Aplana cualquier envoltura a una lista de mapas-pregunta tipados.
+  static const List<String> _sectionNames = ['trueFalse', 'multipleChoice', 'openQuestion'];
+
+  /// Aplana cualquier envoltura a una lista de mapas-pregunta tipados, sin
+  /// importar si el modelo devolvió:
+  ///  - un objeto keyed {trueFalse, multipleChoice, openQuestion};
+  ///  - un array de sets completos (uno por texto);
+  ///  - {questions:[...]} donde cada elemento es un set, un wrapper de UNA
+  ///    sección ({trueFalse:{...}}) o una pregunta tipada ({type:...});
+  ///  - un array de preguntas tipadas.
   static List<Map<String, dynamic>> _collectQuestions(dynamic decoded) {
-    if (decoded is List) {
-      final maps = decoded.whereType<Map<String, dynamic>>().toList();
-      if (maps.any((m) =>
-          m.containsKey('trueFalse') ||
-          m.containsKey('multipleChoice') ||
-          m.containsKey('openQuestion'))) {
-        return _fromKeyedSets(maps);
+    final list = _toMapList(decoded);
+    if (list.isEmpty) {
+      throw const FormatException('Estructura de quiz vacía.');
+    }
+
+    // Array con varios SETS COMPLETOS (uno por texto): repartir una sección por
+    // set para cubrir todos los textos del grupo.
+    final fullSets = list.where((m) => _sectionKeysOf(m).length >= 2).toList();
+    if (fullSets.length >= 2) {
+      final n = fullSets.length;
+      return [
+        _sectionToTyped(fullSets[0], 'trueFalse'),
+        _sectionToTyped(fullSets[1 % n], 'multipleChoice'),
+        _sectionToTyped(fullSets[2 % n], 'openQuestion'),
+      ];
+    }
+
+    // Elementos que envuelven secciones keyed (un set completo en un objeto, o
+    // un wrapper de UNA sección por elemento): expandir a preguntas tipadas,
+    // tomando la primera de cada tipo.
+    if (list.any((m) => _sectionKeysOf(m).isNotEmpty)) {
+      final byType = <String, Map<String, dynamic>>{};
+      for (final m in list) {
+        for (final key in _sectionKeysOf(m)) {
+          byType.putIfAbsent(key, () => _sectionToTyped(m, key));
+        }
       }
-      return maps;
+      if (byType.isNotEmpty) return byType.values.toList();
+    }
+
+    // Preguntas ya tipadas (con 'type' o campos sueltos).
+    return list;
+  }
+
+  /// Reduce cualquier estructura a una lista de mapas candidatos.
+  static List<Map<String, dynamic>> _toMapList(dynamic decoded) {
+    if (decoded is List) {
+      return decoded.whereType<Map<String, dynamic>>().toList();
     }
     if (decoded is Map<String, dynamic>) {
       for (final key in const ['questions', 'preguntas', 'items', 'quiz']) {
@@ -123,38 +160,25 @@ class AiQuizRoundSet {
           if (maps.isNotEmpty) return maps;
         }
       }
-      if (decoded.containsKey('trueFalse') ||
-          decoded.containsKey('multipleChoice') ||
-          decoded.containsKey('openQuestion')) {
-        return _fromKeyedSets([decoded]);
-      }
-      if (decoded.containsKey('type')) return [decoded];
+      return [decoded];
     }
     throw const FormatException('Estructura de quiz no reconocida.');
   }
 
-  /// Convierte uno o más sets keyed en 3 preguntas tipadas, repartiendo una
-  /// sección por set (con módulo) para cubrir todos los textos del grupo.
-  static List<Map<String, dynamic>> _fromKeyedSets(List<Map<String, dynamic>> sets) {
-    final n = sets.length;
-    Map<String, dynamic> section(int i, String key) {
-      final parent = sets[i % n];
-      final raw = parent[key];
-      final m = raw is Map<String, dynamic>
-          ? Map<String, dynamic>.of(raw)
-          : <String, dynamic>{'question': raw?.toString() ?? ''};
-      m['type'] = key;
-      if (key == 'trueFalse' && m['isTrue'] == null && parent['isTrue'] != null) {
-        m['isTrue'] = parent['isTrue'];
-      }
-      return m;
-    }
+  static List<String> _sectionKeysOf(Map<String, dynamic> m) =>
+      _sectionNames.where(m.containsKey).toList();
 
-    return [
-      section(0, 'trueFalse'),
-      section(1, 'multipleChoice'),
-      section(2, 'openQuestion'),
-    ];
+  /// Desenvuelve la sección [key] de [parent] a un mapa-pregunta tipado.
+  static Map<String, dynamic> _sectionToTyped(Map<String, dynamic> parent, String key) {
+    final raw = parent[key];
+    final m = raw is Map<String, dynamic>
+        ? Map<String, dynamic>.of(raw)
+        : <String, dynamic>{'question': raw?.toString() ?? ''};
+    m['type'] = key;
+    if (key == 'trueFalse' && m['isTrue'] == null && parent['isTrue'] != null) {
+      m['isTrue'] = parent['isTrue'];
+    }
+    return m;
   }
 
   static AiTrueFalseRound _trueFalseLenient(Map<String, dynamic> q) {

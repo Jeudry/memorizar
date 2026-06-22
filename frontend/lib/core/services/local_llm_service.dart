@@ -394,6 +394,9 @@ class LocalLlmService {
           '3. "openQuestion": una pregunta abierta corta para que el usuario explique el texto con sus palabras.\n\n'
           'IMPORTANTE: $coverageInstruction\n\n'
           '$depthInstruction\n'
+          'Formato de salida OBLIGATORIO: un ÚNICO objeto JSON EXACTAMENTE con esta forma '
+          '(sin envolturas, sin la clave "questions", sin arrays/listas):\n'
+          '{"trueFalse":{"statement":"...","isTrue":true},"multipleChoice":{"question":"...","correct":"...","distractors":["...","...","..."]},"openQuestion":{"question":"..."}}\n'
           'Todo en español. Responde únicamente con el JSON, sin texto adicional.';
       try {
         final content = await _chat(
@@ -538,6 +541,9 @@ class LocalLlmService {
             '1. La respuesta del usuario DEBE estar directamente relacionada con la pregunta y el versículo de referencia. Si el usuario habla de deportes, fútbol, comida, películas, o responde con frases vacías, de evasión o incoherencias, debes responder "isCorrect": false.\n'
             '2. Si la respuesta es relevante y demuestra que el usuario entendió el mensaje del versículo (aunque la explicación sea sencilla, corta o informal), responde "isCorrect": true.\n'
             '3. En "feedback" escribe una frase corta explicando lógicamente por qué es correcta o por qué es incorrecta.\n'
+            'Formato de salida OBLIGATORIO: un ÚNICO objeto JSON EXACTAMENTE con esta forma '
+            '(sin envolturas ni texto adicional):\n'
+            '{"isCorrect":true,"feedback":"..."}\n'
             'Responde únicamente con el JSON.';
 
         final content = await _chat(
