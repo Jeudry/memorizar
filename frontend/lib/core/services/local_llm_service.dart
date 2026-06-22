@@ -376,10 +376,13 @@ class LocalLlmService {
     required List<({String reference, String verseText})> verses,
   }) async {
     assert(verses.isNotEmpty, 'Se requiere al menos un versículo.');
-    const depthInstruction = 'Las preguntas deben ser CLARAS y fáciles de leer y responder (una idea '
-        'principal, redacción directa, sin rodeos ni enredos), PERO con SUSTANCIA: pueden explorar el '
-        'significado, una implicación, una relación o un matiz del texto. NO las hagas triviales, '
-        'obvias ni infantiles. '
+    const depthInstruction = 'Las preguntas deben ser CORTAS, NATURALES y DIRECTAS, como las haría una '
+        'persona al hablar: pocas palabras (menos de 12), UNA sola idea. '
+        'PROHIBIDO el relleno académico o pomposo: nada de "se describe", "acción fundamental", '
+        '"en el versículo proporcionado/dado", "según el texto bíblico", ni frases rebuscadas. '
+        'Pueden tener algo de fondo (no triviales), pero SIEMPRE preguntadas de forma simple. '
+        'Ejemplo MAL (rebuscado): "¿Qué acción fundamental se describe como el inicio de la existencia en el versículo proporcionado?". '
+        'Ejemplo BIEN (directo): "¿Qué hizo Dios al principio?". '
         'EXACTITUD: la respuesta correcta debe poder verificarse SIEMPRE con el texto dado y ser '
         'inequívoca; nunca inventes datos que no estén en el texto ni hagas preguntas sin respuesta '
         'clara. Dentro de eso está PERMITIDO ser astuto: trampas sutiles, enunciados falsos con un '
