@@ -774,31 +774,7 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-            if (_intruderSet?.explanation != null) ...[
-              const Padding(
-                padding: EdgeInsets.only(left: 4, bottom: 6),
-                child: Text(
-                  'EXPLICACIÓN DE LA IA',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.bold,
-                    color: RefColors.cyan,
-                  ),
-                ),
-              ),
-              Glass(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  _intruderSet!.explanation,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    height: 1.4,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
-            ],
+            const SizedBox(height: 32),
             Cta(
               'Continuar',
               onTap: widget.onFinished,

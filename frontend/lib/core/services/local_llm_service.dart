@@ -118,9 +118,8 @@ class LocalLlmService {
         'minItems': 1,
         'maxItems': 3,
       },
-      'explanation': {'type': 'string'},
     },
-    'required': ['alteredVerse', 'intruderWords', 'explanation'],
+    'required': ['alteredVerse', 'intruderWords'],
   };
 
 
@@ -491,7 +490,7 @@ class LocalLlmService {
           'El resto del versículo debe quedar IGUAL al original.\n'
           'Versículo ($reference): "$verseText"\n\n'
           'Responde SOLO con este JSON, sin nada más:\n'
-          '{"alteredVerse": "el versículo con esas $level palabra(s) cambiada(s)", "intruderWords": ["las palabras nuevas que pusiste"], "explanation": "qué cambiaste y por qué"}';
+          '{"alteredVerse": "el versículo con esas $level palabra(s) cambiada(s)", "intruderWords": ["las palabras nuevas que pusiste"]}';
       try {
         final content = await _chat(
           prompt,
