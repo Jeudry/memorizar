@@ -2407,7 +2407,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   ],
                   if (store.isExerciseStepCompleted(slug)) ...[
                     const SizedBox(height: 18),
-                    Row(
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         const Icon(Icons.check_circle_outline, size: 16, color: RefColors.lime),
@@ -2455,7 +2457,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                           ),
                         ),
                       ],
-                    ),
+                    )),
                   ],
                 ],
               ),
