@@ -28,6 +28,10 @@ class LocalLlmService {
   static const Duration _generationTimeout = Duration(minutes: 3);
   static const double _quizTemperature = 1.0;
   static const int _quizMaxTokens = 900;
+
+  /// Reintentos de la generación del quiz ante un JSON malformado/estructura
+  /// inesperada del modelo on-device (cada intento re-genera con nueva semilla).
+  static const int _quizMaxAttempts = 3;
   static const int _evaluationMaxTokens = 300;
 
   /// Reintentos de la evaluación de respuesta abierta ante un JSON malformado
@@ -348,7 +352,6 @@ class LocalLlmService {
         'Los distractores deben ser opciones plausibles pero claramente incorrectas para quien '
         'comprenda bien el versículo.';
 
-    final entropy = _seedRandom.nextInt(100000);
     final isMulti = verses.length > 1;
 
     final String textBlock;
@@ -360,41 +363,67 @@ class LocalLlmService {
       }
       textBlock = 'Textos a evaluar (${verses.length}):\n${buffer.toString().trimRight()}';
       coverageInstruction =
-          'Hay ${verses.length} textos. Reparte las 3 preguntas entre ellos: dedica '
-          'preferentemente cada una de las 3 secciones (trueFalse, multipleChoice y '
-          'openQuestion) a un texto DISTINTO. Si dos o más textos se pueden combinar '
-          'naturalmente en una sola pregunta con sentido, combínalos. En conjunto, las 3 '
-          'preguntas deben cubrir TODOS los textos del grupo.';
+          'Hay ${verses.length} textos. Devuelve UN ÚNICO objeto JSON con SOLO 3 preguntas en total '
+          '(una en "trueFalse", una en "multipleChoice" y una en "openQuestion"). NO devuelvas un '
+          'array ni una lista, y NO generes un set de preguntas por cada texto. Reparte esas 3 '
+          'preguntas entre los textos: dedica preferentemente cada una a un texto DISTINTO '
+          '(combinándolos en una sola pregunta si tiene sentido), de modo que en conjunto cubran '
+          'todos los textos del grupo.';
     } else {
       textBlock = 'Texto a evaluar (${verses.first.reference}): "${verses.first.verseText}"';
       coverageInstruction =
-          'Cada una de las 3 secciones (trueFalse, multipleChoice y openQuestion) debe evaluar '
-          'aspectos, detalles o conceptos COMPLETAMENTE DIFERENTES del texto. Evita a toda costa '
-          'que pregunten sobre el mismo tema o el mismo detalle para garantizar variedad.';
+          'Devuelve UN ÚNICO objeto JSON. Cada una de las 3 secciones (trueFalse, multipleChoice y '
+          'openQuestion) debe evaluar aspectos, detalles o conceptos COMPLETAMENTE DIFERENTES del '
+          'texto. Evita a toda costa que pregunten sobre el mismo tema o el mismo detalle.';
     }
 
-    final prompt = 'Eres un generador de cuestionarios en español para una app de memorización de versículos bíblicos.\n'
-        'Semilla de variación aleatoria: $entropy\n'
-        '$textBlock\n\n'
-        'Genera exactamente:\n'
-        '1. "trueFalse": una afirmación sobre el contenido del texto con su veredicto "isTrue". '
-        'Decide al azar si la haces verdadera o falsa; si es falsa, introduce un error sutil.\n'
-        '2. "multipleChoice": una pregunta con "correct" (respuesta correcta) y "distractors" (exactamente 3 incorrectas).\n'
-        '3. "openQuestion": una pregunta abierta corta para que el usuario explique el texto con sus palabras.\n\n'
-        'IMPORTANTE: $coverageInstruction\n\n'
-        '$depthInstruction\n'
-        'Todo en español. Responde únicamente con el JSON.';
+    // El modelo on-device a veces ignora la estructura (devuelve un array, JSON
+    // truncado o malformado) en una generación concreta; re-rolamos unas pocas
+    // veces antes de propagar el error a la UI.
+    Object? lastError;
+    for (var attempt = 1; attempt <= _quizMaxAttempts; attempt++) {
+      final entropy = _seedRandom.nextInt(100000);
+      final prompt = 'Eres un generador de cuestionarios en español para una app de memorización de versículos bíblicos.\n'
+          'Semilla de variación aleatoria: $entropy\n'
+          '$textBlock\n\n'
+          'Genera exactamente:\n'
+          '1. "trueFalse": una afirmación sobre el contenido del texto con su veredicto "isTrue". '
+          'Decide al azar si la haces verdadera o falsa; si es falsa, introduce un error sutil.\n'
+          '2. "multipleChoice": una pregunta con "correct" (respuesta correcta) y "distractors" (exactamente 3 incorrectas).\n'
+          '3. "openQuestion": una pregunta abierta corta para que el usuario explique el texto con sus palabras.\n\n'
+          'IMPORTANTE: $coverageInstruction\n\n'
+          '$depthInstruction\n'
+          'Todo en español. Responde únicamente con el JSON, sin texto adicional.';
+      try {
+        final content = await _chat(
+          prompt,
+          temperature: _quizTemperature,
+          maxTokens: _quizMaxTokens,
+          jsonSchema: _quizRoundSetSchema,
+        );
+        debugPrint('=== RESPUESTA IA LOCAL QUIZ CRUDA (intento $attempt) ===\n$content\n=====================================');
+        return _parseQuizRoundSet(content);
+      } catch (e) {
+        lastError = e;
+        debugPrint('Generación de quiz falló (intento $attempt/$_quizMaxAttempts): $e');
+      }
+    }
+    throw StateError('No se pudo generar el quiz tras $_quizMaxAttempts intentos: $lastError');
+  }
 
-    final content = await _chat(
-      prompt,
-      temperature: _quizTemperature,
-      maxTokens: _quizMaxTokens,
-      jsonSchema: _quizRoundSetSchema,
-    );
-    debugPrint('=== RESPUESTA IA LOCAL QUIZ CRUDA ===\n$content\n=====================================');
-    final decoded = _decodeJsonObject(content);
-    debugPrint('=== RESPUESTA IA LOCAL DECODIFICADA ===\n$decoded\n=====================================');
-    return AiQuizRoundSet.fromJson(decoded);
+  /// Parsea la respuesta del quiz tolerando que el modelo devuelva el objeto
+  /// esperado o un array con un set por texto (en cuyo caso reparte una pregunta
+  /// por texto vía [AiQuizRoundSet.distributedFrom]).
+  AiQuizRoundSet _parseQuizRoundSet(String content) {
+    final decoded = _decodeJsonStructure(content);
+    if (decoded is List) {
+      final maps = decoded.whereType<Map<String, dynamic>>().toList();
+      return AiQuizRoundSet.distributedFrom(maps);
+    }
+    if (decoded is Map<String, dynamic>) {
+      return AiQuizRoundSet.fromJson(decoded);
+    }
+    throw const FormatException('La IA local no devolvió un objeto ni un array JSON.');
   }
 
   /// Genera un versículo alterado con palabras intrusas según el nivel de dificultad:
@@ -645,6 +674,30 @@ class LocalLlmService {
       throw StateError('La IA local devolvió una respuesta vacía.');
     }
     return content.trim();
+  }
+
+  /// Decodifica la respuesta del modelo tolerando que sea un objeto `{...}` o un
+  /// array `[...]`. Recorta a la primera estructura JSON (la que abra primero) y
+  /// sanea saltos de línea crudos. Devuelve el `Map` o `List` decodificado.
+  dynamic _decodeJsonStructure(String content) {
+    var cleaned = content.trim();
+    // Quitar envoltura markdown (```json ... ```).
+    cleaned = cleaned.replaceAll('```json', '').replaceAll('```', '').trim();
+
+    final firstObj = cleaned.indexOf('{');
+    final firstArr = cleaned.indexOf('[');
+    final bool asArray =
+        firstArr != -1 && (firstObj == -1 || firstArr < firstObj);
+    final start = asArray ? firstArr : firstObj;
+    if (start != -1) {
+      final end = cleaned.lastIndexOf(asArray ? ']' : '}');
+      if (end > start) {
+        cleaned = cleaned.substring(start, end + 1);
+      }
+    }
+
+    final sanitized = cleaned.replaceAll(RegExp(r'[\x00-\x1F]'), ' ');
+    return jsonDecode(sanitized);
   }
 
   Map<String, dynamic> _decodeJsonObject(String content) {

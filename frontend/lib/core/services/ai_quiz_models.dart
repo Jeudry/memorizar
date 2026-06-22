@@ -53,6 +53,23 @@ class AiQuizRoundSet {
       openQuestion: openQuestionRound,
     );
   }
+
+  /// Cuando el modelo on-device ignora la instrucción y devuelve un ARRAY con un
+  /// set completo por versículo, en vez de fallar, repartimos: tomamos la
+  /// pregunta V/F del 1er texto, la de opción múltiple del 2º y la abierta del
+  /// 3º (con módulo si hay menos textos). Así queda UN set de 3 preguntas que
+  /// cubre el grupo, una pregunta por item.
+  factory AiQuizRoundSet.distributedFrom(List<Map<String, dynamic>> rawSets) {
+    if (rawSets.isEmpty) {
+      throw const FormatException('La IA devolvió un array de quiz vacío.');
+    }
+    final sets = rawSets.map(AiQuizRoundSet.fromJson).toList();
+    return AiQuizRoundSet(
+      trueFalse: sets[0].trueFalse,
+      multipleChoice: sets[1 % sets.length].multipleChoice,
+      openQuestion: sets[2 % sets.length].openQuestion,
+    );
+  }
 }
 
 class AiTrueFalseRound {
