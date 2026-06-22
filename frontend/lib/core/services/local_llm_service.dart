@@ -363,7 +363,7 @@ class LocalLlmService {
     final isMulti = verses.length > 1;
 
     final String textBlock;
-    final String coverageInstruction;
+    final String formatBlock;
     if (isMulti) {
       final n = verses.length;
       final buffer = StringBuffer();
@@ -372,27 +372,34 @@ class LocalLlmService {
       }
       textBlock = 'Textos a evaluar ($n):\n${buffer.toString().trimRight()}';
 
-      // Asignación EXPLÍCITA de cada sección a un texto concreto. Con la
-      // instrucción vaga anterior ("reparte… combínalos si tiene sentido") el
-      // modelo lumpeaba los versículos y dejaba el último sin pregunta.
-      final assignment = n >= 3
-          ? 'Asignación OBLIGATORIA: "trueFalse" trata SOLO sobre el Texto 1; "multipleChoice" SOLO '
-              'sobre el Texto 2; "openQuestion" SOLO sobre el Texto 3. NO combines varios textos en '
-              'una misma pregunta.'
-          : 'Asignación OBLIGATORIA: "trueFalse" trata sobre el Texto 1; "multipleChoice" sobre el '
-              'Texto 2; "openQuestion" sobre el Texto 1 o el Texto 2.';
-      coverageInstruction =
-          'Hay $n textos. Devuelve UN ÚNICO objeto JSON con SOLO 3 preguntas en total (una en '
-          '"trueFalse", una en "multipleChoice" y una en "openQuestion"). NO devuelvas un array ni '
-          'una lista, y NO generes un set de preguntas por cada texto. $assignment '
-          'Es OBLIGATORIO que entre las 3 preguntas se cubran TODOS los $n textos; ninguno puede '
-          'quedar sin su pregunta.';
+      // Una pregunta POR TEXTO, en un array con "forText". El modelo respeta
+      // mucho mejor "esta pregunta es para ESTE texto" por elemento que "reparte
+      // 3 preguntas en un objeto" (antes lumpeaba y dejaba el último texto sin
+      // pregunta). openQuestion va al Texto 3 si existe; si hay 2 textos, al 2.
+      final openForText = n >= 3 ? 3 : n;
+      formatBlock =
+          'Genera EXACTAMENTE 3 preguntas: una "trueFalse", una "multipleChoice" y una "openQuestion". '
+          'Cada una trata SOLO sobre el texto indicado en su "forText". Asignación OBLIGATORIA: '
+          'trueFalse → Texto 1; multipleChoice → Texto 2; openQuestion → Texto $openForText. '
+          'Es OBLIGATORIO cubrir los $n textos; ninguno puede quedar sin su pregunta. '
+          'Preguntas CORTAS y simples; si el trueFalse es falso, el error debe ser CLARO (sin trampas); '
+          'multipleChoice con "correct" breve y exactamente 3 "distractors" breves.\n'
+          'Formato de salida OBLIGATORIO, EXACTAMENTE este array (sin texto adicional antes ni después):\n'
+          '{"questions":[\n'
+          '{"forText":1,"type":"trueFalse","statement":"...","isTrue":true},\n'
+          '{"forText":2,"type":"multipleChoice","question":"...","correct":"...","distractors":["...","...","..."]},\n'
+          '{"forText":$openForText,"type":"openQuestion","question":"..."}\n'
+          ']}';
     } else {
       textBlock = 'Texto a evaluar (${verses.first.reference}): "${verses.first.verseText}"';
-      coverageInstruction =
-          'Devuelve UN ÚNICO objeto JSON. Cada una de las 3 secciones (trueFalse, multipleChoice y '
-          'openQuestion) debe evaluar aspectos, detalles o conceptos COMPLETAMENTE DIFERENTES del '
-          'texto. Evita a toda costa que pregunten sobre el mismo tema o el mismo detalle.';
+      formatBlock =
+          'Genera exactamente 3 preguntas sobre el texto:\n'
+          '1. "trueFalse": afirmación CORTA y simple con su veredicto "isTrue". Si es falsa, el error debe ser CLARO y comprobable (sin trampas).\n'
+          '2. "multipleChoice": pregunta CORTA con "correct" (breve) y "distractors" (exactamente 3, breves).\n'
+          '3. "openQuestion": pregunta abierta CORTA y sencilla.\n'
+          'Cada sección debe evaluar un aspecto DIFERENTE del texto.\n'
+          'Formato de salida OBLIGATORIO: un ÚNICO objeto JSON, sin envolturas, sin "questions", sin arrays:\n'
+          '{"trueFalse":{"statement":"...","isTrue":true},"multipleChoice":{"question":"...","correct":"...","distractors":["...","...","..."]},"openQuestion":{"question":"..."}}';
     }
 
     // El modelo on-device a veces ignora la estructura (devuelve un array, JSON
@@ -404,16 +411,8 @@ class LocalLlmService {
       final prompt = 'Eres un generador de cuestionarios en español para una app de memorización de versículos bíblicos.\n'
           'Semilla de variación aleatoria: $entropy\n'
           '$textBlock\n\n'
-          'Genera exactamente:\n'
-          '1. "trueFalse": una afirmación CORTA y simple sobre el contenido del texto con su veredicto "isTrue". '
-          'Decide al azar si la haces verdadera o falsa; si es falsa, el error debe ser CLARO y comprobable con el texto (no un detalle ambiguo ni una trampa).\n'
-          '2. "multipleChoice": una pregunta CORTA con "correct" (respuesta correcta y breve) y "distractors" (exactamente 3 incorrectas y breves).\n'
-          '3. "openQuestion": una pregunta abierta CORTA y sencilla para que el usuario explique el texto con sus palabras.\n\n'
-          'IMPORTANTE: $coverageInstruction\n\n'
+          '$formatBlock\n\n'
           '$depthInstruction\n'
-          'Formato de salida OBLIGATORIO: un ÚNICO objeto JSON EXACTAMENTE con esta forma '
-          '(sin envolturas, sin la clave "questions", sin arrays/listas):\n'
-          '{"trueFalse":{"statement":"...","isTrue":true},"multipleChoice":{"question":"...","correct":"...","distractors":["...","...","..."]},"openQuestion":{"question":"..."}}\n'
           'Todo en español. Responde únicamente con el JSON, sin texto adicional.';
       try {
         final content = await _chat(
