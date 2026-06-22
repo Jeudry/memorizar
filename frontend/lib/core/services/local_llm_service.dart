@@ -403,7 +403,8 @@ class LocalLlmService {
           'trueFalse → Texto 1; multipleChoice → Texto 2; openQuestion → Texto $openForText. '
           'Es OBLIGATORIO cubrir los $n textos; ninguno puede quedar sin su pregunta. '
           'Preguntas CORTAS; si el trueFalse es falso, el error debe ser comprobable con el texto (puede ser sutil); '
-          'multipleChoice con "correct" breve y exactamente 3 "distractors" breves.\n'
+          'multipleChoice con "correct" breve y exactamente 3 "distractors" breves; '
+          'la openQuestion es UNA sola pregunta corta (NO juntes dos preguntas con "y").\n'
           'Formato de salida OBLIGATORIO, EXACTAMENTE este array (sin texto adicional antes ni después):\n'
           '{"questions":[\n'
           '{"forText":1,"type":"trueFalse","statement":"...","isTrue":true},\n'
@@ -416,7 +417,7 @@ class LocalLlmService {
           'Genera exactamente 3 preguntas sobre el texto:\n'
           '1. "trueFalse": afirmación CORTA con su veredicto "isTrue". Si es falsa, el error debe ser comprobable con el texto (puede ser sutil).\n'
           '2. "multipleChoice": pregunta CORTA con "correct" (breve) y "distractors" (exactamente 3, breves).\n'
-          '3. "openQuestion": pregunta abierta CORTA y clara que invite a explicar o reflexionar (no de respuesta obvia de una palabra).\n'
+          '3. "openQuestion": UNA sola pregunta abierta, CORTA (una frase), que se responda explicando con pocas palabras. NO juntes dos preguntas en una (nada de "explica X y reflexiona sobre Y").\n'
           'Cada sección debe evaluar un aspecto DIFERENTE del texto.\n'
           'Formato de salida OBLIGATORIO: un ÚNICO objeto JSON, sin envolturas, sin "questions", sin arrays:\n'
           '{"trueFalse":{"statement":"...","isTrue":true},"multipleChoice":{"question":"...","correct":"...","distractors":["...","...","..."]},"openQuestion":{"question":"..."}}';
