@@ -81,6 +81,27 @@ void main() {
             reason: '$o debería venir del versículo');
       }
     });
+    test('coherencia: prefiere distractores con la misma terminación que el target', () {
+      // target "creó" (verbo, termina en -ó). El pool mezcla verbos -ó con
+      // sustantivos/adjetivos; deben ganar los -ó por concordancia.
+      const text = 'En el principio creó Dios el cielo y la tierra';
+      const pool = ['formó', 'llamó', 'mostró', 'mesa', 'azul', 'silla', 'rojo', 'árbol'];
+      final accentVerbs = {'formó', 'llamó', 'mostró'};
+      // Varias semillas: en su mayoría los distractores deben terminar en -ó.
+      var oMatchTotal = 0;
+      var distractorTotal = 0;
+      for (var seed = 1; seed <= 6; seed++) {
+        final opts = completionOptions(text, 'creó', seed: seed, aiPool: pool);
+        for (final o in opts) {
+          if (sameAnswer(o, 'creó')) continue;
+          distractorTotal++;
+          if (accentVerbs.contains(o)) oMatchTotal++;
+        }
+      }
+      // La mayoría de los distractores elegidos deben ser los verbos -ó.
+      expect(oMatchTotal / distractorTotal, greaterThan(0.6),
+          reason: 'los distractores deberían concordar en terminación con "creó"');
+    });
   });
 
   group('isMicSlug', () {

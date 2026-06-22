@@ -422,7 +422,9 @@ class _IniciarScreenState extends State<IniciarScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Row(
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               _RoundStep(
@@ -447,7 +449,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
                                 onTap: () => _stepTarget(1, totalCards),
                               ),
                             ],
-                          ),
+                          )),
                           const SizedBox(height: 13),
                           SizedBox(
                             width: 190,

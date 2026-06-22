@@ -779,16 +779,15 @@ class _FogStepState extends State<_FogStep>
                 ],
               ),
             ),
-            Glass(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-              gradient: LinearGradient(
-                colors: [
-                  RefColors.violet.withValues(alpha: .22),
-                  RefColors.cyan.withValues(alpha: .10),
-                ],
-              ),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 240),
+            Expanded(
+              child: Glass(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                gradient: LinearGradient(
+                  colors: [
+                    RefColors.violet.withValues(alpha: .22),
+                    RefColors.cyan.withValues(alpha: .10),
+                  ],
+                ),
                 child: SingleChildScrollView(
                   child: _buildVersesContainer(context),
                 ),

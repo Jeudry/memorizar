@@ -1886,8 +1886,6 @@ String _cardStudyText(BuildContext context) {
 List<({int number, String text})> _currentBatchVerses(BuildContext context) {
   final store = AppScope.of(context);
   final deck = store.activeDeck;
-  // ignore: avoid_print
-  print('DATOSDEBUG batch: isBible=${deck.isBible} cards=${deck.cards.length} dailyTarget=${store.sessionDailyTarget} active=${store.activeCard.front}');
   final List<MemoryCardData> batch;
   if (deck.isBible && deck.cards.length > 1 && store.sessionDailyTarget > 1) {
     final count = store.sessionDailyTarget.clamp(1, deck.cards.length);

@@ -49,6 +49,29 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
   bool _finished = false;
   int? _wrongFlashPos; // resalta en rojo brevemente al fallar
 
+  final ScrollController _contentScroll = ScrollController();
+  final GlobalKey _activeSlotKey = GlobalKey(); // hueco activo, para auto-scroll
+
+  @override
+  void dispose() {
+    _contentScroll.dispose();
+    super.dispose();
+  }
+
+  /// Desplaza el contenido para que el hueco activo quede a la vista.
+  void _scrollToActiveBlank() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _activeSlotKey.currentContext;
+      if (!mounted || ctx == null) return;
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
   String _norm(String w) =>
       w.toLowerCase().replaceAll(RegExp(r'[^0-9a-záéíóúüñ]'), '');
 
@@ -129,6 +152,7 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
         setState(() {
           _updateOptionsForActiveBlank(text);
         });
+        _scrollToActiveBlank();
       }
     } else {
       // Práctica: sin penalización, solo feedback visual breve.
@@ -149,39 +173,40 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _PracticeHeader(
-          pass: _pass,
-          passesRequired: _passesRequired,
-          filled: _filled.length,
-          total: _blankPositions.length,
-          reference: widget.reference,
-        ),
+        _PracticeHeader(reference: widget.reference),
         const SizedBox(height: 12),
-        // El versículo con huecos.
-        Glass(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 26),
-          gradient: LinearGradient(
-            colors: [
-              RefColors.violet.withValues(alpha: .26),
-              RefColors.cyan.withValues(alpha: .20),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          child: Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 6,
-            runSpacing: 10,
-            children: [
-              for (var i = 0; i < _words.length; i++)
-                _WordSlot(
-                  word: _words[i],
-                  isBlank: _blankPositions.contains(i),
-                  filled: _filled[i],
-                  isActive: i == activeBlank,
-                  isWrong: i == _wrongFlashPos,
-                ),
-            ],
+        // El versículo con huecos: con scroll PROPIO y altura acotada para que
+        // un texto gigante no empuje el cuadro de opciones fuera de pantalla.
+        Expanded(
+          child: Glass(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
+            gradient: LinearGradient(
+              colors: [
+                RefColors.violet.withValues(alpha: .26),
+                RefColors.cyan.withValues(alpha: .20),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            child: SingleChildScrollView(
+              controller: _contentScroll,
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 6,
+                runSpacing: 10,
+                children: [
+                  for (var i = 0; i < _words.length; i++)
+                    _WordSlot(
+                      key: i == activeBlank ? _activeSlotKey : null,
+                      word: _words[i],
+                      isBlank: _blankPositions.contains(i),
+                      filled: _filled[i],
+                      isActive: i == activeBlank,
+                      isWrong: i == _wrongFlashPos,
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 14),
@@ -275,65 +300,20 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
 }
 
 class _PracticeHeader extends StatelessWidget {
-  final int pass;
-  final int passesRequired;
-  final int filled;
-  final int total;
   final String reference;
 
-  const _PracticeHeader({
-    required this.pass,
-    required this.passesRequired,
-    required this.filled,
-    required this.total,
-    required this.reference,
-  });
+  const _PracticeHeader({required this.reference});
 
   @override
   Widget build(BuildContext context) {
     return Glass(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       color: RefColors.glassStrong,
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  reference,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Sin niveles · sin intentos · complétalo $passesRequired veces',
-                  style:
-                      const TextStyle(color: RefColors.muted, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: RefColors.violet.withValues(alpha: .18),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: RefColors.violet.withValues(alpha: .5)),
-            ),
-            child: Text(
-              'Vuelta ${pass + 1}/$passesRequired · $filled/$total',
-              style: const TextStyle(
-                color: RefColors.violet,
-                fontSize: 11,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
+      child: Text(
+        reference,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
       ),
     );
   }
@@ -347,6 +327,7 @@ class _WordSlot extends StatelessWidget {
   final bool isWrong;
 
   const _WordSlot({
+    super.key,
     required this.word,
     required this.isBlank,
     required this.filled,

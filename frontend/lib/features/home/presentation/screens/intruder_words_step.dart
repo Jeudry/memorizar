@@ -36,10 +36,13 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
 
   IntruderVerseSet? _intruderSet;
   List<String> _alteredWords = [];
-  final Set<int> _selectedIndices = {};
+  final Set<int> _foundIntruders = {}; // índices ya cazados (correctos)
+  Set<String> _intruderNormSet = {}; // normas de las intrusas (cache)
+  int? _wrongFlashIndex; // índice marcado mal, para el flash rojo
 
   int _lives = 3;
   int _secondsLeft = 30;
+  static const int _timeBonusSeconds = 5; // segundos ganados por intrusa correcta
   Timer? _countdownTimer;
   Timer? _loadingTextTimer;
   bool _success = false;
@@ -97,24 +100,30 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
       await llm.initLlm();
       if (!mounted) return;
 
-      final set = await llm.generateIntruderVerse(
-        reference: widget.card.front,
-        verseText: widget.card.back,
-        level: _level,
-      );
+      final set = await (llm.takePrefetchedIntruder(
+            reference: widget.card.front,
+            level: _level,
+          ) ??
+          llm.generateIntruderVerse(
+            reference: widget.card.front,
+            verseText: widget.card.back,
+            level: _level,
+          ));
 
       if (!mounted) return;
 
       setState(() {
         _intruderSet = set;
         _alteredWords = _splitWords(set.alteredVerse);
-        _selectedIndices.clear();
+        _intruderNormSet = set.intruderWords.map(_normalize).toSet();
+        _foundIntruders.clear();
+        _wrongFlashIndex = null;
         _lives = _level == 1 ? 3 : (_level == 2 ? 2 : 1);
-        _secondsLeft = 30;
+        _secondsLeft = _level == 2 ? 40 : 30;
         _phase = _IntruderPhase.playing;
       });
 
-      if (_level == 3) {
+      if (_isTimedLevel) {
         _startTimer();
       }
     } catch (e) {
@@ -161,63 +170,46 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
     return word.toLowerCase().replaceAll(RegExp(r'[^a-záéíóúüñ0-9]'), '');
   }
 
-  void _toggleWordSelection(int index) {
+  bool get _isTimedLevel => _level >= 2;
+
+  bool _isIntruderAt(int index) =>
+      _intruderNormSet.contains(_normalize(_alteredWords[index]));
+
+  /// Validación INSTANTÁNEA por palabra: al tocar, si es intrusa la marca y (en
+  /// niveles cronometrados) suma tiempo; si no, resta una vida. Al cazar todas,
+  /// gana — sin esperar a un botón "Comprobar".
+  void _onWordTap(int index) {
     if (_phase != _IntruderPhase.playing) return;
-    HapticFeedback.lightImpact();
-    setState(() {
-      if (_selectedIndices.contains(index)) {
-        _selectedIndices.remove(index);
-      } else {
-        if (_selectedIndices.length < _level) {
-          _selectedIndices.add(index);
-        }
+    if (_foundIntruders.contains(index)) return;
+
+    if (_isIntruderAt(index)) {
+      HapticFeedback.lightImpact();
+      setState(() {
+        _foundIntruders.add(index);
+        if (_isTimedLevel) _secondsLeft += _timeBonusSeconds;
+      });
+      if (_foundIntruders.length >= _level) {
+        _countdownTimer?.cancel();
+        HapticFeedback.mediumImpact();
+        setState(() {
+          _success = true;
+          _phase = _IntruderPhase.result;
+        });
       }
-    });
-  }
-
-  void _checkAnswers() {
-    if (_intruderSet == null) return;
-    final normalizedIntruders =
-        _intruderSet!.intruderWords.map(_normalize).toSet();
-
-    final List<int> correctIntruderIndices = [];
-    for (var i = 0; i < _alteredWords.length; i++) {
-      if (normalizedIntruders.contains(_normalize(_alteredWords[i]))) {
-        correctIntruderIndices.add(i);
-      }
-    }
-
-    final isCorrect = _selectedIndices.length == correctIntruderIndices.length &&
-        _selectedIndices.every((idx) => correctIntruderIndices.contains(idx));
-
-    if (isCorrect) {
-      _countdownTimer?.cancel();
+    } else {
       HapticFeedback.mediumImpact();
       setState(() {
-        _success = true;
-        _phase = _IntruderPhase.result;
-      });
-    } else {
-      HapticFeedback.vibrate();
-      setState(() {
         _lives--;
-        _selectedIndices.clear();
+        _wrongFlashIndex = index;
       });
-
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && _wrongFlashIndex == index) {
+          setState(() => _wrongFlashIndex = null);
+        }
+      });
       if (_lives <= 0) {
         _countdownTimer?.cancel();
         _triggerFailure(reason: 'Te has quedado sin intentos.');
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Incorrecto. Te quedan $_lives ${_lives == 1 ? 'intento' : 'intentos'}.',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            backgroundColor: RefColors.urgent,
-            duration: const Duration(seconds: 2),
-          ),
-        );
       }
     }
   }
@@ -443,7 +435,7 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
             title: 'Nivel 2: Intermedio',
             desc: 'La IA cambia exactamente 2 palabras. Las alteraciones son muy parecidas al texto original.',
             livesText: '2 intentos',
-            timeText: 'Sin límite de tiempo',
+            timeText: 'Contrarreloj · +${_timeBonusSeconds}s por acierto',
           ),
           const SizedBox(height: 14),
           _buildLevelCard(
@@ -451,7 +443,7 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
             title: 'Nivel 3: Experto',
             desc: 'La IA cambia exactamente 3 palabras sutiles (conectores o gramática). Solo una vida y tiempo límite.',
             livesText: '1 intento',
-            timeText: 'Límite: 30 segundos',
+            timeText: 'Contrarreloj · +${_timeBonusSeconds}s por acierto',
           ),
           const SizedBox(height: 32),
           Cta(
@@ -530,7 +522,7 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                     ),
                 ],
               ),
-              if (_level == 3)
+              if (_isTimedLevel)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
@@ -587,10 +579,13 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Center(
+                      Center(
                         child: Text(
-                          'Selecciona las palabras falsas:',
-                          style: TextStyle(
+                          _isTimedLevel
+                              ? 'Toca las palabras falsas · cada acierto suma +${_timeBonusSeconds}s'
+                              : 'Toca las palabras falsas:',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                             color: RefColors.cyan,
@@ -604,9 +599,25 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                         runSpacing: 10,
                         children: List.generate(_alteredWords.length, (idx) {
                           final word = _alteredWords[idx];
-                          final isSelected = _selectedIndices.contains(idx);
+                          final isFound = _foundIntruders.contains(idx);
+                          final isWrong = _wrongFlashIndex == idx;
+                          final Color borderColor = isFound
+                              ? RefColors.lime
+                              : isWrong
+                                  ? RefColors.urgent
+                                  : RefColors.border.withValues(alpha: .3);
+                          final Color fillColor = isFound
+                              ? RefColors.lime.withValues(alpha: .22)
+                              : isWrong
+                                  ? RefColors.urgent.withValues(alpha: .22)
+                                  : Colors.transparent;
+                          final Color textColor = isFound
+                              ? RefColors.lime
+                              : isWrong
+                                  ? RefColors.urgent
+                                  : RefColors.ink;
                           return InkWell(
-                            onTap: () => _toggleWordSelection(idx),
+                            onTap: isFound ? null : () => _onWordTap(idx),
                             borderRadius: BorderRadius.circular(10),
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 150),
@@ -615,14 +626,10 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                                 vertical: 6,
                               ),
                               decoration: BoxDecoration(
-                                color: isSelected
-                                    ? RefColors.cyan.withValues(alpha: .25)
-                                    : Colors.transparent,
+                                color: fillColor,
                                 border: Border.all(
-                                  color: isSelected
-                                      ? RefColors.cyan
-                                      : RefColors.border.withValues(alpha: .3),
-                                  width: isSelected ? 1.5 : 1,
+                                  color: borderColor,
+                                  width: isFound || isWrong ? 1.5 : 1,
                                 ),
                                 borderRadius: BorderRadius.circular(10),
                               ),
@@ -630,12 +637,11 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                                 word,
                                 style: TextStyle(
                                   fontSize: 15,
-                                  fontWeight: isSelected
+                                  fontWeight: isFound || isWrong
                                       ? FontWeight.w900
                                       : FontWeight.w500,
-                                  color: isSelected
-                                      ? RefColors.cyan
-                                      : RefColors.ink,
+                                  color: textColor,
+                                  decoration: isFound ? TextDecoration.lineThrough : null,
                                 ),
                               ),
                             ),
@@ -648,11 +654,16 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
               ),
             ),
           ),
-          const SizedBox(height: 20),
-          Cta(
-            'Comprobar (${_selectedIndices.length}/$_level)',
-            onTap: _selectedIndices.length == _level ? _checkAnswers : null,
-            disabled: _selectedIndices.length != _level,
+          const SizedBox(height: 16),
+          Center(
+            child: Text(
+              'Cazadas: ${_foundIntruders.length} / $_level',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: RefColors.muted,
+              ),
+            ),
           ),
         ],
       ),
@@ -662,9 +673,11 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
   Widget _buildResult() {
     if (_success) {
       final originalWords = _splitWords(widget.card.back);
-      final alteredWordsNorm = _alteredWords.map(_normalize).toSet();
       final intruderNorm =
           _intruderSet?.intruderWords.map(_normalize).toSet() ?? {};
+      // Alineación palabra a palabra entre original y alterado (mismo nº de
+      // palabras porque el ejercicio sólo reemplaza, no agrega/quita).
+      final aligned = originalWords.length == _alteredWords.length;
 
       return SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -713,92 +726,65 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'TEXTO ORIGINAL',
+                    'CORRECCIÓN',
                     style: TextStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.bold,
                       color: RefColors.lime,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 14),
+                  // Un solo texto: cada palabra falsa va tachada y encima, en
+                  // verde, la palabra verdadera (alineadas por la base, así el
+                  // versículo se lee corrido abajo con las correcciones arriba).
                   Wrap(
-                    spacing: 4,
-                    runSpacing: 4,
-                    children: originalWords.map((w) {
-                      final hasBeenReplaced =
-                          !alteredWordsNorm.contains(_normalize(w));
-                      return Text(
-                        w,
-                        style: TextStyle(
-                          fontSize: 14.5,
-                          fontWeight: hasBeenReplaced
-                              ? FontWeight.w900
-                              : FontWeight.w500,
-                          color: hasBeenReplaced
-                              ? Colors.greenAccent
-                              : RefColors.ink,
-                        ),
+                    spacing: 6,
+                    runSpacing: 12,
+                    crossAxisAlignment: WrapCrossAlignment.end,
+                    children: List.generate(_alteredWords.length, (i) {
+                      final altered = _alteredWords[i];
+                      final isIntruder = intruderNorm.contains(_normalize(altered));
+                      if (!isIntruder) {
+                        return Text(
+                          altered,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                            color: RefColors.ink,
+                          ),
+                        );
+                      }
+                      final correct = aligned ? originalWords[i] : '';
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (correct.isNotEmpty)
+                            Text(
+                              correct,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                height: 1.1,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.greenAccent,
+                              ),
+                            ),
+                          Text(
+                            altered,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: RefColors.pink,
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                        ],
                       );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 18),
-                  const Text(
-                    'TEXTO CON INTRUSOS DETECTADOS',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.bold,
-                      color: RefColors.pink,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 4,
-                    runSpacing: 4,
-                    children: _alteredWords.map((w) {
-                      final isIntruder = intruderNorm.contains(_normalize(w));
-                      return Text(
-                        w,
-                        style: TextStyle(
-                          fontSize: 14.5,
-                          fontWeight: isIntruder
-                              ? FontWeight.w900
-                              : FontWeight.w500,
-                          decoration: isIntruder
-                              ? TextDecoration.lineThrough
-                              : null,
-                          color: isIntruder ? RefColors.pink : RefColors.ink,
-                        ),
-                      );
-                    }).toList(),
+                    }),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-            if (_intruderSet?.explanation != null) ...[
-              const Padding(
-                padding: EdgeInsets.only(left: 4, bottom: 6),
-                child: Text(
-                  'EXPLICACIÓN DE LA IA',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.bold,
-                    color: RefColors.cyan,
-                  ),
-                ),
-              ),
-              Glass(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  _intruderSet!.explanation,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    height: 1.4,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
-            ],
+            const SizedBox(height: 32),
             Cta(
               'Continuar',
               onTap: widget.onFinished,

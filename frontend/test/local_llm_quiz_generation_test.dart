@@ -37,8 +37,7 @@ void main() {
       const verse = 'Todo lo puedo en Cristo que me fortalece.';
 
       final first = await service.generateQuizRoundSet(
-        reference: reference,
-        verseText: verse,
+        verses: [(reference: reference, verseText: verse)],
       );
 
       expect(first.trueFalse.statement, isNotEmpty);
@@ -52,8 +51,7 @@ void main() {
       expect(first.openQuestion.question, isNotEmpty);
 
       final second = await service.generateQuizRoundSet(
-        reference: reference,
-        verseText: verse,
+        verses: [(reference: reference, verseText: verse)],
       );
 
       final identicalSets = first.trueFalse.statement ==

@@ -16,7 +16,11 @@ class _QuizRound {
   final MemoryCardData target;
   final _QuizQuestionType type;
   final List<MemoryCardData> options;
-  
+
+  /// Referencia(s) del versículo en que se basa esta pregunta (ej. "Génesis 1:1"),
+  /// para mostrarla en la UI de la ronda.
+  final String sourceReference;
+
   // True/False extra fields
   final String? trueFalseStatement;
   final bool? isStatementTrue;
@@ -36,6 +40,7 @@ class _QuizRound {
     required this.target,
     required this.type,
     required this.options,
+    this.sourceReference = '',
     this.trueFalseStatement,
     this.isStatementTrue,
     this.openQuestionPrompt,
@@ -54,7 +59,48 @@ class _QuizRound {
   }
 }
 
+/// Quiz ya generándose en segundo plano, listo para consumir al llegar al paso.
+class _PrefetchedQuiz {
+  final List<MemoryCardData> group; // grupo ya barajado
+  final Future<AiQuizRoundSet> rounds;
+  _PrefetchedQuiz(this.group, this.rounds);
+}
+
+/// Caché de pre-generación del quiz: dispara la generación ANTES de que el
+/// usuario llegue al paso (mientras está en el paso previo), para no esperar los
+/// ~20s. La inferencia está serializada en LocalLlmService, así que esto no
+/// choca con otra generación; sólo se prefetcha el quiz inmediatamente siguiente.
+class _QuizPrefetch {
+  static final Map<String, _PrefetchedQuiz> _cache = {};
+
+  static String _key(List<MemoryCardData> group) => group.map((c) => c.id).join('|');
+
+  /// Arranca la generación del grupo si aún no está en caché (idempotente).
+  static void ensure(List<MemoryCardData> group) {
+    if (group.isEmpty) return;
+    final key = _key(group);
+    if (_cache.containsKey(key)) return;
+    final shuffled = [...group]..shuffle();
+    final future = LocalLlmService.instance.generateQuizRoundSet(
+      verses: [for (final c in shuffled) (reference: c.front, verseText: c.back)],
+    );
+    // Si nadie lo consume (el usuario omite/sale), evitar "unhandled exception"
+    // y limpiar la entrada fallida para poder reintentar luego.
+    unawaited(future.then((_) {}, onError: (_) => _cache.remove(key)));
+    _cache[key] = _PrefetchedQuiz(shuffled, future);
+  }
+
+  /// Toma (y remueve) el quiz pre-generado para [group], o null si no hay.
+  static _PrefetchedQuiz? take(List<MemoryCardData> group) => _cache.remove(_key(group));
+}
+
 class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
+  /// El quiz con IA agrupa los items elegidos de a [_quizGroupSize] por vuelta:
+  /// cada vuelta genera 3 preguntas (V/F, opción múltiple, abierta) que se
+  /// reparten entre los items del grupo (una por item cuando hay 3, combinadas
+  /// cuando tiene sentido). Ej.: 3 items → 1 vuelta; 4 items → 2 vueltas (3 + 1).
+  static const int _quizGroupSize = 3;
+
   int _subCardIndex = 0;
   bool _checked = false;
   int _fragmentVisibleWords = 8;
@@ -828,10 +874,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       setState(() => _aiDistractorLoading = true);
       try {
         if (!llm.isReady) await llm.initLlm();
-        final pool = await llm.generateCompletionDistractors(
-          reference: card.front,
-          verseText: card.back,
-        );
+        final pool = await (llm.takePrefetchedDistractors(card.front) ??
+            llm.generateCompletionDistractors(
+              reference: card.front,
+              verseText: card.back,
+            ));
         if (!mounted || _aiDistractorCardId != card.id) return;
         setState(() {
           _aiDistractorPool = pool;
@@ -939,12 +986,56 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (!correct) _scheduleFlashRebuild();
   }
 
-  void _ensureQuizRounds(MemoryDeckData deck, MemoryCardData card) {
-    final alreadyHandledCard = _quizCardId == card.id &&
+  /// Clave estable de un grupo de items para deduplicar la generación del quiz.
+  String _quizGroupKey(List<MemoryCardData> group) =>
+      group.map((c) => c.id).join('|');
+
+  /// Items que cubre la vuelta actual del quiz: hasta [_quizGroupSize] tomados
+  /// desde [_subCardIndex] dentro del batch de la sesión.
+  List<MemoryCardData> _quizGroupCards(List<MemoryCardData> batch) {
+    if (batch.isEmpty) return const [];
+    final start = _subCardIndex.clamp(0, batch.length - 1);
+    final end = (start + _quizGroupSize).clamp(0, batch.length);
+    return batch.sublist(start, end);
+  }
+
+  /// Omite por completo un ejercicio de IA (quiz / palabras intrusas): a
+  /// diferencia del omitir de F2, NO lo transforma en otro ejercicio — lo salta
+  /// y avanza al siguiente paso (o cierra la card si era el último).
+  void _omitAiStep(BuildContext context, AppStore store, String slug) {
+    ActiveMediaRegistry.stopAll();
+    _subCardIndex = 0;
+    _completeStepAndNavigate(context, store, slug);
+  }
+
+  /// Al aprobar una vuelta: si quedan items en el batch, avanza al siguiente
+  /// grupo de [_quizGroupSize] y deja que el próximo build regenere las
+  /// preguntas; si ya no quedan, cierra el step (o la card de sesión si es el
+  /// último step).
+  void _finishQuizGroupOrAdvance(BuildContext context, AppStore store) {
+    final batch = _sessionBatchCards(context);
+    if (_subCardIndex + _quizGroupSize < batch.length) {
+      _subCardIndex += _quizGroupSize;
+      _resetQuiz(); // limpia _quizCardId/rounds/score → el build regenera el grupo
+      return;
+    }
+    _subCardIndex = 0;
+    final steps = _sessionFlowSteps(store);
+    final isLastStep = steps.isNotEmpty && steps.last.slug == widget.data.slug;
+    if (isLastStep) {
+      _completeSessionCard(context, store, correct: true);
+    } else {
+      _completeStepAndNavigate(context, store, widget.data.slug);
+    }
+  }
+
+  void _ensureQuizRounds(MemoryDeckData deck, List<MemoryCardData> group) {
+    final groupKey = _quizGroupKey(group);
+    final alreadyHandledGroup = _quizCardId == groupKey &&
         (_quizRounds.isNotEmpty || _isAiQuizLoading || _aiQuizError != null);
-    if (alreadyHandledCard) return;
+    if (alreadyHandledGroup) return;
     // Se invoca durante build: mutar campos sin setState; el async sí lo usa.
-    _quizCardId = card.id;
+    _quizCardId = groupKey;
     _quizRoundIndex = 0;
     _quizScore = 0;
     _openQuestionController.clear();
@@ -952,13 +1043,16 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     _isAiQuizLoading = true;
     _aiQuizError = null;
     _aiQuizLoadingText = 'Despertando la IA local…';
-    unawaited(_loadAiQuizRounds(card));
+    unawaited(_loadAiQuizRounds(group));
   }
 
   Future<void> _loadAiQuizRounds(
-    MemoryCardData card,
+    List<MemoryCardData> group,
   ) async {
     final llm = LocalLlmService.instance;
+    final label = group.length == 1
+        ? group.first.front
+        : '${group.length} versículos';
     void onEngineStatus() {
       if (!mounted || !_isAiQuizLoading) return;
       final status = llm.statusNotifier.value;
@@ -967,22 +1061,34 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       }
     }
 
+    // Si el quiz ya se pre-generó en segundo plano (prefetch), consumirlo: el
+    // orden barajado y la generación vienen de ahí, así que es instantáneo si ya
+    // terminó. Si no, barajamos y generamos aquí. El barajado se hace fuera del
+    // build para no cambiar la clave del grupo (evita regeneraciones infinitas).
+    final prefetched = _QuizPrefetch.take(group);
+    final quizGroup = prefetched?.group ?? ([...group]..shuffle());
     llm.statusNotifier.addListener(onEngineStatus);
     try {
+      debugPrint('=== QUIZ GROUP (${quizGroup.length} versículos'
+          '${prefetched != null ? ", PREFETCH" : ", orden aleatorio"}): '
+          '${quizGroup.map((c) => c.front).join(" | ")} ===');
       await llm.initLlm();
       if (!mounted) return;
       setState(() {
         _aiQuizLoadingText = llm.isMockFallback
-            ? 'Cargando preguntas simuladas sobre ${card.front}…'
-            : 'Gemma 4 está creando preguntas únicas sobre ${card.front}…';
+            ? 'Cargando preguntas simuladas sobre $label…'
+            : 'Gemma 4 está creando preguntas únicas sobre $label…';
       });
-      final roundSet = await llm.generateQuizRoundSet(
-        reference: card.front,
-        verseText: card.back,
-      );
+      final roundSet = await (prefetched?.rounds ??
+          llm.generateQuizRoundSet(
+            verses: [
+              for (final card in quizGroup)
+                (reference: card.front, verseText: card.back),
+            ],
+          ));
       if (!mounted) return;
       setState(() {
-        _quizRounds = _roundsFromAi(card, roundSet);
+        _quizRounds = _roundsFromAi(quizGroup, roundSet);
         _isAiQuizLoading = false;
       });
     } catch (e) {
@@ -999,46 +1105,59 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     }
   }
 
-  List<_QuizRound> _roundsFromAi(MemoryCardData card, AiQuizRoundSet set) {
+  List<_QuizRound> _roundsFromAi(List<MemoryCardData> group, AiQuizRoundSet set) {
+    // Reparte cada una de las 3 rondas a un item distinto del grupo cuando hay
+    // suficientes (3 items → V/F al 1º, opción múltiple al 2º, abierta al 3º).
+    // Con menos items, varias rondas comparten item sin romper nada. El target
+    // sólo alimenta ícono/atribución; el contenido lo crea la IA cubriendo el
+    // grupo completo.
+    MemoryCardData itemFor(int index) => group[index % group.length];
+    final tfCard = itemFor(0);
+    final mcCard = itemFor(1);
+    final openCard = itemFor(2);
+
     final trueFalseRound = _QuizRound(
-      target: card,
+      target: tfCard,
       type: _QuizQuestionType.trueFalse,
       options: const [],
+      sourceReference: tfCard.front,
       trueFalseStatement: set.trueFalse.statement,
       isStatementTrue: set.trueFalse.isTrue,
     );
 
     final multipleChoice = set.multipleChoice;
     final correctCard = MemoryCardData(
-      id: 'quiz-ai-mc-${card.id}',
+      id: 'quiz-ai-mc-${mcCard.id}',
       front: multipleChoice.question,
       back: multipleChoice.correct,
-      source: card.source,
-      icon: card.icon,
+      source: mcCard.source,
+      icon: mcCard.icon,
     );
     final optionCards = <MemoryCardData>[
       correctCard,
       for (var idx = 0; idx < multipleChoice.distractors.length; idx++)
         MemoryCardData(
-          id: 'quiz-ai-mc-distractor-$idx-${card.id}',
+          id: 'quiz-ai-mc-distractor-$idx-${mcCard.id}',
           front: multipleChoice.question,
           back: multipleChoice.distractors[idx],
           source: LocalLlmService.instance.isMockFallback
               ? 'IA Simulada (Simulator)'
               : 'IA local',
-          icon: card.icon,
+          icon: mcCard.icon,
         ),
     ]..shuffle();
     final multipleChoiceRound = _QuizRound(
       target: correctCard,
       type: _QuizQuestionType.frontToBack,
       options: optionCards,
+      sourceReference: mcCard.front,
     );
 
     final openRound = _QuizRound(
-      target: card,
+      target: openCard,
       type: _QuizQuestionType.openQuestion,
       options: const [],
+      sourceReference: openCard.front,
       openQuestionPrompt: set.openQuestion.question,
     );
 
@@ -1076,13 +1195,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         Future.delayed(const Duration(milliseconds: 1500), () {
           if (!mounted) return;
           if (_quizFinished && _quizPassed) {
-            final steps = _sessionFlowSteps(store);
-            final isLastStep = steps.isNotEmpty && steps.last.slug == widget.data.slug;
-            if (isLastStep) {
-              _completeSessionCard(context, store, correct: true);
-            } else {
-              _completeStepAndNavigate(context, store, widget.data.slug);
-            }
+            _finishQuizGroupOrAdvance(context, store);
           }
         });
       }
@@ -1143,13 +1256,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               Future.delayed(const Duration(milliseconds: 1500), () {
                 if (!mounted) return;
                 if (_quizFinished && _quizPassed) {
-                  final steps = _sessionFlowSteps(store);
-                  final isLastStep = steps.isNotEmpty && steps.last.slug == widget.data.slug;
-                  if (isLastStep) {
-                    _completeSessionCard(context, store, correct: true);
-                  } else {
-                    _completeStepAndNavigate(context, store, widget.data.slug);
-                  }
+                  _finishQuizGroupOrAdvance(context, store);
                 }
               });
             }
@@ -1301,10 +1408,25 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       setState(() {
         _isEvaluatingOpenQuestion = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'La IA local no pudo evaluar tu respuesta. Inténtalo de nuevo.',
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          // Se queda hasta que el usuario lo cierre con la X.
+          duration: const Duration(days: 1),
+          showCloseIcon: true,
+          backgroundColor: RefColors.glassStrong,
+          shape: RoundedRectangleBorder(
+            side: const BorderSide(color: RefColors.urgent),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          content: const Text(
+            'La IA local no pudo evaluar tu respuesta esta vez. Vuelve a enviarla o usa "Omitir".',
+            style: TextStyle(
+              color: RefColors.urgent,
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+            ),
           ),
         ),
       );
@@ -1324,9 +1446,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       }
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    final feedbackMessenger = ScaffoldMessenger.of(context);
+    feedbackMessenger.hideCurrentSnackBar();
+    feedbackMessenger.showSnackBar(
       SnackBar(
-        duration: const Duration(seconds: 4),
+        // Más tiempo y con botón de cerrar para poder leer el veredicto.
+        duration: const Duration(seconds: 8),
+        showCloseIcon: true,
         backgroundColor: RefColors.glassStrong,
         shape: RoundedRectangleBorder(
           side: BorderSide(color: passes ? RefColors.lime : RefColors.urgent),
@@ -1358,13 +1484,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         Future.delayed(const Duration(milliseconds: 4000), () {
           if (!mounted) return;
           if (_quizFinished && _quizPassed) {
-            final steps = _sessionFlowSteps(store);
-            final isLastStep = steps.isNotEmpty && steps.last.slug == widget.data.slug;
-            if (isLastStep) {
-              _completeSessionCard(context, store, correct: true);
-            } else {
-              _completeStepAndNavigate(context, store, widget.data.slug);
-            }
+            _finishQuizGroupOrAdvance(context, store);
           }
         });
       }
@@ -1464,6 +1584,27 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     final stepIndex = steps.indexWhere((step) => step.slug == slug);
     final step = stepIndex < 0 ? _flowStepNumber(slug) : stepIndex + 1;
     final totalSteps = steps.length;
+
+    // Pre-generar en segundo plano la IA del paso SIGUIENTE, para que al llegar
+    // ya esté lista (sin esperar ~20s). Sólo el paso inmediato, para no bloquear
+    // otra generación (la inferencia está serializada). Cubre quiz, distractores
+    // de "elige la palabra" y el ejercicio de palabras intrusas.
+    final nextSlug = _nextFlowSlug(store, slug);
+    final llmPrefetch = LocalLlmService.instance;
+    if (slug != '09-quiz' && nextSlug == '09-quiz') {
+      _QuizPrefetch.ensure(_quizGroupCards(batch));
+    }
+    if (_isCompletionSlug(nextSlug)) {
+      llmPrefetch.prefetchCompletionDistractors(reference: card.front, verseText: card.back);
+    }
+    if (nextSlug.startsWith('18-palabras-intrusas')) {
+      final level = nextSlug.endsWith('-n2') ? 2 : (nextSlug.endsWith('-n3') ? 3 : 1);
+      llmPrefetch.prefetchIntruderVerse(
+        reference: card.front,
+        verseText: card.back,
+        level: level,
+      );
+    }
     if (slug == '02-lectura-frag' && store.isExerciseStepCompleted(slug)) {
       _fragmentVisibleWords = _studyWords(card.back).length;
     }
@@ -1526,7 +1667,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             (slug != '01-escuchar' &&
             !_isFirstLetterSlug(slug) &&
             !_isFogSlug(slug) &&
-            !_isFinalVoiceSlug(slug)) ||
+            !_isFinalVoiceSlug(slug) &&
+            !slug.startsWith('18-palabras-intrusas') &&
+            slug != _chooseWordPracticeSlug) ||
             _omitOverride.contains(slug),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1579,7 +1722,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               final isScrollable = (slug != '01-escuchar' &&
                   !_isFirstLetterSlug(slug) &&
                   !_isFogSlug(slug) &&
-                  !_isFinalVoiceSlug(slug)) ||
+                  !_isFinalVoiceSlug(slug) &&
+                  !slug.startsWith('18-palabras-intrusas') &&
+                  slug != _chooseWordPracticeSlug) ||
                   _omitOverride.contains(slug);
 
               final isMyTurnActive = isCoop && coopState != null && (
@@ -2093,7 +2238,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     }
 
     if (slug == '09-quiz') {
-      _ensureQuizRounds(deck, card);
+      _ensureQuizRounds(deck, _quizGroupCards(_sessionBatchCards(context)));
       if (_isAiQuizLoading) {
         return Center(
           child: Glass(
@@ -2277,7 +2422,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   ],
                   if (store.isExerciseStepCompleted(slug)) ...[
                     const SizedBox(height: 18),
-                    Row(
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         const Icon(Icons.check_circle_outline, size: 16, color: RefColors.lime),
@@ -2325,7 +2472,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                           ),
                         ),
                       ],
-                    ),
+                    )),
                   ],
                 ],
               ),
@@ -2431,7 +2578,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Mantén presionado un bloque para arrastrarlo a su lugar, o toca dos bloques para intercambiar sus posiciones.',
+                    'Mantén presionado un bloque para arrastrarlo a su lugar.',
                     style: TextStyle(
                       color: RefColors.dim,
                       fontSize: 11,
@@ -2814,6 +2961,26 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             ],
           ),
         ),
+        if (round.sourceReference.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.menu_book_rounded, size: 13, color: RefColors.muted),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    'Basada en ${round.sourceReference}',
+                    style: const TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         _ExerciseQuestionBlock(contextLabel: contextLabel, question: question),
         const SizedBox(height: 14),
         if (isTrueFalse) ...[
@@ -3402,7 +3569,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     String slug,
   ) {
     if (slug.startsWith('18-palabras-intrusas')) {
-      return const SizedBox.shrink();
+      // El ejercicio de IA "señala el intruso" maneja su avance internamente;
+      // aquí sólo ofrecemos saltarlo (sin reemplazo).
+      return Align(
+        alignment: Alignment.centerRight,
+        child: SizedBox(
+          width: 140,
+          child: GhostButton(
+            'Omitir',
+            onTap: () => _omitAiStep(context, store, slug),
+          ),
+        ),
+      );
     }
     final isOmitted = _omitOverride.contains(slug);
     // F2: el reemplazo por omitir trae su propio botón de continuar solo para la fase Preparar.
@@ -3530,7 +3708,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     }
 
     if (slug != '05-bloques') {
-      return _ActionCta(
+      final cta = _ActionCta(
         label: _footerLabel(slug, card, checked: _checked, completed: completed),
         enabled: _footerEnabled(
           slug,
@@ -3567,16 +3745,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               _showQuizFailedDialog();
               return;
             }
-            final batch = _sessionBatchCards(context);
-            if (_subCardIndex + 1 < batch.length) {
-              setState(() {
-                _subCardIndex++;
-                _resetSubCardState();
-              });
-              return;
-            }
-            _subCardIndex = 0;
-            _completeStepAndNavigate(context, store, slug);
+            _finishQuizGroupOrAdvance(context, store);
             return;
           }
 
@@ -3607,6 +3776,23 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           );
         },
       );
+      if (slug == '09-quiz') {
+        // El quiz con IA es omitible: se salta el paso sin reemplazarlo.
+        return Row(
+          children: [
+            SizedBox(
+              width: 118,
+              child: GhostButton(
+                'Omitir',
+                onTap: () => _omitAiStep(context, store, slug),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(child: cta),
+          ],
+        );
+      }
+      return cta;
     }
 
     return Row(

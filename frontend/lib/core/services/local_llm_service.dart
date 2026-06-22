@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -26,9 +27,42 @@ class LocalLlmService {
   static const String _legacyModelFileName = 'gemma-3-4b-it-qat-Q4_0.gguf';
   static const int _minValidModelBytes = 3000 * 1024 * 1024; // 3.02 GB
   static const Duration _generationTimeout = Duration(minutes: 3);
-  static const double _quizTemperature = 1.0;
+  // 0.9: prioriza la variedad (con la rotación de estilo/enfoque) manteniéndose
+  // por debajo del 1.0 que inventaba hechos y degeneraba.
+  static const double _quizTemperature = 0.9;
   static const int _quizMaxTokens = 900;
+
+  /// Estilo del cuestionario, elegido al azar por generación para que no se
+  /// sienta repetitivo. ~1 de cada 3 sale con trampa sutil (pero justa).
+  static const List<String> _quizStyles = [
+    'Estilo: directas y claras.',
+    'Estilo: directas y claras.',
+    'Estilo: ASTUTO — ponle una trampa sutil pero JUSTA: el enunciado falso lleva un error fino y '
+        'los distractores son muy plausibles; aun así la respuesta correcta debe poder verificarse con el texto.',
+  ];
+
+  /// Enfoque del que parte cada pregunta, rotado al azar para dar variedad y que
+  /// no pregunten siempre lo mismo.
+  static const List<String> _quizFocusAngles = [
+    'el sujeto: quién realiza la acción',
+    'la acción principal o el verbo',
+    'una palabra o detalle concreto del texto',
+    'el lugar, el tiempo o el contexto',
+    'el orden o la secuencia de lo que ocurre',
+    'el propósito, la causa o la consecuencia',
+    'lo que el texto afirma o niega explícitamente',
+  ];
+
+  /// Reintentos de la generación del quiz ante un JSON irrecuperable del modelo
+  /// on-device. Cada generación tarda ~20s, así que el normalizador tolerante
+  /// hace el trabajo pesado y esto sólo cubre fallos extremos; mantenerlo bajo.
+  static const int _quizMaxAttempts = 2;
   static const int _evaluationMaxTokens = 300;
+
+  /// Reintentos de la evaluación de respuesta abierta. Cada intento cuesta
+  /// ~20s, así que lo mantenemos bajo para no hacer esperar demasiado al usuario
+  /// cuando el modelo no coopera.
+  static const int _evaluationMaxAttempts = 2;
 
   static const Map<String, dynamic> _quizRoundSetSchema = {
     'type': 'object',
@@ -85,9 +119,8 @@ class LocalLlmService {
         'minItems': 1,
         'maxItems': 3,
       },
-      'explanation': {'type': 'string'},
     },
-    'required': ['alteredVerse', 'intruderWords', 'explanation'],
+    'required': ['alteredVerse', 'intruderWords'],
   };
 
 
@@ -96,6 +129,12 @@ class LocalLlmService {
     receiveTimeout: _generationTimeout,
   ));
   final math.Random _seedRandom = math.Random();
+
+  /// Serializa la inferencia: el motor on-device (libLiteRtLm) crashea
+  /// (SIGSEGV en su ThreadPool) si se le piden dos inferencias a la vez. Encadena
+  /// las llamadas para que SIEMPRE corra una sola — esto también permite
+  /// pre-generar en segundo plano sin chocar con una generación en curso.
+  Future<void> _inferenceChain = Future.value();
 
   bool _initialized = false;
   Future<void>? _initInFlight;
@@ -252,15 +291,26 @@ class LocalLlmService {
     statusNotifier.value = 'Inicializando IA local en el dispositivo…';
 
     if (_useMobileBackend) {
+      // La PRIMERA carga del modelo a GPU en un dispositivo real tarda bastante
+      // más que unos pocos segundos. En iOS de desarrollo (simulador) no hay
+      // modelo GPU, así que un timeout corto deja caer a IA simulada; en un
+      // dispositivo real (Android) hay que ESPERAR la carga real: abortarla a
+      // los 4s era justo lo que hacía fallar la generación en el PRIMER intento
+      // (la carga nativa seguía en background y el segundo intento ya la tomaba
+      // caliente). Por eso el timeout aquí es generoso fuera del simulador iOS.
+      final useSimulatorFallback = !kIsWeb && Platform.isIOS;
+      final initTimeout = useSimulatorFallback
+          ? const Duration(seconds: 4)
+          : const Duration(seconds: 120);
       try {
         await FlutterGemmaBackend.instance
             .init(onStatus: (s) => statusNotifier.value = s)
-            .timeout(const Duration(seconds: 4));
+            .timeout(initTimeout);
         _initialized = true;
         _isMockFallback = false;
       } catch (e) {
         debugPrint('Fallo al inicializar Gemma nativo ($e).');
-        if (!kIsWeb && Platform.isIOS) {
+        if (useSimulatorFallback) {
           debugPrint('Activando fallback de IA simulada para desarrollo (Simulador iOS).');
           _initialized = true;
           _isMockFallback = true;
@@ -318,40 +368,114 @@ class LocalLlmService {
   }
 
   /// Genera un set completo de preguntas (V/F, opción múltiple y respuesta
-  /// abierta) sobre el versículo dado. Cada llamada produce preguntas nuevas.
+  /// abierta) sobre uno o varios versículos. Cuando se pasa más de un texto, las
+  /// 3 preguntas se reparten entre ellos: se combinan en una sola pregunta donde
+  /// tenga sentido y, si no, cada una de las 3 secciones se dedica a un texto
+  /// distinto, de modo que el conjunto cubra todos los textos del grupo. Cada
+  /// llamada produce preguntas nuevas.
   Future<AiQuizRoundSet> generateQuizRoundSet({
-    required String reference,
-    required String verseText,
+    required List<({String reference, String verseText})> verses,
   }) async {
-    const depthInstruction = 'Las preguntas deben ser de comprensión directa y clara, '
-        'pero ricas en contenido: evalúa el significado literal, así como aspectos prácticos, '
-        'implicaciones espirituales o doctrina clave de forma accesible. '
-        'Los distractores deben ser opciones plausibles pero claramente incorrectas para quien '
-        'comprenda bien el versículo.';
+    assert(verses.isNotEmpty, 'Se requiere al menos un versículo.');
+    const depthInstruction = 'Las preguntas deben ser CORTAS, NATURALES y DIRECTAS, como las haría una '
+        'persona al hablar: pocas palabras (menos de 12), UNA sola idea. '
+        'PROHIBIDO el relleno académico o pomposo: nada de "se describe", "acción fundamental", '
+        '"en el versículo proporcionado/dado", "según el texto bíblico", ni frases rebuscadas. '
+        'Pueden tener algo de fondo (no triviales), pero SIEMPRE preguntadas de forma simple. '
+        'Ejemplo MAL (rebuscado): "¿Qué acción fundamental se describe como el inicio de la existencia en el versículo proporcionado?". '
+        'Ejemplo BIEN (directo): "¿Qué hizo Dios al principio?". '
+        'EXACTITUD: la respuesta correcta debe poder verificarse SIEMPRE con el texto dado y ser '
+        'inequívoca; nunca inventes datos que no estén en el texto ni hagas preguntas sin respuesta '
+        'clara. Dentro de eso está PERMITIDO ser astuto: trampas sutiles, enunciados falsos con un '
+        'error fino y distractores muy plausibles están bien, mientras la respuesta correcta siga '
+        'siendo deducible del texto.';
 
-    final entropy = _seedRandom.nextInt(100000);
-    final prompt = 'Eres un generador de cuestionarios en español para una app de memorización de versículos bíblicos.\n'
-        'Semilla de variación aleatoria: $entropy\n'
-        'Texto a evaluar ($reference): "$verseText"\n\n'
-        'Genera exactamente:\n'
-        '1. "trueFalse": una afirmación sobre el contenido del texto con su veredicto "isTrue". '
-        'Decide al azar si la haces verdadera o falsa; si es falsa, introduce un error sutil.\n'
-        '2. "multipleChoice": una pregunta con "correct" (respuesta correcta) y "distractors" (exactamente 3 incorrectas).\n'
-        '3. "openQuestion": una pregunta abierta corta para que el usuario explique el texto con sus palabras.\n\n'
-        'IMPORTANTE: Cada una de las 3 secciones (trueFalse, multipleChoice y openQuestion) debe evaluar aspectos, detalles o conceptos COMPLETAMENTE DIFERENTES del texto. Evita a toda costa que pregunten sobre el mismo tema o el mismo detalle para garantizar variedad.\n\n'
-        '$depthInstruction\n'
-        'Todo en español. Responde únicamente con el JSON.';
+    final isMulti = verses.length > 1;
 
-    final content = await _chat(
-      prompt,
-      temperature: _quizTemperature,
-      maxTokens: _quizMaxTokens,
-      jsonSchema: _quizRoundSetSchema,
-    );
-    debugPrint('=== RESPUESTA IA LOCAL QUIZ CRUDA ===\n$content\n=====================================');
-    final decoded = _decodeJsonObject(content);
-    debugPrint('=== RESPUESTA IA LOCAL DECODIFICADA ===\n$decoded\n=====================================');
-    return AiQuizRoundSet.fromJson(decoded);
+    final String textBlock;
+    final String formatBlock;
+    if (isMulti) {
+      final n = verses.length;
+      final buffer = StringBuffer();
+      for (var i = 0; i < n; i++) {
+        buffer.writeln('Texto ${i + 1} (${verses[i].reference}): "${verses[i].verseText}"');
+      }
+      textBlock = 'Textos a evaluar ($n):\n${buffer.toString().trimRight()}';
+
+      // Una pregunta POR TEXTO, en un array con "forText". El modelo respeta
+      // mucho mejor "esta pregunta es para ESTE texto" por elemento que "reparte
+      // 3 preguntas en un objeto" (antes lumpeaba y dejaba el último texto sin
+      // pregunta). openQuestion va al Texto 3 si existe; si hay 2 textos, al 2.
+      final openForText = n >= 3 ? 3 : n;
+      formatBlock =
+          'Genera EXACTAMENTE 3 preguntas: una "trueFalse", una "multipleChoice" y una "openQuestion". '
+          'Cada una trata SOLO sobre el texto indicado en su "forText". Asignación OBLIGATORIA: '
+          'trueFalse → Texto 1; multipleChoice → Texto 2; openQuestion → Texto $openForText. '
+          'Es OBLIGATORIO cubrir los $n textos; ninguno puede quedar sin su pregunta. '
+          'Preguntas CORTAS; si el trueFalse es falso, el error debe ser comprobable con el texto (puede ser sutil); '
+          'multipleChoice con "correct" breve y exactamente 3 "distractors" breves; '
+          'la openQuestion es UNA sola pregunta corta (NO juntes dos preguntas con "y").\n'
+          'Formato de salida OBLIGATORIO, EXACTAMENTE este array (sin texto adicional antes ni después):\n'
+          '{"questions":[\n'
+          '{"forText":1,"type":"trueFalse","statement":"...","isTrue":true},\n'
+          '{"forText":2,"type":"multipleChoice","question":"...","correct":"...","distractors":["...","...","..."]},\n'
+          '{"forText":$openForText,"type":"openQuestion","question":"..."}\n'
+          ']}';
+    } else {
+      textBlock = 'Texto a evaluar (${verses.first.reference}): "${verses.first.verseText}"';
+      formatBlock =
+          'Genera exactamente 3 preguntas sobre el texto:\n'
+          '1. "trueFalse": afirmación CORTA con su veredicto "isTrue". Si es falsa, el error debe ser comprobable con el texto (puede ser sutil).\n'
+          '2. "multipleChoice": pregunta CORTA con "correct" (breve) y "distractors" (exactamente 3, breves).\n'
+          '3. "openQuestion": UNA sola pregunta abierta, CORTA (una frase), que se responda explicando con pocas palabras. NO juntes dos preguntas en una (nada de "explica X y reflexiona sobre Y").\n'
+          'Cada sección debe evaluar un aspecto DIFERENTE del texto.\n'
+          'Formato de salida OBLIGATORIO: un ÚNICO objeto JSON, sin envolturas, sin "questions", sin arrays:\n'
+          '{"trueFalse":{"statement":"...","isTrue":true},"multipleChoice":{"question":"...","correct":"...","distractors":["...","...","..."]},"openQuestion":{"question":"..."}}';
+    }
+
+    // El modelo on-device a veces ignora la estructura (devuelve un array, JSON
+    // truncado o malformado) en una generación concreta; re-rolamos unas pocas
+    // veces antes de propagar el error a la UI.
+    Object? lastError;
+    for (var attempt = 1; attempt <= _quizMaxAttempts; attempt++) {
+      final entropy = _seedRandom.nextInt(100000);
+      final style = _quizStyles[_seedRandom.nextInt(_quizStyles.length)];
+      final tfFocus = _quizFocusAngles[_seedRandom.nextInt(_quizFocusAngles.length)];
+      final mcFocus = _quizFocusAngles[_seedRandom.nextInt(_quizFocusAngles.length)];
+      final varietyHint =
+          'VARIEDAD: cada cuestionario debe ser DISTINTO a los anteriores; no repitas el mismo '
+          'patrón ni la misma frase de siempre. EVITA la pregunta más obvia: elige un ángulo MENOS '
+          'evidente del texto. Esta vez parte la pregunta de verdadero/falso desde $tfFocus, y la de '
+          'opción múltiple desde $mcFocus. $style';
+      final prompt = 'Eres un generador de cuestionarios en español para una app de memorización de versículos bíblicos.\n'
+          'Semilla de variación aleatoria: $entropy\n'
+          '$textBlock\n\n'
+          '$formatBlock\n\n'
+          '$depthInstruction\n'
+          '$varietyHint\n'
+          'Todo en español. Responde únicamente con el JSON, sin texto adicional.';
+      try {
+        final content = await _chat(
+          prompt,
+          temperature: _quizTemperature,
+          maxTokens: _quizMaxTokens,
+          jsonSchema: _quizRoundSetSchema,
+        );
+        debugPrint('=== RESPUESTA IA LOCAL QUIZ CRUDA (intento $attempt) ===\n$content\n=====================================');
+        return _parseQuizRoundSet(content);
+      } catch (e) {
+        lastError = e;
+        debugPrint('Generación de quiz falló (intento $attempt/$_quizMaxAttempts): $e');
+      }
+    }
+    throw StateError('No se pudo generar el quiz tras $_quizMaxAttempts intentos: $lastError');
+  }
+
+  /// Parsea la respuesta del quiz con el normalizador tolerante: acepta el
+  /// objeto esperado, un array de sets, `{questions:[...]}` o un array de
+  /// preguntas tipadas, con nombres de campo variables.
+  AiQuizRoundSet _parseQuizRoundSet(String content) {
+    return AiQuizRoundSet.lenient(_decodeJsonStructure(content));
   }
 
   /// Genera un versículo alterado con palabras intrusas según el nivel de dificultad:
@@ -363,41 +487,194 @@ class LocalLlmService {
     required String verseText,
     required int level,
   }) async {
-    String levelInstruction = '';
-    if (level == 1) {
-      levelInstruction = 'Reemplaza exactamente 1 palabra del versículo por una palabra incorrecta (un "intruso"). '
-          'La alteración debe ser sutil y plausible (no obvia), como un sinónimo cercano o una palabra que encaje en el contexto gramatical pero cambie el significado sutilmente.';
-    } else if (level == 2) {
-      levelInstruction = 'Reemplaza exactamente 2 palabras del versículo por dos palabras incorrectas ("intrusos"). '
-          'Las alteraciones deben ser de dificultad alta y muy parecidas a las originales (longitud similar, letras similares, raíces compartidas o sinónimos extremadamente cercanos) que se confundan fácilmente al leer rápido.';
-    } else {
-      levelInstruction = 'Reemplaza exactamente 3 palabras del versículo por tres palabras incorrectas ("intrusos"). '
-          'Las alteraciones deben ser sumamente difíciles de identificar a simple vista: cambia conectores gramaticales pequeños (ej: "por" en vez de "para", "con" en vez de "en"), o palabras con un significado teológico casi idéntico pero incorrecto (ej: "Señor" en vez de "Dios" si el original decía Dios).';
+    final levelHint = level == 1
+        ? 'un cambio sutil (un sinónimo cercano)'
+        : level == 2
+            ? 'cambios sutiles, con palabras muy parecidas a las originales'
+            : 'cambios muy sutiles (conectores pequeños o sinónimos casi idénticos)';
+
+    // Prompt corto y directo: los prompts largos hacían que el modelo on-device
+    // degenerara (escupía "<unk><unk>…" sin generar JSON).
+    Object? lastError;
+    for (var attempt = 1; attempt <= _quizMaxAttempts; attempt++) {
+      final prompt = 'Toma el versículo y REEMPLAZA EXACTAMENTE $level palabra(s) por otra(s) palabra(s) DIFERENTE(S) e incorrecta(s) ("intrusos"), con $levelHint. '
+          'Cada palabra intrusa debe ser DISTINTA a la que reemplaza (NO repitas la misma palabra). El resto del versículo queda IGUAL.\n'
+          'Ejemplo: versículo "Dios creó el cielo" → alterado "Dios formó el cielo", intruso "formó" (cambió "creó" por "formó").\n'
+          'Versículo ($reference): "$verseText"\n\n'
+          'Responde SOLO con este JSON, sin nada más:\n'
+          '{"alteredVerse": "el versículo con esas $level palabra(s) ya cambiada(s)", "intruderWords": ["las palabras NUEVAS que pusiste, no las originales"]}';
+      try {
+        final content = await _chat(
+          prompt,
+          temperature: 0.5,
+          maxTokens: 600,
+          jsonSchema: _intruderVerseSchema,
+        );
+        debugPrint('=== RESPUESTA IA LOCAL INTRUSO CRUDA (intento $attempt) ===\n$content\n=====================================');
+        final set = IntruderVerseSet.lenient(_decodeJsonStructure(content));
+        validateIntruderSet(set, verseText, level); // lanza si no es jugable
+        return set;
+      } catch (e) {
+        lastError = e;
+        debugPrint('Generación de palabras intrusas falló (intento $attempt/$_quizMaxAttempts): $e');
+      }
+    }
+    // Garantía a nivel de código: si la IA no logró un ejercicio válido, lo
+    // construimos nosotros para que NUNCA salga roto (ni idéntico al original).
+    debugPrint('Intrusas: usando fallback de código tras fallar la IA ($lastError).');
+    return buildFallbackIntruderVerse(verseText, level, _seedRandom);
+  }
+
+  static String _intruderNorm(String w) =>
+      w.toLowerCase().replaceAll(RegExp(r'[^0-9a-záéíóúüñ]'), '');
+
+  /// Verifica que el ejercicio es JUGABLE y real, tal como lo consume el juego:
+  /// el versículo cambió, las palabras intrusas son NUEVAS (no estaban en el
+  /// original) y aparecen EXACTAMENTE [level] veces en el texto alterado.
+  @visibleForTesting
+  static void validateIntruderSet(IntruderVerseSet set, String original, int level) {
+    final originalWords = original.split(RegExp(r'\s+')).map(_intruderNorm).where((w) => w.isNotEmpty).toList();
+    final alteredWords = set.alteredVerse.split(RegExp(r'\s+')).map(_intruderNorm).where((w) => w.isNotEmpty).toList();
+
+    if (alteredWords.join(' ') == originalWords.join(' ')) {
+      throw const FormatException('El versículo alterado es idéntico al original.');
     }
 
+    final originalSet = originalWords.toSet();
+    final intruderNorms = set.intruderWords.map(_intruderNorm).where((w) => w.isNotEmpty).toSet();
+    if (intruderNorms.isEmpty) {
+      throw const FormatException('No hay palabras intrusas.');
+    }
+    for (final w in intruderNorms) {
+      if (originalSet.contains(w)) {
+        throw FormatException('La intrusa "$w" ya estaba en el versículo original.');
+      }
+    }
+    final positions = alteredWords.where(intruderNorms.contains).length;
+    if (positions != level) {
+      throw FormatException('Se esperaban $level intrusas en el texto, hay $positions.');
+    }
+  }
 
-    final entropy = _seedRandom.nextInt(100000);
-    final prompt = 'Eres un creador de desafíos premium de memorización de la Biblia en español.\n'
-        'Semilla de variación aleatoria: $entropy\n'
-        'Tu tarea es tomar el versículo indicado y generar una versión alterada del mismo.\n\n'
-        'Versículo original ($reference): "$verseText"\n\n'
-        'Instrucciones específicas:\n'
-        '- $levelInstruction\n'
-        '- Las palabras intrusas nuevas no deben existir en el versículo original en esa misma posición.\n'
-        '- El resto de palabras del versículo deben permanecer idénticas al original.\n'
-        '- Devuelve exactamente en "alteredVerse" el versículo modificado completo conservando signos de puntuación originales donde sea posible.\n'
-        '- Devuelve exactamente en "intruderWords" la lista de las palabras intrusas (tal y como aparecen en el versículo alterado, sin puntuación pegada si es posible).\n'
-        '- Devuelve en "explanation" una explicación interactiva de alta calidad que indique qué palabras se cambiaron y por qué el texto original usa esas palabras (con un matiz teológico o lingüístico interesante).\n\n'
-        'Responde únicamente con el objeto JSON estructurado. Todo en español.';
+  /// Sinónimos cercanos (registro bíblico) que CONSERVAN género y número, para
+  /// que el intruso suene coherente con su artículo (nada de "la mundo"). Sólo
+  /// red de seguridad cuando el modelo no coopera.
+  static const Map<String, String> _intruderSynonyms = {
+    // Verbos (sin concordancia de género).
+    'creó': 'formó', 'creo': 'formo', 'creado': 'formado', 'hizo': 'formó',
+    'dijo': 'habló', 'vio': 'miró', 'amó': 'quiso', 'dio': 'entregó',
+    'llamó': 'nombró', 'separó': 'dividió', 'bendijo': 'consagró',
+    // Sustantivos masculinos → masculinos.
+    'principio': 'comienzo', 'comienzo': 'inicio', 'dios': 'señor', 'señor': 'dios',
+    'cielo': 'firmamento', 'mundo': 'planeta', 'espíritu': 'aliento',
+    'día': 'amanecer', 'camino': 'sendero', 'corazón': 'pecho', 'amor': 'cariño',
+    'pueblo': 'reino', 'rey': 'príncipe', 'hijo': 'heredero', 'padre': 'progenitor',
+    'poder': 'dominio', 'temor': 'recelo', 'gozo': 'júbilo', 'pecado': 'error',
+    // Sustantivos femeninos → femeninos.
+    'tierra': 'arena', 'luz': 'llama', 'vida': 'existencia', 'verdad': 'certeza',
+    'palabra': 'voz', 'paz': 'calma', 'gloria': 'honra', 'fe': 'esperanza',
+    'noche': 'sombra', 'gracia': 'merced', 'fuerza': 'firmeza', 'mujer': 'dama',
+    'madre': 'señora', 'nación': 'región', 'muerte': 'ruina',
+    // Plurales (conservan número).
+    'cielos': 'firmamentos', 'tinieblas': 'sombras', 'aguas': 'olas',
+    'palabras': 'voces', 'días': 'tiempos',
+  };
 
-    final content = await _chat(
-      prompt,
-      temperature: 0.8,
-      maxTokens: 600,
-      jsonSchema: _intruderVerseSchema,
+  /// Pools genéricos por género (cuando una palabra no tiene sinónimo): se elige
+  /// según el artículo que la precede para no romper la concordancia.
+  static const List<String> _intruderMascGeneric = [
+    'firmamento', 'sendero', 'aliento', 'abismo', 'sosiego', 'umbral', 'clamor',
+    'designio', 'reino', 'sustento',
+  ];
+  static const List<String> _intruderFemGeneric = [
+    'arena', 'sombra', 'niebla', 'senda', 'calma', 'aurora', 'bruma', 'llama',
+    'región', 'firmeza',
+  ];
+  static const Set<String> _intruderFemDeterminers = {
+    'la', 'las', 'una', 'unas', 'esta', 'estas', 'esa', 'esas', 'aquella', 'aquellas',
+  };
+  static const Set<String> _intruderMascDeterminers = {
+    'el', 'los', 'un', 'unos', 'este', 'estos', 'ese', 'esos', 'aquel', 'aquellos',
+  };
+
+  /// Palabras-función que NUNCA se reemplazan (romperían la frase): artículos,
+  /// preposiciones, conjunciones, pronombres y auxiliares comunes.
+  static const Set<String> _intruderStopWords = {
+    'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'lo', 'le', 'les',
+    'y', 'o', 'u', 'e', 'ni', 'de', 'del', 'a', 'al', 'en', 'con', 'por', 'para',
+    'sin', 'sobre', 'tras', 'que', 'se', 'su', 'sus', 'mi', 'tu', 'me', 'te', 'nos',
+    'es', 'fue', 'era', 'son', 'no', 'si', 'sí', 'como', 'más', 'muy', 'ya', 'ha', 'han',
+  };
+
+  /// Construye un ejercicio de intrusas válido en puro código: reemplaza
+  /// exactamente [level] palabras de contenido por otras DISTINTAS, nuevas y
+  /// coherentes con su artículo.
+  @visibleForTesting
+  static IntruderVerseSet buildFallbackIntruderVerse(String original, int level, math.Random rng) {
+    final clean = original.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final tokens = clean.split(' ');
+    final originalNorms = tokens.map(_intruderNorm).toSet();
+    final usedNew = <String>{...originalNorms};
+
+    String replaceCore(String token, String newCore) {
+      final m = RegExp(r'^([^0-9a-záéíóúüñ]*)(.*?)([^0-9a-záéíóúüñ]*)$', caseSensitive: false)
+          .firstMatch(token);
+      final lead = m?.group(1) ?? '';
+      final trail = m?.group(3) ?? '';
+      final core = m?.group(2) ?? token;
+      final cased = core.isNotEmpty && core[0] == core[0].toUpperCase()
+          ? newCore[0].toUpperCase() + newCore.substring(1)
+          : newCore;
+      return '$lead$cased$trail';
+    }
+
+    // Género que impone el artículo previo (si lo hay), para elegir el genérico.
+    String pickGeneric(int idx) {
+      final prev = idx > 0 ? _intruderNorm(tokens[idx - 1]) : '';
+      final List<String> pool;
+      if (_intruderFemDeterminers.contains(prev)) {
+        pool = _intruderFemGeneric;
+      } else if (_intruderMascDeterminers.contains(prev)) {
+        pool = _intruderMascGeneric;
+      } else {
+        pool = [..._intruderMascGeneric, ..._intruderFemGeneric];
+      }
+      return pool.firstWhere((w) => !usedNew.contains(w), orElse: () => '');
+    }
+
+    // Candidatos: SÓLO palabras de contenido (>= 3 letras y no función),
+    // barajados, con prioridad para las que tienen sinónimo (más plausibles).
+    bool isContent(int i) {
+      final c = _intruderNorm(tokens[i]);
+      return c.length >= 3 && !_intruderStopWords.contains(c);
+    }
+
+    final candidates = [for (var i = 0; i < tokens.length; i++) if (isContent(i)) i]..shuffle(rng);
+    candidates.sort((a, b) {
+      final aHas = _intruderSynonyms.containsKey(_intruderNorm(tokens[a])) ? 0 : 1;
+      final bHas = _intruderSynonyms.containsKey(_intruderNorm(tokens[b])) ? 0 : 1;
+      return aHas.compareTo(bHas);
+    });
+
+    final intruders = <String>[];
+    for (final idx in candidates) {
+      if (intruders.length >= level) break;
+      final core = _intruderNorm(tokens[idx]);
+      var newCore = _intruderSynonyms[core]; // gender-consistent by construction
+      if (newCore == null || usedNew.contains(newCore)) {
+        newCore = pickGeneric(idx); // gender chosen from the preceding article
+      }
+      if (newCore.isEmpty || usedNew.contains(newCore)) continue;
+      tokens[idx] = replaceCore(tokens[idx], newCore);
+      usedNew.add(newCore);
+      intruders.add(newCore);
+    }
+
+    return IntruderVerseSet(
+      alteredVerse: tokens.join(' '),
+      intruderWords: intruders,
+      explanation: '',
     );
-
-    return IntruderVerseSet.fromJson(_decodeJsonObject(content));
   }
 
   static const Map<String, dynamic> _distractorSchema = {
@@ -428,12 +705,15 @@ class LocalLlmService {
         'Eres un tutor de memorización de versículos en español.\n'
         'Semilla de variación aleatoria: $entropy\n'
         'Texto ($reference): "$verseText"\n\n'
-        'Devuelve "distractors": una lista de exactamente $count PALABRAS sueltas '
-        '(una sola palabra cada una, sin frases) que sirvan como opciones '
-        'INCORRECTAS pero CONFUSAS para un ejercicio de rellenar huecos del texto. '
-        'Deben parecerse a palabras del versículo: sinónimos cercanos, misma '
-        'familia, conjugaciones o errores plausibles — nunca palabras que '
-        'aparezcan tal cual en el texto. Todo en español. Solo el JSON.';
+        'Devuelve "distractors": exactamente $count PALABRAS sueltas (una sola palabra, sin frases) '
+        'que funcionen como opciones INCORRECTAS pero MUY confundibles en un ejercicio de rellenar '
+        'huecos de este texto. Cada distractor debe poder colocarse en lugar de ALGUNA palabra del '
+        'versículo y sonar casi creíble: usa sinónimos cercanos, la misma familia o raíz, otra '
+        'conjugación, o palabras de longitud y forma parecidas a las del texto, y que encajen '
+        'gramaticalmente (mismo tipo: si reemplaza un verbo, que sea verbo; si un sustantivo, '
+        'sustantivo; respeta género/número). '
+        'PROHIBIDO: palabras que ya estén en el texto, y palabras genéricas sin relación con el '
+        'versículo. Todo en español. Solo el JSON.';
     final content = await _chat(
       prompt,
       temperature: 0.9,
@@ -450,6 +730,51 @@ class LocalLlmService {
     return words;
   }
 
+  // ---------------------------------------------------------------------------
+  // Prefetch en segundo plano (take-once): arranca la generación ANTES de que
+  // el usuario llegue al ejercicio. El primer consumidor TOMA el resultado (lo
+  // saca del caché); un re-uso posterior (ej. "Reintentar") genera fresco. La
+  // inferencia ya está serializada, así que esto sólo adelanta trabajo, no choca.
+  // ---------------------------------------------------------------------------
+  final Map<String, Future<IntruderVerseSet>> _intruderPrefetch = {};
+  final Map<String, Future<List<String>>> _distractorPrefetch = {};
+
+  String _intruderKey(String reference, int level) => '$reference##$level';
+
+  void prefetchIntruderVerse({
+    required String reference,
+    required String verseText,
+    required int level,
+  }) {
+    final key = _intruderKey(reference, level);
+    if (_intruderPrefetch.containsKey(key)) return;
+    final f = generateIntruderVerse(reference: reference, verseText: verseText, level: level);
+    _intruderPrefetch[key] = f;
+    unawaited(f.then((_) {}, onError: (_) => _intruderPrefetch.remove(key)));
+  }
+
+  /// Devuelve el intruso pre-generado para (reference, level) y lo SACA del
+  /// caché, o null si no se prefetchó.
+  Future<IntruderVerseSet>? takePrefetchedIntruder({
+    required String reference,
+    required int level,
+  }) =>
+      _intruderPrefetch.remove(_intruderKey(reference, level));
+
+  void prefetchCompletionDistractors({
+    required String reference,
+    required String verseText,
+  }) {
+    if (_distractorPrefetch.containsKey(reference)) return;
+    final f = generateCompletionDistractors(reference: reference, verseText: verseText);
+    _distractorPrefetch[reference] = f;
+    unawaited(f.then((_) {}, onError: (_) => _distractorPrefetch.remove(reference)));
+  }
+
+  /// Distractores pre-generados para [reference] (los SACA del caché), o null.
+  Future<List<String>>? takePrefetchedDistractors(String reference) =>
+      _distractorPrefetch.remove(reference);
+
   /// Evalúa con la IA local la respuesta libre del usuario a una pregunta
   /// abierta sobre el versículo. Devuelve veredicto y feedback breve.
   Future<AiOpenAnswerEvaluation> evaluateOpenAnswer({
@@ -457,28 +782,39 @@ class LocalLlmService {
     required String verseText,
     required String userAnswer,
   }) async {
-    final entropy = _seedRandom.nextInt(100000);
-    final prompt = 'Eres un evaluador de respuestas de cuestionarios de memorización bíblica. Evalúa de forma estricta y lógica la respuesta del usuario.\n'
-        'Semilla de variación aleatoria: $entropy\n'
-        'Texto de referencia del versículo: "$verseText"\n'
-        'Pregunta abierta: "$question"\n'
-        'Respuesta del usuario: "${userAnswer.trim()}"\n\n'
-        'Instrucciones de Evaluación:\n'
-        '1. La respuesta del usuario DEBE estar directamente relacionada con la pregunta y el versículo de referencia. Si el usuario habla de deportes, fútbol, comida, películas, o responde con frases vacías, de evasión o incoherencias, debes responder "isCorrect": false.\n'
-        '2. Si la respuesta es relevante y demuestra que el usuario entendió el mensaje del versículo (aunque la explicación sea sencilla, corta o informal), responde "isCorrect": true.\n'
-        '3. En "feedback" escribe una frase corta explicando lógicamente por qué es correcta o por qué es incorrecta.\n'
-        'Responde únicamente con el JSON.';
+    // El modelo on-device a veces emite un JSON malformado o truncado en una
+    // generación concreta; un simple re-roll suele resolverlo. Reintentamos
+    // unas pocas veces antes de propagar el error a la UI.
+    Object? lastError;
+    for (var attempt = 1; attempt <= _evaluationMaxAttempts; attempt++) {
+      try {
+        // Prompt corto y directo: los prompts largos disparaban en el modelo
+        // on-device un bucle degenerado (repetía "system..." sin generar JSON).
+        final prompt = 'Evalúa si la respuesta del usuario es válida para la pregunta sobre el versículo. Sé estricto pero justo.\n'
+            'Versículo: "$verseText"\n'
+            'Pregunta: "$question"\n'
+            'Respuesta del usuario: "${userAnswer.trim()}"\n\n'
+            'Es correcta si se relaciona con la pregunta y muestra que entendió el versículo, aunque sea simple o informal. '
+            'Es incorrecta si habla de otra cosa (deportes, comida…), está vacía, evade o es incoherente.\n'
+            'Responde SOLO con este JSON, sin nada más antes ni después:\n'
+            '{"isCorrect": true, "feedback": "frase corta del porqué"}';
 
-    final content = await _chat(
-      prompt,
-      temperature: 0.4,
-      maxTokens: _evaluationMaxTokens,
-      jsonSchema: _openAnswerEvaluationSchema,
-    );
-    debugPrint('=== RESPUESTA IA EVALUACION CRUDA ===\n$content\n=====================================');
-    final decoded = _decodeJsonObject(content);
-    debugPrint('=== RESPUESTA IA EVALUACION DECODIFICADA ===\n$decoded\n=====================================');
-    return AiOpenAnswerEvaluation.fromJson(decoded);
+        final content = await _chat(
+          prompt,
+          temperature: 0.4,
+          maxTokens: _evaluationMaxTokens,
+          jsonSchema: _openAnswerEvaluationSchema,
+        );
+        debugPrint('=== RESPUESTA IA EVALUACION CRUDA (intento $attempt) ===\n$content\n=====================================');
+        final decoded = _decodeJsonStructure(content);
+        debugPrint('=== RESPUESTA IA EVALUACION DECODIFICADA ===\n$decoded\n=====================================');
+        return AiOpenAnswerEvaluation.lenient(decoded);
+      } catch (e) {
+        lastError = e;
+        debugPrint('Evaluación de respuesta abierta falló (intento $attempt/$_evaluationMaxAttempts): $e');
+      }
+    }
+    throw StateError('No se pudo evaluar la respuesta tras $_evaluationMaxAttempts intentos: $lastError');
   }
 
   static const Map<String, dynamic> _deckSchema = {
@@ -541,7 +877,27 @@ class LocalLlmService {
   }
 
   /// Inferencia base contra el servidor llama.cpp local (API OpenAI-compatible).
+  /// Punto único de inferencia: serializa todas las llamadas (una a la vez) para
+  /// no crashear el motor nativo y para que el prefetch en background no choque
+  /// con una generación en curso.
   Future<String> _chat(
+    String prompt, {
+    required double temperature,
+    required int maxTokens,
+    Map<String, dynamic>? jsonSchema,
+  }) {
+    final result = _inferenceChain.then((_) => _chatImpl(
+          prompt,
+          temperature: temperature,
+          maxTokens: maxTokens,
+          jsonSchema: jsonSchema,
+        ));
+    // El siguiente en la cola espera a este, haya éxito o error (sin propagar).
+    _inferenceChain = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
+  Future<String> _chatImpl(
     String prompt, {
     required double temperature,
     required int maxTokens,
@@ -590,6 +946,30 @@ class LocalLlmService {
       throw StateError('La IA local devolvió una respuesta vacía.');
     }
     return content.trim();
+  }
+
+  /// Decodifica la respuesta del modelo tolerando que sea un objeto `{...}` o un
+  /// array `[...]`. Recorta a la primera estructura JSON (la que abra primero) y
+  /// sanea saltos de línea crudos. Devuelve el `Map` o `List` decodificado.
+  dynamic _decodeJsonStructure(String content) {
+    var cleaned = content.trim();
+    // Quitar envoltura markdown (```json ... ```).
+    cleaned = cleaned.replaceAll('```json', '').replaceAll('```', '').trim();
+
+    final firstObj = cleaned.indexOf('{');
+    final firstArr = cleaned.indexOf('[');
+    final bool asArray =
+        firstArr != -1 && (firstObj == -1 || firstArr < firstObj);
+    final start = asArray ? firstArr : firstObj;
+    if (start != -1) {
+      final end = cleaned.lastIndexOf(asArray ? ']' : '}');
+      if (end > start) {
+        cleaned = cleaned.substring(start, end + 1);
+      }
+    }
+
+    final sanitized = cleaned.replaceAll(RegExp(r'[\x00-\x1F]'), ' ');
+    return jsonDecode(sanitized);
   }
 
   Map<String, dynamic> _decodeJsonObject(String content) {

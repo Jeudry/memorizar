@@ -1507,12 +1507,12 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
       ).length.clamp(0, _studyWords(text).length);
       final absoluteIndex = (_ttsStartWordOffset + index).clamp(
         0,
-        _studyWords(_cardStudyText(context)).length,
+        _studyWords(_currentBatchText(context)).length,
       );
       setState(() => _wordIndex = absoluteIndex);
       _scrollToProgress(
         absoluteIndex,
-        _studyWords(_cardStudyText(context)).length,
+        _studyWords(_currentBatchText(context)).length,
       );
     });
   }
@@ -1772,9 +1772,9 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
 
   @override
   Widget build(BuildContext context) {
-    final words = _studyWords(_cardStudyText(context));
-    final source = _cardSourceText(context).toUpperCase();
-    final text = _cardStudyText(context);
+    final words = _studyWords(_currentBatchText(context));
+    final source = _currentBatchReference(context).toUpperCase();
+    final text = _currentBatchText(context);
     final safeIndex = _wordIndex.clamp(0, words.isEmpty ? 0 : words.length - 1);
     final progress = _completed
         ? 1.0
