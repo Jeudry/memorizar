@@ -30,6 +30,10 @@ class LocalLlmService {
   static const int _quizMaxTokens = 900;
   static const int _evaluationMaxTokens = 300;
 
+  /// Reintentos de la evaluación de respuesta abierta ante un JSON malformado
+  /// del modelo on-device (cada intento re-genera con nueva semilla).
+  static const int _evaluationMaxAttempts = 3;
+
   static const Map<String, dynamic> _quizRoundSetSchema = {
     'type': 'object',
     'properties': {
@@ -496,28 +500,40 @@ class LocalLlmService {
     required String verseText,
     required String userAnswer,
   }) async {
-    final entropy = _seedRandom.nextInt(100000);
-    final prompt = 'Eres un evaluador de respuestas de cuestionarios de memorización bíblica. Evalúa de forma estricta y lógica la respuesta del usuario.\n'
-        'Semilla de variación aleatoria: $entropy\n'
-        'Texto de referencia del versículo: "$verseText"\n'
-        'Pregunta abierta: "$question"\n'
-        'Respuesta del usuario: "${userAnswer.trim()}"\n\n'
-        'Instrucciones de Evaluación:\n'
-        '1. La respuesta del usuario DEBE estar directamente relacionada con la pregunta y el versículo de referencia. Si el usuario habla de deportes, fútbol, comida, películas, o responde con frases vacías, de evasión o incoherencias, debes responder "isCorrect": false.\n'
-        '2. Si la respuesta es relevante y demuestra que el usuario entendió el mensaje del versículo (aunque la explicación sea sencilla, corta o informal), responde "isCorrect": true.\n'
-        '3. En "feedback" escribe una frase corta explicando lógicamente por qué es correcta o por qué es incorrecta.\n'
-        'Responde únicamente con el JSON.';
+    // El modelo on-device a veces emite un JSON malformado o truncado en una
+    // generación concreta; un simple re-roll suele resolverlo. Reintentamos
+    // unas pocas veces antes de propagar el error a la UI.
+    Object? lastError;
+    for (var attempt = 1; attempt <= _evaluationMaxAttempts; attempt++) {
+      try {
+        final entropy = _seedRandom.nextInt(100000);
+        final prompt = 'Eres un evaluador de respuestas de cuestionarios de memorización bíblica. Evalúa de forma estricta y lógica la respuesta del usuario.\n'
+            'Semilla de variación aleatoria: $entropy\n'
+            'Texto de referencia del versículo: "$verseText"\n'
+            'Pregunta abierta: "$question"\n'
+            'Respuesta del usuario: "${userAnswer.trim()}"\n\n'
+            'Instrucciones de Evaluación:\n'
+            '1. La respuesta del usuario DEBE estar directamente relacionada con la pregunta y el versículo de referencia. Si el usuario habla de deportes, fútbol, comida, películas, o responde con frases vacías, de evasión o incoherencias, debes responder "isCorrect": false.\n'
+            '2. Si la respuesta es relevante y demuestra que el usuario entendió el mensaje del versículo (aunque la explicación sea sencilla, corta o informal), responde "isCorrect": true.\n'
+            '3. En "feedback" escribe una frase corta explicando lógicamente por qué es correcta o por qué es incorrecta.\n'
+            'Responde únicamente con el JSON.';
 
-    final content = await _chat(
-      prompt,
-      temperature: 0.4,
-      maxTokens: _evaluationMaxTokens,
-      jsonSchema: _openAnswerEvaluationSchema,
-    );
-    debugPrint('=== RESPUESTA IA EVALUACION CRUDA ===\n$content\n=====================================');
-    final decoded = _decodeJsonObject(content);
-    debugPrint('=== RESPUESTA IA EVALUACION DECODIFICADA ===\n$decoded\n=====================================');
-    return AiOpenAnswerEvaluation.fromJson(decoded);
+        final content = await _chat(
+          prompt,
+          temperature: 0.4,
+          maxTokens: _evaluationMaxTokens,
+          jsonSchema: _openAnswerEvaluationSchema,
+        );
+        debugPrint('=== RESPUESTA IA EVALUACION CRUDA (intento $attempt) ===\n$content\n=====================================');
+        final decoded = _decodeJsonObject(content);
+        debugPrint('=== RESPUESTA IA EVALUACION DECODIFICADA ===\n$decoded\n=====================================');
+        return AiOpenAnswerEvaluation.fromJson(decoded);
+      } catch (e) {
+        lastError = e;
+        debugPrint('Evaluación de respuesta abierta falló (intento $attempt/$_evaluationMaxAttempts): $e');
+      }
+    }
+    throw StateError('No se pudo evaluar la respuesta tras $_evaluationMaxAttempts intentos: $lastError');
   }
 
   static const Map<String, dynamic> _deckSchema = {

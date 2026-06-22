@@ -138,14 +138,30 @@ class AiOpenAnswerEvaluation {
   });
 
   factory AiOpenAnswerEvaluation.fromJson(Map<String, dynamic> json) {
-    final isCorrect = json['isCorrect'];
-    if (isCorrect is! bool) {
+    // En móvil flutter_gemma no fuerza la gramática JSON, así que el modelo a
+    // veces devuelve "isCorrect" como string ("true"/"sí") o número en vez de
+    // un booleano estricto. Coercionamos con tolerancia en lugar de reventar.
+    final isCorrect = _coerceBool(json['isCorrect']);
+    if (isCorrect == null) {
       throw const FormatException('La evaluación de la IA no trae "isCorrect".');
     }
     return AiOpenAnswerEvaluation(
       isCorrect: isCorrect,
       feedback: AiTrueFalseRound.requireText(json, 'feedback'),
     );
+  }
+
+  static bool? _coerceBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final s = value.trim().toLowerCase();
+      const truthy = {'true', '1', 'sí', 'si', 'correcto', 'correcta', 'verdadero'};
+      const falsy = {'false', '0', 'no', 'incorrecto', 'incorrecta', 'falso'};
+      if (truthy.contains(s)) return true;
+      if (falsy.contains(s)) return false;
+    }
+    return null;
   }
 }
 
