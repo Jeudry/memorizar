@@ -447,43 +447,25 @@ class LocalLlmService {
     required String verseText,
     required int level,
   }) async {
-    String levelInstruction = '';
-    if (level == 1) {
-      levelInstruction = 'Reemplaza exactamente 1 palabra del versículo por una palabra incorrecta (un "intruso"). '
-          'La alteración debe ser sutil y plausible (no obvia), como un sinónimo cercano o una palabra que encaje en el contexto gramatical pero cambie el significado sutilmente.';
-    } else if (level == 2) {
-      levelInstruction = 'Reemplaza exactamente 2 palabras del versículo por dos palabras incorrectas ("intrusos"). '
-          'Las alteraciones deben ser de dificultad alta y muy parecidas a las originales (longitud similar, letras similares, raíces compartidas o sinónimos extremadamente cercanos) que se confundan fácilmente al leer rápido.';
-    } else {
-      levelInstruction = 'Reemplaza exactamente 3 palabras del versículo por tres palabras incorrectas ("intrusos"). '
-          'Las alteraciones deben ser sumamente difíciles de identificar a simple vista: cambia conectores gramaticales pequeños (ej: "por" en vez de "para", "con" en vez de "en"), o palabras con un significado teológico casi idéntico pero incorrecto (ej: "Señor" en vez de "Dios" si el original decía Dios).';
-    }
+    final levelHint = level == 1
+        ? 'un cambio sutil (un sinónimo cercano)'
+        : level == 2
+            ? 'cambios sutiles, con palabras muy parecidas a las originales'
+            : 'cambios muy sutiles (conectores pequeños o sinónimos casi idénticos)';
 
-
-    // Mismo blindaje que el quiz/evaluación: el modelo on-device varía formato
-    // y a veces falla una generación. Reintentamos con parser tolerante.
+    // Prompt corto y directo: los prompts largos hacían que el modelo on-device
+    // degenerara (escupía "<unk><unk>…" sin generar JSON).
     Object? lastError;
     for (var attempt = 1; attempt <= _quizMaxAttempts; attempt++) {
-      final entropy = _seedRandom.nextInt(100000);
-      final prompt = 'Eres un creador de desafíos premium de memorización de la Biblia en español.\n'
-          'Semilla de variación aleatoria: $entropy\n'
-          'Tu tarea es tomar el versículo indicado y generar una versión alterada del mismo.\n\n'
-          'Versículo original ($reference): "$verseText"\n\n'
-          'Instrucciones específicas:\n'
-          '- $levelInstruction\n'
-          '- Las palabras intrusas nuevas no deben existir en el versículo original en esa misma posición.\n'
-          '- El resto de palabras del versículo deben permanecer idénticas al original.\n'
-          '- "alteredVerse": el versículo modificado completo conservando signos de puntuación originales donde sea posible.\n'
-          '- "intruderWords": la lista de las palabras intrusas (tal y como aparecen en el versículo alterado).\n'
-          '- "explanation": una explicación corta que indique qué palabras se cambiaron y por qué el texto original usa esas palabras.\n\n'
-          'Formato de salida OBLIGATORIO: un ÚNICO objeto JSON EXACTAMENTE con esta forma '
-          '(sin envolturas, sin arrays, sin texto adicional):\n'
-          '{"alteredVerse":"...","intruderWords":["...","..."],"explanation":"..."}\n'
-          'Todo en español. Responde únicamente con el JSON.';
+      final prompt = 'Toma el versículo y cambia EXACTAMENTE $level palabra(s) por otra(s) incorrecta(s) ("intrusos"), con $levelHint. '
+          'El resto del versículo debe quedar IGUAL al original.\n'
+          'Versículo ($reference): "$verseText"\n\n'
+          'Responde SOLO con este JSON, sin nada más:\n'
+          '{"alteredVerse": "el versículo con esas $level palabra(s) cambiada(s)", "intruderWords": ["las palabras nuevas que pusiste"], "explanation": "qué cambiaste y por qué"}';
       try {
         final content = await _chat(
           prompt,
-          temperature: 0.8,
+          temperature: 0.5,
           maxTokens: 600,
           jsonSchema: _intruderVerseSchema,
         );
