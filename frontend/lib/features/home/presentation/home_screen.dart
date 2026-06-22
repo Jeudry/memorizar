@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../../core/api/models.dart';
@@ -809,69 +810,137 @@ class _IconButton extends StatelessWidget {
   }
 }
 
-class _HeroSection extends StatelessWidget {
+class _HeroSection extends StatefulWidget {
   const _HeroSection();
+
+  @override
+  State<_HeroSection> createState() => _HeroSectionState();
+}
+
+class _HeroSectionState extends State<_HeroSection> {
+  final PageController _pc = PageController();
+  Timer? _timer;
+  int _count = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Slide automático: avanza solo cada 4s entre mazos con pendientes.
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_pc.hasClients || _count <= 1) return;
+      final next = (((_pc.page ?? 0).round()) + 1) % _count;
+      _pc.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 450),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _pc.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
-    final dueCards = store.dueCards;
-    final topCards = dueCards.take(2).toList();
+
     if (!store.hasDecks) {
-      return GlassCard(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.glassStrong,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: AppColors.glassBorder),
-                  ),
-                  child: const Text(
-                    'INICIO',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.4,
-                      color: AppColors.inkMuted,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                const Text(
-                  '0 min total',
-                  style: TextStyle(color: AppColors.inkMuted, fontSize: 11),
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            const Text(
-              'Listo para memorizar',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Crea un mazo abajo y empieza una sesión cuando tengas contenido preparado.',
-              style: TextStyle(
-                color: AppColors.inkMuted,
-                fontSize: 12,
-                height: 1.35,
-              ),
-            ),
-          ],
-        ),
+      return _heroMessage(
+        badge: 'INICIO',
+        badgeColor: AppColors.inkMuted,
+        title: 'Listo para memorizar',
+        body: 'Crea un mazo abajo y empieza una sesión cuando tengas contenido preparado.',
       );
     }
-    if (dueCards.isEmpty) {
-      return GlassCard(
+
+    final pending = <({MemoryDeckData deck, int due})>[
+      for (final d in store.decks)
+        if (d.cards.any((c) => c.isDueForReview))
+          (deck: d, due: d.cards.where((c) => c.isDueForReview).length),
+    ];
+    _count = pending.length;
+
+    if (pending.isEmpty) {
+      return _heroMessage(
+        badge: 'TODO AL DÍA',
+        badgeColor: AppColors.accentLime,
+        title: '¡Mente afilada!',
+        body: 'No tienes tarjetas pendientes. Memoriza algo nuevo abajo.',
+      );
+    }
+
+    return SizedBox(
+      height: 92,
+      child: PageView.builder(
+        controller: _pc,
+        itemCount: pending.length,
+        itemBuilder: (context, i) =>
+            _PendingDeckSuggestion(deck: pending[i].deck, due: pending[i].due),
+      ),
+    );
+  }
+
+  Widget _heroMessage({
+    required String badge,
+    required Color badgeColor,
+    required String title,
+    required String body,
+  }) {
+    return GlassCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.glassStrong,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: AppColors.glassBorder),
+            ),
+            child: Text(
+              badge,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.4,
+                color: badgeColor,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 6),
+          Text(
+            body,
+            style: const TextStyle(color: AppColors.inkMuted, fontSize: 12, height: 1.35),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Una "slide" del hero: sugiere UN mazo con tarjetas pendientes. Al tocarlo
+/// abre ese mazo para empezar la sesión.
+class _PendingDeckSuggestion extends StatelessWidget {
+  final MemoryDeckData deck;
+  final int due;
+  const _PendingDeckSuggestion({required this.deck, required this.due});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = deck.isBible ? AppColors.accentSun : AppColors.accentCyan;
+    return GestureDetector(
+      onTap: () {
+        AppScope.of(context).setActiveDeck(deck.id);
+        Navigator.pushNamed(context, '/iniciar');
+      },
+      child: GlassCard(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
@@ -880,286 +949,83 @@ class _HeroSection extends StatelessWidget {
               height: 48,
               decoration: BoxDecoration(
                 color: AppColors.glassStrong,
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.accentLime.withValues(alpha: 0.3)),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: accent.withValues(alpha: 0.35)),
               ),
-              child: const Center(
-                child: Text(
-                  '🧠',
-                  style: TextStyle(fontSize: 24),
-                ),
-              ),
+              child: Center(child: GlyphIcon(deck.icon, size: 22)),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'TODO AL DÍA',
+                      const Text(
+                        'PENDIENTE',
                         style: TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.w900,
-                          letterSpacing: 1.2,
-                          color: AppColors.accentLime,
+                          letterSpacing: 1.3,
+                          color: AppColors.inkMuted,
                         ),
                       ),
-                      Text(
-                        '100% completado',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.accentLime.withValues(alpha: 0.8),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: AppColors.accentPink,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '$due',
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    '¡Mente totalmente afilada!',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      color: AppColors.ink,
-                    ),
+                  const SizedBox(height: 3),
+                  Text(
+                    deck.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 2),
-                  const Text(
-                    'Repasos completados. ¡Excelente constancia!',
-                    style: TextStyle(
+                  Text(
+                    due == 1 ? '1 tarjeta por repasar' : '$due tarjetas por repasar',
+                    style: const TextStyle(
+                      fontSize: 11.5,
                       color: AppColors.inkMuted,
-                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: accent.withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Repasar',
+                    style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(width: 3),
+                  Icon(Icons.arrow_forward_rounded, color: accent, size: 14),
                 ],
               ),
             ),
           ],
         ),
-      );
-    }
-    return GlassCard(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.glassStrong,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: AppColors.glassBorder),
-                ),
-                child: Row(
-                  children: [
-                    const Text(
-                      'PENDIENTE ',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.accentPink,
-                        borderRadius: BorderRadius.circular(999),
-                        boxShadow: const [
-                          BoxShadow(color: Color(0x80FF3EA5), blurRadius: 10),
-                        ],
-                      ),
-                      child: Text(
-                        '${store.weakCards}',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Text(
-                '~${store.estimatedPendingMinutes} min total',
-                style: const TextStyle(color: AppColors.inkMuted, fontSize: 11),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ShaderMask(
-            shaderCallback: (Rect bounds) {
-              return LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.white,
-                  Colors.white,
-                  Colors.white.withValues(alpha: 0.28),
-                  Colors.transparent,
-                ],
-                stops: const [0.0, 0.45, 0.88, 1.0],
-              ).createShader(bounds);
-            },
-            blendMode: BlendMode.dstIn,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (var i = 0; i < topCards.length; i++) ...[
-                  _HeroItem(
-                    emoji: topCards[i].icon,
-                    title: topCards[i].front,
-                    subtitle:
-                        '${topCards[i].source} · retención ${topCards[i].retention}%',
-                    eta: '~${(topCards[i].lapses + 3).clamp(3, 7)} min',
-                    isUrgent: topCards[i].retention < 50,
-                    isToday: topCards[i].retention >= 50,
-                    isPriority: i == 0,
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Divider(color: AppColors.glassBorder, height: 1),
-          const SizedBox(height: 6),
-          TextButton(
-            onPressed: () => Navigator.pushNamed(context, '/repasar'),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Ver los ${dueCards.length} pendientes',
-                  style: const TextStyle(
-                    color: AppColors.inkMuted,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                const Icon(
-                  Icons.keyboard_arrow_down,
-                  color: AppColors.inkMuted,
-                  size: 18,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeroItem extends StatelessWidget {
-  final String emoji;
-  final String title;
-  final String subtitle;
-  final String eta;
-  final bool isUrgent;
-  final bool isToday;
-  final bool isPriority;
-
-  const _HeroItem({
-    required this.emoji,
-    required this.title,
-    required this.subtitle,
-    required this.eta,
-    this.isUrgent = false,
-    this.isToday = false,
-    this.isPriority = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final accentColor = isUrgent
-        ? AppColors.urgent
-        : (isToday ? AppColors.accentSun : AppColors.accentLime);
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isPriority ? AppColors.glassStrong : AppColors.glassSoft,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isPriority
-              ? AppColors.urgent.withValues(alpha: 0.30)
-              : AppColors.glassBorder,
-        ),
-        boxShadow: isPriority
-            ? [
-                BoxShadow(
-                  color: AppColors.urgent.withValues(alpha: 0.10),
-                  blurRadius: 20,
-                  offset: const Offset(0, 4),
-                ),
-              ]
-            : null,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: AppColors.glassStrong,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: accentColor.withValues(alpha: 0.5)),
-              boxShadow: [
-                BoxShadow(
-                  color: accentColor.withValues(alpha: 0.3),
-                  blurRadius: 10,
-                ),
-              ],
-            ),
-            child: Center(child: GlyphIcon(emoji, size: 18)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.inkMuted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-            decoration: BoxDecoration(
-              color: AppColors.glassStrong,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: AppColors.glassBorder),
-            ),
-            child: Text(
-              eta,
-              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
-            ),
-          ),
-          const SizedBox(width: 8),
-          const Icon(Icons.chevron_right, color: AppColors.inkMuted, size: 18),
-        ],
       ),
     );
   }
