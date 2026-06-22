@@ -35,9 +35,10 @@ class LocalLlmService {
   static const int _quizMaxAttempts = 2;
   static const int _evaluationMaxTokens = 300;
 
-  /// Reintentos de la evaluación de respuesta abierta ante un JSON malformado
-  /// del modelo on-device (cada intento re-genera con nueva semilla).
-  static const int _evaluationMaxAttempts = 3;
+  /// Reintentos de la evaluación de respuesta abierta. Cada intento cuesta
+  /// ~20s, así que lo mantenemos bajo para no hacer esperar demasiado al usuario
+  /// cuando el modelo no coopera.
+  static const int _evaluationMaxAttempts = 2;
 
   static const Map<String, dynamic> _quizRoundSetSchema = {
     'type': 'object',
@@ -532,20 +533,16 @@ class LocalLlmService {
     Object? lastError;
     for (var attempt = 1; attempt <= _evaluationMaxAttempts; attempt++) {
       try {
-        final entropy = _seedRandom.nextInt(100000);
-        final prompt = 'Eres un evaluador de respuestas de cuestionarios de memorización bíblica. Evalúa de forma estricta y lógica la respuesta del usuario.\n'
-            'Semilla de variación aleatoria: $entropy\n'
-            'Texto de referencia del versículo: "$verseText"\n'
-            'Pregunta abierta: "$question"\n'
+        // Prompt corto y directo: los prompts largos disparaban en el modelo
+        // on-device un bucle degenerado (repetía "system..." sin generar JSON).
+        final prompt = 'Evalúa si la respuesta del usuario es válida para la pregunta sobre el versículo. Sé estricto pero justo.\n'
+            'Versículo: "$verseText"\n'
+            'Pregunta: "$question"\n'
             'Respuesta del usuario: "${userAnswer.trim()}"\n\n'
-            'Instrucciones de Evaluación:\n'
-            '1. La respuesta del usuario DEBE estar directamente relacionada con la pregunta y el versículo de referencia. Si el usuario habla de deportes, fútbol, comida, películas, o responde con frases vacías, de evasión o incoherencias, debes responder "isCorrect": false.\n'
-            '2. Si la respuesta es relevante y demuestra que el usuario entendió el mensaje del versículo (aunque la explicación sea sencilla, corta o informal), responde "isCorrect": true.\n'
-            '3. En "feedback" escribe una frase corta explicando lógicamente por qué es correcta o por qué es incorrecta.\n'
-            'Formato de salida OBLIGATORIO: un ÚNICO objeto JSON EXACTAMENTE con esta forma '
-            '(sin envolturas ni texto adicional):\n'
-            '{"isCorrect":true,"feedback":"..."}\n'
-            'Responde únicamente con el JSON.';
+            'Es correcta si se relaciona con la pregunta y muestra que entendió el versículo, aunque sea simple o informal. '
+            'Es incorrecta si habla de otra cosa (deportes, comida…), está vacía, evade o es incoherente.\n'
+            'Responde SOLO con este JSON, sin nada más antes ni después:\n'
+            '{"isCorrect": true, "feedback": "frase corta del porqué"}';
 
         final content = await _chat(
           prompt,
