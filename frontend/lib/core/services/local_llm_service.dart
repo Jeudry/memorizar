@@ -252,15 +252,26 @@ class LocalLlmService {
     statusNotifier.value = 'Inicializando IA local en el dispositivo…';
 
     if (_useMobileBackend) {
+      // La PRIMERA carga del modelo a GPU en un dispositivo real tarda bastante
+      // más que unos pocos segundos. En iOS de desarrollo (simulador) no hay
+      // modelo GPU, así que un timeout corto deja caer a IA simulada; en un
+      // dispositivo real (Android) hay que ESPERAR la carga real: abortarla a
+      // los 4s era justo lo que hacía fallar la generación en el PRIMER intento
+      // (la carga nativa seguía en background y el segundo intento ya la tomaba
+      // caliente). Por eso el timeout aquí es generoso fuera del simulador iOS.
+      final useSimulatorFallback = !kIsWeb && Platform.isIOS;
+      final initTimeout = useSimulatorFallback
+          ? const Duration(seconds: 4)
+          : const Duration(seconds: 120);
       try {
         await FlutterGemmaBackend.instance
             .init(onStatus: (s) => statusNotifier.value = s)
-            .timeout(const Duration(seconds: 4));
+            .timeout(initTimeout);
         _initialized = true;
         _isMockFallback = false;
       } catch (e) {
         debugPrint('Fallo al inicializar Gemma nativo ($e).');
-        if (!kIsWeb && Platform.isIOS) {
+        if (useSimulatorFallback) {
           debugPrint('Activando fallback de IA simulada para desarrollo (Simulador iOS).');
           _initialized = true;
           _isMockFallback = true;
