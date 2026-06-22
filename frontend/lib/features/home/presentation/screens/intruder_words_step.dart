@@ -662,9 +662,11 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
   Widget _buildResult() {
     if (_success) {
       final originalWords = _splitWords(widget.card.back);
-      final alteredWordsNorm = _alteredWords.map(_normalize).toSet();
       final intruderNorm =
           _intruderSet?.intruderWords.map(_normalize).toSet() ?? {};
+      // Alineación palabra a palabra entre original y alterado (mismo nº de
+      // palabras porque el ejercicio sólo reemplaza, no agrega/quita).
+      final aligned = originalWords.length == _alteredWords.length;
 
       return SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -713,63 +715,60 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'TEXTO ORIGINAL',
+                    'CORRECCIÓN',
                     style: TextStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.bold,
                       color: RefColors.lime,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 14),
+                  // Un solo texto: cada palabra falsa va tachada y encima, en
+                  // verde, la palabra verdadera (alineadas por la base, así el
+                  // versículo se lee corrido abajo con las correcciones arriba).
                   Wrap(
-                    spacing: 4,
-                    runSpacing: 4,
-                    children: originalWords.map((w) {
-                      final hasBeenReplaced =
-                          !alteredWordsNorm.contains(_normalize(w));
-                      return Text(
-                        w,
-                        style: TextStyle(
-                          fontSize: 14.5,
-                          fontWeight: hasBeenReplaced
-                              ? FontWeight.w900
-                              : FontWeight.w500,
-                          color: hasBeenReplaced
-                              ? Colors.greenAccent
-                              : RefColors.ink,
-                        ),
+                    spacing: 6,
+                    runSpacing: 12,
+                    crossAxisAlignment: WrapCrossAlignment.end,
+                    children: List.generate(_alteredWords.length, (i) {
+                      final altered = _alteredWords[i];
+                      final isIntruder = intruderNorm.contains(_normalize(altered));
+                      if (!isIntruder) {
+                        return Text(
+                          altered,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                            color: RefColors.ink,
+                          ),
+                        );
+                      }
+                      final correct = aligned ? originalWords[i] : '';
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (correct.isNotEmpty)
+                            Text(
+                              correct,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                height: 1.1,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.greenAccent,
+                              ),
+                            ),
+                          Text(
+                            altered,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: RefColors.pink,
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                        ],
                       );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 18),
-                  const Text(
-                    'TEXTO CON INTRUSOS DETECTADOS',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.bold,
-                      color: RefColors.pink,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 4,
-                    runSpacing: 4,
-                    children: _alteredWords.map((w) {
-                      final isIntruder = intruderNorm.contains(_normalize(w));
-                      return Text(
-                        w,
-                        style: TextStyle(
-                          fontSize: 14.5,
-                          fontWeight: isIntruder
-                              ? FontWeight.w900
-                              : FontWeight.w500,
-                          decoration: isIntruder
-                              ? TextDecoration.lineThrough
-                              : null,
-                          color: isIntruder ? RefColors.pink : RefColors.ink,
-                        ),
-                      );
-                    }).toList(),
+                    }),
                   ),
                 ],
               ),
