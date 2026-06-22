@@ -1653,7 +1653,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             !_isFirstLetterSlug(slug) &&
             !_isFogSlug(slug) &&
             !_isFinalVoiceSlug(slug) &&
-            !slug.startsWith('18-palabras-intrusas')) ||
+            !slug.startsWith('18-palabras-intrusas') &&
+            slug != _chooseWordPracticeSlug) ||
             _omitOverride.contains(slug),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1707,7 +1708,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   !_isFirstLetterSlug(slug) &&
                   !_isFogSlug(slug) &&
                   !_isFinalVoiceSlug(slug) &&
-                  !slug.startsWith('18-palabras-intrusas')) ||
+                  !slug.startsWith('18-palabras-intrusas') &&
+                  slug != _chooseWordPracticeSlug) ||
                   _omitOverride.contains(slug);
 
               final isMyTurnActive = isCoop && coopState != null && (
