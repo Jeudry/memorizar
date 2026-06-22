@@ -456,28 +456,41 @@ class LocalLlmService {
     }
 
 
-    final entropy = _seedRandom.nextInt(100000);
-    final prompt = 'Eres un creador de desafíos premium de memorización de la Biblia en español.\n'
-        'Semilla de variación aleatoria: $entropy\n'
-        'Tu tarea es tomar el versículo indicado y generar una versión alterada del mismo.\n\n'
-        'Versículo original ($reference): "$verseText"\n\n'
-        'Instrucciones específicas:\n'
-        '- $levelInstruction\n'
-        '- Las palabras intrusas nuevas no deben existir en el versículo original en esa misma posición.\n'
-        '- El resto de palabras del versículo deben permanecer idénticas al original.\n'
-        '- Devuelve exactamente en "alteredVerse" el versículo modificado completo conservando signos de puntuación originales donde sea posible.\n'
-        '- Devuelve exactamente en "intruderWords" la lista de las palabras intrusas (tal y como aparecen en el versículo alterado, sin puntuación pegada si es posible).\n'
-        '- Devuelve en "explanation" una explicación interactiva de alta calidad que indique qué palabras se cambiaron y por qué el texto original usa esas palabras (con un matiz teológico o lingüístico interesante).\n\n'
-        'Responde únicamente con el objeto JSON estructurado. Todo en español.';
-
-    final content = await _chat(
-      prompt,
-      temperature: 0.8,
-      maxTokens: 600,
-      jsonSchema: _intruderVerseSchema,
-    );
-
-    return IntruderVerseSet.fromJson(_decodeJsonObject(content));
+    // Mismo blindaje que el quiz/evaluación: el modelo on-device varía formato
+    // y a veces falla una generación. Reintentamos con parser tolerante.
+    Object? lastError;
+    for (var attempt = 1; attempt <= _quizMaxAttempts; attempt++) {
+      final entropy = _seedRandom.nextInt(100000);
+      final prompt = 'Eres un creador de desafíos premium de memorización de la Biblia en español.\n'
+          'Semilla de variación aleatoria: $entropy\n'
+          'Tu tarea es tomar el versículo indicado y generar una versión alterada del mismo.\n\n'
+          'Versículo original ($reference): "$verseText"\n\n'
+          'Instrucciones específicas:\n'
+          '- $levelInstruction\n'
+          '- Las palabras intrusas nuevas no deben existir en el versículo original en esa misma posición.\n'
+          '- El resto de palabras del versículo deben permanecer idénticas al original.\n'
+          '- "alteredVerse": el versículo modificado completo conservando signos de puntuación originales donde sea posible.\n'
+          '- "intruderWords": la lista de las palabras intrusas (tal y como aparecen en el versículo alterado).\n'
+          '- "explanation": una explicación corta que indique qué palabras se cambiaron y por qué el texto original usa esas palabras.\n\n'
+          'Formato de salida OBLIGATORIO: un ÚNICO objeto JSON EXACTAMENTE con esta forma '
+          '(sin envolturas, sin arrays, sin texto adicional):\n'
+          '{"alteredVerse":"...","intruderWords":["...","..."],"explanation":"..."}\n'
+          'Todo en español. Responde únicamente con el JSON.';
+      try {
+        final content = await _chat(
+          prompt,
+          temperature: 0.8,
+          maxTokens: 600,
+          jsonSchema: _intruderVerseSchema,
+        );
+        debugPrint('=== RESPUESTA IA LOCAL INTRUSO CRUDA (intento $attempt) ===\n$content\n=====================================');
+        return IntruderVerseSet.lenient(_decodeJsonStructure(content));
+      } catch (e) {
+        lastError = e;
+        debugPrint('Generación de palabras intrusas falló (intento $attempt/$_quizMaxAttempts): $e');
+      }
+    }
+    throw StateError('No se pudo generar el ejercicio de palabras intrusas tras $_quizMaxAttempts intentos: $lastError');
   }
 
   static const Map<String, dynamic> _distractorSchema = {

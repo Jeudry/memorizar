@@ -465,5 +465,70 @@ class IntruderVerseSet {
       explanation: explanation,
     );
   }
+
+  /// Parser tolerante: igual que el quiz/evaluación, el modelo on-device usa
+  /// claves y formas variables. Acepta el verso alterado y las palabras intrusas
+  /// bajo varias claves, la lista como array o string separada por comas, y
+  /// desenvuelve wrappers; la explicación es opcional (default si falta).
+  factory IntruderVerseSet.lenient(dynamic decoded) {
+    Map<String, dynamic>? map;
+    if (decoded is List) {
+      final maps = decoded.whereType<Map<String, dynamic>>().toList();
+      map = maps.isEmpty ? null : maps.first;
+    } else if (decoded is Map<String, dynamic>) {
+      map = decoded;
+    }
+    if (map == null) {
+      throw const FormatException('El ejercicio de intrusas no es un objeto JSON.');
+    }
+    for (final key in const ['result', 'resultado', 'data', 'exercise', 'ejercicio']) {
+      final inner = map![key];
+      if (inner is Map<String, dynamic>) {
+        map = inner;
+        break;
+      }
+    }
+
+    final alteredVerse = _llmText(map!, const [
+      'alteredVerse', 'altered_verse', 'versiculoAlterado', 'versículoAlterado',
+      'versoAlterado', 'modifiedVerse', 'verse', 'verso', 'text', 'texto',
+    ]);
+    if (alteredVerse == null) {
+      throw const FormatException('El ejercicio de intrusas no trae el versículo alterado.');
+    }
+
+    final rawWords = map['intruderWords'] ??
+        map['intruder_words'] ??
+        map['palabrasIntrusas'] ??
+        map['palabras_intrusas'] ??
+        map['intrusos'] ??
+        map['intruders'] ??
+        map['words'] ??
+        map['palabras'];
+    var intruderWords = _llmStringList(rawWords);
+    if (intruderWords.isEmpty && rawWords is String) {
+      // Lista venida como string "palabra1, palabra2".
+      intruderWords = rawWords
+          .split(RegExp(r'[,;]'))
+          .map((w) => w.trim())
+          .where((w) => w.isNotEmpty)
+          .toList();
+    }
+    if (intruderWords.isEmpty) {
+      throw const FormatException('El ejercicio de intrusas no trae palabras intrusas.');
+    }
+
+    final explanation = _llmText(map, const [
+          'explanation', 'explicacion', 'explicación', 'razon', 'razón', 'reason',
+          'feedback', 'comentario', 'detalle',
+        ]) ??
+        'Identifica las palabras que no pertenecen al versículo original.';
+
+    return IntruderVerseSet(
+      alteredVerse: alteredVerse,
+      intruderWords: intruderWords,
+      explanation: explanation,
+    );
+  }
 }
 

@@ -195,4 +195,39 @@ void main() {
       expect(ev.feedback, 'Ok.');
     });
   });
+
+  group('IntruderVerseSet.lenient', () {
+    test('forma estándar', () {
+      final decoded = jsonDecode(
+          '{"alteredVerse": "En el comienzo creó Dios el cielo y la tierra.", "intruderWords": ["comienzo"], "explanation": "El original dice principio."}');
+      final s = IntruderVerseSet.lenient(decoded);
+      expect(s.alteredVerse, contains('comienzo'));
+      expect(s.intruderWords, contains('comienzo'));
+      expect(s.explanation, isNotEmpty);
+    });
+
+    test('claves alternativas (versiculoAlterado, intrusos) y explicación ausente', () {
+      final decoded = jsonDecode(
+          '{"versiculoAlterado": "Todo lo puedo en Cristo que me anima.", "intrusos": ["anima"]}');
+      final s = IntruderVerseSet.lenient(decoded);
+      expect(s.alteredVerse, contains('anima'));
+      expect(s.intruderWords, contains('anima'));
+      expect(s.explanation, isNotEmpty); // default
+    });
+
+    test('intruderWords como string separada por comas', () {
+      final decoded = jsonDecode(
+          '{"alteredVerse": "texto alterado", "intruderWords": "anima, fuerza", "explanation": "x"}');
+      final s = IntruderVerseSet.lenient(decoded);
+      expect(s.intruderWords, containsAll(['anima', 'fuerza']));
+    });
+
+    test('wrapper {result:{...}}', () {
+      final decoded = jsonDecode(
+          '{"result": {"alteredVerse": "v", "intruderWords": ["a"], "explanation": "e"}}');
+      final s = IntruderVerseSet.lenient(decoded);
+      expect(s.alteredVerse, 'v');
+      expect(s.intruderWords, ['a']);
+    });
+  });
 }
