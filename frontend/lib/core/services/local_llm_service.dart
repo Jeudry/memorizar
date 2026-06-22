@@ -486,11 +486,12 @@ class LocalLlmService {
     // degenerara (escupía "<unk><unk>…" sin generar JSON).
     Object? lastError;
     for (var attempt = 1; attempt <= _quizMaxAttempts; attempt++) {
-      final prompt = 'Toma el versículo y cambia EXACTAMENTE $level palabra(s) por otra(s) incorrecta(s) ("intrusos"), con $levelHint. '
-          'El resto del versículo debe quedar IGUAL al original.\n'
+      final prompt = 'Toma el versículo y REEMPLAZA EXACTAMENTE $level palabra(s) por otra(s) palabra(s) DIFERENTE(S) e incorrecta(s) ("intrusos"), con $levelHint. '
+          'Cada palabra intrusa debe ser DISTINTA a la que reemplaza (NO repitas la misma palabra). El resto del versículo queda IGUAL.\n'
+          'Ejemplo: versículo "Dios creó el cielo" → alterado "Dios formó el cielo", intruso "formó" (cambió "creó" por "formó").\n'
           'Versículo ($reference): "$verseText"\n\n'
           'Responde SOLO con este JSON, sin nada más:\n'
-          '{"alteredVerse": "el versículo con esas $level palabra(s) cambiada(s)", "intruderWords": ["las palabras nuevas que pusiste"]}';
+          '{"alteredVerse": "el versículo con esas $level palabra(s) ya cambiada(s)", "intruderWords": ["las palabras NUEVAS que pusiste, no las originales"]}';
       try {
         final content = await _chat(
           prompt,
@@ -499,13 +500,47 @@ class LocalLlmService {
           jsonSchema: _intruderVerseSchema,
         );
         debugPrint('=== RESPUESTA IA LOCAL INTRUSO CRUDA (intento $attempt) ===\n$content\n=====================================');
-        return IntruderVerseSet.lenient(_decodeJsonStructure(content));
+        final set = IntruderVerseSet.lenient(_decodeJsonStructure(content));
+        _validateIntruderSet(set, verseText); // lanza si no hubo alteración real
+        return set;
       } catch (e) {
         lastError = e;
         debugPrint('Generación de palabras intrusas falló (intento $attempt/$_quizMaxAttempts): $e');
       }
     }
     throw StateError('No se pudo generar el ejercicio de palabras intrusas tras $_quizMaxAttempts intentos: $lastError');
+  }
+
+  /// Verifica que el modelo de verdad alteró el versículo: que el texto cambió y
+  /// que las "palabras intrusas" son palabras NUEVAS (no estaban en el original).
+  /// Atrapa el caso roto en que el modelo devuelve el versículo idéntico o marca
+  /// como intrusa una palabra que ya estaba (ej. "principio" → "principio").
+  void _validateIntruderSet(IntruderVerseSet set, String original) {
+    String norm(String w) =>
+        w.toLowerCase().replaceAll(RegExp(r'[^0-9a-záéíóúüñ]'), '');
+
+    final originalWords =
+        original.split(RegExp(r'\s+')).map(norm).where((w) => w.isNotEmpty).toList();
+    final alteredWords = set.alteredVerse
+        .split(RegExp(r'\s+'))
+        .map(norm)
+        .where((w) => w.isNotEmpty)
+        .toList();
+
+    if (alteredWords.join(' ') == originalWords.join(' ')) {
+      throw const FormatException('El versículo alterado es idéntico al original (sin intrusos).');
+    }
+
+    final originalSet = originalWords.toSet();
+    final alteredSet = alteredWords.toSet();
+    // Una intrusa real aparece en el texto alterado pero NO en el original.
+    final genuineIntruders = set.intruderWords
+        .map(norm)
+        .where((w) => w.isNotEmpty && alteredSet.contains(w) && !originalSet.contains(w))
+        .toList();
+    if (genuineIntruders.isEmpty) {
+      throw const FormatException('Las palabras marcadas como intrusas ya estaban en el versículo.');
+    }
   }
 
   static const Map<String, dynamic> _distractorSchema = {
