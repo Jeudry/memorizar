@@ -457,15 +457,16 @@ class LocalLlmService {
     required String verseText,
     required String userAnswer,
   }) async {
-    final prompt = 'Eres un tutor de memorización bíblica. Evalúa en español la respuesta del usuario.\n'
-        'Texto de referencia: "$verseText"\n'
+    final entropy = _seedRandom.nextInt(100000);
+    final prompt = 'Eres un evaluador de respuestas de cuestionarios de memorización bíblica. Evalúa de forma estricta y lógica la respuesta del usuario.\n'
+        'Semilla de variación aleatoria: $entropy\n'
+        'Texto de referencia del versículo: "$verseText"\n'
         'Pregunta abierta: "$question"\n'
         'Respuesta del usuario: "${userAnswer.trim()}"\n\n'
-        'Criterio de Evaluación:\n'
-        '- Sé muy flexible e indulgente: si la respuesta del usuario es básicamente correcta, aproximada o demuestra un entendimiento general/básico, márcala como CORRECTA ("isCorrect": true). No exijas explicaciones exhaustivas o teología profunda.\n'
-        '- Si la respuesta está bien pero es muy simple o le falta profundizar, márcala igualmente como CORRECTA ("isCorrect": true), y usa el "feedback" para añadir detalles adicionales o aclaraciones de forma amable e instructiva (envía la profundidad como una aclaración, no como un motivo de fallo).\n'
-        '- Solo marca "isCorrect" como false si la respuesta es completamente errónea, vacía o totalmente fuera de tema.\n'
-        '- En "feedback" escribe 1 o 2 frases breves y amigables explicando el veredicto o complementando la respuesta.\n'
+        'Instrucciones de Evaluación:\n'
+        '1. La respuesta del usuario DEBE estar directamente relacionada con la pregunta y el versículo de referencia. Si el usuario habla de deportes, fútbol, comida, películas, o responde con frases vacías, de evasión o incoherencias, debes responder "isCorrect": false.\n'
+        '2. Si la respuesta es relevante y demuestra que el usuario entendió el mensaje del versículo (aunque la explicación sea sencilla, corta o informal), responde "isCorrect": true.\n'
+        '3. En "feedback" escribe una frase corta explicando lógicamente por qué es correcta o por qué es incorrecta.\n'
         'Responde únicamente con el JSON.';
 
     final content = await _chat(
@@ -474,7 +475,10 @@ class LocalLlmService {
       maxTokens: _evaluationMaxTokens,
       jsonSchema: _openAnswerEvaluationSchema,
     );
-    return AiOpenAnswerEvaluation.fromJson(_decodeJsonObject(content));
+    debugPrint('=== RESPUESTA IA EVALUACION CRUDA ===\n$content\n=====================================');
+    final decoded = _decodeJsonObject(content);
+    debugPrint('=== RESPUESTA IA EVALUACION DECODIFICADA ===\n$decoded\n=====================================');
+    return AiOpenAnswerEvaluation.fromJson(decoded);
   }
 
   static const Map<String, dynamic> _deckSchema = {
