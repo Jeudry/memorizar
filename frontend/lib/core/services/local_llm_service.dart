@@ -347,11 +347,12 @@ class LocalLlmService {
     required List<({String reference, String verseText})> verses,
   }) async {
     assert(verses.isNotEmpty, 'Se requiere al menos un versículo.');
-    const depthInstruction = 'Las preguntas deben ser de comprensión directa y clara, '
-        'pero ricas en contenido: evalúa el significado literal, así como aspectos prácticos, '
-        'implicaciones espirituales o doctrina clave de forma accesible. '
-        'Los distractores deben ser opciones plausibles pero claramente incorrectas para quien '
-        'comprenda bien el versículo.';
+    const depthInstruction = 'Las preguntas y respuestas deben ser CORTAS, SIMPLES y directas: '
+        'lenguaje sencillo y cotidiano, UNA sola idea por pregunta, frases breves '
+        '(idealmente menos de 15 palabras). Evita enunciados largos, rebuscados o con varias '
+        'cláusulas, y términos teológicos complicados. Pregunta por el sentido literal y evidente '
+        'del texto. Los distractores deben ser cortos, plausibles pero claramente incorrectos para '
+        'quien comprenda el versículo.';
 
     final isMulti = verses.length > 1;
 
@@ -388,10 +389,10 @@ class LocalLlmService {
           'Semilla de variación aleatoria: $entropy\n'
           '$textBlock\n\n'
           'Genera exactamente:\n'
-          '1. "trueFalse": una afirmación sobre el contenido del texto con su veredicto "isTrue". '
+          '1. "trueFalse": una afirmación CORTA y simple sobre el contenido del texto con su veredicto "isTrue". '
           'Decide al azar si la haces verdadera o falsa; si es falsa, introduce un error sutil.\n'
-          '2. "multipleChoice": una pregunta con "correct" (respuesta correcta) y "distractors" (exactamente 3 incorrectas).\n'
-          '3. "openQuestion": una pregunta abierta corta para que el usuario explique el texto con sus palabras.\n\n'
+          '2. "multipleChoice": una pregunta CORTA con "correct" (respuesta correcta y breve) y "distractors" (exactamente 3 incorrectas y breves).\n'
+          '3. "openQuestion": una pregunta abierta CORTA y sencilla para que el usuario explique el texto con sus palabras.\n\n'
           'IMPORTANTE: $coverageInstruction\n\n'
           '$depthInstruction\n'
           'Formato de salida OBLIGATORIO: un ÚNICO objeto JSON EXACTAMENTE con esta forma '
