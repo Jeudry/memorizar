@@ -59,6 +59,41 @@ class _QuizRound {
   }
 }
 
+/// Quiz ya generándose en segundo plano, listo para consumir al llegar al paso.
+class _PrefetchedQuiz {
+  final List<MemoryCardData> group; // grupo ya barajado
+  final Future<AiQuizRoundSet> rounds;
+  _PrefetchedQuiz(this.group, this.rounds);
+}
+
+/// Caché de pre-generación del quiz: dispara la generación ANTES de que el
+/// usuario llegue al paso (mientras está en el paso previo), para no esperar los
+/// ~20s. La inferencia está serializada en LocalLlmService, así que esto no
+/// choca con otra generación; sólo se prefetcha el quiz inmediatamente siguiente.
+class _QuizPrefetch {
+  static final Map<String, _PrefetchedQuiz> _cache = {};
+
+  static String _key(List<MemoryCardData> group) => group.map((c) => c.id).join('|');
+
+  /// Arranca la generación del grupo si aún no está en caché (idempotente).
+  static void ensure(List<MemoryCardData> group) {
+    if (group.isEmpty) return;
+    final key = _key(group);
+    if (_cache.containsKey(key)) return;
+    final shuffled = [...group]..shuffle();
+    final future = LocalLlmService.instance.generateQuizRoundSet(
+      verses: [for (final c in shuffled) (reference: c.front, verseText: c.back)],
+    );
+    // Si nadie lo consume (el usuario omite/sale), evitar "unhandled exception"
+    // y limpiar la entrada fallida para poder reintentar luego.
+    unawaited(future.then((_) {}, onError: (_) => _cache.remove(key)));
+    _cache[key] = _PrefetchedQuiz(shuffled, future);
+  }
+
+  /// Toma (y remueve) el quiz pre-generado para [group], o null si no hay.
+  static _PrefetchedQuiz? take(List<MemoryCardData> group) => _cache.remove(_key(group));
+}
+
 class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   /// El quiz con IA agrupa los items elegidos de a [_quizGroupSize] por vuelta:
   /// cada vuelta genera 3 preguntas (V/F, opción múltiple, abierta) que se
@@ -1025,15 +1060,16 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       }
     }
 
-    // Barajar el orden de los versículos UNA vez por generación para que la
-    // asignación a rondas no sea predecible (no siempre V/F=1º, opción=2º,
-    // abierta=3º). Se baraja aquí —no en build— para no cambiar la clave del
-    // grupo y evitar regeneraciones infinitas. El mismo orden alimenta el prompt
-    // y _roundsFromAi, así la referencia mostrada coincide con la pregunta.
-    final quizGroup = [...group]..shuffle();
+    // Si el quiz ya se pre-generó en segundo plano (prefetch), consumirlo: el
+    // orden barajado y la generación vienen de ahí, así que es instantáneo si ya
+    // terminó. Si no, barajamos y generamos aquí. El barajado se hace fuera del
+    // build para no cambiar la clave del grupo (evita regeneraciones infinitas).
+    final prefetched = _QuizPrefetch.take(group);
+    final quizGroup = prefetched?.group ?? ([...group]..shuffle());
     llm.statusNotifier.addListener(onEngineStatus);
     try {
-      debugPrint('=== QUIZ GROUP (${quizGroup.length} versículos, orden aleatorio): '
+      debugPrint('=== QUIZ GROUP (${quizGroup.length} versículos'
+          '${prefetched != null ? ", PREFETCH" : ", orden aleatorio"}): '
           '${quizGroup.map((c) => c.front).join(" | ")} ===');
       await llm.initLlm();
       if (!mounted) return;
@@ -1042,12 +1078,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             ? 'Cargando preguntas simuladas sobre $label…'
             : 'Gemma 4 está creando preguntas únicas sobre $label…';
       });
-      final roundSet = await llm.generateQuizRoundSet(
-        verses: [
-          for (final card in quizGroup)
-            (reference: card.front, verseText: card.back),
-        ],
-      );
+      final roundSet = await (prefetched?.rounds ??
+          llm.generateQuizRoundSet(
+            verses: [
+              for (final card in quizGroup)
+                (reference: card.front, verseText: card.back),
+            ],
+          ));
       if (!mounted) return;
       setState(() {
         _quizRounds = _roundsFromAi(quizGroup, roundSet);
@@ -1546,6 +1583,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     final stepIndex = steps.indexWhere((step) => step.slug == slug);
     final step = stepIndex < 0 ? _flowStepNumber(slug) : stepIndex + 1;
     final totalSteps = steps.length;
+
+    // Pre-generar el quiz en segundo plano cuando el paso SIGUIENTE es el quiz,
+    // para que al llegar ya esté listo (sin esperar ~20s). Sólo el quiz que
+    // sigue, para no bloquear otra generación (la inferencia está serializada).
+    if (slug != '09-quiz' && _nextFlowSlug(store, slug) == '09-quiz') {
+      _QuizPrefetch.ensure(_quizGroupCards(batch));
+    }
     if (slug == '02-lectura-frag' && store.isExerciseStepCompleted(slug)) {
       _fragmentVisibleWords = _studyWords(card.back).length;
     }
