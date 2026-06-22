@@ -16,7 +16,11 @@ class _QuizRound {
   final MemoryCardData target;
   final _QuizQuestionType type;
   final List<MemoryCardData> options;
-  
+
+  /// Referencia(s) del versículo en que se basa esta pregunta (ej. "Génesis 1:1"),
+  /// para mostrarla en la UI de la ronda.
+  final String sourceReference;
+
   // True/False extra fields
   final String? trueFalseStatement;
   final bool? isStatementTrue;
@@ -36,6 +40,7 @@ class _QuizRound {
     required this.target,
     required this.type,
     required this.options,
+    this.sourceReference = '',
     this.trueFalseStatement,
     this.isStatementTrue,
     this.openQuestionPrompt,
@@ -1071,6 +1076,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       target: tfCard,
       type: _QuizQuestionType.trueFalse,
       options: const [],
+      sourceReference: tfCard.front,
       trueFalseStatement: set.trueFalse.statement,
       isStatementTrue: set.trueFalse.isTrue,
     );
@@ -1100,12 +1106,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       target: correctCard,
       type: _QuizQuestionType.frontToBack,
       options: optionCards,
+      sourceReference: mcCard.front,
     );
 
     final openRound = _QuizRound(
       target: openCard,
       type: _QuizQuestionType.openQuestion,
       options: const [],
+      sourceReference: openCard.front,
       openQuestionPrompt: set.openQuestion.question,
     );
 
@@ -2884,6 +2892,26 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             ],
           ),
         ),
+        if (round.sourceReference.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.menu_book_rounded, size: 13, color: RefColors.muted),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    'Basada en ${round.sourceReference}',
+                    style: const TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         _ExerciseQuestionBlock(contextLabel: contextLabel, question: question),
         const SizedBox(height: 14),
         if (isTrueFalse) ...[
