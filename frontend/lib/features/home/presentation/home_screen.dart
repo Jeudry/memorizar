@@ -6,7 +6,6 @@ import '../../../core/router/app_routes.dart';
 import '../../../core/theme.dart';
 import 'glyph_icon.dart';
 import '../../../core/ui/main_tab_shell.dart';
-import '../../missions/presentation/missions_panel.dart';
 import 'ui_screens.dart';
 import '../../cooperativo/data/coop_service.dart';
 
@@ -61,12 +60,6 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
           const _CommunitySlider(),
-          const SizedBox(height: 18),
-
-
-
-          // Misiones del día
-          const MissionsPanel(),
           const SizedBox(height: 18),
 
           // Amigos
@@ -1228,84 +1221,7 @@ class _MemorizarGrid extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        _MemCardHorizontal(
-          title: 'Planes de lectura',
-          subtitle: 'Recorridos guiados día por día',
-          emoji: '📖',
-          color: AppColors.accentCyan,
-          route: '/planes',
-        ),
       ],
-    );
-  }
-}
-
-class _MemCardHorizontal extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final String emoji;
-  final Color color;
-  final String route;
-
-  const _MemCardHorizontal({
-    required this.title,
-    required this.subtitle,
-    required this.emoji,
-    required this.color,
-    required this.route,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.pushNamed(context, route),
-      child: GlassCard(
-        padding: const EdgeInsets.all(14),
-        color: AppColors.glassBg,
-        child: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.glassBorder),
-                gradient: LinearGradient(
-                  colors: [color.withValues(alpha: .22), color.withValues(alpha: .04)],
-                ),
-              ),
-              child: Center(child: GlyphIcon(emoji, size: 20)),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.inkMuted,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right_rounded, color: AppColors.inkMuted),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -1873,26 +1789,38 @@ class _ActivityFeedState extends State<_ActivityFeed> {
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
 
-    // Logueado con datos del backend.
-    if (store.isLoggedIn && _entries != null && _entries!.isNotEmpty) {
-      return GlassCard(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          children: [
-            for (final raw in _entries!.take(5).toList().asMap().entries) ...[
-              _RemoteFeedRow(entry: raw.value),
-              if (raw.key != 4 && raw.key < _entries!.length - 1)
-                const Divider(color: AppColors.glassBorder, height: 20),
-            ],
-          ],
-        ),
-      );
-    }
+    // Logueado: feed SOLO de amigos (excluye mi propia actividad).
+    if (store.isLoggedIn) {
+      final myId = store.currentUser?.id;
+      final friendsEntries =
+          (_entries ?? const <FeedEntry>[]).where((e) => e.userId != myId).toList();
 
-    if (store.isLoggedIn && _loading && _entries == null) {
-      return const GlassCard(
-        padding: EdgeInsets.all(20),
-        child: Center(child: CircularProgressIndicator()),
+      if (friendsEntries.isNotEmpty) {
+        return GlassCard(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            children: [
+              for (final raw in friendsEntries.take(5).toList().asMap().entries) ...[
+                _RemoteFeedRow(entry: raw.value),
+                if (raw.key != 4 && raw.key < friendsEntries.length - 1)
+                  const Divider(color: AppColors.glassBorder, height: 20),
+              ],
+            ],
+          ),
+        );
+      }
+
+      if (_loading && _entries == null) {
+        return const GlassCard(
+          padding: EdgeInsets.all(20),
+          child: Center(child: CircularProgressIndicator()),
+        );
+      }
+
+      return const _EmptyHomePanel(
+        icon: '👋',
+        title: 'Sin actividad de amigos',
+        body: 'Cuando tus amigos memoricen o logren algo, lo verás aquí.',
       );
     }
 
