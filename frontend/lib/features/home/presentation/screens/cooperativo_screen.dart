@@ -1356,7 +1356,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                         Row(
                           children: [
                             const Text(
-                              'Dificultad:',
+                              'Refuerzo:',
                               style: TextStyle(color: RefColors.dim, fontSize: 11, fontWeight: FontWeight.bold),
                             ),
                             const SizedBox(width: 10),
@@ -1377,7 +1377,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                                       },
                                     ),
                                     _buildFilterChip(
-                                      label: 'Fácil',
+                                      label: 'Rápido',
                                       selected: _filterDifficulty == 1,
                                       onTap: () {
                                         setModalState(() {
@@ -1388,7 +1388,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                                       },
                                     ),
                                     _buildFilterChip(
-                                      label: 'Medio',
+                                      label: 'Equilibrado',
                                       selected: _filterDifficulty == 2,
                                       onTap: () {
                                         setModalState(() {
@@ -1399,7 +1399,7 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                                       },
                                     ),
                                     _buildFilterChip(
-                                      label: 'Difícil',
+                                      label: 'Intensivo',
                                       selected: _filterDifficulty == 3,
                                       onTap: () {
                                         setModalState(() {
@@ -1532,13 +1532,13 @@ class _CooperativoScreenState extends State<CooperativoScreen> {
                                         final diff = room['difficulty'] ?? 1;
                                         final mode = room['mode']?.toString() ?? 'grupal';
 
-                                        String diffLabel = 'Fácil';
+                                        String diffLabel = 'Rápido';
                                         Color diffColor = RefColors.lime;
                                         if (diff == 2) {
-                                          diffLabel = 'Medio';
+                                          diffLabel = 'Equilibrado';
                                           diffColor = Colors.orange;
                                         } else if (diff == 3) {
-                                          diffLabel = 'Difícil';
+                                          diffLabel = 'Intensivo';
                                           diffColor = RefColors.urgent;
                                         }
 
@@ -3702,13 +3702,13 @@ class _CoopSettingsCard extends StatelessWidget {
       limitStr = 'de 4 en 4 (Intenso)';
     }
 
-    final diffLabels = {0: 'Fácil', 1: 'Media', 2: 'Difícil'};
-    final diffStr = diffLabels[roomState.sessionDifficulty] ?? 'Media';
-    
+    final diffLabels = {0: 'Rápido', 1: 'Equilibrado', 2: 'Intensivo'};
+    final diffStr = diffLabels[roomState.sessionDifficulty] ?? 'Equilibrado';
+
     // Si no hay mazo, advertir en subtítulo
-    final cardsSubtitle = deck == null 
-        ? 'Dificultad: $diffStr · Selecciona un mazo primero'
-        : 'Dificultad: $diffStr · Aprender: $limitStr';
+    final cardsSubtitle = deck == null
+        ? 'Refuerzo: $diffStr · Selecciona un mazo primero'
+        : 'Refuerzo: $diffStr · Aprender: $limitStr';
 
     return Glass(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
@@ -5810,22 +5810,25 @@ class _CooperativoConfigScreenState extends State<CooperativoConfigScreen> {
           ),
           const SizedBox(height: 12),
           _OptionGroup(
-            title: 'Dificultad',
+            title: 'A tu medida',
+            subtitle:
+                'Ajustamos cuánto refuerzo para apoyar la memoria del equipo: menos si retienen '
+                'fácil, más si quieren asegurarlo del todo.',
             options: [
               (
-                Icons.spa_rounded,
-                'Fácil',
-                '~${_difficultyMinutes(0, _dailyTarget)} min · con pistas',
+                Icons.bolt_rounded,
+                'Rápido',
+                '~${_difficultyMinutes(0, _dailyTarget)} min · para memoria ágil',
               ),
               (
-                Icons.psychology_alt_rounded,
-                'Intermedio',
-                '~${_difficultyMinutes(1, _dailyTarget)} min · balanceado',
+                Icons.verified_rounded,
+                'Equilibrado',
+                '~${_difficultyMinutes(1, _dailyTarget)} min · recomendado',
               ),
               (
-                Icons.timer_rounded,
-                'Experto',
-                '~${_difficultyMinutes(2, _dailyTarget)} min · intenso',
+                Icons.local_fire_department_rounded,
+                'Intensivo',
+                '~${_difficultyMinutes(2, _dailyTarget)} min · máximo refuerzo',
               ),
             ],
             active: _difficulty,
