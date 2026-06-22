@@ -129,6 +129,12 @@ class LocalLlmService {
   ));
   final math.Random _seedRandom = math.Random();
 
+  /// Serializa la inferencia: el motor on-device (libLiteRtLm) crashea
+  /// (SIGSEGV en su ThreadPool) si se le piden dos inferencias a la vez. Encadena
+  /// las llamadas para que SIEMPRE corra una sola — esto también permite
+  /// pre-generar en segundo plano sin chocar con una generación en curso.
+  Future<void> _inferenceChain = Future.value();
+
   bool _initialized = false;
   Future<void>? _initInFlight;
   final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0.0);
@@ -819,7 +825,27 @@ class LocalLlmService {
   }
 
   /// Inferencia base contra el servidor llama.cpp local (API OpenAI-compatible).
+  /// Punto único de inferencia: serializa todas las llamadas (una a la vez) para
+  /// no crashear el motor nativo y para que el prefetch en background no choque
+  /// con una generación en curso.
   Future<String> _chat(
+    String prompt, {
+    required double temperature,
+    required int maxTokens,
+    Map<String, dynamic>? jsonSchema,
+  }) {
+    final result = _inferenceChain.then((_) => _chatImpl(
+          prompt,
+          temperature: temperature,
+          maxTokens: maxTokens,
+          jsonSchema: jsonSchema,
+        ));
+    // El siguiente en la cola espera a este, haya éxito o error (sin propagar).
+    _inferenceChain = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
+  Future<String> _chatImpl(
     String prompt, {
     required double temperature,
     required int maxTokens,
