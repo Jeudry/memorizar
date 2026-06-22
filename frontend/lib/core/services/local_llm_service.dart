@@ -29,9 +29,10 @@ class LocalLlmService {
   static const double _quizTemperature = 1.0;
   static const int _quizMaxTokens = 900;
 
-  /// Reintentos de la generación del quiz ante un JSON malformado/estructura
-  /// inesperada del modelo on-device (cada intento re-genera con nueva semilla).
-  static const int _quizMaxAttempts = 3;
+  /// Reintentos de la generación del quiz ante un JSON irrecuperable del modelo
+  /// on-device. Cada generación tarda ~20s, así que el normalizador tolerante
+  /// hace el trabajo pesado y esto sólo cubre fallos extremos; mantenerlo bajo.
+  static const int _quizMaxAttempts = 2;
   static const int _evaluationMaxTokens = 300;
 
   /// Reintentos de la evaluación de respuesta abierta ante un JSON malformado
@@ -411,19 +412,11 @@ class LocalLlmService {
     throw StateError('No se pudo generar el quiz tras $_quizMaxAttempts intentos: $lastError');
   }
 
-  /// Parsea la respuesta del quiz tolerando que el modelo devuelva el objeto
-  /// esperado o un array con un set por texto (en cuyo caso reparte una pregunta
-  /// por texto vía [AiQuizRoundSet.distributedFrom]).
+  /// Parsea la respuesta del quiz con el normalizador tolerante: acepta el
+  /// objeto esperado, un array de sets, `{questions:[...]}` o un array de
+  /// preguntas tipadas, con nombres de campo variables.
   AiQuizRoundSet _parseQuizRoundSet(String content) {
-    final decoded = _decodeJsonStructure(content);
-    if (decoded is List) {
-      final maps = decoded.whereType<Map<String, dynamic>>().toList();
-      return AiQuizRoundSet.distributedFrom(maps);
-    }
-    if (decoded is Map<String, dynamic>) {
-      return AiQuizRoundSet.fromJson(decoded);
-    }
-    throw const FormatException('La IA local no devolvió un objeto ni un array JSON.');
+    return AiQuizRoundSet.lenient(_decodeJsonStructure(content));
   }
 
   /// Genera un versículo alterado con palabras intrusas según el nivel de dificultad:

@@ -54,22 +54,185 @@ class AiQuizRoundSet {
     );
   }
 
-  /// Cuando el modelo on-device ignora la instrucción y devuelve un ARRAY con un
-  /// set completo por versículo, en vez de fallar, repartimos: tomamos la
-  /// pregunta V/F del 1er texto, la de opción múltiple del 2º y la abierta del
-  /// 3º (con módulo si hay menos textos). Así queda UN set de 3 preguntas que
-  /// cubre el grupo, una pregunta por item.
-  factory AiQuizRoundSet.distributedFrom(List<Map<String, dynamic>> rawSets) {
-    if (rawSets.isEmpty) {
-      throw const FormatException('La IA devolvió un array de quiz vacío.');
+  /// Parser tolerante: el modelo on-device (sin gramática forzada en móvil)
+  /// devuelve formas muy variadas — objeto keyed {trueFalse, multipleChoice,
+  /// openQuestion}, array de esos sets, `{ "questions": [ {type:...}, ... ] }`,
+  /// o un array de preguntas tipadas — con nombres de campo inconsistentes
+  /// (question/text/statement, answer/isTrue, distractors/options). Esto extrae
+  /// las 3 preguntas de cualquiera de esas formas en vez de reventar.
+  factory AiQuizRoundSet.lenient(dynamic decoded) {
+    final questions = _collectQuestions(decoded);
+    if (questions.isEmpty) {
+      throw const FormatException('La IA no devolvió preguntas de quiz.');
     }
-    final sets = rawSets.map(AiQuizRoundSet.fromJson).toList();
+
+    Map<String, dynamic>? tf, mc, oq;
+    for (final q in questions) {
+      final type = (q['type'] ?? q['questionType'] ?? '').toString().toLowerCase();
+      final hasDistractors = q['distractors'] is List || q['options'] is List;
+      final hasBoolAnswer = _llmBool(q['isTrue'] ?? q['answer'] ?? q['is_true']) != null &&
+          !hasDistractors;
+      if (mc == null &&
+          (type.contains('multiple') || type.contains('choice') ||
+              type.contains('opcion') || type.contains('opción') || hasDistractors)) {
+        mc = q;
+      } else if (tf == null &&
+          (type.contains('true') || type.contains('false') ||
+              type.contains('verdadero') || type.contains('falso') || hasBoolAnswer)) {
+        tf = q;
+      } else if (oq == null &&
+          (type.contains('open') || type.contains('abierta') || type.contains('open_question'))) {
+        oq = q;
+      }
+    }
+
+    // Rellenar las que falten por orden posicional con las preguntas sobrantes.
+    final leftovers = questions.where((q) => q != tf && q != mc && q != oq).toList();
+    tf ??= leftovers.isNotEmpty ? leftovers.removeAt(0) : null;
+    mc ??= leftovers.isNotEmpty ? leftovers.removeAt(0) : null;
+    oq ??= leftovers.isNotEmpty ? leftovers.removeAt(0) : null;
+
+    if (tf == null || mc == null || oq == null) {
+      throw const FormatException('La IA no devolvió las 3 preguntas del quiz.');
+    }
+
     return AiQuizRoundSet(
-      trueFalse: sets[0].trueFalse,
-      multipleChoice: sets[1 % sets.length].multipleChoice,
-      openQuestion: sets[2 % sets.length].openQuestion,
+      trueFalse: _trueFalseLenient(tf),
+      multipleChoice: _multipleChoiceLenient(mc),
+      openQuestion: _openLenient(oq),
     );
   }
+
+  /// Aplana cualquier envoltura a una lista de mapas-pregunta tipados.
+  static List<Map<String, dynamic>> _collectQuestions(dynamic decoded) {
+    if (decoded is List) {
+      final maps = decoded.whereType<Map<String, dynamic>>().toList();
+      if (maps.any((m) =>
+          m.containsKey('trueFalse') ||
+          m.containsKey('multipleChoice') ||
+          m.containsKey('openQuestion'))) {
+        return _fromKeyedSets(maps);
+      }
+      return maps;
+    }
+    if (decoded is Map<String, dynamic>) {
+      for (final key in const ['questions', 'preguntas', 'items', 'quiz']) {
+        final v = decoded[key];
+        if (v is List) {
+          final maps = v.whereType<Map<String, dynamic>>().toList();
+          if (maps.isNotEmpty) return maps;
+        }
+      }
+      if (decoded.containsKey('trueFalse') ||
+          decoded.containsKey('multipleChoice') ||
+          decoded.containsKey('openQuestion')) {
+        return _fromKeyedSets([decoded]);
+      }
+      if (decoded.containsKey('type')) return [decoded];
+    }
+    throw const FormatException('Estructura de quiz no reconocida.');
+  }
+
+  /// Convierte uno o más sets keyed en 3 preguntas tipadas, repartiendo una
+  /// sección por set (con módulo) para cubrir todos los textos del grupo.
+  static List<Map<String, dynamic>> _fromKeyedSets(List<Map<String, dynamic>> sets) {
+    final n = sets.length;
+    Map<String, dynamic> section(int i, String key) {
+      final parent = sets[i % n];
+      final raw = parent[key];
+      final m = raw is Map<String, dynamic>
+          ? Map<String, dynamic>.of(raw)
+          : <String, dynamic>{'question': raw?.toString() ?? ''};
+      m['type'] = key;
+      if (key == 'trueFalse' && m['isTrue'] == null && parent['isTrue'] != null) {
+        m['isTrue'] = parent['isTrue'];
+      }
+      return m;
+    }
+
+    return [
+      section(0, 'trueFalse'),
+      section(1, 'multipleChoice'),
+      section(2, 'openQuestion'),
+    ];
+  }
+
+  static AiTrueFalseRound _trueFalseLenient(Map<String, dynamic> q) {
+    final statement =
+        _llmText(q, const ['statement', 'question', 'text', 'affirmation', 'afirmacion']);
+    if (statement == null) {
+      throw const FormatException('La IA no devolvió un enunciado de verdadero/falso.');
+    }
+    final isTrue = _llmBool(q['isTrue'] ?? q['answer'] ?? q['correct'] ?? q['is_true']) ?? true;
+    return AiTrueFalseRound(statement: statement, isTrue: isTrue);
+  }
+
+  static AiMultipleChoiceRound _multipleChoiceLenient(Map<String, dynamic> q) {
+    final question = _llmText(q, const ['question', 'text', 'statement']);
+    if (question == null) {
+      throw const FormatException('La IA no devolvió la pregunta de opción múltiple.');
+    }
+    var correct = _llmText(q, const ['correct', 'answer', 'correctAnswer', 'correcta']);
+    var distractors =
+        _llmStringList(q['distractors'] ?? q['options'] ?? q['opciones'] ?? q['incorrect']);
+    if (correct != null) {
+      distractors = distractors.where((d) => d != correct).toList();
+    } else if (distractors.isNotEmpty) {
+      // 'options' sin 'correct' explícita: asumir la primera como correcta.
+      correct = distractors.removeAt(0);
+    }
+    if (correct == null) {
+      throw const FormatException('La IA no devolvió la respuesta correcta de opción múltiple.');
+    }
+    if (distractors.isEmpty) {
+      throw const FormatException('La IA no devolvió distractores de opción múltiple.');
+    }
+    return AiMultipleChoiceRound(
+      question: question,
+      correct: correct,
+      distractors: distractors.take(AiMultipleChoiceRound.requiredDistractorCount).toList(),
+    );
+  }
+
+  static AiOpenQuestionRound _openLenient(Map<String, dynamic> q) {
+    final question = _llmText(q, const ['question', 'text', 'prompt', 'statement']);
+    if (question == null) {
+      throw const FormatException('La IA no devolvió la pregunta abierta.');
+    }
+    return AiOpenQuestionRound(question: question);
+  }
+}
+
+/// Primer string no vacío entre [keys].
+String? _llmText(Map<String, dynamic> json, List<String> keys) {
+  for (final k in keys) {
+    final v = json[k];
+    if (v is String && v.trim().isNotEmpty) return v.trim();
+  }
+  return null;
+}
+
+/// Lista de strings no vacíos (tolera elementos no-string).
+List<String> _llmStringList(dynamic value) {
+  if (value is! List) return const [];
+  return value
+      .map((e) => e.toString().trim())
+      .where((e) => e.isNotEmpty)
+      .toList();
+}
+
+/// Coerción tolerante a bool desde bool/num/string ("true"/"sí"/"falso"…).
+bool? _llmBool(dynamic value) {
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  if (value is String) {
+    final s = value.trim().toLowerCase();
+    const truthy = {'true', '1', 'sí', 'si', 'correcto', 'correcta', 'verdadero', 'verdad'};
+    const falsy = {'false', '0', 'no', 'incorrecto', 'incorrecta', 'falso'};
+    if (truthy.contains(s)) return true;
+    if (falsy.contains(s)) return false;
+  }
+  return null;
 }
 
 class AiTrueFalseRound {
@@ -158,7 +321,7 @@ class AiOpenAnswerEvaluation {
     // En móvil flutter_gemma no fuerza la gramática JSON, así que el modelo a
     // veces devuelve "isCorrect" como string ("true"/"sí") o número en vez de
     // un booleano estricto. Coercionamos con tolerancia en lugar de reventar.
-    final isCorrect = _coerceBool(json['isCorrect']);
+    final isCorrect = _llmBool(json['isCorrect']);
     if (isCorrect == null) {
       throw const FormatException('La evaluación de la IA no trae "isCorrect".');
     }
@@ -166,19 +329,6 @@ class AiOpenAnswerEvaluation {
       isCorrect: isCorrect,
       feedback: AiTrueFalseRound.requireText(json, 'feedback'),
     );
-  }
-
-  static bool? _coerceBool(dynamic value) {
-    if (value is bool) return value;
-    if (value is num) return value != 0;
-    if (value is String) {
-      final s = value.trim().toLowerCase();
-      const truthy = {'true', '1', 'sí', 'si', 'correcto', 'correcta', 'verdadero'};
-      const falsy = {'false', '0', 'no', 'incorrecto', 'incorrecta', 'falso'};
-      if (truthy.contains(s)) return true;
-      if (falsy.contains(s)) return false;
-    }
-    return null;
   }
 }
 
