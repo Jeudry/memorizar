@@ -1022,6 +1022,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
     llm.statusNotifier.addListener(onEngineStatus);
     try {
+      debugPrint('=== QUIZ GROUP (${group.length} versículos): '
+          '${group.map((c) => c.front).join(" | ")} ===');
       await llm.initLlm();
       if (!mounted) return;
       setState(() {
@@ -1592,7 +1594,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             (slug != '01-escuchar' &&
             !_isFirstLetterSlug(slug) &&
             !_isFogSlug(slug) &&
-            !_isFinalVoiceSlug(slug)) ||
+            !_isFinalVoiceSlug(slug) &&
+            !slug.startsWith('18-palabras-intrusas')) ||
             _omitOverride.contains(slug),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1645,7 +1648,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               final isScrollable = (slug != '01-escuchar' &&
                   !_isFirstLetterSlug(slug) &&
                   !_isFogSlug(slug) &&
-                  !_isFinalVoiceSlug(slug)) ||
+                  !_isFinalVoiceSlug(slug) &&
+                  !slug.startsWith('18-palabras-intrusas')) ||
                   _omitOverride.contains(slug);
 
               final isMyTurnActive = isCoop && coopState != null && (
