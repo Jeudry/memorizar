@@ -329,11 +329,15 @@ class LocalLlmService {
   }
 
   /// Genera un set completo de preguntas (V/F, opción múltiple y respuesta
-  /// abierta) sobre el versículo dado. Cada llamada produce preguntas nuevas.
+  /// abierta) sobre uno o varios versículos. Cuando se pasa más de un texto, las
+  /// 3 preguntas se reparten entre ellos: se combinan en una sola pregunta donde
+  /// tenga sentido y, si no, cada una de las 3 secciones se dedica a un texto
+  /// distinto, de modo que el conjunto cubra todos los textos del grupo. Cada
+  /// llamada produce preguntas nuevas.
   Future<AiQuizRoundSet> generateQuizRoundSet({
-    required String reference,
-    required String verseText,
+    required List<({String reference, String verseText})> verses,
   }) async {
+    assert(verses.isNotEmpty, 'Se requiere al menos un versículo.');
     const depthInstruction = 'Las preguntas deben ser de comprensión directa y clara, '
         'pero ricas en contenido: evalúa el significado literal, así como aspectos prácticos, '
         'implicaciones espirituales o doctrina clave de forma accesible. '
@@ -341,15 +345,39 @@ class LocalLlmService {
         'comprenda bien el versículo.';
 
     final entropy = _seedRandom.nextInt(100000);
+    final isMulti = verses.length > 1;
+
+    final String textBlock;
+    final String coverageInstruction;
+    if (isMulti) {
+      final buffer = StringBuffer();
+      for (var i = 0; i < verses.length; i++) {
+        buffer.writeln('${i + 1}. (${verses[i].reference}): "${verses[i].verseText}"');
+      }
+      textBlock = 'Textos a evaluar (${verses.length}):\n${buffer.toString().trimRight()}';
+      coverageInstruction =
+          'Hay ${verses.length} textos. Reparte las 3 preguntas entre ellos: dedica '
+          'preferentemente cada una de las 3 secciones (trueFalse, multipleChoice y '
+          'openQuestion) a un texto DISTINTO. Si dos o más textos se pueden combinar '
+          'naturalmente en una sola pregunta con sentido, combínalos. En conjunto, las 3 '
+          'preguntas deben cubrir TODOS los textos del grupo.';
+    } else {
+      textBlock = 'Texto a evaluar (${verses.first.reference}): "${verses.first.verseText}"';
+      coverageInstruction =
+          'Cada una de las 3 secciones (trueFalse, multipleChoice y openQuestion) debe evaluar '
+          'aspectos, detalles o conceptos COMPLETAMENTE DIFERENTES del texto. Evita a toda costa '
+          'que pregunten sobre el mismo tema o el mismo detalle para garantizar variedad.';
+    }
+
     final prompt = 'Eres un generador de cuestionarios en español para una app de memorización de versículos bíblicos.\n'
         'Semilla de variación aleatoria: $entropy\n'
-        'Texto a evaluar ($reference): "$verseText"\n\n'
+        '$textBlock\n\n'
         'Genera exactamente:\n'
         '1. "trueFalse": una afirmación sobre el contenido del texto con su veredicto "isTrue". '
         'Decide al azar si la haces verdadera o falsa; si es falsa, introduce un error sutil.\n'
         '2. "multipleChoice": una pregunta con "correct" (respuesta correcta) y "distractors" (exactamente 3 incorrectas).\n'
         '3. "openQuestion": una pregunta abierta corta para que el usuario explique el texto con sus palabras.\n\n'
-        'IMPORTANTE: Cada una de las 3 secciones (trueFalse, multipleChoice y openQuestion) debe evaluar aspectos, detalles o conceptos COMPLETAMENTE DIFERENTES del texto. Evita a toda costa que pregunten sobre el mismo tema o el mismo detalle para garantizar variedad.\n\n'
+        'IMPORTANTE: $coverageInstruction\n\n'
         '$depthInstruction\n'
         'Todo en español. Responde únicamente con el JSON.';
 

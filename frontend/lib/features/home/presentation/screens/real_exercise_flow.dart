@@ -55,6 +55,12 @@ class _QuizRound {
 }
 
 class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
+  /// El quiz con IA agrupa los items elegidos de a [_quizGroupSize] por vuelta:
+  /// cada vuelta genera 3 preguntas (V/F, opción múltiple, abierta) que se
+  /// reparten entre los items del grupo (una por item cuando hay 3, combinadas
+  /// cuando tiene sentido). Ej.: 3 items → 1 vuelta; 4 items → 2 vueltas (3 + 1).
+  static const int _quizGroupSize = 3;
+
   int _subCardIndex = 0;
   bool _checked = false;
   int _fragmentVisibleWords = 8;
@@ -939,12 +945,47 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (!correct) _scheduleFlashRebuild();
   }
 
-  void _ensureQuizRounds(MemoryDeckData deck, MemoryCardData card) {
-    final alreadyHandledCard = _quizCardId == card.id &&
+  /// Clave estable de un grupo de items para deduplicar la generación del quiz.
+  String _quizGroupKey(List<MemoryCardData> group) =>
+      group.map((c) => c.id).join('|');
+
+  /// Items que cubre la vuelta actual del quiz: hasta [_quizGroupSize] tomados
+  /// desde [_subCardIndex] dentro del batch de la sesión.
+  List<MemoryCardData> _quizGroupCards(List<MemoryCardData> batch) {
+    if (batch.isEmpty) return const [];
+    final start = _subCardIndex.clamp(0, batch.length - 1);
+    final end = (start + _quizGroupSize).clamp(0, batch.length);
+    return batch.sublist(start, end);
+  }
+
+  /// Al aprobar una vuelta: si quedan items en el batch, avanza al siguiente
+  /// grupo de [_quizGroupSize] y deja que el próximo build regenere las
+  /// preguntas; si ya no quedan, cierra el step (o la card de sesión si es el
+  /// último step).
+  void _finishQuizGroupOrAdvance(BuildContext context, AppStore store) {
+    final batch = _sessionBatchCards(context);
+    if (_subCardIndex + _quizGroupSize < batch.length) {
+      _subCardIndex += _quizGroupSize;
+      _resetQuiz(); // limpia _quizCardId/rounds/score → el build regenera el grupo
+      return;
+    }
+    _subCardIndex = 0;
+    final steps = _sessionFlowSteps(store);
+    final isLastStep = steps.isNotEmpty && steps.last.slug == widget.data.slug;
+    if (isLastStep) {
+      _completeSessionCard(context, store, correct: true);
+    } else {
+      _completeStepAndNavigate(context, store, widget.data.slug);
+    }
+  }
+
+  void _ensureQuizRounds(MemoryDeckData deck, List<MemoryCardData> group) {
+    final groupKey = _quizGroupKey(group);
+    final alreadyHandledGroup = _quizCardId == groupKey &&
         (_quizRounds.isNotEmpty || _isAiQuizLoading || _aiQuizError != null);
-    if (alreadyHandledCard) return;
+    if (alreadyHandledGroup) return;
     // Se invoca durante build: mutar campos sin setState; el async sí lo usa.
-    _quizCardId = card.id;
+    _quizCardId = groupKey;
     _quizRoundIndex = 0;
     _quizScore = 0;
     _openQuestionController.clear();
@@ -952,13 +993,16 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     _isAiQuizLoading = true;
     _aiQuizError = null;
     _aiQuizLoadingText = 'Despertando la IA local…';
-    unawaited(_loadAiQuizRounds(card));
+    unawaited(_loadAiQuizRounds(group));
   }
 
   Future<void> _loadAiQuizRounds(
-    MemoryCardData card,
+    List<MemoryCardData> group,
   ) async {
     final llm = LocalLlmService.instance;
+    final label = group.length == 1
+        ? group.first.front
+        : '${group.length} versículos';
     void onEngineStatus() {
       if (!mounted || !_isAiQuizLoading) return;
       final status = llm.statusNotifier.value;
@@ -973,16 +1017,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       if (!mounted) return;
       setState(() {
         _aiQuizLoadingText = llm.isMockFallback
-            ? 'Cargando preguntas simuladas sobre ${card.front}…'
-            : 'Gemma 4 está creando preguntas únicas sobre ${card.front}…';
+            ? 'Cargando preguntas simuladas sobre $label…'
+            : 'Gemma 4 está creando preguntas únicas sobre $label…';
       });
       final roundSet = await llm.generateQuizRoundSet(
-        reference: card.front,
-        verseText: card.back,
+        verses: [
+          for (final card in group)
+            (reference: card.front, verseText: card.back),
+        ],
       );
       if (!mounted) return;
       setState(() {
-        _quizRounds = _roundsFromAi(card, roundSet);
+        _quizRounds = _roundsFromAi(group, roundSet);
         _isAiQuizLoading = false;
       });
     } catch (e) {
@@ -999,9 +1045,19 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     }
   }
 
-  List<_QuizRound> _roundsFromAi(MemoryCardData card, AiQuizRoundSet set) {
+  List<_QuizRound> _roundsFromAi(List<MemoryCardData> group, AiQuizRoundSet set) {
+    // Reparte cada una de las 3 rondas a un item distinto del grupo cuando hay
+    // suficientes (3 items → V/F al 1º, opción múltiple al 2º, abierta al 3º).
+    // Con menos items, varias rondas comparten item sin romper nada. El target
+    // sólo alimenta ícono/atribución; el contenido lo crea la IA cubriendo el
+    // grupo completo.
+    MemoryCardData itemFor(int index) => group[index % group.length];
+    final tfCard = itemFor(0);
+    final mcCard = itemFor(1);
+    final openCard = itemFor(2);
+
     final trueFalseRound = _QuizRound(
-      target: card,
+      target: tfCard,
       type: _QuizQuestionType.trueFalse,
       options: const [],
       trueFalseStatement: set.trueFalse.statement,
@@ -1010,23 +1066,23 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
     final multipleChoice = set.multipleChoice;
     final correctCard = MemoryCardData(
-      id: 'quiz-ai-mc-${card.id}',
+      id: 'quiz-ai-mc-${mcCard.id}',
       front: multipleChoice.question,
       back: multipleChoice.correct,
-      source: card.source,
-      icon: card.icon,
+      source: mcCard.source,
+      icon: mcCard.icon,
     );
     final optionCards = <MemoryCardData>[
       correctCard,
       for (var idx = 0; idx < multipleChoice.distractors.length; idx++)
         MemoryCardData(
-          id: 'quiz-ai-mc-distractor-$idx-${card.id}',
+          id: 'quiz-ai-mc-distractor-$idx-${mcCard.id}',
           front: multipleChoice.question,
           back: multipleChoice.distractors[idx],
           source: LocalLlmService.instance.isMockFallback
               ? 'IA Simulada (Simulator)'
               : 'IA local',
-          icon: card.icon,
+          icon: mcCard.icon,
         ),
     ]..shuffle();
     final multipleChoiceRound = _QuizRound(
@@ -1036,7 +1092,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
 
     final openRound = _QuizRound(
-      target: card,
+      target: openCard,
       type: _QuizQuestionType.openQuestion,
       options: const [],
       openQuestionPrompt: set.openQuestion.question,
@@ -1076,13 +1132,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         Future.delayed(const Duration(milliseconds: 1500), () {
           if (!mounted) return;
           if (_quizFinished && _quizPassed) {
-            final steps = _sessionFlowSteps(store);
-            final isLastStep = steps.isNotEmpty && steps.last.slug == widget.data.slug;
-            if (isLastStep) {
-              _completeSessionCard(context, store, correct: true);
-            } else {
-              _completeStepAndNavigate(context, store, widget.data.slug);
-            }
+            _finishQuizGroupOrAdvance(context, store);
           }
         });
       }
@@ -1143,13 +1193,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               Future.delayed(const Duration(milliseconds: 1500), () {
                 if (!mounted) return;
                 if (_quizFinished && _quizPassed) {
-                  final steps = _sessionFlowSteps(store);
-                  final isLastStep = steps.isNotEmpty && steps.last.slug == widget.data.slug;
-                  if (isLastStep) {
-                    _completeSessionCard(context, store, correct: true);
-                  } else {
-                    _completeStepAndNavigate(context, store, widget.data.slug);
-                  }
+                  _finishQuizGroupOrAdvance(context, store);
                 }
               });
             }
@@ -1358,13 +1402,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         Future.delayed(const Duration(milliseconds: 4000), () {
           if (!mounted) return;
           if (_quizFinished && _quizPassed) {
-            final steps = _sessionFlowSteps(store);
-            final isLastStep = steps.isNotEmpty && steps.last.slug == widget.data.slug;
-            if (isLastStep) {
-              _completeSessionCard(context, store, correct: true);
-            } else {
-              _completeStepAndNavigate(context, store, widget.data.slug);
-            }
+            _finishQuizGroupOrAdvance(context, store);
           }
         });
       }
@@ -2093,7 +2131,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     }
 
     if (slug == '09-quiz') {
-      _ensureQuizRounds(deck, card);
+      _ensureQuizRounds(deck, _quizGroupCards(_sessionBatchCards(context)));
       if (_isAiQuizLoading) {
         return Center(
           child: Glass(
