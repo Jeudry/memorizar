@@ -958,6 +958,15 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     return batch.sublist(start, end);
   }
 
+  /// Omite por completo un ejercicio de IA (quiz / palabras intrusas): a
+  /// diferencia del omitir de F2, NO lo transforma en otro ejercicio — lo salta
+  /// y avanza al siguiente paso (o cierra la card si era el último).
+  void _omitAiStep(BuildContext context, AppStore store, String slug) {
+    ActiveMediaRegistry.stopAll();
+    _subCardIndex = 0;
+    _completeStepAndNavigate(context, store, slug);
+  }
+
   /// Al aprobar una vuelta: si quedan items en el batch, avanza al siguiente
   /// grupo de [_quizGroupSize] y deja que el próximo build regenere las
   /// preguntas; si ya no quedan, cierra el step (o la card de sesión si es el
@@ -3440,7 +3449,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     String slug,
   ) {
     if (slug.startsWith('18-palabras-intrusas')) {
-      return const SizedBox.shrink();
+      // El ejercicio de IA "señala el intruso" maneja su avance internamente;
+      // aquí sólo ofrecemos saltarlo (sin reemplazo).
+      return Align(
+        alignment: Alignment.centerRight,
+        child: SizedBox(
+          width: 140,
+          child: GhostButton(
+            'Omitir',
+            onTap: () => _omitAiStep(context, store, slug),
+          ),
+        ),
+      );
     }
     final isOmitted = _omitOverride.contains(slug);
     // F2: el reemplazo por omitir trae su propio botón de continuar solo para la fase Preparar.
@@ -3568,7 +3588,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     }
 
     if (slug != '05-bloques') {
-      return _ActionCta(
+      final cta = _ActionCta(
         label: _footerLabel(slug, card, checked: _checked, completed: completed),
         enabled: _footerEnabled(
           slug,
@@ -3605,16 +3625,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               _showQuizFailedDialog();
               return;
             }
-            final batch = _sessionBatchCards(context);
-            if (_subCardIndex + 1 < batch.length) {
-              setState(() {
-                _subCardIndex++;
-                _resetSubCardState();
-              });
-              return;
-            }
-            _subCardIndex = 0;
-            _completeStepAndNavigate(context, store, slug);
+            _finishQuizGroupOrAdvance(context, store);
             return;
           }
 
@@ -3645,6 +3656,23 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           );
         },
       );
+      if (slug == '09-quiz') {
+        // El quiz con IA es omitible: se salta el paso sin reemplazarlo.
+        return Row(
+          children: [
+            SizedBox(
+              width: 118,
+              child: GhostButton(
+                'Omitir',
+                onTap: () => _omitAiStep(context, store, slug),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(child: cta),
+          ],
+        );
+      }
+      return cta;
     }
 
     return Row(
