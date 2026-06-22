@@ -2048,12 +2048,15 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     return copy.take(count.clamp(0, copy.length)).toList();
   }
 
-  // Intro: pasos básicos de preparación (escuchar / leer / bloques).
+  // Intro (preparación) ESCALA con el nivel: "A tu medida". Rápido va al grano
+  // —para quien retiene fácil— con la prep mínima; Equilibrado suma la lectura
+  // en voz; Intensivo hace la preparación multimodal completa (más cuidado para
+  // asegurar la memorización). La práctica activa más abajo también escala.
   final intro = <String>[
     '00-solo-lectura',
     '01-escuchar',
-    '03-leer-voz',
-    '04-escuchar-voz',
+    if (difficulty >= 1) '03-leer-voz', // Equilibrado e Intensivo
+    if (difficulty >= 2) '04-escuchar-voz', // sólo Intensivo
     _chooseWordPracticeSlug, // práctica suave que cierra Preparar
     '05-bloques',
   ];
