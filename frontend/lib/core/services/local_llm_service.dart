@@ -546,32 +546,59 @@ class LocalLlmService {
     }
   }
 
-  /// Sinónimos cercanos (registro bíblico) para construir un intruso plausible
-  /// sin la IA. Sólo se usa como red de seguridad cuando el modelo no coopera.
+  /// Sinónimos cercanos (registro bíblico) que CONSERVAN género y número, para
+  /// que el intruso suene coherente con su artículo (nada de "la mundo"). Sólo
+  /// red de seguridad cuando el modelo no coopera.
   static const Map<String, String> _intruderSynonyms = {
-    'principio': 'comienzo', 'comienzo': 'principio', 'creó': 'formó', 'creo': 'formo',
-    'creado': 'formado', 'hizo': 'creó', 'dios': 'señor', 'señor': 'dios',
-    'cielo': 'firmamento', 'cielos': 'firmamentos', 'tierra': 'mundo', 'mundo': 'tierra',
-    'luz': 'claridad', 'tinieblas': 'sombras', 'oscuridad': 'tinieblas', 'aguas': 'mares',
-    'agua': 'mar', 'mar': 'océano', 'espíritu': 'aliento', 'bueno': 'agradable',
-    'día': 'jornada', 'noche': 'oscuridad', 'grande': 'enorme', 'todo': 'cada',
-    'todos': 'cada', 'siempre': 'eternamente', 'nunca': 'jamás', 'amor': 'cariño',
-    'vida': 'existencia', 'muerte': 'final', 'palabra': 'verbo', 'verdad': 'certeza',
-    'camino': 'sendero', 'fuerza': 'poder', 'poder': 'fuerza', 'corazón': 'alma',
-    'alma': 'corazón', 'pueblo': 'nación', 'hombre': 'varón', 'mujer': 'dama',
-    'hijo': 'descendiente', 'padre': 'progenitor', 'rey': 'monarca', 'gloria': 'honra',
-    'paz': 'calma', 'fe': 'confianza', 'gracia': 'favor', 'pecado': 'falta',
-    'santo': 'sagrado', 'eterno': 'perpetuo', 'gozo': 'alegría', 'temor': 'miedo',
+    // Verbos (sin concordancia de género).
+    'creó': 'formó', 'creo': 'formo', 'creado': 'formado', 'hizo': 'formó',
+    'dijo': 'habló', 'vio': 'miró', 'amó': 'quiso', 'dio': 'entregó',
+    'llamó': 'nombró', 'separó': 'dividió', 'bendijo': 'consagró',
+    // Sustantivos masculinos → masculinos.
+    'principio': 'comienzo', 'comienzo': 'inicio', 'dios': 'señor', 'señor': 'dios',
+    'cielo': 'firmamento', 'mundo': 'planeta', 'espíritu': 'aliento',
+    'día': 'amanecer', 'camino': 'sendero', 'corazón': 'pecho', 'amor': 'cariño',
+    'pueblo': 'reino', 'rey': 'príncipe', 'hijo': 'heredero', 'padre': 'progenitor',
+    'poder': 'dominio', 'temor': 'recelo', 'gozo': 'júbilo', 'pecado': 'error',
+    // Sustantivos femeninos → femeninos.
+    'tierra': 'arena', 'luz': 'llama', 'vida': 'existencia', 'verdad': 'certeza',
+    'palabra': 'voz', 'paz': 'calma', 'gloria': 'honra', 'fe': 'esperanza',
+    'noche': 'sombra', 'gracia': 'merced', 'fuerza': 'firmeza', 'mujer': 'dama',
+    'madre': 'señora', 'nación': 'región', 'muerte': 'ruina',
+    // Plurales (conservan número).
+    'cielos': 'firmamentos', 'tinieblas': 'sombras', 'aguas': 'olas',
+    'palabras': 'voces', 'días': 'tiempos',
   };
 
-  /// Pool genérico para cuando una palabra no tiene sinónimo en el mapa.
-  static const List<String> _intruderGenericPool = [
-    'firmamento', 'sendero', 'aliento', 'sombra', 'certeza', 'jornada', 'sustento',
-    'vínculo', 'designio', 'clamor', 'umbral', 'sosiego', 'anhelo', 'vigilia',
+  /// Pools genéricos por género (cuando una palabra no tiene sinónimo): se elige
+  /// según el artículo que la precede para no romper la concordancia.
+  static const List<String> _intruderMascGeneric = [
+    'firmamento', 'sendero', 'aliento', 'abismo', 'sosiego', 'umbral', 'clamor',
+    'designio', 'reino', 'sustento',
   ];
+  static const List<String> _intruderFemGeneric = [
+    'arena', 'sombra', 'niebla', 'senda', 'calma', 'aurora', 'bruma', 'llama',
+    'región', 'firmeza',
+  ];
+  static const Set<String> _intruderFemDeterminers = {
+    'la', 'las', 'una', 'unas', 'esta', 'estas', 'esa', 'esas', 'aquella', 'aquellas',
+  };
+  static const Set<String> _intruderMascDeterminers = {
+    'el', 'los', 'un', 'unos', 'este', 'estos', 'ese', 'esos', 'aquel', 'aquellos',
+  };
+
+  /// Palabras-función que NUNCA se reemplazan (romperían la frase): artículos,
+  /// preposiciones, conjunciones, pronombres y auxiliares comunes.
+  static const Set<String> _intruderStopWords = {
+    'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'lo', 'le', 'les',
+    'y', 'o', 'u', 'e', 'ni', 'de', 'del', 'a', 'al', 'en', 'con', 'por', 'para',
+    'sin', 'sobre', 'tras', 'que', 'se', 'su', 'sus', 'mi', 'tu', 'me', 'te', 'nos',
+    'es', 'fue', 'era', 'son', 'no', 'si', 'sí', 'como', 'más', 'muy', 'ya', 'ha', 'han',
+  };
 
   /// Construye un ejercicio de intrusas válido en puro código: reemplaza
-  /// exactamente [level] palabras del versículo por otras DISTINTAS y nuevas.
+  /// exactamente [level] palabras de contenido por otras DISTINTAS, nuevas y
+  /// coherentes con su artículo.
   @visibleForTesting
   static IntruderVerseSet buildFallbackIntruderVerse(String original, int level, math.Random rng) {
     final clean = original.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -585,36 +612,47 @@ class LocalLlmService {
       final lead = m?.group(1) ?? '';
       final trail = m?.group(3) ?? '';
       final core = m?.group(2) ?? token;
-      // Conservar la capitalización inicial.
       final cased = core.isNotEmpty && core[0] == core[0].toUpperCase()
           ? newCore[0].toUpperCase() + newCore.substring(1)
           : newCore;
       return '$lead$cased$trail';
     }
 
-    // Candidatos: índices de palabras de contenido (>= 4 letras), barajados, y
-    // con prioridad para las que tienen sinónimo.
-    final candidates = [
-      for (var i = 0; i < tokens.length; i++)
-        if (_intruderNorm(tokens[i]).length >= 4) i,
-    ]..shuffle(rng);
+    // Género que impone el artículo previo (si lo hay), para elegir el genérico.
+    String pickGeneric(int idx) {
+      final prev = idx > 0 ? _intruderNorm(tokens[idx - 1]) : '';
+      final List<String> pool;
+      if (_intruderFemDeterminers.contains(prev)) {
+        pool = _intruderFemGeneric;
+      } else if (_intruderMascDeterminers.contains(prev)) {
+        pool = _intruderMascGeneric;
+      } else {
+        pool = [..._intruderMascGeneric, ..._intruderFemGeneric];
+      }
+      return pool.firstWhere((w) => !usedNew.contains(w), orElse: () => '');
+    }
+
+    // Candidatos: SÓLO palabras de contenido (>= 3 letras y no función),
+    // barajados, con prioridad para las que tienen sinónimo (más plausibles).
+    bool isContent(int i) {
+      final c = _intruderNorm(tokens[i]);
+      return c.length >= 3 && !_intruderStopWords.contains(c);
+    }
+
+    final candidates = [for (var i = 0; i < tokens.length; i++) if (isContent(i)) i]..shuffle(rng);
     candidates.sort((a, b) {
       final aHas = _intruderSynonyms.containsKey(_intruderNorm(tokens[a])) ? 0 : 1;
       final bHas = _intruderSynonyms.containsKey(_intruderNorm(tokens[b])) ? 0 : 1;
       return aHas.compareTo(bHas);
     });
-    // Si no hay suficientes de >=4 letras, completar con cualquier palabra.
-    for (var i = 0; i < tokens.length; i++) {
-      if (!candidates.contains(i) && _intruderNorm(tokens[i]).isNotEmpty) candidates.add(i);
-    }
 
     final intruders = <String>[];
     for (final idx in candidates) {
       if (intruders.length >= level) break;
       final core = _intruderNorm(tokens[idx]);
-      var newCore = _intruderSynonyms[core];
+      var newCore = _intruderSynonyms[core]; // gender-consistent by construction
       if (newCore == null || usedNew.contains(newCore)) {
-        newCore = _intruderGenericPool.firstWhere((w) => !usedNew.contains(w), orElse: () => '');
+        newCore = pickGeneric(idx); // gender chosen from the preceding article
       }
       if (newCore.isEmpty || usedNew.contains(newCore)) continue;
       tokens[idx] = replaceCore(tokens[idx], newCore);

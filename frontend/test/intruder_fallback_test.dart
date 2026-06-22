@@ -17,6 +17,40 @@ void main() {
   ];
 
   group('buildFallbackIntruderVerse', () {
+    test('respeta la concordancia de género: nunca "la <masculino>" ni "el <femenino>"', () {
+      const verse = 'En el principio creó Dios el cielo y la tierra.';
+      const knownMasc = {
+        'firmamento', 'sendero', 'aliento', 'abismo', 'sosiego', 'umbral', 'clamor',
+        'designio', 'reino', 'sustento', 'comienzo', 'inicio', 'señor', 'planeta',
+        'amanecer', 'pecho', 'cariño', 'príncipe', 'heredero', 'progenitor', 'dominio',
+        'recelo', 'júbilo', 'error',
+      };
+      const knownFem = {
+        'arena', 'sombra', 'niebla', 'senda', 'calma', 'aurora', 'bruma', 'llama',
+        'región', 'firmeza', 'existencia', 'certeza', 'voz', 'honra', 'esperanza',
+        'merced', 'dama', 'señora', 'ruina',
+      };
+      String core(String w) => w.replaceAll(RegExp(r'[^a-záéíóúüñ]'), '');
+      for (var level = 1; level <= 3; level++) {
+        for (var seed = 0; seed < 12; seed++) {
+          final set = LocalLlmService.buildFallbackIntruderVerse(verse, level, Random(seed));
+          final words = set.alteredVerse.toLowerCase().split(RegExp(r'\s+'));
+          for (var i = 1; i < words.length; i++) {
+            final prev = core(words[i - 1]);
+            final w = core(words[i]);
+            if (prev == 'la') {
+              expect(knownMasc.contains(w), isFalse,
+                  reason: '"la $w" rompe concordancia (seed=$seed level=$level): ${set.alteredVerse}');
+            }
+            if (prev == 'el') {
+              expect(knownFem.contains(w), isFalse,
+                  reason: '"el $w" rompe concordancia (seed=$seed level=$level): ${set.alteredVerse}');
+            }
+          }
+        }
+      }
+    });
+
     test('siempre genera un ejercicio válido para niveles 1-3 y varias semillas', () {
       for (final verse in verses) {
         for (var level = 1; level <= 3; level++) {
