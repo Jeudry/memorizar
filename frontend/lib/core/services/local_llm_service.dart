@@ -360,18 +360,28 @@ class LocalLlmService {
     final String textBlock;
     final String coverageInstruction;
     if (isMulti) {
+      final n = verses.length;
       final buffer = StringBuffer();
-      for (var i = 0; i < verses.length; i++) {
-        buffer.writeln('${i + 1}. (${verses[i].reference}): "${verses[i].verseText}"');
+      for (var i = 0; i < n; i++) {
+        buffer.writeln('Texto ${i + 1} (${verses[i].reference}): "${verses[i].verseText}"');
       }
-      textBlock = 'Textos a evaluar (${verses.length}):\n${buffer.toString().trimRight()}';
+      textBlock = 'Textos a evaluar ($n):\n${buffer.toString().trimRight()}';
+
+      // Asignación EXPLÍCITA de cada sección a un texto concreto. Con la
+      // instrucción vaga anterior ("reparte… combínalos si tiene sentido") el
+      // modelo lumpeaba los versículos y dejaba el último sin pregunta.
+      final assignment = n >= 3
+          ? 'Asignación OBLIGATORIA: "trueFalse" trata SOLO sobre el Texto 1; "multipleChoice" SOLO '
+              'sobre el Texto 2; "openQuestion" SOLO sobre el Texto 3. NO combines varios textos en '
+              'una misma pregunta.'
+          : 'Asignación OBLIGATORIA: "trueFalse" trata sobre el Texto 1; "multipleChoice" sobre el '
+              'Texto 2; "openQuestion" sobre el Texto 1 o el Texto 2.';
       coverageInstruction =
-          'Hay ${verses.length} textos. Devuelve UN ÚNICO objeto JSON con SOLO 3 preguntas en total '
-          '(una en "trueFalse", una en "multipleChoice" y una en "openQuestion"). NO devuelvas un '
-          'array ni una lista, y NO generes un set de preguntas por cada texto. Reparte esas 3 '
-          'preguntas entre los textos: dedica preferentemente cada una a un texto DISTINTO '
-          '(combinándolos en una sola pregunta si tiene sentido), de modo que en conjunto cubran '
-          'todos los textos del grupo.';
+          'Hay $n textos. Devuelve UN ÚNICO objeto JSON con SOLO 3 preguntas en total (una en '
+          '"trueFalse", una en "multipleChoice" y una en "openQuestion"). NO devuelvas un array ni '
+          'una lista, y NO generes un set de preguntas por cada texto. $assignment '
+          'Es OBLIGATORIO que entre las 3 preguntas se cubran TODOS los $n textos; ninguno puede '
+          'quedar sin su pregunta.';
     } else {
       textBlock = 'Texto a evaluar (${verses.first.reference}): "${verses.first.verseText}"';
       coverageInstruction =
