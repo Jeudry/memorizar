@@ -100,11 +100,15 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
       await llm.initLlm();
       if (!mounted) return;
 
-      final set = await llm.generateIntruderVerse(
-        reference: widget.card.front,
-        verseText: widget.card.back,
-        level: _level,
-      );
+      final set = await (llm.takePrefetchedIntruder(
+            reference: widget.card.front,
+            level: _level,
+          ) ??
+          llm.generateIntruderVerse(
+            reference: widget.card.front,
+            verseText: widget.card.back,
+            level: _level,
+          ));
 
       if (!mounted) return;
 

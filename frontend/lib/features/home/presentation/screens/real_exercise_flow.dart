@@ -874,10 +874,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       setState(() => _aiDistractorLoading = true);
       try {
         if (!llm.isReady) await llm.initLlm();
-        final pool = await llm.generateCompletionDistractors(
-          reference: card.front,
-          verseText: card.back,
-        );
+        final pool = await (llm.takePrefetchedDistractors(card.front) ??
+            llm.generateCompletionDistractors(
+              reference: card.front,
+              verseText: card.back,
+            ));
         if (!mounted || _aiDistractorCardId != card.id) return;
         setState(() {
           _aiDistractorPool = pool;
@@ -1584,11 +1585,25 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     final step = stepIndex < 0 ? _flowStepNumber(slug) : stepIndex + 1;
     final totalSteps = steps.length;
 
-    // Pre-generar el quiz en segundo plano cuando el paso SIGUIENTE es el quiz,
-    // para que al llegar ya esté listo (sin esperar ~20s). Sólo el quiz que
-    // sigue, para no bloquear otra generación (la inferencia está serializada).
-    if (slug != '09-quiz' && _nextFlowSlug(store, slug) == '09-quiz') {
+    // Pre-generar en segundo plano la IA del paso SIGUIENTE, para que al llegar
+    // ya esté lista (sin esperar ~20s). Sólo el paso inmediato, para no bloquear
+    // otra generación (la inferencia está serializada). Cubre quiz, distractores
+    // de "elige la palabra" y el ejercicio de palabras intrusas.
+    final nextSlug = _nextFlowSlug(store, slug);
+    final llmPrefetch = LocalLlmService.instance;
+    if (slug != '09-quiz' && nextSlug == '09-quiz') {
       _QuizPrefetch.ensure(_quizGroupCards(batch));
+    }
+    if (_isCompletionSlug(nextSlug)) {
+      llmPrefetch.prefetchCompletionDistractors(reference: card.front, verseText: card.back);
+    }
+    if (nextSlug.startsWith('18-palabras-intrusas')) {
+      final level = nextSlug.endsWith('-n2') ? 2 : (nextSlug.endsWith('-n3') ? 3 : 1);
+      llmPrefetch.prefetchIntruderVerse(
+        reference: card.front,
+        verseText: card.back,
+        level: level,
+      );
     }
     if (slug == '02-lectura-frag' && store.isExerciseStepCompleted(slug)) {
       _fragmentVisibleWords = _studyWords(card.back).length;

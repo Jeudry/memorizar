@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -704,12 +705,15 @@ class LocalLlmService {
         'Eres un tutor de memorización de versículos en español.\n'
         'Semilla de variación aleatoria: $entropy\n'
         'Texto ($reference): "$verseText"\n\n'
-        'Devuelve "distractors": una lista de exactamente $count PALABRAS sueltas '
-        '(una sola palabra cada una, sin frases) que sirvan como opciones '
-        'INCORRECTAS pero CONFUSAS para un ejercicio de rellenar huecos del texto. '
-        'Deben parecerse a palabras del versículo: sinónimos cercanos, misma '
-        'familia, conjugaciones o errores plausibles — nunca palabras que '
-        'aparezcan tal cual en el texto. Todo en español. Solo el JSON.';
+        'Devuelve "distractors": exactamente $count PALABRAS sueltas (una sola palabra, sin frases) '
+        'que funcionen como opciones INCORRECTAS pero MUY confundibles en un ejercicio de rellenar '
+        'huecos de este texto. Cada distractor debe poder colocarse en lugar de ALGUNA palabra del '
+        'versículo y sonar casi creíble: usa sinónimos cercanos, la misma familia o raíz, otra '
+        'conjugación, o palabras de longitud y forma parecidas a las del texto, y que encajen '
+        'gramaticalmente (mismo tipo: si reemplaza un verbo, que sea verbo; si un sustantivo, '
+        'sustantivo; respeta género/número). '
+        'PROHIBIDO: palabras que ya estén en el texto, y palabras genéricas sin relación con el '
+        'versículo. Todo en español. Solo el JSON.';
     final content = await _chat(
       prompt,
       temperature: 0.9,
@@ -725,6 +729,51 @@ class LocalLlmService {
     }
     return words;
   }
+
+  // ---------------------------------------------------------------------------
+  // Prefetch en segundo plano (take-once): arranca la generación ANTES de que
+  // el usuario llegue al ejercicio. El primer consumidor TOMA el resultado (lo
+  // saca del caché); un re-uso posterior (ej. "Reintentar") genera fresco. La
+  // inferencia ya está serializada, así que esto sólo adelanta trabajo, no choca.
+  // ---------------------------------------------------------------------------
+  final Map<String, Future<IntruderVerseSet>> _intruderPrefetch = {};
+  final Map<String, Future<List<String>>> _distractorPrefetch = {};
+
+  String _intruderKey(String reference, int level) => '$reference##$level';
+
+  void prefetchIntruderVerse({
+    required String reference,
+    required String verseText,
+    required int level,
+  }) {
+    final key = _intruderKey(reference, level);
+    if (_intruderPrefetch.containsKey(key)) return;
+    final f = generateIntruderVerse(reference: reference, verseText: verseText, level: level);
+    _intruderPrefetch[key] = f;
+    unawaited(f.then((_) {}, onError: (_) => _intruderPrefetch.remove(key)));
+  }
+
+  /// Devuelve el intruso pre-generado para (reference, level) y lo SACA del
+  /// caché, o null si no se prefetchó.
+  Future<IntruderVerseSet>? takePrefetchedIntruder({
+    required String reference,
+    required int level,
+  }) =>
+      _intruderPrefetch.remove(_intruderKey(reference, level));
+
+  void prefetchCompletionDistractors({
+    required String reference,
+    required String verseText,
+  }) {
+    if (_distractorPrefetch.containsKey(reference)) return;
+    final f = generateCompletionDistractors(reference: reference, verseText: verseText);
+    _distractorPrefetch[reference] = f;
+    unawaited(f.then((_) {}, onError: (_) => _distractorPrefetch.remove(reference)));
+  }
+
+  /// Distractores pre-generados para [reference] (los SACA del caché), o null.
+  Future<List<String>>? takePrefetchedDistractors(String reference) =>
+      _distractorPrefetch.remove(reference);
 
   /// Evalúa con la IA local la respuesta libre del usuario a una pregunta
   /// abierta sobre el versículo. Devuelve veredicto y feedback breve.
