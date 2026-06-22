@@ -26,7 +26,9 @@ class LocalLlmService {
   static const String _legacyModelFileName = 'gemma-3-4b-it-qat-Q4_0.gguf';
   static const int _minValidModelBytes = 3000 * 1024 * 1024; // 3.02 GB
   static const Duration _generationTimeout = Duration(minutes: 3);
-  static const double _quizTemperature = 1.0;
+  // 0.7: suficiente variedad entre generaciones (vía semilla) sin la
+  // "creatividad" de 1.0 que hacía inventar hechos y preguntas engañosas.
+  static const double _quizTemperature = 0.7;
   static const int _quizMaxTokens = 900;
 
   /// Reintentos de la generación del quiz ante un JSON irrecuperable del modelo
@@ -352,8 +354,11 @@ class LocalLlmService {
         'lenguaje sencillo y cotidiano, UNA sola idea por pregunta, frases breves '
         '(idealmente menos de 15 palabras). Evita enunciados largos, rebuscados o con varias '
         'cláusulas, y términos teológicos complicados. Pregunta por el sentido literal y evidente '
-        'del texto. Los distractores deben ser cortos, plausibles pero claramente incorrectos para '
-        'quien comprenda el versículo.';
+        'del texto. '
+        'EXACTITUD: la pregunta y su respuesta deben ser FACTUALMENTE correctas y verificables '
+        'ÚNICAMENTE con el texto dado. La respuesta correcta debe ser indiscutiblemente correcta y '
+        'los distractores claramente falsos (no ambiguos ni discutibles). No inventes datos que no '
+        'estén en el texto ni hagas preguntas con trampa.';
 
     final isMulti = verses.length > 1;
 
@@ -401,7 +406,7 @@ class LocalLlmService {
           '$textBlock\n\n'
           'Genera exactamente:\n'
           '1. "trueFalse": una afirmación CORTA y simple sobre el contenido del texto con su veredicto "isTrue". '
-          'Decide al azar si la haces verdadera o falsa; si es falsa, introduce un error sutil.\n'
+          'Decide al azar si la haces verdadera o falsa; si es falsa, el error debe ser CLARO y comprobable con el texto (no un detalle ambiguo ni una trampa).\n'
           '2. "multipleChoice": una pregunta CORTA con "correct" (respuesta correcta y breve) y "distractors" (exactamente 3 incorrectas y breves).\n'
           '3. "openQuestion": una pregunta abierta CORTA y sencilla para que el usuario explique el texto con sus palabras.\n\n'
           'IMPORTANTE: $coverageInstruction\n\n'
