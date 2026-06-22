@@ -2561,7 +2561,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Mantén presionado un bloque para arrastrarlo a su lugar, o toca dos bloques para intercambiar sus posiciones.',
+                    'Mantén presionado un bloque para arrastrarlo a su lugar.',
                     style: TextStyle(
                       color: RefColors.dim,
                       fontSize: 11,
