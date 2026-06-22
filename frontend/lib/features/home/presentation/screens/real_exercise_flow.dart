@@ -1354,10 +1354,25 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       setState(() {
         _isEvaluatingOpenQuestion = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'La IA local no pudo evaluar tu respuesta. Inténtalo de nuevo.',
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          // Se queda hasta que el usuario lo cierre con la X.
+          duration: const Duration(days: 1),
+          showCloseIcon: true,
+          backgroundColor: RefColors.glassStrong,
+          shape: RoundedRectangleBorder(
+            side: const BorderSide(color: RefColors.urgent),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          content: const Text(
+            'La IA local no pudo evaluar tu respuesta esta vez. Vuelve a enviarla o usa "Omitir".',
+            style: TextStyle(
+              color: RefColors.urgent,
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+            ),
           ),
         ),
       );
@@ -1377,9 +1392,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       }
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    final feedbackMessenger = ScaffoldMessenger.of(context);
+    feedbackMessenger.hideCurrentSnackBar();
+    feedbackMessenger.showSnackBar(
       SnackBar(
-        duration: const Duration(seconds: 4),
+        // Más tiempo y con botón de cerrar para poder leer el veredicto.
+        duration: const Duration(seconds: 8),
+        showCloseIcon: true,
         backgroundColor: RefColors.glassStrong,
         shape: RoundedRectangleBorder(
           side: BorderSide(color: passes ? RefColors.lime : RefColors.urgent),
