@@ -26,10 +26,31 @@ class LocalLlmService {
   static const String _legacyModelFileName = 'gemma-3-4b-it-qat-Q4_0.gguf';
   static const int _minValidModelBytes = 3000 * 1024 * 1024; // 3.02 GB
   static const Duration _generationTimeout = Duration(minutes: 3);
-  // 0.7: suficiente variedad entre generaciones (vía semilla) sin la
-  // "creatividad" de 1.0 que hacía inventar hechos y preguntas engañosas.
-  static const double _quizTemperature = 0.7;
+  // 0.85: buena variedad entre generaciones (con la rotación de estilo/enfoque)
+  // sin llegar a la "creatividad" de 1.0 que inventaba hechos y degeneraba.
+  static const double _quizTemperature = 0.85;
   static const int _quizMaxTokens = 900;
+
+  /// Estilo del cuestionario, elegido al azar por generación para que no se
+  /// sienta repetitivo. ~1 de cada 3 sale con trampa sutil (pero justa).
+  static const List<String> _quizStyles = [
+    'Estilo: directas y claras.',
+    'Estilo: directas y claras.',
+    'Estilo: ASTUTO — ponle una trampa sutil pero JUSTA: el enunciado falso lleva un error fino y '
+        'los distractores son muy plausibles; aun así la respuesta correcta debe poder verificarse con el texto.',
+  ];
+
+  /// Enfoque del que parte cada pregunta, rotado al azar para dar variedad y que
+  /// no pregunten siempre lo mismo.
+  static const List<String> _quizFocusAngles = [
+    'el sujeto: quién realiza la acción',
+    'la acción principal o el verbo',
+    'una palabra o detalle concreto del texto',
+    'el lugar, el tiempo o el contexto',
+    'el orden o la secuencia de lo que ocurre',
+    'el propósito, la causa o la consecuencia',
+    'lo que el texto afirma o niega explícitamente',
+  ];
 
   /// Reintentos de la generación del quiz ante un JSON irrecuperable del modelo
   /// on-device. Cada generación tarda ~20s, así que el normalizador tolerante
@@ -350,15 +371,14 @@ class LocalLlmService {
     required List<({String reference, String verseText})> verses,
   }) async {
     assert(verses.isNotEmpty, 'Se requiere al menos un versículo.');
-    const depthInstruction = 'Las preguntas y respuestas deben ser CORTAS, SIMPLES y directas: '
-        'lenguaje sencillo y cotidiano, UNA sola idea por pregunta, frases breves '
-        '(idealmente menos de 15 palabras). Evita enunciados largos, rebuscados o con varias '
-        'cláusulas, y términos teológicos complicados. Pregunta por el sentido literal y evidente '
-        'del texto. '
-        'EXACTITUD: la pregunta y su respuesta deben ser FACTUALMENTE correctas y verificables '
-        'ÚNICAMENTE con el texto dado. La respuesta correcta debe ser indiscutiblemente correcta y '
-        'los distractores claramente falsos (no ambiguos ni discutibles). No inventes datos que no '
-        'estén en el texto ni hagas preguntas con trampa.';
+    const depthInstruction = 'Las preguntas y respuestas deben ser CORTAS: UNA sola idea por '
+        'pregunta, frases breves (idealmente menos de 15 palabras), sin enunciados largos ni '
+        'términos teológicos complicados. '
+        'EXACTITUD: la respuesta correcta debe poder verificarse SIEMPRE con el texto dado y ser '
+        'inequívoca; nunca inventes datos que no estén en el texto ni hagas preguntas sin respuesta '
+        'clara. Dentro de eso está PERMITIDO ser astuto: trampas sutiles, enunciados falsos con un '
+        'error fino y distractores muy plausibles están bien, mientras la respuesta correcta siga '
+        'siendo deducible del texto.';
 
     final isMulti = verses.length > 1;
 
@@ -382,7 +402,7 @@ class LocalLlmService {
           'Cada una trata SOLO sobre el texto indicado en su "forText". Asignación OBLIGATORIA: '
           'trueFalse → Texto 1; multipleChoice → Texto 2; openQuestion → Texto $openForText. '
           'Es OBLIGATORIO cubrir los $n textos; ninguno puede quedar sin su pregunta. '
-          'Preguntas CORTAS y simples; si el trueFalse es falso, el error debe ser CLARO (sin trampas); '
+          'Preguntas CORTAS; si el trueFalse es falso, el error debe ser comprobable con el texto (puede ser sutil); '
           'multipleChoice con "correct" breve y exactamente 3 "distractors" breves.\n'
           'Formato de salida OBLIGATORIO, EXACTAMENTE este array (sin texto adicional antes ni después):\n'
           '{"questions":[\n'
@@ -394,7 +414,7 @@ class LocalLlmService {
       textBlock = 'Texto a evaluar (${verses.first.reference}): "${verses.first.verseText}"';
       formatBlock =
           'Genera exactamente 3 preguntas sobre el texto:\n'
-          '1. "trueFalse": afirmación CORTA y simple con su veredicto "isTrue". Si es falsa, el error debe ser CLARO y comprobable (sin trampas).\n'
+          '1. "trueFalse": afirmación CORTA con su veredicto "isTrue". Si es falsa, el error debe ser comprobable con el texto (puede ser sutil).\n'
           '2. "multipleChoice": pregunta CORTA con "correct" (breve) y "distractors" (exactamente 3, breves).\n'
           '3. "openQuestion": pregunta abierta CORTA y sencilla.\n'
           'Cada sección debe evaluar un aspecto DIFERENTE del texto.\n'
@@ -408,11 +428,19 @@ class LocalLlmService {
     Object? lastError;
     for (var attempt = 1; attempt <= _quizMaxAttempts; attempt++) {
       final entropy = _seedRandom.nextInt(100000);
+      final style = _quizStyles[_seedRandom.nextInt(_quizStyles.length)];
+      final tfFocus = _quizFocusAngles[_seedRandom.nextInt(_quizFocusAngles.length)];
+      final mcFocus = _quizFocusAngles[_seedRandom.nextInt(_quizFocusAngles.length)];
+      final varietyHint =
+          'VARIEDAD: cada cuestionario debe ser DISTINTO a los anteriores; no repitas el mismo '
+          'patrón ni la misma frase de siempre. Esta vez parte la pregunta de verdadero/falso desde '
+          '$tfFocus, y la de opción múltiple desde $mcFocus. $style';
       final prompt = 'Eres un generador de cuestionarios en español para una app de memorización de versículos bíblicos.\n'
           'Semilla de variación aleatoria: $entropy\n'
           '$textBlock\n\n'
           '$formatBlock\n\n'
           '$depthInstruction\n'
+          '$varietyHint\n'
           'Todo en español. Responde únicamente con el JSON, sin texto adicional.';
       try {
         final content = await _chat(
