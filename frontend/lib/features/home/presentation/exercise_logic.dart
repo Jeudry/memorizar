@@ -113,39 +113,48 @@ List<String> completionOptions(
     seed == 0 ? DateTime.now().microsecondsSinceEpoch : seed,
   );
 
-  final versePool = <String>[];
-  for (final word in studyWords(text)) {
+  // Candidatos: primero el pool de la IA (más tramposos), luego palabras del
+  // versículo como respaldo. Dedup y sin la palabra correcta.
+  final candidates = <String>[];
+  void addCandidate(String word) {
     final clean = word.replaceAll(cleanRegex, '');
-    if (clean.length > 3 &&
+    if (clean.length > 2 &&
         !sameAnswer(clean, cleanTarget) &&
-        !versePool.any((p) => sameAnswer(p, clean))) {
-      versePool.add(clean);
+        !candidates.any((c) => sameAnswer(c, clean))) {
+      candidates.add(clean);
     }
   }
 
-  final distractors = <String>[];
-  if (aiPool != null && aiPool.isNotEmpty) {
-    final cleaned = <String>[];
-    for (final word in aiPool) {
-      final clean = word.replaceAll(cleanRegex, '');
-      if (clean.length > 2 &&
-          !sameAnswer(clean, cleanTarget) &&
-          !cleaned.any((p) => sameAnswer(p, clean))) {
-        cleaned.add(clean);
-      }
-    }
-    cleaned.shuffle(rng);
-    distractors.addAll(cleaned.take(4));
+  for (final word in (aiPool ?? const <String>[])) {
+    addCandidate(word);
   }
-  if (distractors.length < 4) {
-    final pad = [...versePool]..shuffle(rng);
-    for (final word in pad) {
-      if (distractors.length >= 4) break;
-      if (!distractors.any((d) => sameAnswer(d, word))) distractors.add(word);
-    }
+  for (final word in studyWords(text)) {
+    addCandidate(word);
   }
 
-  final options = <String>[cleanTarget, ...distractors.take(4)];
+  // Coherencia sintáctica: en español la TERMINACIÓN marca tipo y concordancia
+  // (-ó verbo pasado, -a femenino, -o masculino, -as/-os plural). Puntuamos cada
+  // distractor por cuánto coincide su terminación (y longitud) con el target,
+  // para que las opciones encajen gramaticalmente en el hueco y no salga un
+  // verbo donde va un sustantivo. Pequeño jitter aleatorio para variar empates.
+  final t = cleanTarget.toLowerCase();
+  int similarity(String w) {
+    final c = w.toLowerCase();
+    var s = 0;
+    // El ÚLTIMO carácter es la señal fuerte de concordancia/tipo en español.
+    if (t.isNotEmpty && c.isNotEmpty && t[t.length - 1] == c[c.length - 1]) {
+      s += 3;
+      if (t.length >= 2 && c.length >= 2 && t[t.length - 2] == c[c.length - 2]) s += 2;
+      if (t.length >= 3 && c.length >= 3 && t[t.length - 3] == c[c.length - 3]) s += 1;
+    }
+    if ((t.length - c.length).abs() <= 2) s += 1;
+    return s;
+  }
+
+  final scored = {for (final c in candidates) c: similarity(c) * 10 + rng.nextInt(5)};
+  candidates.sort((a, b) => scored[b]!.compareTo(scored[a]!));
+
+  final options = <String>[cleanTarget, ...candidates.take(4)];
   options.shuffle(rng);
   return options;
 }
