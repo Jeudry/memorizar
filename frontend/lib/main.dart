@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'core/router/app_routes.dart';
 import 'core/services/analytics_service.dart';
 import 'core/services/backend_analytics_provider.dart';
 import 'core/services/deeplink_service.dart';
+import 'core/services/llama_server_manager.dart';
 import 'core/services/local_llm_service.dart';
 import 'core/services/push_service.dart';
 import 'core/theme.dart';
@@ -78,12 +80,14 @@ class MemorizarApp extends StatefulWidget {
   State<MemorizarApp> createState() => _MemorizarAppState();
 }
 
-class _MemorizarAppState extends State<MemorizarApp> {
+class _MemorizarAppState extends State<MemorizarApp> with WidgetsBindingObserver {
   bool _onboardingShown = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _registerDesktopShutdownHooks();
     if (widget.showOnboarding) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_onboardingShown) return;
@@ -94,6 +98,40 @@ class _MemorizarAppState extends State<MemorizarApp> {
             builder: (_) => const OnboardingScreen(),
           ));
         }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // En escritorio la IA local corre como un subproceso `llama-server`. Si la
+    // app se cierra sin matarlo, queda HUÉRFANO (reparentado a launchd) comiendo
+    // GBs de RAM con el modelo cargado. Al detach (cierre/quit) lo apagamos.
+    if (state == AppLifecycleState.detached) {
+      unawaited(LlamaServerManager.instance.stop());
+    }
+  }
+
+  /// En escritorio, atrapa SIGINT/SIGTERM (cierre desde terminal, `kill`, etc.)
+  /// para apagar el `llama-server` antes de salir y no dejarlo huérfano.
+  void _registerDesktopShutdownHooks() {
+    if (kIsWeb || !(Platform.isMacOS || Platform.isLinux || Platform.isWindows)) {
+      return;
+    }
+    final signals = <ProcessSignal>[
+      ProcessSignal.sigint,
+      if (!Platform.isWindows) ProcessSignal.sigterm,
+    ];
+    for (final signal in signals) {
+      signal.watch().listen((_) async {
+        await LlamaServerManager.instance.stop();
+        exit(0);
       });
     }
   }
