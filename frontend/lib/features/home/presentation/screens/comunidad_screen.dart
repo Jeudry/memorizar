@@ -712,7 +712,7 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
       if (featured.isNotEmpty) ...[
         const SectionHead('Destacado esta semana'),
         SizedBox(
-          height: 104,
+          height: 116,
           child: ListView(
             scrollDirection: Axis.horizontal,
             children: [
@@ -1188,6 +1188,8 @@ class _FeaturedDeck extends StatelessWidget {
                 children: [
                   Text(
                     title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.w900,
@@ -1197,6 +1199,8 @@ class _FeaturedDeck extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 11,
                       color: RefColors.muted,
