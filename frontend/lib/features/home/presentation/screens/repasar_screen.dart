@@ -28,14 +28,20 @@ class _RepasarScreenState extends State<RepasarScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const RefTopBar(title: 'Mazos'),
-          const _PageHead(
-            'Tus mazos',
-            'Organízalos en grupos y repásalos a tu ritmo',
-          ),
-          // Acción principal de repaso, sin lenguaje de vencimiento: el
-          // aprendizaje no caduca, solo sugerimos por dónde empezar.
-          _RecommendedReview(
-            onTap: () => Navigator.pushNamed(context, AppRoutes.flashcards),
+          const SizedBox(height: 8),
+          // Acción principal de repaso (sin lenguaje de vencimiento) junto al
+          // botón para crear grupos.
+          Row(
+            children: [
+              Expanded(
+                child: _RecommendedReview(
+                  onTap: () =>
+                      Navigator.pushNamed(context, AppRoutes.flashcards),
+                ),
+              ),
+              const SizedBox(width: 10),
+              _NewGroupButton(onTap: () => _createGroupSheet(context, store)),
+            ],
           ),
           if (hasGroups) ...[
             const SizedBox(height: 16),
@@ -50,25 +56,7 @@ class _RepasarScreenState extends State<RepasarScreen> {
               _GroupBanner(stats: _groupStats(store, _selectedGroupId!)),
             ],
           ],
-          const SizedBox(height: 14),
-          Align(
-            alignment: Alignment.centerRight,
-            child: GestureDetector(
-              onTap: () => _createGroupSheet(context, store),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 6),
-                child: Text(
-                  '＋ Grupo',
-                  style: TextStyle(
-                    color: RefColors.cyan,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
+          const SectionHead('Tus mazos'),
           ..._buildDecks(context, store),
         ],
       ),
@@ -461,7 +449,7 @@ class _RecommendedReview extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Glass(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
         gradient: LinearGradient(
           colors: [
             RefColors.cyan.withValues(alpha: .20),
@@ -473,30 +461,55 @@ class _RecommendedReview extends StatelessWidget {
         border: Border.all(color: RefColors.cyan.withValues(alpha: .30)),
         child: Row(
           children: const [
-            GlyphIcon('✨', size: 26),
-            SizedBox(width: 12),
+            GlyphIcon('✨', size: 22),
+            SizedBox(width: 10),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Repaso recomendado',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'Empieza por tus tarjetas más débiles',
-                    style: TextStyle(fontSize: 11.5, color: RefColors.muted),
-                  ),
-                ],
+              child: Text(
+                'Repaso',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
             SizedBox(width: 8),
             Icon(Icons.play_circle_fill_rounded,
-                color: RefColors.cyan, size: 30),
+                color: RefColors.cyan, size: 28),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Botón compacto para crear un nuevo grupo, pensado para ir al lado de la
+/// tarjeta de Repaso.
+class _NewGroupButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _NewGroupButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Glass(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        color: HtmlRefColors.glassSoft,
+        border: Border.all(color: RefColors.cyan.withValues(alpha: .30)),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.create_new_folder_rounded,
+                color: RefColors.cyan, size: 18),
+            SizedBox(width: 7),
+            Text(
+              'Grupo',
+              style: TextStyle(
+                color: RefColors.cyan,
+                fontWeight: FontWeight.w900,
+                fontSize: 13.5,
+              ),
+            ),
           ],
         ),
       ),
