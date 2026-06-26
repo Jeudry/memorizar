@@ -13,6 +13,14 @@ class _RepasarScreenState extends State<RepasarScreen> {
   /// Grupo seleccionado en el slide; null = "Todos".
   String? _selectedGroupId;
 
+  /// Mazos marcados en el modo de selección múltiple.
+  final Set<String> _selectedDeckIds = <String>{};
+
+  /// Evita borrados duplicados mientras el batch está en curso.
+  bool _isDeleting = false;
+
+  bool get _selectionMode => _selectedDeckIds.isNotEmpty;
+
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
@@ -22,12 +30,27 @@ class _RepasarScreenState extends State<RepasarScreen> {
         !store.groups.any((g) => g.id == _selectedGroupId)) {
       _selectedGroupId = null;
     }
+    // Descarta de la selección los mazos que ya no existen.
+    if (_selectedDeckIds.isNotEmpty) {
+      final existingIds = store.decks.map((d) => d.id).toSet();
+      _selectedDeckIds.removeWhere((id) => !existingIds.contains(id));
+    }
     return ReferencePage(
       active: AppRoutes.repasar,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const RefTopBar(title: 'Mazos'),
+          if (_selectionMode)
+            _DeckSelectionBar(
+              count: _selectedDeckIds.length,
+              allSelected: _visibleDecksAllSelected(store),
+              isDeleting: _isDeleting,
+              onClose: _exitSelection,
+              onToggleAll: () => _toggleSelectAllVisible(store),
+              onDelete: () => _confirmDeleteSelected(context, store),
+            )
+          else
+            const RefTopBar(title: 'Mazos'),
           const SizedBox(height: 8),
           // Acción principal de repaso (sin lenguaje de vencimiento) junto al
           // botón para crear grupos.
@@ -43,6 +66,10 @@ class _RepasarScreenState extends State<RepasarScreen> {
               Expanded(
                 child: _NewGroupButton(
                     onTap: () => _createGroupSheet(context, store)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _NewDeckButton(onTap: () => _addDeckSheet(context)),
               ),
             ],
           ),
@@ -122,9 +149,139 @@ class _RepasarScreenState extends State<RepasarScreen> {
           deck.title,
           '${deck.weakCount} débiles · ${deck.cards.length} tarjetas',
           completed: store.isDeckCompleted(deck.id),
-          onMenu: () => _deckOptionsSheet(context, store, deck),
+          selected: _selectedDeckIds.contains(deck.id),
+          onMenu:
+              _selectionMode ? null : () => _deckOptionsSheet(context, store, deck),
+          onLongPress: () => _toggleDeckSelected(deck.id),
+          onTap: _selectionMode ? () => _toggleDeckSelected(deck.id) : null,
         ),
       );
+
+  /// Hoja para crear un mazo nuevo: elegir Biblia o pegar contenido propio.
+  Future<void> _addDeckSheet(BuildContext context) async {
+    final route = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFF0F0C1B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Agregar mazo',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16)),
+              ),
+            ),
+            ListTile(
+              leading: const Text('✝️', style: TextStyle(fontSize: 22)),
+              title: const Text('Biblia',
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w700)),
+              subtitle: const Text('Versículos · capítulos · libros',
+                  style: TextStyle(color: RefColors.muted, fontSize: 12)),
+              onTap: () => Navigator.pop(ctx, AppRoutes.biblia),
+            ),
+            ListTile(
+              leading: const Text('✨', style: TextStyle(fontSize: 22)),
+              title: const Text('Especificar',
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w700)),
+              subtitle: const Text('Pega tu propio contenido',
+                  style: TextStyle(color: RefColors.muted, fontSize: 12)),
+              onTap: () => Navigator.pop(ctx, AppRoutes.especificar),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (route != null && context.mounted) {
+      Navigator.pushNamed(context, route);
+    }
+  }
+
+  /// Mazos actualmente visibles según el filtro de grupo (lo que abarca
+  /// "seleccionar todos").
+  List<MemoryDeckData> _visibleDecks(AppStore store) => _selectedGroupId == null
+      ? store.decks
+      : store.decksInGroup(_selectedGroupId);
+
+  bool _visibleDecksAllSelected(AppStore store) {
+    final visible = _visibleDecks(store);
+    return visible.isNotEmpty &&
+        visible.every((deck) => _selectedDeckIds.contains(deck.id));
+  }
+
+  void _toggleDeckSelected(String deckId) {
+    setState(() {
+      if (!_selectedDeckIds.remove(deckId)) _selectedDeckIds.add(deckId);
+    });
+  }
+
+  void _exitSelection() => setState(_selectedDeckIds.clear);
+
+  void _toggleSelectAllVisible(AppStore store) {
+    final visibleIds = _visibleDecks(store).map((deck) => deck.id);
+    setState(() {
+      if (_visibleDecksAllSelected(store)) {
+        _selectedDeckIds.clear();
+      } else {
+        _selectedDeckIds.addAll(visibleIds);
+      }
+    });
+  }
+
+  Future<void> _confirmDeleteSelected(
+      BuildContext context, AppStore store) async {
+    if (_isDeleting || _selectedDeckIds.isEmpty) return;
+    final count = _selectedDeckIds.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF0F0C1B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Eliminar mazos',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        content: Text(
+          'Se eliminarán $count ${count == 1 ? 'mazo' : 'mazos'} y todas sus tarjetas. Esta acción no se puede deshacer.',
+          style: const TextStyle(color: RefColors.muted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child:
+                const Text('Cancelar', style: TextStyle(color: RefColors.muted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: RefColors.urgent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _isDeleting = true);
+    final ids = _selectedDeckIds.toList();
+    try {
+      await store.deleteDecks(ids);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _selectedDeckIds.clear();
+          _isDeleting = false;
+        });
+      }
+    }
+  }
 
   /// Lista los mazos agrupados por carpeta: cada grupo con su encabezado, y
   /// al final los mazos sin grupo. Un mazo pertenece a 0 o 1 grupo.
@@ -633,20 +790,31 @@ class _DeckRetention extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool completed;
+  final bool selected;
   final VoidCallback? onMenu;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
 
   const _DeckRetention(this.emoji, this.title, this.subtitle,
-      {this.completed = false, this.onMenu});
+      {this.completed = false,
+      this.selected = false,
+      this.onMenu,
+      this.onTap,
+      this.onLongPress});
 
   @override
   Widget build(BuildContext context) {
-    return Glass(
+    final card = Glass(
       radius: 14,
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
-      color: RefColors.glassSoft,
+      color: selected ? RefColors.glassStrong : RefColors.glassSoft,
       child: Row(
         children: [
-          GlyphIcon(emoji, size: 22),
+          if (selected)
+            const Icon(Icons.check_circle_rounded,
+                size: 22, color: RefColors.cyan)
+          else
+            GlyphIcon(emoji, size: 22),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -692,6 +860,113 @@ class _DeckRetention extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+
+    if (onTap == null && onLongPress == null) return card;
+
+    return GestureDetector(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? RefColors.cyan : Colors.transparent,
+            width: 2,
+          ),
+        ),
+        child: card,
+      ),
+    );
+  }
+}
+
+/// Barra superior contextual del modo de selección múltiple de mazos.
+class _DeckSelectionBar extends StatelessWidget {
+  final int count;
+  final bool allSelected;
+  final bool isDeleting;
+  final VoidCallback onClose;
+  final VoidCallback onToggleAll;
+  final VoidCallback onDelete;
+
+  const _DeckSelectionBar({
+    required this.count,
+    required this.allSelected,
+    required this.isDeleting,
+    required this.onClose,
+    required this.onToggleAll,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        children: [
+          _BarAction(
+              icon: Icons.close_rounded, onTap: isDeleting ? null : onClose),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$count ${count == 1 ? 'seleccionado' : 'seleccionados'}',
+              style:
+                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            ),
+          ),
+          _BarAction(
+            icon: allSelected
+                ? Icons.deselect_rounded
+                : Icons.select_all_rounded,
+            onTap: isDeleting ? null : onToggleAll,
+          ),
+          const SizedBox(width: 8),
+          _BarAction(
+            icon: Icons.delete_outline_rounded,
+            color: RefColors.urgent,
+            loading: isDeleting,
+            onTap: (isDeleting || count == 0) ? null : onDelete,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Botón de acción con el mismo aspecto que [RefIconButton] pero tappable.
+class _BarAction extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onTap;
+  final Color? color;
+  final bool loading;
+
+  const _BarAction(
+      {required this.icon, this.onTap, this.color, this.loading = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Opacity(
+        opacity: onTap == null ? 0.5 : 1,
+        child: Glass(
+          radius: 14,
+          padding: EdgeInsets.zero,
+          child: SizedBox(
+            width: 42,
+            height: 42,
+            child: loading
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: RefColors.urgent),
+                  )
+                : Icon(icon, size: 20, color: color),
+          ),
+        ),
       ),
     );
   }
@@ -779,9 +1054,41 @@ class _NewGroupButton extends StatelessWidget {
                 color: RefColors.cyan, size: 18),
             SizedBox(width: 7),
             Text(
-              'Nuevo grupo',
+              'Grupo',
               style: TextStyle(
                 color: RefColors.cyan,
+                fontWeight: FontWeight.w900,
+                fontSize: 13.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NewDeckButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _NewDeckButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Glass(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        color: HtmlRefColors.glassSoft,
+        border: Border.all(color: RefColors.pink.withValues(alpha: .30)),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.add_rounded, color: RefColors.pink, size: 18),
+            SizedBox(width: 7),
+            Text(
+              'Mazo',
+              style: TextStyle(
+                color: RefColors.pink,
                 fontWeight: FontWeight.w900,
                 fontSize: 13.5,
               ),

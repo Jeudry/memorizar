@@ -1230,6 +1230,24 @@ class AppStore extends ChangeNotifier {
     await _saveCompletedDecks();
   }
 
+  /// Borra varios mazos de una sola pasada (un único refresh y guardado),
+  /// para la selección múltiple de "Mis Mazos".
+  Future<void> deleteDecks(Iterable<String> deckIds) async {
+    final ids = deckIds.toSet();
+    if (ids.isEmpty) return;
+    _decks.removeWhere((d) => ids.contains(d.id));
+    _completedDeckIds.removeAll(ids);
+    _completedExerciseSteps
+        .removeWhere((key) => ids.any((id) => key.startsWith('$id:')));
+    notifyListeners();
+    if (enableDatabasePersistence && db != null) {
+      for (final id in ids) {
+        await db!.deleteDeck(id);
+      }
+    }
+    await _saveCompletedDecks();
+  }
+
   /// ¿El usuario marcó este mazo como completado?
   bool isDeckCompleted(String deckId) => _completedDeckIds.contains(deckId);
 
