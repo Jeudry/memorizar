@@ -825,6 +825,11 @@ class AppStore extends ChangeNotifier {
   static const _kBigFontKey = 'memorizar.big.font';
   static const _kReminderEnabledKey = 'memorizar.reminder.enabled';
   static const _kReminderHourKey = 'memorizar.reminder.hour';
+  static const _kCompletedDecksKey = 'memorizar.decks.completed';
+
+  /// Ids de mazos que el usuario marcó como completados. Se persiste en
+  /// SharedPreferences (no requiere migración de Drift).
+  final Set<String> _completedDeckIds = {};
 
   ThemeMode _themeMode = ThemeMode.dark;
   String _locale = 'es';
@@ -853,6 +858,9 @@ class AppStore extends ChangeNotifier {
     _bigFont = prefs.getBool(_kBigFontKey) ?? false;
     _reminderEnabled = prefs.getBool(_kReminderEnabledKey) ?? false;
     _reminderHour = prefs.getInt(_kReminderHourKey) ?? 20;
+    _completedDeckIds
+      ..clear()
+      ..addAll(prefs.getStringList(_kCompletedDecksKey) ?? const []);
     // Re-programar al arrancar mantiene el recordatorio vigente aunque el
     // sistema lo haya purgado (reinicios, actualizaciones de la app).
     if (_reminderEnabled) {
@@ -1183,6 +1191,42 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
     if (enableDatabasePersistence && db != null) {
       await _persistDeckToDatabase(updated);
+    }
+  }
+
+  /// Borra un mazo por completo (sus tarjetas y rastros locales).
+  Future<void> deleteDeck(String deckId) async {
+    _decks.removeWhere((d) => d.id == deckId);
+    _completedDeckIds.remove(deckId);
+    _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));
+    notifyListeners();
+    if (enableDatabasePersistence && db != null) {
+      await db!.deleteDeck(deckId);
+    }
+    await _saveCompletedDecks();
+  }
+
+  /// ¿El usuario marcó este mazo como completado?
+  bool isDeckCompleted(String deckId) => _completedDeckIds.contains(deckId);
+
+  /// Marca/desmarca un mazo como completado y lo persiste.
+  Future<void> setDeckCompleted(String deckId, bool completed) async {
+    if (completed) {
+      _completedDeckIds.add(deckId);
+    } else {
+      _completedDeckIds.remove(deckId);
+    }
+    notifyListeners();
+    await _saveCompletedDecks();
+  }
+
+  Future<void> _saveCompletedDecks() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(
+          _kCompletedDecksKey, _completedDeckIds.toList());
+    } catch (_) {
+      // Sin SharedPreferences (tests): se mantiene solo en memoria.
     }
   }
 

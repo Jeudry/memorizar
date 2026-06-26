@@ -40,7 +40,10 @@ class _RepasarScreenState extends State<RepasarScreen> {
                 ),
               ),
               const SizedBox(width: 10),
-              _NewGroupButton(onTap: () => _createGroupSheet(context, store)),
+              Expanded(
+                child: _NewGroupButton(
+                    onTap: () => _createGroupSheet(context, store)),
+              ),
             ],
           ),
           if (hasGroups) ...[
@@ -56,7 +59,7 @@ class _RepasarScreenState extends State<RepasarScreen> {
               _GroupBanner(stats: _groupStats(store, _selectedGroupId!)),
             ],
           ],
-          const SectionHead('Tus mazos'),
+          const SizedBox(height: 16),
           ..._buildDecks(context, store),
         ],
       ),
@@ -111,9 +114,8 @@ class _RepasarScreenState extends State<RepasarScreen> {
           deck.icon,
           deck.title,
           '${deck.weakCount} débiles · ${deck.cards.length} tarjetas',
-          deck.retention / 100,
-          onExport: () => exportDeckToCsv(context, deck),
-          onMenu: () => _moveToGroupSheet(context, store, deck),
+          completed: store.isDeckCompleted(deck.id),
+          onMenu: () => _deckOptionsSheet(context, store, deck),
         ),
       );
 
@@ -237,6 +239,124 @@ class _RepasarScreenState extends State<RepasarScreen> {
     if (res != null) await store.createGroup(res.name, icon: res.icon);
   }
 
+  /// Menú de opciones de un mazo: completar, mover, exportar o eliminar.
+  Future<void> _deckOptionsSheet(
+      BuildContext context, AppStore store, MemoryDeckData deck) async {
+    final completed = store.isDeckCompleted(deck.id);
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF0F0C1B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+              child: Row(
+                children: [
+                  GlyphIcon(deck.icon, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      deck.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: Icon(
+                completed
+                    ? Icons.check_circle_rounded
+                    : Icons.check_circle_outline_rounded,
+                color: completed ? RefColors.lime : RefColors.muted,
+              ),
+              title: Text(
+                completed ? 'Marcar como pendiente' : 'Marcar como completado',
+                style: const TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                store.setDeckCompleted(deck.id, !completed);
+                Navigator.pop(ctx);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_move_rounded,
+                  color: RefColors.cyan),
+              title: const Text('Mover a grupo…',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _moveToGroupSheet(context, store, deck);
+              },
+            ),
+            ListTile(
+              leading:
+                  const Icon(Icons.ios_share_rounded, color: RefColors.cyan),
+              title: const Text('Exportar CSV',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                exportDeckToCsv(context, deck);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline_rounded,
+                  color: RefColors.urgent),
+              title: const Text('Eliminar mazo',
+                  style: TextStyle(color: RefColors.urgent)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await _confirmDeleteDeck(context, store, deck);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteDeck(
+      BuildContext context, AppStore store, MemoryDeckData deck) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF0F0C1B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Eliminar mazo',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        content: Text(
+          'Se eliminará "${deck.title}" y sus ${deck.cards.length} tarjetas. Esta acción no se puede deshacer.',
+          style: const TextStyle(color: RefColors.muted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child:
+                const Text('Cancelar', style: TextStyle(color: RefColors.muted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: RefColors.urgent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await store.deleteDeck(deck.id);
+  }
+
   /// Hoja para mover un mazo a un grupo (o sin grupo / crear uno nuevo).
   Future<void> _moveToGroupSheet(
       BuildContext context, AppStore store, MemoryDeckData deck) async {
@@ -349,18 +469,17 @@ class _DeckRetention extends StatelessWidget {
   final String emoji;
   final String title;
   final String subtitle;
-  final double value;
-  final VoidCallback? onExport;
+  final bool completed;
   final VoidCallback? onMenu;
 
-  const _DeckRetention(this.emoji, this.title, this.subtitle, this.value,
-      {this.onExport, this.onMenu});
+  const _DeckRetention(this.emoji, this.title, this.subtitle,
+      {this.completed = false, this.onMenu});
 
   @override
   Widget build(BuildContext context) {
     return Glass(
       radius: 14,
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
       color: RefColors.glassSoft,
       child: Row(
         children: [
@@ -370,34 +489,30 @@ class _DeckRetention extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    if (completed) ...[
+                      const SizedBox(width: 6),
+                      const Icon(Icons.check_circle_rounded,
+                          size: 15, color: RefColors.lime),
+                    ],
+                  ],
                 ),
                 Text(
                   subtitle,
                   style: const TextStyle(fontSize: 11, color: RefColors.muted),
                 ),
-                const SizedBox(height: 6),
-                RefProgress(value),
               ],
             ),
           ),
-          if (onExport != null)
-            GestureDetector(
-              onTap: onExport,
-              child: Container(
-                margin: const EdgeInsets.only(left: 8),
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: RefColors.glassStrong,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: RefColors.border),
-                ),
-                child: const Icon(Icons.ios_share_rounded,
-                    size: 17, color: RefColors.cyan),
-              ),
-            ),
           if (onMenu != null)
             GestureDetector(
               onTap: onMenu,
@@ -459,22 +574,18 @@ class _RecommendedReview extends StatelessWidget {
           end: Alignment.centerRight,
         ),
         border: Border.all(color: RefColors.cyan.withValues(alpha: .30)),
-        child: Row(
-          children: const [
-            GlyphIcon('✨', size: 22),
-            SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Repaso',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
-                ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            GlyphIcon('✨', size: 18),
+            SizedBox(width: 7),
+            Text(
+              'Repaso',
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w900,
               ),
             ),
-            SizedBox(width: 8),
-            Icon(Icons.play_circle_fill_rounded,
-                color: RefColors.cyan, size: 28),
           ],
         ),
       ),
@@ -497,13 +608,13 @@ class _NewGroupButton extends StatelessWidget {
         color: HtmlRefColors.glassSoft,
         border: Border.all(color: RefColors.cyan.withValues(alpha: .30)),
         child: const Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.create_new_folder_rounded,
                 color: RefColors.cyan, size: 18),
             SizedBox(width: 7),
             Text(
-              'Grupo',
+              'Nuevo grupo',
               style: TextStyle(
                 color: RefColors.cyan,
                 fontWeight: FontWeight.w900,
