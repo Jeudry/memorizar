@@ -874,7 +874,7 @@ class _HeroSectionState extends State<_HeroSection> {
     }
 
     return SizedBox(
-      height: 92,
+      height: 118,
       child: PageView.builder(
         controller: _pc,
         itemCount: pending.length,
