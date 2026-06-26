@@ -1017,9 +1017,9 @@ class _CommunityCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: GlassCard(
-        width: 150,
-        height: 150,
-        padding: const EdgeInsets.all(12),
+        width: 104,
+        height: 104,
+        padding: const EdgeInsets.all(9),
         color: AppColors.glassBg,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1029,19 +1029,19 @@ class _CommunityCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Container(
-                  width: 36,
-                  height: 36,
+                  width: 26,
+                  height: 26,
                   decoration: BoxDecoration(
                     color: AppColors.glassStrong,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: AppColors.glassBorder),
                   ),
-                  child: Center(child: GlyphIcon(emoji, size: 18)),
+                  child: Center(child: GlyphIcon(emoji, size: 13)),
                 ),
                 if (weakCount > 0)
                   Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                     decoration: BoxDecoration(
                       color: AppColors.urgent.withValues(alpha: .15),
                       borderRadius: BorderRadius.circular(999),
@@ -1050,7 +1050,7 @@ class _CommunityCard extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      '$weakCount por repasar',
+                      '$weakCount',
                       style: const TextStyle(
                         color: AppColors.urgent,
                         fontSize: 9,
@@ -1063,19 +1063,24 @@ class _CommunityCard extends StatelessWidget {
             const Spacer(),
             Text(
               title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 13,
+                fontSize: 11.5,
                 fontWeight: FontWeight.w700,
-                height: 1.2,
+                height: 1.15,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Text(
               stats,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 10,
+                fontSize: 8.5,
                 color: AppColors.inkMuted,
                 fontWeight: FontWeight.w500,
+                height: 1.2,
               ),
             ),
           ],
