@@ -1,6 +1,7 @@
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/app_state.dart';
 import '../../../core/router/app_routes.dart';
@@ -30,6 +31,12 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   String? _error;
   bool _success = false;
 
+  /// "Recuérdame": si está activo, persistimos el correo en este dispositivo
+  /// para precargarlo la próxima vez. Por defecto encendido.
+  bool _remember = true;
+  static const _kRememberFlag = 'auth_remember_me';
+  static const _kRememberedEmail = 'auth_remembered_email';
+
   /// Sub-modo dentro de email: false = sign in, true = sign up.
   bool _isSignUp = false;
 
@@ -56,6 +63,32 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       vsync: this,
       duration: const Duration(seconds: 4),
     )..repeat(reverse: true);
+    _loadRemembered();
+  }
+
+  /// Precarga el correo recordado en este dispositivo (si lo hay).
+  Future<void> _loadRemembered() async {
+    final prefs = await SharedPreferences.getInstance();
+    final remember = prefs.getBool(_kRememberFlag) ?? true;
+    final email = prefs.getString(_kRememberedEmail) ?? '';
+    if (!mounted) return;
+    setState(() {
+      _remember = remember;
+      if (remember && email.isNotEmpty && _emailCtrl.text.isEmpty) {
+        _emailCtrl.text = email;
+      }
+    });
+  }
+
+  /// Guarda o limpia el correo recordado según el estado de "Recuérdame".
+  Future<void> _persistRemembered(String email) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kRememberFlag, _remember);
+    if (_remember) {
+      await prefs.setString(_kRememberedEmail, email);
+    } else {
+      await prefs.remove(_kRememberedEmail);
+    }
   }
 
   @override
@@ -156,6 +189,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       } else {
         await store.loginWithEmail(email: email, password: pass);
       }
+      await _persistRemembered(email);
       if (!mounted) return;
       await _celebrateAndGoHome();
     } catch (e) {
@@ -490,6 +524,11 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         icon: Icons.lock_outline_rounded,
                         obscure: true,
                       ),
+                      const SizedBox(height: 12),
+                      _RememberMeToggle(
+                        value: _remember,
+                        onChanged: (v) => setState(() => _remember = v),
+                      ),
                       const SizedBox(height: 16),
                       _busy
                           ? const Center(
@@ -726,6 +765,56 @@ class _LoginFieldState extends State<_LoginField> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Fila "Recuérdame": un checkbox compacto que controla si se persiste el
+/// correo en este dispositivo para precargarlo la próxima vez.
+class _RememberMeToggle extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _RememberMeToggle({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onChanged(!value),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: value ? RefColors.cyan : Colors.transparent,
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(
+                  color: value ? RefColors.cyan : HtmlRefColors.glassBorder,
+                  width: 1.6,
+                ),
+              ),
+              child: value
+                  ? const Icon(Icons.check_rounded,
+                      color: Colors.black, size: 16)
+                  : null,
+            ),
+            const SizedBox(width: 10),
+            const Text(
+              'Recuérdame en este dispositivo',
+              style: TextStyle(
+                color: RefColors.muted,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
