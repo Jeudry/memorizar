@@ -1293,10 +1293,6 @@ func (s *Service) CommunityOverview(userID string) (*CommunityOverview, error) {
 		return nil, err
 	}
 
-	enrich := func(resource domain.SharedResource) CommunityDeck {
-		return CommunityDeck{SharedResource: resource, ImportCount: totalCounts[resource.ID]}
-	}
-
 	featuredSource := append([]domain.SharedResource{}, decks...)
 	sort.SliceStable(featuredSource, func(i, j int) bool {
 		ri, rj := recentCounts[featuredSource[i].ID], recentCounts[featuredSource[j].ID]
@@ -1305,12 +1301,14 @@ func (s *Service) CommunityOverview(userID string) (*CommunityOverview, error) {
 		}
 		return featuredSource[i].CreatedAt.After(featuredSource[j].CreatedAt)
 	})
-	featured := make([]CommunityDeck, 0, 3)
-	for _, resource := range featuredSource {
-		if len(featured) == 3 {
-			break
-		}
-		featured = append(featured, enrich(resource))
+	if len(featuredSource) > 3 {
+		featuredSource = featuredSource[:3]
+	}
+	// Enriquecemos con stats completas (rating, likes, comentarios) para que la
+	// portada —y el slide de inicio— puedan mostrar popularidad, no solo importaciones.
+	featured, err := s.attachCommunityStats(userID, featuredSource)
+	if err != nil {
+		return nil, err
 	}
 
 	popularSource := append([]domain.SharedResource{}, decks...)
@@ -1321,12 +1319,12 @@ func (s *Service) CommunityOverview(userID string) (*CommunityOverview, error) {
 		}
 		return popularSource[i].CreatedAt.After(popularSource[j].CreatedAt)
 	})
-	popular := make([]CommunityDeck, 0, 6)
-	for _, resource := range popularSource {
-		if len(popular) == 6 {
-			break
-		}
-		popular = append(popular, enrich(resource))
+	if len(popularSource) > 6 {
+		popularSource = popularSource[:6]
+	}
+	popular, err := s.attachCommunityStats(userID, popularSource)
+	if err != nil {
+		return nil, err
 	}
 
 	type creatorAgg struct {

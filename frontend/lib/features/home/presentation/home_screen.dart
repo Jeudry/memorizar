@@ -1020,6 +1020,10 @@ class _CommunityCard extends StatelessWidget {
   final String stats;
   /// Tarjetas débiles/por repasar del mazo. > 0 muestra un badge accionable.
   final int weakCount;
+  /// Promedio de estrellas (0–5) para mazos de comunidad. > 0 muestra un badge
+  /// de popularidad con la valoración.
+  final double ratingAvg;
+  final int ratingCount;
   final VoidCallback? onTap;
 
   const _CommunityCard({
@@ -1027,6 +1031,8 @@ class _CommunityCard extends StatelessWidget {
     required this.title,
     required this.stats,
     this.weakCount = 0,
+    this.ratingAvg = 0,
+    this.ratingCount = 0,
     this.onTap,
   });
 
@@ -1056,7 +1062,36 @@ class _CommunityCard extends StatelessWidget {
                   ),
                   child: Center(child: GlyphIcon(emoji, size: 24)),
                 ),
-                if (weakCount > 0)
+                if (ratingAvg > 0)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentSun.withValues(alpha: .16),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: AppColors.accentSun.withValues(alpha: .4),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('★',
+                            style: TextStyle(
+                                color: AppColors.accentSun, fontSize: 11)),
+                        const SizedBox(width: 2),
+                        Text(
+                          ratingAvg.toStringAsFixed(1),
+                          style: const TextStyle(
+                            color: AppColors.accentSun,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (weakCount > 0)
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -1170,6 +1205,19 @@ class _HomeCommunitySliderState extends State<_HomeCommunitySlider> {
     }
   }
 
+  /// Línea de popularidad del mazo: importaciones + me gusta (+ nº de
+  /// valoraciones cuando las hay), para dar señal social en la tarjeta.
+  String _shareStats(Map<String, dynamic> share) {
+    final imports = (share['importCount'] as int?) ?? 0;
+    final likes = (share['likeCount'] as int?) ?? 0;
+    final ratings = (share['ratingCount'] as int?) ?? 0;
+    final parts = <String>['$imports 📥', '$likes ❤️'];
+    if (ratings > 0) {
+      parts.add('$ratings ${ratings == 1 ? 'reseña' : 'reseñas'}');
+    }
+    return parts.join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final shares = _shares;
@@ -1182,8 +1230,9 @@ class _HomeCommunitySliderState extends State<_HomeCommunitySlider> {
               _CommunityCard(
                 emoji: _shareIcon(share),
                 title: (share['title'] as String?) ?? 'Sin título',
-                stats:
-                    '${(share['importCount'] as int?) ?? 0} importaciones 📥',
+                stats: _shareStats(share),
+                ratingAvg: (share['ratingAvg'] as num?)?.toDouble() ?? 0,
+                ratingCount: (share['ratingCount'] as int?) ?? 0,
                 onTap: () => Navigator.pushNamed(context, '/comunidad'),
               ),
               const SizedBox(width: 10),
