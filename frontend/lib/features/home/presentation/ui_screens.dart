@@ -189,6 +189,7 @@ Map<String, WidgetBuilder> buildAppRoutes() => {
   AppRoutes.biblia: (_) => const BibliaScreen(),
   AppRoutes.especificar: (_) => const EspecificarScreen(),
   AppRoutes.iniciar: (_) => const IniciarScreen(),
+  AppRoutes.agregarMazo: (_) => const AgregarMazoScreen(),
   AppRoutes.repasar: (_) => const MainTabShell(initialRoute: AppRoutes.repasar),
   AppRoutes.comunidad: (_) => const MainTabShell(initialRoute: AppRoutes.comunidad),
   AppRoutes.amigos: (_) => const MainTabShell(initialRoute: AppRoutes.amigos),

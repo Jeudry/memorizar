@@ -157,62 +157,9 @@ class _RepasarScreenState extends State<RepasarScreen> {
         ),
       );
 
-  /// Hoja para crear un mazo nuevo: elegir Biblia o pegar contenido propio.
-  Future<void> _addDeckSheet(BuildContext context) async {
-    final route = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: const Color(0xFF0F0C1B),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 12),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Agregar mazo',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16)),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _AddDeckCard(
-                      emoji: '✝️',
-                      title: 'Biblia',
-                      subtitle: 'Versículos · capítulos · libros',
-                      color: RefColors.sun,
-                      onTap: () => Navigator.pop(ctx, AppRoutes.biblia),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _AddDeckCard(
-                      emoji: '✨',
-                      title: 'Especificar',
-                      subtitle: 'Pega tu propio contenido',
-                      color: RefColors.violet,
-                      onTap: () => Navigator.pop(ctx, AppRoutes.especificar),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (route != null && context.mounted) {
-      Navigator.pushNamed(context, route);
-    }
+  /// Abre la pantalla "Agregar mazo" (no un bottom sheet).
+  void _addDeckSheet(BuildContext context) {
+    Navigator.pushNamed(context, AppRoutes.agregarMazo);
   }
 
   /// Mazos actualmente visibles según el filtro de grupo (lo que abarca
@@ -1168,6 +1115,54 @@ class _AddDeckCard extends StatelessWidget {
   }
 }
 
+/// Pantalla (no modal) para agregar un mazo: elegir Biblia o pegar contenido.
+class AgregarMazoScreen extends StatelessWidget {
+  const AgregarMazoScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ReferencePage(
+      showBottomNav: false,
+      active: AppRoutes.repasar,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const RefTopBar(title: 'Agregar mazo'),
+          const _PageHead(
+            'Agregar mazo',
+            '¿De dónde sacamos el contenido?',
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: _AddDeckCard(
+                  emoji: '✝️',
+                  title: 'Biblia',
+                  subtitle: 'Versículos · capítulos · libros',
+                  color: RefColors.sun,
+                  onTap: () => Navigator.pushReplacementNamed(
+                      context, AppRoutes.biblia),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _AddDeckCard(
+                  emoji: '✨',
+                  title: 'Especificar',
+                  subtitle: 'Pega tu propio contenido',
+                  color: RefColors.violet,
+                  onTap: () => Navigator.pushReplacementNamed(
+                      context, AppRoutes.especificar),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Slide horizontal de grupos: "Todos" + cada grupo. Al tocar uno se
 /// selecciona y se muestra su banner y sus mazos debajo.
 class _GroupsSlide extends StatelessWidget {
@@ -1337,33 +1332,35 @@ class _GroupBanner extends StatelessWidget {
                     color: RefColors.muted,
                   ),
                 ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Icon(
-                      allDone
-                          ? Icons.verified_rounded
-                          : Icons.check_circle_outline_rounded,
-                      size: 14,
-                      color: stats.completedDecks > 0
-                          ? RefColors.lime
-                          : RefColors.muted,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      allDone
-                          ? '¡Grupo completado!'
-                          : '${stats.completedDecks} de ${stats.deckCount} mazos completados',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w800,
+                if (stats.deckCount > 0) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(
+                        allDone
+                            ? Icons.verified_rounded
+                            : Icons.check_circle_outline_rounded,
+                        size: 14,
                         color: stats.completedDecks > 0
                             ? RefColors.lime
                             : RefColors.muted,
                       ),
-                    ),
-                  ],
-                ),
+                      const SizedBox(width: 5),
+                      Text(
+                        allDone
+                            ? '¡Grupo completado!'
+                            : '${stats.completedDecks} de ${stats.deckCount} mazos completados',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          color: stats.completedDecks > 0
+                              ? RefColors.lime
+                              : RefColors.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
