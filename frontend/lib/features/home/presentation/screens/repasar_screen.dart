@@ -117,13 +117,16 @@ class _RepasarScreenState extends State<RepasarScreen> {
   }
 
   Widget _deckTile(BuildContext context, AppStore store, MemoryDeckData deck) =>
-      _DeckRetention(
-        deck.icon,
-        deck.title,
-        '${deck.weakCount} débiles · ${deck.cards.length} tarjetas',
-        deck.retention / 100,
-        onExport: () => exportDeckToCsv(context, deck),
-        onMenu: () => _moveToGroupSheet(context, store, deck),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: _DeckRetention(
+          deck.icon,
+          deck.title,
+          '${deck.weakCount} débiles · ${deck.cards.length} tarjetas',
+          deck.retention / 100,
+          onExport: () => exportDeckToCsv(context, deck),
+          onMenu: () => _moveToGroupSheet(context, store, deck),
+        ),
       );
 
   /// Lista los mazos agrupados por carpeta: cada grupo con su encabezado, y
@@ -368,12 +371,12 @@ class _DeckRetention extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Glass(
-      radius: 16,
-      padding: const EdgeInsets.all(12),
+      radius: 14,
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
       color: RefColors.glassSoft,
       child: Row(
         children: [
-          GlyphIcon(emoji, size: 24),
+          GlyphIcon(emoji, size: 22),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -387,7 +390,7 @@ class _DeckRetention extends StatelessWidget {
                   subtitle,
                   style: const TextStyle(fontSize: 11, color: RefColors.muted),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 RefProgress(value),
               ],
             ),
