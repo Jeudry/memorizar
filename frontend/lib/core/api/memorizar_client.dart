@@ -51,13 +51,22 @@ class MemorizarClient {
   Uri _uri(String path) => Uri.parse('$baseUrl$path');
 
   Future<Map<String, dynamic>> _decode(http.Response r) async {
-    if (r.body.isEmpty) return const {};
-    final body = jsonDecode(r.body);
+    // Parsear el body con tolerancia: puede venir VACÍO o ser NO-JSON (p. ej. un
+    // 405 con HTML de otro servidor ocupando el puerto). Nunca dejamos pasar un
+    // status de error como éxito.
+    dynamic body;
+    if (r.body.isNotEmpty) {
+      try {
+        body = jsonDecode(r.body);
+      } catch (_) {
+        body = null;
+      }
+    }
     if (r.statusCode >= 400) {
       final rawError = body is Map && body['error'] is String
           ? body['error'] as String
           : 'HTTP ${r.statusCode}';
-      
+
       // Traducir todos los errores comunes del backend en Go
       String friendlyMsg = rawError;
       if (rawError.contains('email already in use') || rawError.contains('already in use')) {
@@ -86,6 +95,7 @@ class MemorizarClient {
       
       throw MemorizarException(friendlyMsg);
     }
+    if (body == null) return const {};
     if (body is Map<String, dynamic>) return body;
     return {'data': body};
   }
