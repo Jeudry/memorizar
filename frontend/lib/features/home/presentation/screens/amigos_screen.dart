@@ -21,7 +21,6 @@ class AmigosScreen extends StatefulWidget {
 class _AmigosScreenState extends State<AmigosScreen> {
   FriendsResult? _data;
   List<RemoteUser> _suggestions = const [];
-  List<Map<String, dynamic>> _leaderboard = const [];
   bool _loading = false;
   String? _error;
 
@@ -39,24 +38,12 @@ class _AmigosScreenState extends State<AmigosScreen> {
       _error = null;
     });
     try {
-      // Reporta el puntaje propio antes de pedir el ranking, para aparecer al día.
-      unawaited(
-        store.api.reportScore(
-          streak: store.streakDays,
-          points: store.correctAnswers,
-        ),
-      );
       final friends = await store.api.listFriends();
       final suggestions = await store.api.suggestions();
-      List<Map<String, dynamic>> board = const [];
-      try {
-        board = await store.api.leaderboard();
-      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _data = friends;
         _suggestions = suggestions;
-        _leaderboard = board;
       });
     } catch (e) {
       if (!mounted) return;
@@ -273,10 +260,6 @@ class _AmigosScreenState extends State<AmigosScreen> {
                 onAccept: () => _accept(f),
               ),
           ],
-          if (_leaderboard.length > 1) ...[
-            const SectionHead('🏆 Ranking entre amigos'),
-            for (final e in _leaderboard) _LeaderboardRow(entry: e),
-          ],
           if (friends.isNotEmpty) ...[
             const SectionHead('Tus amigos'),
             for (final f in friends)
@@ -293,84 +276,6 @@ class _AmigosScreenState extends State<AmigosScreen> {
             for (final s in _suggestions)
               _SuggestionRow(user: s, onInvite: () => _sendRequest(s)),
           ],
-        ],
-      ),
-    );
-  }
-}
-
-class _LeaderboardRow extends StatelessWidget {
-  final Map<String, dynamic> entry;
-  const _LeaderboardRow({required this.entry});
-
-  @override
-  Widget build(BuildContext context) {
-    final rank = (entry['rank'] as int?) ?? 0;
-    final isMe = (entry['isMe'] as bool?) ?? false;
-    final name = (entry['displayName'] as String?)?.trim();
-    final username = (entry['username'] as String?) ?? '';
-    final label = (name != null && name.isNotEmpty)
-        ? name
-        : (username.isNotEmpty ? '@$username' : 'Usuario');
-    final points = (entry['points'] as int?) ?? 0;
-    final streak = (entry['streak'] as int?) ?? 0;
-    final medal = switch (rank) {
-      1 => '🥇',
-      2 => '🥈',
-      3 => '🥉',
-      _ => '$rank',
-    };
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-      decoration: BoxDecoration(
-        color: isMe
-            ? RefColors.cyan.withValues(alpha: .10)
-            : HtmlRefColors.glassSoft,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isMe
-              ? RefColors.cyan.withValues(alpha: .4)
-              : HtmlRefColors.glassBorder,
-        ),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 28,
-            child: Text(
-              medal,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              isMe ? '$label (tú)' : label,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                color: isMe ? RefColors.cyan : RefColors.ink,
-              ),
-            ),
-          ),
-          if (streak > 0) ...[
-            Text(
-              '🔥 $streak',
-              style: const TextStyle(fontSize: 11, color: RefColors.muted),
-            ),
-            const SizedBox(width: 10),
-          ],
-          Text(
-            '$points pts',
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-              color: RefColors.sun,
-            ),
-          ),
         ],
       ),
     );
@@ -595,8 +500,8 @@ class _InviteHero extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Glass(
-        radius: 18,
-        padding: const EdgeInsets.all(18),
+        radius: 16,
+        padding: const EdgeInsets.all(12),
         gradient: const LinearGradient(
           colors: [Color(0xFF55C8FF), Color(0xFF7757FF)],
           begin: Alignment.centerLeft,
@@ -610,8 +515,8 @@ class _InviteHero extends StatelessWidget {
               right: -44,
               top: -60,
               child: Container(
-                width: 170,
-                height: 170,
+                width: 120,
+                height: 120,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
@@ -626,16 +531,16 @@ class _InviteHero extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  width: 48,
-                  height: 48,
+                  width: 38,
+                  height: 38,
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: .22),
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   alignment: Alignment.center,
-                  child: const GlyphIcon('🤝', size: 24),
+                  child: const GlyphIcon('🤝', size: 19),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 11),
                 const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -643,15 +548,15 @@ class _InviteHero extends StatelessWidget {
                       Text(
                         'Crecen juntos',
                         style: TextStyle(
-                          fontSize: 15,
+                          fontSize: 13.5,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      SizedBox(height: 2),
+                      SizedBox(height: 1),
                       Text(
                         'Invita amigos y multipliquen su progreso',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 10.5,
                           color: Color(0xE6FFFFFF),
                           height: 1.2,
                         ),
