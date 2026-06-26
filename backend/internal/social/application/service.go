@@ -1229,6 +1229,7 @@ type CommunityCategoryStat struct {
 type CommunityOverview struct {
 	Featured   []CommunityDeck         `json:"featured"`
 	Popular    []CommunityDeck         `json:"popular"`
+	Recent     []CommunityDeck         `json:"recent"`
 	Creators   []CommunityCreatorStat  `json:"creators"`
 	Categories []CommunityCategoryStat `json:"categories"`
 	TotalDecks int                     `json:"totalDecks"`
@@ -1398,9 +1399,23 @@ func (s *Service) CommunityOverview(userID string) (*CommunityOverview, error) {
 		categories = categories[:8]
 	}
 
+	// Nuevos mazos: los más recientes por fecha de publicación.
+	recentSource := append([]domain.SharedResource{}, decks...)
+	sort.SliceStable(recentSource, func(i, j int) bool {
+		return recentSource[i].CreatedAt.After(recentSource[j].CreatedAt)
+	})
+	if len(recentSource) > 6 {
+		recentSource = recentSource[:6]
+	}
+	recent, err := s.attachCommunityStats(userID, recentSource)
+	if err != nil {
+		return nil, err
+	}
+
 	return &CommunityOverview{
 		Featured:   featured,
 		Popular:    popular,
+		Recent:     recent,
 		Creators:   creators,
 		Categories: categories,
 		TotalDecks: len(decks),
