@@ -2,144 +2,125 @@
 // RepasarScreen + helpers.
 part of '../ui_screens.dart';
 
-class RepasarScreen extends StatelessWidget {
+class RepasarScreen extends StatefulWidget {
   const RepasarScreen({super.key});
+
+  @override
+  State<RepasarScreen> createState() => _RepasarScreenState();
+}
+
+class _RepasarScreenState extends State<RepasarScreen> {
+  /// Grupo seleccionado en el slide; null = "Todos".
+  String? _selectedGroupId;
 
   @override
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
-    final weakCount = store.dueTodayCount;
+    final hasGroups = store.groups.isNotEmpty;
+    // Si el grupo seleccionado dejó de existir (lo borraron), volvemos a Todos.
+    if (_selectedGroupId != null &&
+        !store.groups.any((g) => g.id == _selectedGroupId)) {
+      _selectedGroupId = null;
+    }
     return ReferencePage(
       active: AppRoutes.repasar,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const RefTopBar(title: 'Repasar'),
+          const RefTopBar(title: 'Mazos'),
           const _PageHead(
-            'Memoria activa',
-            'Rescata lo que ya dominaste antes de que se pierda',
+            'Tus mazos',
+            'Organízalos en grupos y repásalos a tu ritmo',
           ),
-          Glass(
-            padding: const EdgeInsets.all(18),
-            gradient: LinearGradient(
-              colors: [
-                RefColors.urgent.withValues(alpha: .22),
-                RefColors.sun.withValues(alpha: .12),
-              ],
-            ),
-            border: Border.all(color: RefColors.urgent.withValues(alpha: .35)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const RefChip(
-                  '⚠ EN RIESGO',
-                  dense: true,
-                  color: Color(0x33FF5A8A),
-                  textColor: Color(0xFFFFB8CC),
-                ),
-                const SizedBox(height: 12),
-                RichText(
-                  text: TextSpan(
-                    style: const TextStyle(
-                      color: RefColors.ink,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      height: 1.18,
-                    ),
-                    children: [
-                      WidgetSpan(
-                        alignment: PlaceholderAlignment.baseline,
-                        baseline: TextBaseline.alphabetic,
-                        child: ShaderMask(
-                          shaderCallback: (bounds) =>
-                              RefColors.primary.createShader(bounds),
-                          child: Text(
-                            '$weakCount tarjetas',
-                            style: TextStyle(
-                              color: RefColors.ink,
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              height: 1.18,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const TextSpan(text: ' tienen repaso vencido hoy'),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Un repaso de 5 minutos ahora las salva de perderse.',
-                  style: TextStyle(color: RefColors.muted, fontSize: 12),
-                ),
-                const SizedBox(height: 14),
-                Cta(
-                  '▶ Rescatar ahora · 5 min',
-                  onTap: () =>
-                      Navigator.pushNamed(context, AppRoutes.flashcards),
-                ),
-              ],
-            ),
+          // Acción principal de repaso, sin lenguaje de vencimiento: el
+          // aprendizaje no caduca, solo sugerimos por dónde empezar.
+          _RecommendedReview(
+            onTap: () => Navigator.pushNamed(context, AppRoutes.flashcards),
           ),
-          const SizedBox(height: 12),
-          Glass(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: const [
-                GlyphIcon('✨', size: 24),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Repaso recomendado',
-                        style: TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      Text(
-                        'Empieza por tarjetas débiles · luego mazos',
-                        style: TextStyle(fontSize: 11, color: RefColors.muted),
-                      ),
-                    ],
-                  ),
-                ),
-                Text(
-                  '›',
-                  style: TextStyle(fontSize: 26, color: RefColors.muted),
-                ),
-              ],
+          if (hasGroups) ...[
+            const SizedBox(height: 16),
+            _GroupsSlide(
+              groups: store.groups,
+              selectedId: _selectedGroupId,
+              countFor: (id) => store.decksInGroup(id).length,
+              onSelect: (id) => setState(() => _selectedGroupId = id),
             ),
-          ),
+            if (_selectedGroupId != null) ...[
+              const SizedBox(height: 12),
+              _GroupBanner(stats: _groupStats(store, _selectedGroupId!)),
+            ],
+          ],
           SectionHead(
             'Tus mazos',
             action: '＋ Grupo',
             onAction: () => _createGroupSheet(context, store),
           ),
-          ..._buildGroupedDecks(context, store),
+          ..._buildDecks(context, store),
         ],
       ),
     );
   }
 
+  /// Métricas agregadas de un grupo para el banner.
+  _GroupStats _groupStats(AppStore store, String groupId) {
+    final group = store.groups.firstWhere((g) => g.id == groupId);
+    final decks = store.decksInGroup(groupId);
+    final cards = decks.fold<int>(0, (s, d) => s + d.cards.length);
+    final weak = decks.fold<int>(0, (s, d) => s + d.weakCount);
+    // Retención promedio ponderada por número de tarjetas.
+    final totalRet =
+        decks.fold<int>(0, (s, d) => s + d.retention * d.cards.length);
+    final retention = cards == 0 ? 0 : (totalRet / cards).round();
+    return _GroupStats(
+      icon: group.icon,
+      name: group.name,
+      deckCount: decks.length,
+      cardCount: cards,
+      weakCount: weak,
+      retention: retention,
+    );
+  }
+
+  /// Mazos a mostrar según la selección: un grupo concreto (planos) o "Todos"
+  /// (agrupados por carpeta, como antes).
+  List<Widget> _buildDecks(BuildContext context, AppStore store) {
+    if (_selectedGroupId == null) {
+      return _buildGroupedDecks(context, store);
+    }
+    final decks = store.decksInGroup(_selectedGroupId);
+    if (decks.isEmpty) {
+      return const [
+        Padding(
+          padding: EdgeInsets.symmetric(vertical: 18),
+          child: Text(
+            'Este grupo aún no tiene mazos. Abre el menú ⋮ de un mazo para moverlo aquí.',
+            style: TextStyle(color: RefColors.muted, fontSize: 12),
+          ),
+        ),
+      ];
+    }
+    return [for (final deck in decks) _deckTile(context, store, deck)];
+  }
+
+  Widget _deckTile(BuildContext context, AppStore store, MemoryDeckData deck) =>
+      _DeckRetention(
+        deck.icon,
+        deck.title,
+        '${deck.weakCount} débiles · ${deck.cards.length} tarjetas',
+        deck.retention / 100,
+        onExport: () => exportDeckToCsv(context, deck),
+        onMenu: () => _moveToGroupSheet(context, store, deck),
+      );
+
   /// Lista los mazos agrupados por carpeta: cada grupo con su encabezado, y
   /// al final los mazos sin grupo. Un mazo pertenece a 0 o 1 grupo.
   List<Widget> _buildGroupedDecks(BuildContext context, AppStore store) {
-    Widget deckTile(MemoryDeckData deck) => _DeckRetention(
-          deck.icon,
-          deck.title,
-          '${deck.weakCount} débiles · ${deck.cards.length} tarjetas',
-          deck.retention / 100,
-          onExport: () => exportDeckToCsv(context, deck),
-          onMenu: () => _moveToGroupSheet(context, store, deck),
-        );
-
     final widgets = <Widget>[];
     for (final group in store.groups) {
       final groupDecks = store.decksInGroup(group.id);
       if (groupDecks.isEmpty) continue;
       widgets.add(_GroupHeader('${group.icon} ${group.name}', groupDecks.length));
-      widgets.addAll(groupDecks.map(deckTile));
+      widgets.addAll(groupDecks.map((d) => _deckTile(context, store, d)));
     }
     final ungrouped = store.decksInGroup(null);
     if (ungrouped.isNotEmpty) {
@@ -147,7 +128,7 @@ class RepasarScreen extends StatelessWidget {
       if (store.groups.any((g) => store.decksInGroup(g.id).isNotEmpty)) {
         widgets.add(_GroupHeader('📂 Sin grupo', ungrouped.length));
       }
-      widgets.addAll(ungrouped.map(deckTile));
+      widgets.addAll(ungrouped.map((d) => _deckTile(context, store, d)));
     }
     return widgets;
   }
@@ -369,6 +350,277 @@ class _DeckRetention extends StatelessWidget {
                     size: 17, color: RefColors.muted),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Métricas agregadas de un grupo, calculadas en RepasarScreen para el banner.
+class _GroupStats {
+  final String icon;
+  final String name;
+  final int deckCount;
+  final int cardCount;
+  final int weakCount;
+  final int retention; // 0–100
+
+  const _GroupStats({
+    required this.icon,
+    required this.name,
+    required this.deckCount,
+    required this.cardCount,
+    required this.weakCount,
+    required this.retention,
+  });
+}
+
+/// Tarjeta de acción principal: sugiere por dónde empezar a repasar, sin
+/// lenguaje de vencimiento. Toda la tarjeta es tocable.
+class _RecommendedReview extends StatelessWidget {
+  final VoidCallback onTap;
+  const _RecommendedReview({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Glass(
+        padding: const EdgeInsets.all(16),
+        gradient: LinearGradient(
+          colors: [
+            RefColors.cyan.withValues(alpha: .20),
+            RefColors.violet.withValues(alpha: .14),
+          ],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        border: Border.all(color: RefColors.cyan.withValues(alpha: .30)),
+        child: Row(
+          children: const [
+            GlyphIcon('✨', size: 26),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Repaso recomendado',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Empieza por tus tarjetas más débiles',
+                    style: TextStyle(fontSize: 11.5, color: RefColors.muted),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(width: 8),
+            Icon(Icons.play_circle_fill_rounded,
+                color: RefColors.cyan, size: 30),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Slide horizontal de grupos: "Todos" + cada grupo. Al tocar uno se
+/// selecciona y se muestra su banner y sus mazos debajo.
+class _GroupsSlide extends StatelessWidget {
+  final List<MemoryGroupData> groups;
+  final String? selectedId;
+  final int Function(String? groupId) countFor;
+  final ValueChanged<String?> onSelect;
+
+  const _GroupsSlide({
+    required this.groups,
+    required this.selectedId,
+    required this.countFor,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 38,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          _GroupChip(
+            emoji: '🗂️',
+            label: 'Todos',
+            count: countFor(null) +
+                groups.fold<int>(0, (s, g) => s + countFor(g.id)),
+            selected: selectedId == null,
+            onTap: () => onSelect(null),
+          ),
+          for (final g in groups)
+            _GroupChip(
+              emoji: g.icon,
+              label: g.name,
+              count: countFor(g.id),
+              selected: selectedId == g.id,
+              onTap: () => onSelect(g.id),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GroupChip extends StatelessWidget {
+  final String emoji;
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _GroupChip({
+    required this.emoji,
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        margin: const EdgeInsets.only(right: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? RefColors.cyan.withValues(alpha: .16)
+              : HtmlRefColors.glassSoft,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? RefColors.cyan : HtmlRefColors.glassBorder,
+            width: selected ? 1.6 : 1.2,
+          ),
+        ),
+        child: Row(
+          children: [
+            GlyphIcon(emoji, size: 14),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                color: selected ? RefColors.cyan : RefColors.ink,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .06),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '$count',
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  color: RefColors.muted,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Banner con la info del grupo seleccionado: icono, nombre, progreso de
+/// dominio, total de mazos/tarjetas y cuántas están débiles.
+class _GroupBanner extends StatelessWidget {
+  final _GroupStats stats;
+  const _GroupBanner({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    return Glass(
+      radius: 18,
+      padding: const EdgeInsets.all(16),
+      gradient: LinearGradient(
+        colors: [
+          RefColors.violet.withValues(alpha: .22),
+          RefColors.cyan.withValues(alpha: .12),
+        ],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      border: Border.all(color: RefColors.violet.withValues(alpha: .30)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .10),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: HtmlRefColors.glassBorder),
+                ),
+                child: GlyphIcon(stats.icon, size: 26),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      stats.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${stats.deckCount} ${stats.deckCount == 1 ? 'mazo' : 'mazos'} · ${stats.cardCount} tarjetas',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: RefColors.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '${stats.retention}%',
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  color: RefColors.lime,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          RefProgress(stats.retention / 100),
+          const SizedBox(height: 8),
+          Text(
+            stats.weakCount > 0
+                ? '${stats.weakCount} ${stats.weakCount == 1 ? 'tarjeta débil' : 'tarjetas débiles'} por reforzar'
+                : '¡Todo este grupo está en buena forma!',
+            style: const TextStyle(fontSize: 11.5, color: RefColors.muted),
+          ),
         ],
       ),
     );

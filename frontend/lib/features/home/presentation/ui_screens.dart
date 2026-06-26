@@ -30,7 +30,6 @@ import 'screens/deck_rating_sheet.dart';
 import 'screens/deck_comments_sheet.dart';
 import 'exercise_logic.dart';
 import '../../../core/services/local_llm_service.dart';
-import '../../../core/srs_forecast.dart';
 import '../../../core/services/ai_quiz_models.dart';
 import '../../account/presentation/account_screen.dart';
 import '../../auth/presentation/login_screen.dart';
