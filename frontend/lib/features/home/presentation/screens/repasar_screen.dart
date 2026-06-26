@@ -50,11 +50,25 @@ class _RepasarScreenState extends State<RepasarScreen> {
               _GroupBanner(stats: _groupStats(store, _selectedGroupId!)),
             ],
           ],
-          SectionHead(
-            'Tus mazos',
-            action: '＋ Grupo',
-            onAction: () => _createGroupSheet(context, store),
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerRight,
+            child: GestureDetector(
+              onTap: () => _createGroupSheet(context, store),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 6),
+                child: Text(
+                  '＋ Grupo',
+                  style: TextStyle(
+                    color: RefColors.cyan,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
           ),
+          const SizedBox(height: 4),
           ..._buildDecks(context, store),
         ],
       ),
@@ -670,8 +684,6 @@ class _GroupBanner extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          RefProgress(stats.retention / 100),
         ],
       ),
     );
