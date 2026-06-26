@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../../core/api/models.dart';
@@ -30,10 +29,6 @@ class HomeScreen extends StatelessWidget {
         children: [
           // App Header
           const _AppHeader(),
-          const SizedBox(height: 18),
-
-          // Hero Section (Pendientes)
-          const _HeroSection(),
           const SizedBox(height: 18),
 
           // Memorizar algo nuevo
@@ -808,227 +803,6 @@ class _IconButton extends StatelessWidget {
   }
 }
 
-class _HeroSection extends StatefulWidget {
-  const _HeroSection();
-
-  @override
-  State<_HeroSection> createState() => _HeroSectionState();
-}
-
-class _HeroSectionState extends State<_HeroSection> {
-  final PageController _pc = PageController();
-  Timer? _timer;
-  int _count = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    // Slide automático: avanza solo cada 4s entre mazos con pendientes.
-    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
-      if (!mounted || !_pc.hasClients || _count <= 1) return;
-      final next = (((_pc.page ?? 0).round()) + 1) % _count;
-      _pc.animateToPage(
-        next,
-        duration: const Duration(milliseconds: 450),
-        curve: Curves.easeInOut,
-      );
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _pc.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final store = AppScope.of(context);
-
-    if (!store.hasDecks) {
-      return _heroMessage(
-        badge: 'INICIO',
-        badgeColor: AppColors.inkMuted,
-        title: 'Listo para memorizar',
-        body: 'Crea un mazo abajo y empieza una sesión cuando tengas contenido preparado.',
-      );
-    }
-
-    final pending = <({MemoryDeckData deck, int due})>[
-      for (final d in store.decks)
-        if (d.cards.any((c) => c.isDueForReview))
-          (deck: d, due: d.cards.where((c) => c.isDueForReview).length),
-    ];
-    _count = pending.length;
-
-    if (pending.isEmpty) {
-      return _heroMessage(
-        badge: 'TODO AL DÍA',
-        badgeColor: AppColors.accentLime,
-        title: '¡Mente afilada!',
-        body: 'No tienes tarjetas pendientes. Memoriza algo nuevo abajo.',
-      );
-    }
-
-    return SizedBox(
-      height: 118,
-      child: PageView.builder(
-        controller: _pc,
-        itemCount: pending.length,
-        itemBuilder: (context, i) =>
-            _PendingDeckSuggestion(deck: pending[i].deck, due: pending[i].due),
-      ),
-    );
-  }
-
-  Widget _heroMessage({
-    required String badge,
-    required Color badgeColor,
-    required String title,
-    required String body,
-  }) {
-    return GlassCard(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.glassStrong,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: AppColors.glassBorder),
-            ),
-            child: Text(
-              badge,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.4,
-                color: badgeColor,
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 6),
-          Text(
-            body,
-            style: const TextStyle(color: AppColors.inkMuted, fontSize: 12, height: 1.35),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Una "slide" del hero: sugiere UN mazo con tarjetas pendientes. Al tocarlo
-/// abre ese mazo para empezar la sesión.
-class _PendingDeckSuggestion extends StatelessWidget {
-  final MemoryDeckData deck;
-  final int due;
-  const _PendingDeckSuggestion({required this.deck, required this.due});
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = deck.isBible ? AppColors.accentSun : AppColors.accentCyan;
-    return GestureDetector(
-      onTap: () {
-        AppScope.of(context).setActiveDeck(deck.id);
-        Navigator.pushNamed(context, '/iniciar');
-      },
-      child: GlassCard(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: AppColors.glassStrong,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: accent.withValues(alpha: 0.35)),
-              ),
-              child: Center(child: GlyphIcon(deck.icon, size: 22)),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      const Text(
-                        'PENDIENTE',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.3,
-                          color: AppColors.inkMuted,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: AppColors.accentPink,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          '$due',
-                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    deck.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    due == 1 ? '1 tarjeta por repasar' : '$due tarjetas por repasar',
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      color: AppColors.inkMuted,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: accent.withValues(alpha: 0.4)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Repasar',
-                    style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(width: 3),
-                  Icon(Icons.arrow_forward_rounded, color: accent, size: 14),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _SectionHeader extends StatelessWidget {
   final String title;
   final Widget? trailing;
@@ -1193,11 +967,16 @@ class _CommunitySlider extends StatelessWidget {
             'Cuando crees contenido desde Biblia o Especificar, aparecerá aquí.',
       );
     }
+    // Mostramos los mazos como un slide ordenado por los que más tarjetas
+    // pendientes (débiles/por repasar) tienen, para empujar al usuario hacia
+    // lo más urgente primero.
+    final sorted = [...decks]
+      ..sort((a, b) => b.weakCount.compareTo(a.weakCount));
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
-          for (final deck in decks.take(4)) ...[
+          for (final deck in sorted) ...[
             _CommunityCard(
               emoji: deck.icon,
               title: deck.title,
