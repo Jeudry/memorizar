@@ -1029,14 +1029,14 @@ class _CommunityCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Container(
-                  width: 26,
-                  height: 26,
+                  width: 42,
+                  height: 42,
                   decoration: BoxDecoration(
                     color: AppColors.glassStrong,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(11),
                     border: Border.all(color: AppColors.glassBorder),
                   ),
-                  child: Center(child: GlyphIcon(emoji, size: 13)),
+                  child: Center(child: GlyphIcon(emoji, size: 22)),
                 ),
                 if (weakCount > 0)
                   Container(
@@ -1060,7 +1060,7 @@ class _CommunityCard extends StatelessWidget {
                   ),
               ],
             ),
-            const Spacer(),
+            const SizedBox(height: 6),
             Text(
               title,
               maxLines: 1,
