@@ -190,7 +190,7 @@ class _AmigosScreenState extends State<AmigosScreen> {
                           ),
                           SizedBox(height: 2),
                           Text(
-                            'Estudien juntos en tiempo real con o sin tarjetas.',
+                            'Estudien juntos en tiempo real.',
                             style: TextStyle(
                               fontSize: 11,
                               color: RefColors.muted,
@@ -554,7 +554,7 @@ class _InviteHero extends StatelessWidget {
                       ),
                       SizedBox(height: 1),
                       Text(
-                        'Invita amigos y multipliquen su progreso',
+                        'Invita a tus amigos',
                         style: TextStyle(
                           fontSize: 10.5,
                           color: Color(0xE6FFFFFF),

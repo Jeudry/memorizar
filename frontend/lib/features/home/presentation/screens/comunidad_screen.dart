@@ -712,7 +712,7 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
       if (featured.isNotEmpty) ...[
         const SectionHead('Destacado esta semana'),
         SizedBox(
-          height: 130,
+          height: 104,
           child: ListView(
             scrollDirection: Axis.horizontal,
             children: [
@@ -720,8 +720,8 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
                 _FeaturedDeck(
                   _shareIcon(share),
                   (share['title'] as String?) ?? 'Sin título',
-                  'por ${_shareOwnerLabel(share, creators)} · ${(share['importCount'] as int?) ?? 0} importaciones',
-                  '📥 ${(share['importCount'] as int?) ?? 0}',
+                  'por ${_shareOwnerLabel(share, creators)}',
+                  _shareRatingLabel(share),
                   LinearGradient(
                     colors: [
                       RefColors.pink.withValues(alpha: .22),
@@ -778,6 +778,20 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
       }
     }
     return 'creador';
+  }
+
+  /// Rating compacto (★ promedio · ❤ likes · 📥 importaciones) de un share,
+  /// igual que en las tarjetas de "Populares".
+  String _shareRatingLabel(Map<String, dynamic> share) {
+    final ratingAvg = ((share['ratingAvg'] as num?) ?? 0).toDouble();
+    final ratingCount = (share['ratingCount'] as int?) ?? 0;
+    final likeCount = (share['likeCount'] as int?) ?? 0;
+    final importCount = (share['importCount'] as int?) ?? 0;
+    return <String>[
+      if (ratingCount > 0) '★ ${ratingAvg.toStringAsFixed(1)}',
+      if (likeCount > 0) '❤ $likeCount',
+      '📥 $importCount',
+    ].join('  ·  ');
   }
 }
 
@@ -1188,7 +1202,7 @@ class _FeaturedDeck extends StatelessWidget {
                       color: RefColors.muted,
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(height: 8),
                   RefChip(
                     rating,
                     dense: true,
