@@ -41,8 +41,6 @@ class HomeScreen extends StatelessWidget {
           const _MemorizarGrid(),
           const SizedBox(height: 12),
           const _CoopBar(),
-          const SizedBox(height: 12),
-          const _PremiumHomeCard(),
           const SizedBox(height: 18),
 
           // De la comunidad
@@ -1175,102 +1173,6 @@ class _MemCard extends StatelessWidget {
               ],
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PremiumHomeCard extends StatelessWidget {
-  const _PremiumHomeCard();
-
-  @override
-  Widget build(BuildContext context) {
-    final isPremium = AppScope.of(context).isPremium;
-    return GestureDetector(
-      onTap: () => Navigator.pushNamed(context, '/premium'),
-      child: GlassCard(
-        padding: const EdgeInsets.all(16),
-        color: AppColors.glassBg,
-        child: Row(
-          children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                gradient: AppColors.gradPrimary,
-                borderRadius: BorderRadius.circular(15),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.accentPink.withValues(alpha: .22),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.workspace_premium_rounded, size: 24),
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Premium',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      _SmallStatusPill(isPremium ? 'Activo' : 'Próximamente'),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Quizes inteligentes, sin anuncios y ejercicios avanzados.',
-                    style: TextStyle(
-                      color: AppColors.inkMuted,
-                      fontSize: 12,
-                      height: 1.25,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right_rounded, color: AppColors.inkMuted),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SmallStatusPill extends StatelessWidget {
-  final String label;
-
-  const _SmallStatusPill(this.label);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.accentSun.withValues(alpha: .18),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.accentSun.withValues(alpha: .42)),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: AppColors.accentSun,
-          fontSize: 10,
-          fontWeight: FontWeight.w900,
         ),
       ),
     );
