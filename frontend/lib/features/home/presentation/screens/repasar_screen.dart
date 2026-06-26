@@ -56,7 +56,11 @@ class _RepasarScreenState extends State<RepasarScreen> {
             ),
             if (_selectedGroupId != null) ...[
               const SizedBox(height: 12),
-              _GroupBanner(stats: _groupStats(store, _selectedGroupId!)),
+              _GroupBanner(
+                stats: _groupStats(store, _selectedGroupId!),
+                onMenu: () =>
+                    _groupOptionsSheet(context, store, _selectedGroupId!),
+              ),
             ],
           ],
           const SizedBox(height: 16),
@@ -72,6 +76,8 @@ class _RepasarScreenState extends State<RepasarScreen> {
     final decks = store.decksInGroup(groupId);
     final cards = decks.fold<int>(0, (s, d) => s + d.cards.length);
     final weak = decks.fold<int>(0, (s, d) => s + d.weakCount);
+    final completed =
+        decks.where((d) => store.isDeckCompleted(d.id)).length;
     // Retención promedio ponderada por número de tarjetas.
     final totalRet =
         decks.fold<int>(0, (s, d) => s + d.retention * d.cards.length);
@@ -82,6 +88,7 @@ class _RepasarScreenState extends State<RepasarScreen> {
       deckCount: decks.length,
       cardCount: cards,
       weakCount: weak,
+      completedDecks: completed,
       retention: retention,
     );
   }
@@ -357,6 +364,162 @@ class _RepasarScreenState extends State<RepasarScreen> {
     if (ok == true) await store.deleteDeck(deck.id);
   }
 
+  /// Menú de opciones de un grupo: editar (nombre + ícono) o eliminar.
+  Future<void> _groupOptionsSheet(
+      BuildContext context, AppStore store, String groupId) async {
+    final group = store.groups.firstWhere((g) => g.id == groupId,
+        orElse: () => store.groups.first);
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF0F0C1B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+              child: Row(
+                children: [
+                  GlyphIcon(group.icon, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      group.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_rounded, color: RefColors.cyan),
+              title: const Text('Renombrar / cambiar ícono',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final res = await _promptGroupEdit(context, group);
+                if (res != null) {
+                  await store.updateGroup(groupId,
+                      name: res.name, icon: res.icon);
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline_rounded,
+                  color: RefColors.urgent),
+              title: const Text('Eliminar grupo',
+                  style: TextStyle(color: RefColors.urgent)),
+              subtitle: const Text('Sus mazos quedan sin grupo (no se borran)',
+                  style: TextStyle(color: RefColors.muted, fontSize: 11)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await store.deleteGroup(groupId);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Diálogo de edición de grupo: nombre + ícono prellenados.
+  Future<({String name, String icon})?> _promptGroupEdit(
+      BuildContext context, MemoryGroupData group) async {
+    final controller = TextEditingController(text: group.name);
+    final choices = {..._groupEmojiChoices, group.icon}.toList();
+    String selectedIcon = group.icon;
+    final result = await showDialog<({String name, String icon})>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocalState) => AlertDialog(
+          backgroundColor: const Color(0xFF0F0C1B),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: const Text('Editar grupo',
+              style:
+                  TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  hintText: 'Nombre del grupo',
+                  hintStyle: TextStyle(color: RefColors.muted),
+                ),
+                onSubmitted: (v) =>
+                    Navigator.pop(ctx, (name: v, icon: selectedIcon)),
+              ),
+              const SizedBox(height: 16),
+              const Text('Ícono',
+                  style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final emoji in choices)
+                    GestureDetector(
+                      onTap: () => setLocalState(() => selectedIcon = emoji),
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: selectedIcon == emoji
+                              ? RefColors.cyan.withValues(alpha: .18)
+                              : HtmlRefColors.glassSoft,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: selectedIcon == emoji
+                                ? RefColors.cyan
+                                : HtmlRefColors.glassBorder,
+                            width: selectedIcon == emoji ? 1.8 : 1.2,
+                          ),
+                        ),
+                        child: Text(emoji, style: const TextStyle(fontSize: 19)),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar',
+                  style: TextStyle(color: RefColors.muted)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(
+                  ctx, (name: controller.text, icon: selectedIcon)),
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final trimmed = result?.name.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    return (name: trimmed, icon: result!.icon);
+  }
+
   /// Hoja para mover un mazo a un grupo (o sin grupo / crear uno nuevo).
   Future<void> _moveToGroupSheet(
       BuildContext context, AppStore store, MemoryDeckData deck) async {
@@ -541,6 +704,7 @@ class _GroupStats {
   final int deckCount;
   final int cardCount;
   final int weakCount;
+  final int completedDecks;
   final int retention; // 0–100
 
   const _GroupStats({
@@ -549,6 +713,7 @@ class _GroupStats {
     required this.deckCount,
     required this.cardCount,
     required this.weakCount,
+    required this.completedDecks,
     required this.retention,
   });
 }
@@ -744,10 +909,12 @@ class _GroupChip extends StatelessWidget {
 /// dominio, total de mazos/tarjetas y cuántas están débiles.
 class _GroupBanner extends StatelessWidget {
   final _GroupStats stats;
-  const _GroupBanner({required this.stats});
+  final VoidCallback? onMenu;
+  const _GroupBanner({required this.stats, this.onMenu});
 
   @override
   Widget build(BuildContext context) {
+    final allDone = stats.deckCount > 0 && stats.completedDecks == stats.deckCount;
     return Glass(
       radius: 18,
       padding: const EdgeInsets.all(16),
@@ -760,57 +927,89 @@ class _GroupBanner extends StatelessWidget {
         end: Alignment.bottomRight,
       ),
       border: Border.all(color: RefColors.violet.withValues(alpha: .30)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: .10),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: HtmlRefColors.glassBorder),
+          Container(
+            width: 48,
+            height: 48,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: .10),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: HtmlRefColors.glassBorder),
+            ),
+            child: GlyphIcon(stats.icon, size: 26),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  stats.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-                child: GlyphIcon(stats.icon, size: 26),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(height: 2),
+                Text(
+                  '${stats.deckCount} ${stats.deckCount == 1 ? 'mazo' : 'mazos'} · ${stats.cardCount} tarjetas',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: RefColors.muted,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
                   children: [
-                    Text(
-                      stats.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
-                      ),
+                    Icon(
+                      allDone
+                          ? Icons.verified_rounded
+                          : Icons.check_circle_outline_rounded,
+                      size: 14,
+                      color: stats.completedDecks > 0
+                          ? RefColors.lime
+                          : RefColors.muted,
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(width: 5),
                     Text(
-                      '${stats.deckCount} ${stats.deckCount == 1 ? 'mazo' : 'mazos'} · ${stats.cardCount} tarjetas',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: RefColors.muted,
+                      allDone
+                          ? '¡Grupo completado!'
+                          : '${stats.completedDecks} de ${stats.deckCount} mazos completados',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        color: stats.completedDecks > 0
+                            ? RefColors.lime
+                            : RefColors.muted,
                       ),
                     ),
                   ],
                 ),
-              ),
-              Text(
-                '${stats.retention}%',
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: RefColors.lime,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
+          const SizedBox(width: 8),
+          Text(
+            '${stats.retention}%',
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              color: RefColors.lime,
+            ),
+          ),
+          if (onMenu != null)
+            GestureDetector(
+              onTap: onMenu,
+              child: const Padding(
+                padding: EdgeInsets.only(left: 6),
+                child: Icon(Icons.more_vert_rounded,
+                    size: 20, color: RefColors.muted),
+              ),
+            ),
         ],
       ),
     );

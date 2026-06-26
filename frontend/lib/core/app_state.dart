@@ -1182,6 +1182,30 @@ class AppStore extends ChangeNotifier {
     return id;
   }
 
+  /// Renombra o cambia el ícono de un grupo y lo persiste.
+  Future<void> updateGroup(String groupId, {String? name, String? icon}) async {
+    final i = _groups.indexWhere((g) => g.id == groupId);
+    if (i < 0) return;
+    final g = _groups[i];
+    final cleanName = (name ?? g.name).trim();
+    final updated = MemoryGroupData(
+      id: g.id,
+      name: cleanName.isEmpty ? g.name : cleanName,
+      icon: icon ?? g.icon,
+      createdAt: g.createdAt,
+    );
+    _groups[i] = updated;
+    notifyListeners();
+    if (enableDatabasePersistence && db != null) {
+      await db!.upsertGroup(DeckGroupsCompanion(
+        id: drift.Value(updated.id),
+        name: drift.Value(updated.name),
+        icon: drift.Value(updated.icon),
+        createdAt: drift.Value(updated.createdAt),
+      ));
+    }
+  }
+
   /// Asigna (o quita, con null) el grupo de un mazo y lo persiste.
   Future<void> assignDeckToGroup(String deckId, String? groupId) async {
     final index = _decks.indexWhere((d) => d.id == deckId);
