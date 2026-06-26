@@ -441,11 +441,7 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        for (final r in liked)
-          _CommunityHit(
-            share: r,
-            onImport: () => _import(r),
-          ),
+        _communityGrid(liked),
       ],
     );
   }
@@ -607,11 +603,7 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
                 ),
               )
             else
-              for (final r in _results!)
-                _CommunityHit(
-                  share: r,
-                  onImport: () => _import(r),
-                ),
+              _communityGrid(_results!),
           ],
           const SizedBox(height: 12),
           ..._buildExploreSections(store),
@@ -738,21 +730,33 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
       ],
       if (popular.isNotEmpty) ...[
         const SectionHead('Populares'),
-        for (final share in popular)
-          _CommunityHit(
-            share: share,
-            onImport: () => _import(share),
-          ),
+        _communityGrid(popular),
       ],
       if (recent.isNotEmpty) ...[
         const SectionHead('Nuevos mazos'),
-        for (final share in recent)
-          _CommunityHit(
-            share: share,
-            onImport: () => _import(share),
-          ),
+        _communityGrid(recent),
       ],
     ];
+  }
+
+  /// Grilla de 2 columnas de mazos comunitarios (tarjetas compactas tocables).
+  Widget _communityGrid(List<Map<String, dynamic>> items) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(bottom: 4),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        mainAxisExtent: 96,
+      ),
+      itemCount: items.length,
+      itemBuilder: (_, i) => _CommunityHit(
+        share: items[i],
+        onImport: () => _import(items[i]),
+      ),
+    );
   }
 
   String _shareIcon(Map<String, dynamic> share) {
@@ -1027,7 +1031,6 @@ class _CommunityHit extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = (share['title'] as String?) ?? 'Sin título';
-    final summary = (share['summary'] as String?) ?? '';
     final ratingAvg = ((share['ratingAvg'] as num?) ?? 0).toDouble();
     final ratingCount = (share['ratingCount'] as int?) ?? 0;
     final likeCount = (share['likeCount'] as int?) ?? 0;
@@ -1037,64 +1040,41 @@ class _CommunityHit extends StatelessWidget {
       if (likeCount > 0) '❤ $likeCount',
       '📥 $importCount',
     ].join('  ·  ');
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: HtmlRefColors.glassSoft,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: HtmlRefColors.glassBorder),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.public_rounded, color: RefColors.cyan, size: 22),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
-                ),
-                if (summary.isNotEmpty)
-                  Text(
-                    summary,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: RefColors.muted, fontSize: 11),
-                  ),
-                const SizedBox(height: 4),
-                Text(
-                  pop,
-                  style: const TextStyle(
-                      color: RefColors.dim,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700),
-                ),
-              ],
+    // Toda la tarjeta es tocable: al tocarla se obtiene el mazo.
+    return GestureDetector(
+      onTap: onImport,
+      child: Container(
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: HtmlRefColors.glassSoft,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: HtmlRefColors.glassBorder),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.public_rounded, color: RefColors.cyan, size: 20),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style:
+                  const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900),
             ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: onImport,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: RefColors.lime.withValues(alpha: .15),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
-              ),
-              child: const Text('Obtener',
-                  style: TextStyle(
-                      color: RefColors.lime,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900)),
+            const SizedBox(height: 4),
+            Text(
+              pop,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  color: RefColors.dim,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
