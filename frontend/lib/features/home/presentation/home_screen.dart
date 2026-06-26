@@ -990,22 +990,31 @@ class _CommunitySlider extends StatelessWidget {
     // lo más urgente primero.
     final sorted = [...decks]
       ..sort((a, b) => b.weakCount.compareTo(a.weakCount));
+    final store = AppScope.of(context);
+    final groupsById = {for (final g in store.groups) g.id: g};
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
           for (final deck in sorted) ...[
-            _CommunityCard(
-              emoji: deck.icon,
-              title: deck.title,
-              stats:
-                  '${deck.cards.length} tarjetas · ${deck.retention}% retención',
-              weakCount: deck.weakCount,
-              onTap: () {
-                AppScope.of(context).setActiveDeck(deck.id);
-                Navigator.pushNamed(context, '/iniciar');
-              },
-            ),
+            Builder(builder: (context) {
+              final group =
+                  deck.groupId != null ? groupsById[deck.groupId] : null;
+              return _CommunityCard(
+                emoji: deck.icon,
+                title: deck.title,
+                stats:
+                    '${deck.cards.length} tarjetas · ${deck.retention}% retención',
+                weakCount: deck.weakCount,
+                groupLabel: group?.name,
+                groupEmoji: group?.icon,
+                groupColor: group != null ? groupColor(group.id) : null,
+                onTap: () {
+                  AppScope.of(context).setActiveDeck(deck.id);
+                  Navigator.pushNamed(context, '/iniciar');
+                },
+              );
+            }),
             const SizedBox(width: 10),
           ],
         ],
@@ -1014,12 +1023,35 @@ class _CommunitySlider extends StatelessWidget {
   }
 }
 
+/// Paleta de colores distintivos para las carpetas/grupos. Se asigna de forma
+/// estable a partir del id del grupo, para que cada carpeta tenga su propio
+/// color consistente entre sesiones.
+const List<Color> _groupPalette = [
+  AppColors.accentCyan,
+  AppColors.accentPink,
+  AppColors.accentLime,
+  AppColors.accentViolet,
+  AppColors.accentSun,
+  Color(0xFF4ECDC4),
+  Color(0xFFFF8A5B),
+  Color(0xFF59B0FF),
+];
+
+/// Color distintivo y estable para un grupo, derivado de su id.
+Color groupColor(String groupId) =>
+    _groupPalette[groupId.hashCode.abs() % _groupPalette.length];
+
 class _CommunityCard extends StatelessWidget {
   final String emoji;
   final String title;
   final String stats;
   /// Tarjetas débiles/por repasar del mazo. > 0 muestra un badge accionable.
   final int weakCount;
+  /// Carpeta/grupo del mazo (si aplica): se muestra como chip de color junto
+  /// al emoji.
+  final String? groupLabel;
+  final String? groupEmoji;
+  final Color? groupColor;
   /// Promedio de estrellas (0–5) para mazos de comunidad. > 0 muestra un badge
   /// de popularidad con la valoración.
   final double ratingAvg;
@@ -1033,6 +1065,9 @@ class _CommunityCard extends StatelessWidget {
     this.weakCount = 0,
     this.ratingAvg = 0,
     this.ratingCount = 0,
+    this.groupLabel,
+    this.groupEmoji,
+    this.groupColor,
     this.onTap,
   });
 
@@ -1052,15 +1087,58 @@ class _CommunityCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    color: AppColors.glassStrong,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.glassBorder),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: AppColors.glassStrong,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.glassBorder),
+                        ),
+                        child: Center(child: GlyphIcon(emoji, size: 24)),
+                      ),
+                      if (groupLabel != null && groupColor != null) ...[
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: groupColor!.withValues(alpha: .16),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                  color: groupColor!.withValues(alpha: .5)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (groupEmoji != null) ...[
+                                  Text(groupEmoji!,
+                                      style: const TextStyle(fontSize: 10)),
+                                  const SizedBox(width: 3),
+                                ],
+                                Flexible(
+                                  child: Text(
+                                    groupLabel!,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: groupColor,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                  child: Center(child: GlyphIcon(emoji, size: 24)),
                 ),
                 if (ratingAvg > 0)
                   Container(
