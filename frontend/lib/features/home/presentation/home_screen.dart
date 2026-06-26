@@ -1130,7 +1130,7 @@ class _HomeCommunitySliderState extends State<_HomeCommunitySlider> {
 
   Future<void> _load() async {
     final store = AppScope.of(context);
-    if (!store.isLoggedIn || _loading) return;
+    if (_loading) return;
     setState(() => _loading = true);
     try {
       final overview = await store.api.getCommunityOverview();

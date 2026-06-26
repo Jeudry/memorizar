@@ -63,7 +63,7 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
   Future<void> _loadOverview() async {
     if (_loadingOverview || !mounted) return;
     final store = AppScope.of(context);
-    if (!store.isLoggedIn) return;
+    // El catálogo es público: cargamos también para invitados.
     setState(() {
       _loadingOverview = true;
       _overviewError = null;
@@ -277,12 +277,6 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
 
   Future<void> _runSearch(String q) async {
     final store = AppScope.of(context);
-    if (!store.isLoggedIn) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Inicia sesión para buscar en la comunidad.')),
-      );
-      return;
-    }
     setState(() => _searching = true);
     try {
       final results =
@@ -637,35 +631,6 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
 
   /// Portada del tab Explorar con datos reales del catálogo comunitario.
   List<Widget> _buildExploreSections(AppStore store) {
-    if (!store.isLoggedIn) {
-      return [
-        Glass(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 28),
-          child: Column(
-            children: [
-              const Icon(Icons.public_rounded, color: RefColors.cyan, size: 40),
-              const SizedBox(height: 12),
-              const Text(
-                'Inicia sesión para explorar la comunidad',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Los mazos publicados, los más importados y sus creadores aparecen aquí con datos reales.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: RefColors.muted, fontSize: 12, height: 1.4),
-              ),
-              const SizedBox(height: 14),
-              Cta(
-                'Iniciar sesión',
-                onTap: () => Navigator.pushNamed(context, AppRoutes.login),
-              ),
-            ],
-          ),
-        ),
-      ];
-    }
     if (_loadingOverview && _overview == null) {
       return const [
         Padding(
@@ -737,7 +702,7 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
           physics: const NeverScrollableScrollPhysics(),
           crossAxisSpacing: 6,
           mainAxisSpacing: 6,
-          childAspectRatio: 1.45,
+          childAspectRatio: 1.2,
           children: [
             for (final category in categories)
               _CategoryTile(
@@ -1466,23 +1431,27 @@ class _CategoryTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
       color: const Color(0x10FFFFFF),
       border: Border.all(color: const Color(0x24FFFFFF)),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          GlyphIcon(emoji, size: 21),
-          const SizedBox(height: 3),
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            count,
-            style: const TextStyle(fontSize: 8.5, color: RefColors.muted),
-          ),
-        ],
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            GlyphIcon(emoji, size: 21),
+            const SizedBox(height: 3),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              count,
+              style: const TextStyle(fontSize: 8.5, color: RefColors.muted),
+            ),
+          ],
+        ),
       ),
       ),
     );
