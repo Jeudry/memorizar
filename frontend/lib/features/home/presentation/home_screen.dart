@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../../core/api/models.dart';
@@ -54,6 +55,23 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
           const _CommunitySlider(),
+          const SizedBox(height: 18),
+
+          // Comunidad
+          _SectionHeader(
+            title: 'Comunidad',
+            trailing: TextButton(
+              onPressed: () => Navigator.pushNamed(context, '/comunidad'),
+              child: const Text(
+                'Explorar',
+                style: TextStyle(
+                  color: AppColors.inkMuted,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+          const _HomeCommunitySlider(),
           const SizedBox(height: 18),
 
           // Amigos
@@ -1017,9 +1035,9 @@ class _CommunityCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: GlassCard(
-        width: 104,
-        height: 104,
-        padding: const EdgeInsets.all(9),
+        width: 168,
+        height: 132,
+        padding: const EdgeInsets.all(13),
         color: AppColors.glassBg,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1029,19 +1047,19 @@ class _CommunityCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Container(
-                  width: 42,
-                  height: 42,
+                  width: 46,
+                  height: 46,
                   decoration: BoxDecoration(
                     color: AppColors.glassStrong,
-                    borderRadius: BorderRadius.circular(11),
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: AppColors.glassBorder),
                   ),
-                  child: Center(child: GlyphIcon(emoji, size: 22)),
+                  child: Center(child: GlyphIcon(emoji, size: 24)),
                 ),
                 if (weakCount > 0)
                   Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                     decoration: BoxDecoration(
                       color: AppColors.urgent.withValues(alpha: .15),
                       borderRadius: BorderRadius.circular(999),
@@ -1053,31 +1071,31 @@ class _CommunityCard extends StatelessWidget {
                       '$weakCount',
                       style: const TextStyle(
                         color: AppColors.urgent,
-                        fontSize: 9,
+                        fontSize: 11,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                   ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
               title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
+                fontSize: 14.5,
+                fontWeight: FontWeight.w800,
                 height: 1.15,
               ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Text(
               stats,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 8.5,
+                fontSize: 11,
                 color: AppColors.inkMuted,
                 fontWeight: FontWeight.w500,
                 height: 1.2,
@@ -1085,6 +1103,102 @@ class _CommunityCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Slide horizontal de mazos publicados por la comunidad, con el mismo estilo
+/// de tarjeta que "Tus mazos". Carga el overview del backend; si no hay sesión
+/// o aún no hay mazos publicados, muestra un panel breve que invita a explorar.
+class _HomeCommunitySlider extends StatefulWidget {
+  const _HomeCommunitySlider();
+
+  @override
+  State<_HomeCommunitySlider> createState() => _HomeCommunitySliderState();
+}
+
+class _HomeCommunitySliderState extends State<_HomeCommunitySlider> {
+  List<Map<String, dynamic>>? _shares;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    final store = AppScope.of(context);
+    if (!store.isLoggedIn || _loading) return;
+    setState(() => _loading = true);
+    try {
+      final overview = await store.api.getCommunityOverview();
+      // Combinamos destacados + populares y deduplicamos por shareId, dejando
+      // los más relevantes primero (orden de llegada del backend).
+      final featured =
+          (overview['featured'] as List? ?? const []).cast<Map<String, dynamic>>();
+      final popular =
+          (overview['popular'] as List? ?? const []).cast<Map<String, dynamic>>();
+      final seen = <String>{};
+      final merged = <Map<String, dynamic>>[];
+      for (final share in [...featured, ...popular]) {
+        final id = (share['shareId'] as String?) ?? (share['title'] as String?) ?? '';
+        if (id.isEmpty || seen.contains(id)) continue;
+        seen.add(id);
+        merged.add(share);
+      }
+      if (!mounted) return;
+      setState(() => _shares = merged);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _shares = const []);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _shareIcon(Map<String, dynamic> share) {
+    try {
+      final raw = (share['payloadJson'] as String?) ?? '';
+      if (raw.isEmpty) return '🌍';
+      final payload = jsonDecode(raw) as Map<String, dynamic>;
+      final icon = (payload['icon'] as String?)?.trim() ?? '';
+      return icon.isEmpty ? '🌍' : icon;
+    } catch (_) {
+      return '🌍';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shares = _shares;
+    if (shares != null && shares.isNotEmpty) {
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final share in shares) ...[
+              _CommunityCard(
+                emoji: _shareIcon(share),
+                title: (share['title'] as String?) ?? 'Sin título',
+                stats:
+                    '${(share['importCount'] as int?) ?? 0} importaciones 📥',
+                onTap: () => Navigator.pushNamed(context, '/comunidad'),
+              ),
+              const SizedBox(width: 10),
+            ],
+          ],
+        ),
+      );
+    }
+    // Sin sesión o sin mazos publicados todavía: panel breve que invita.
+    return GestureDetector(
+      onTap: () => Navigator.pushNamed(context, '/comunidad'),
+      child: const _EmptyHomePanel(
+        icon: '🌍',
+        title: 'Explora la comunidad',
+        body: 'Descubre y descarga mazos publicados por otras personas.',
       ),
     );
   }
