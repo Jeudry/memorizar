@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 
 import '../../../core/app_state.dart';
@@ -26,9 +28,24 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   DateTime? _selectedBirthDate;
   bool _busy = false;
   String? _error;
-  
+  bool _success = false;
+
   /// Sub-modo dentro de email: false = sign in, true = sign up.
   bool _isSignUp = false;
+
+  /// Muestra una breve celebración de éxito y luego entra al home. Se usa
+  /// tanto para el login por correo como para el social, para que el usuario
+  /// reciba siempre confirmación visual antes de cambiar de pantalla.
+  Future<void> _celebrateAndGoHome() async {
+    if (!mounted) return;
+    setState(() {
+      _success = true;
+      _error = null;
+    });
+    await Future.delayed(const Duration(milliseconds: 1000));
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (_) => false);
+  }
 
   late AnimationController _logoAnimationCtrl;
 
@@ -140,11 +157,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         await store.loginWithEmail(email: email, password: pass);
       }
       if (!mounted) return;
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        AppRoutes.home,
-        (_) => false,
-      );
+      await _celebrateAndGoHome();
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = _parseError(e));
@@ -165,11 +178,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       );
       if (completed == true) {
         if (!mounted) return;
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          AppRoutes.home,
-          (_) => false,
-        );
+        await _celebrateAndGoHome();
       } else {
         await store.logout();
         if (mounted) {
@@ -181,11 +190,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       }
     } else {
       if (!mounted) return;
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        AppRoutes.home,
-        (_) => false,
-      );
+      await _celebrateAndGoHome();
     }
   }
 
@@ -268,6 +273,15 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     final size = MediaQuery.of(context).size;
     final isDesktop = size.width > 600;
 
+    return Stack(
+      children: [
+        _buildPage(isDesktop),
+        if (_success) const _LoginSuccessOverlay(),
+      ],
+    );
+  }
+
+  Widget _buildPage(bool isDesktop) {
     return ReferencePage(
       showBottomNav: false,
       active: AppRoutes.home,
@@ -608,10 +622,12 @@ class _LoginField extends StatefulWidget {
 class _LoginFieldState extends State<_LoginField> {
   final FocusNode _focusNode = FocusNode();
   bool _isFocused = false;
+  late bool _obscured;
 
   @override
   void initState() {
     super.initState();
+    _obscured = widget.obscure;
     _focusNode.addListener(() {
       setState(() {
         _isFocused = _focusNode.hasFocus;
@@ -629,37 +645,48 @@ class _LoginFieldState extends State<_LoginField> {
   Widget build(BuildContext context) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
       decoration: BoxDecoration(
         color: _isFocused ? HtmlRefColors.glassStrong : HtmlRefColors.glassSoft,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: _isFocused ? RefColors.cyan : HtmlRefColors.glassBorder,
-          width: 1.5,
+          width: _isFocused ? 1.8 : 1.4,
         ),
         boxShadow: _isFocused
             ? [
                 BoxShadow(
-                  color: RefColors.cyan.withValues(alpha: .1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
+                  color: RefColors.cyan.withValues(alpha: .16),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
                 ),
               ]
             : null,
       ),
       child: Row(
         children: [
-          Icon(
-            widget.icon, 
-            color: _isFocused ? RefColors.cyan : RefColors.muted, 
-            size: 18,
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: _isFocused
+                  ? RefColors.cyan.withValues(alpha: .14)
+                  : Colors.white.withValues(alpha: .04),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              widget.icon,
+              color: _isFocused ? RefColors.cyan : RefColors.muted,
+              size: 20,
+            ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: TextField(
               controller: widget.controller,
               focusNode: _focusNode,
-              obscureText: widget.obscure,
+              obscureText: _obscured,
               keyboardType: widget.keyboardType,
               readOnly: widget.readOnly,
               onTap: widget.onTap,
@@ -667,18 +694,138 @@ class _LoginFieldState extends State<_LoginField> {
               enableSuggestions: !widget.obscure,
               style: const TextStyle(
                 color: RefColors.ink,
-                fontSize: 13.5,
+                fontSize: 15.5,
                 fontWeight: FontWeight.w700,
+                height: 1.2,
               ),
               decoration: InputDecoration(
                 border: InputBorder.none,
                 isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 hintText: widget.hint,
-                hintStyle: const TextStyle(color: RefColors.dim, fontSize: 13.5),
+                hintStyle: const TextStyle(
+                  color: RefColors.dim,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),
+          if (widget.obscure)
+            GestureDetector(
+              onTap: () => setState(() => _obscured = !_obscured),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Icon(
+                  _obscured
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  color: _isFocused ? RefColors.cyan : RefColors.muted,
+                  size: 20,
+                ),
+              ),
+            ),
         ],
+      ),
+    );
+  }
+}
+
+/// Overlay de celebración que se muestra brevemente tras un login/registro
+/// exitoso: un fondo difuminado con un check animado y un mensaje de bienvenida.
+class _LoginSuccessOverlay extends StatefulWidget {
+  const _LoginSuccessOverlay();
+
+  @override
+  State<_LoginSuccessOverlay> createState() => _LoginSuccessOverlayState();
+}
+
+class _LoginSuccessOverlayState extends State<_LoginSuccessOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+  late final Animation<double> _fade;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 520),
+    );
+    _scale = CurvedAnimation(parent: _ctrl, curve: Curves.elasticOut);
+    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: FadeTransition(
+        opacity: _fade,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          child: Container(
+            color: const Color(0xFF0B0A14).withValues(alpha: .72),
+            alignment: Alignment.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ScaleTransition(
+                  scale: _scale,
+                  child: Container(
+                    width: 96,
+                    height: 96,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF2BD980), Color(0xFF16B486)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF2BD980).withValues(alpha: .5),
+                          blurRadius: 30,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      color: Colors.white,
+                      size: 54,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                const Text(
+                  '¡Bienvenido!',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Sesión iniciada con éxito',
+                  style: TextStyle(
+                    color: RefColors.muted,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
