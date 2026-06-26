@@ -19,7 +19,8 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
+class _LoginScreenState extends State<LoginScreen>
+    with SingleTickerProviderStateMixin {
   final _social = SocialAuthService();
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
@@ -105,7 +106,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   int _calculateAge(DateTime birthDate) {
     final today = DateTime.now();
     int age = today.year - birthDate.year;
-    if (today.month < birthDate.month || (today.month == birthDate.month && today.day < birthDate.day)) {
+    if (today.month < birthDate.month ||
+        (today.month == birthDate.month && today.day < birthDate.day)) {
       age--;
     }
     return age;
@@ -127,7 +129,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
               onPrimary: Colors.black,
               surface: Color(0xFF161A22),
               onSurface: Colors.white,
-            ), dialogTheme: DialogThemeData(backgroundColor: const Color(0xFF0F1219)),
+            ),
+            dialogTheme: DialogThemeData(
+              backgroundColor: const Color(0xFF0F1219),
+            ),
           ),
           child: child!,
         );
@@ -136,7 +141,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     if (picked != null) {
       setState(() {
         _selectedBirthDate = picked;
-        _birthDateCtrl.text = "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+        _birthDateCtrl.text =
+            "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
       });
     }
   }
@@ -167,14 +173,18 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           throw Exception('El nombre de usuario es obligatorio.');
         }
         if (!RegExp(r'^[a-zA-Z0-9_]{3,15}$').hasMatch(username)) {
-          throw Exception('El usuario debe tener entre 3 y 15 caracteres y solo contener letras, números o guiones bajos.');
+          throw Exception(
+            'El usuario debe tener entre 3 y 15 caracteres y solo contener letras, números o guiones bajos.',
+          );
         }
         if (birthDate == null) {
           throw Exception('La fecha de nacimiento es obligatoria.');
         }
         final age = _calculateAge(birthDate);
         if (age < 0 || age > 120) {
-          throw Exception('Por favor, selecciona una fecha de nacimiento válida.');
+          throw Exception(
+            'Por favor, selecciona una fecha de nacimiento válida.',
+          );
         }
         if (pass.length < 8) {
           throw Exception('La contraseña debe tener al menos 8 caracteres.');
@@ -284,21 +294,24 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         }
       }
     }
-    
+
     // Mapeo en español amigable
-    if (raw.contains('email already in use') || raw.contains('already in use')) {
+    if (raw.contains('email already in use') ||
+        raw.contains('already in use')) {
       return 'Este correo electrónico ya está registrado. Por favor, inicia sesión.';
     }
-    if (raw.contains('invalid credentials') || raw.contains('invalid session')) {
+    if (raw.contains('invalid credentials') ||
+        raw.contains('invalid session')) {
       return 'Correo o contraseña incorrectos.';
     }
-    if (raw.contains('weak password') || raw.contains('at least 8 characters')) {
+    if (raw.contains('weak password') ||
+        raw.contains('at least 8 characters')) {
       return 'La contraseña debe tener al menos 8 caracteres.';
     }
     if (raw.contains('SERVICE_DISABLED') || raw.contains('People API')) {
       return 'Acceso denegado: Habilita la People API en Google Cloud.';
     }
-    
+
     return raw;
   }
 
@@ -383,7 +396,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 if (_error != null) ...[
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
                       color: RefColors.urgent.withValues(alpha: .1),
                       borderRadius: BorderRadius.circular(14),
@@ -451,7 +467,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   ],
                 ),
                 const SizedBox(height: 22),
-                
+
                 // 2. Divisor estético intermedio
                 Row(
                   children: [
@@ -535,7 +551,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               child: Padding(
                                 padding: EdgeInsets.symmetric(vertical: 10),
                                 child: CircularProgressIndicator(
-                                  valueColor: AlwaysStoppedAnimation<Color>(RefColors.pink),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    RefColors.pink,
+                                  ),
                                 ),
                               ),
                             )
@@ -571,7 +589,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   ),
                 ),
                 const SizedBox(height: 24),
-                
+
                 // Divisor a invitado
                 Row(
                   children: [
@@ -606,11 +624,12 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   ),
                 ),
                 const SizedBox(height: 24),
-                
+
                 // Enlaces Legales
                 Center(
                   child: GestureDetector(
-                    onTap: () => Navigator.pushNamed(context, AppRoutes.legalMenu),
+                    onTap: () =>
+                        Navigator.pushNamed(context, AppRoutes.legalMenu),
                     child: const MouseRegion(
                       cursor: SystemMouseCursors.click,
                       child: Text(
@@ -800,8 +819,11 @@ class _RememberMeToggle extends StatelessWidget {
                 ),
               ),
               child: value
-                  ? const Icon(Icons.check_rounded,
-                      color: Colors.black, size: 16)
+                  ? const Icon(
+                      Icons.check_rounded,
+                      color: Colors.black,
+                      size: 16,
+                    )
                   : null,
             ),
             const SizedBox(width: 10),
@@ -856,62 +878,67 @@ class _LoginSuccessOverlayState extends State<_LoginSuccessOverlay>
   @override
   Widget build(BuildContext context) {
     return Positioned.fill(
-      child: FadeTransition(
-        opacity: _fade,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-          child: Container(
-            color: const Color(0xFF0B0A14).withValues(alpha: .72),
-            alignment: Alignment.center,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ScaleTransition(
-                  scale: _scale,
-                  child: Container(
-                    width: 96,
-                    height: 96,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF2BD980), Color(0xFF16B486)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF2BD980).withValues(alpha: .5),
-                          blurRadius: 30,
-                          spreadRadius: 2,
+      child: Material(
+        type: MaterialType.transparency,
+        child: FadeTransition(
+          opacity: _fade,
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+            child: Container(
+              color: const Color(0xFF0B0A14).withValues(alpha: .72),
+              alignment: Alignment.center,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ScaleTransition(
+                    scale: _scale,
+                    child: Container(
+                      width: 96,
+                      height: 96,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF2BD980), Color(0xFF16B486)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                      ],
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(
+                              0xFF2BD980,
+                            ).withValues(alpha: .5),
+                            blurRadius: 30,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.check_rounded,
+                        color: Colors.white,
+                        size: 54,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.check_rounded,
+                  ),
+                  const SizedBox(height: 22),
+                  const Text(
+                    '¡Bienvenido!',
+                    style: TextStyle(
                       color: Colors.white,
-                      size: 54,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
-                ),
-                const SizedBox(height: 22),
-                const Text(
-                  '¡Bienvenido!',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900,
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Sesión iniciada con éxito',
+                    style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Sesión iniciada con éxito',
-                  style: TextStyle(
-                    color: RefColors.muted,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -943,11 +970,13 @@ class _CompactProviderButtonState extends State<_CompactProviderButton> {
   @override
   Widget build(BuildContext context) {
     final disabled = widget.onTap == null;
-    
+
     return Opacity(
       opacity: disabled ? .45 : 1,
       child: MouseRegion(
-        cursor: disabled ? SystemMouseCursors.forbidden : SystemMouseCursors.click,
+        cursor: disabled
+            ? SystemMouseCursors.forbidden
+            : SystemMouseCursors.click,
         onEnter: (_) => setState(() => _isHovered = true),
         onExit: (_) => setState(() => _isHovered = false),
         child: GestureDetector(
@@ -956,10 +985,14 @@ class _CompactProviderButtonState extends State<_CompactProviderButton> {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: _isHovered ? HtmlRefColors.glassStrong : HtmlRefColors.glassSoft,
+              color: _isHovered
+                  ? HtmlRefColors.glassStrong
+                  : HtmlRefColors.glassSoft,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: _isHovered ? widget.color.withValues(alpha: .4) : HtmlRefColors.glassBorder,
+                color: _isHovered
+                    ? widget.color.withValues(alpha: .4)
+                    : HtmlRefColors.glassBorder,
                 width: 1.5,
               ),
               boxShadow: _isHovered
@@ -984,8 +1017,8 @@ class _CompactProviderButtonState extends State<_CompactProviderButton> {
                   ),
                   child: Center(
                     child: Icon(
-                      widget.icon, 
-                      color: widget.color, 
+                      widget.icon,
+                      color: widget.color,
                       size: widget.icon == Icons.g_mobiledata_rounded ? 22 : 16,
                     ),
                   ),
@@ -1032,7 +1065,8 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
   int _calculateAge(DateTime birthDate) {
     final today = DateTime.now();
     int age = today.year - birthDate.year;
-    if (today.month < birthDate.month || (today.month == birthDate.month && today.day < birthDate.day)) {
+    if (today.month < birthDate.month ||
+        (today.month == birthDate.month && today.day < birthDate.day)) {
       age--;
     }
     return age;
@@ -1053,7 +1087,10 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
               onPrimary: Colors.white,
               surface: Color(0xFF140F26),
               onSurface: Colors.white,
-            ), dialogTheme: DialogThemeData(backgroundColor: const Color(0xFF0F0C1B)),
+            ),
+            dialogTheme: DialogThemeData(
+              backgroundColor: const Color(0xFF0F0C1B),
+            ),
           ),
           child: child!,
         );
@@ -1062,7 +1099,8 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
     if (picked != null) {
       setState(() {
         _selectedBirthDate = picked;
-        _birthDateCtrl.text = "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+        _birthDateCtrl.text =
+            "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
       });
     }
   }
@@ -1077,7 +1115,10 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
       return;
     }
     if (!RegExp(r'^[a-zA-Z0-9_]{3,15}$').hasMatch(username)) {
-      setState(() => _error = 'El nombre de usuario debe tener entre 3 y 15 caracteres y solo contener letras, números o guiones bajos.');
+      setState(
+        () => _error =
+            'El nombre de usuario debe tener entre 3 y 15 caracteres y solo contener letras, números o guiones bajos.',
+      );
       return;
     }
     if (birthDate == null) {
@@ -1086,7 +1127,9 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
     }
     final age = _calculateAge(birthDate);
     if (age < 0 || age > 120) {
-      setState(() => _error = 'Por favor, introduce una fecha de nacimiento válida.');
+      setState(
+        () => _error = 'Por favor, introduce una fecha de nacimiento válida.',
+      );
       return;
     }
 
@@ -1096,10 +1139,7 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
     });
 
     try {
-      await widget.store.updateProfile(
-        username: username,
-        age: age,
-      );
+      await widget.store.updateProfile(username: username, age: age);
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -1148,7 +1188,10 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
               const SizedBox(height: 20),
               if (_error != null) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: RefColors.urgent.withValues(alpha: .1),
                     borderRadius: BorderRadius.circular(10),
@@ -1159,12 +1202,20 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.error_outline_rounded, color: RefColors.urgent, size: 16),
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        color: RefColors.urgent,
+                        size: 16,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           _error!,
-                          style: const TextStyle(color: RefColors.urgent, fontSize: 11, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: RefColors.urgent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
@@ -1189,16 +1240,15 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
               _busy
                   ? const Center(
                       child: CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(RefColors.pink),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          RefColors.pink,
+                        ),
                       ),
                     )
                   : Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Cta(
-                          'Finalizar Registro',
-                          onTap: _submit,
-                        ),
+                        Cta('Finalizar Registro', onTap: _submit),
                         const SizedBox(height: 10),
                         GhostButton(
                           'Cancelar',
