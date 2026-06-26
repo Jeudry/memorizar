@@ -170,7 +170,7 @@ class _RepasarScreenState extends State<RepasarScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 12),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text('Agregar mazo',
@@ -180,25 +180,32 @@ class _RepasarScreenState extends State<RepasarScreen> {
                         fontSize: 16)),
               ),
             ),
-            ListTile(
-              leading: const Text('✝️', style: TextStyle(fontSize: 22)),
-              title: const Text('Biblia',
-                  style: TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w700)),
-              subtitle: const Text('Versículos · capítulos · libros',
-                  style: TextStyle(color: RefColors.muted, fontSize: 12)),
-              onTap: () => Navigator.pop(ctx, AppRoutes.biblia),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _AddDeckCard(
+                      emoji: '✝️',
+                      title: 'Biblia',
+                      subtitle: 'Versículos · capítulos · libros',
+                      color: RefColors.sun,
+                      onTap: () => Navigator.pop(ctx, AppRoutes.biblia),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _AddDeckCard(
+                      emoji: '✨',
+                      title: 'Especificar',
+                      subtitle: 'Pega tu propio contenido',
+                      color: RefColors.violet,
+                      onTap: () => Navigator.pop(ctx, AppRoutes.especificar),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            ListTile(
-              leading: const Text('✨', style: TextStyle(fontSize: 22)),
-              title: const Text('Especificar',
-                  style: TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w700)),
-              subtitle: const Text('Pega tu propio contenido',
-                  style: TextStyle(color: RefColors.muted, fontSize: 12)),
-              onTap: () => Navigator.pop(ctx, AppRoutes.especificar),
-            ),
-            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -1092,6 +1099,67 @@ class _NewDeckButton extends StatelessWidget {
                 fontWeight: FontWeight.w900,
                 fontSize: 13.5,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Tarjeta grande del chooser "Agregar mazo" (Biblia / Especificar), con el
+/// mismo estilo que "Memorizar algo nuevo" del inicio.
+class _AddDeckCard extends StatelessWidget {
+  final String emoji;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _AddDeckCard({
+    required this.emoji,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Glass(
+        padding: const EdgeInsets.all(14),
+        gradient: LinearGradient(
+          colors: [
+            color.withValues(alpha: .22),
+            color.withValues(alpha: .08),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: color.withValues(alpha: .30)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: .22),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(child: GlyphIcon(emoji, size: 20)),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: const TextStyle(fontSize: 11, color: RefColors.muted),
             ),
           ],
         ),
