@@ -133,45 +133,103 @@ class _RepasarScreenState extends State<RepasarScreen> {
     return widgets;
   }
 
-  /// Pide un nombre de grupo en un diálogo. Devuelve el nombre o null.
-  Future<String?> _promptGroupName(BuildContext context) async {
+  /// Emojis disponibles para representar una carpeta/grupo.
+  static const List<String> _groupEmojiChoices = [
+    '📁', '📚', '✝️', '🌍', '💡', '🔥',
+    '⭐', '🎯', '🧠', '📝', '🎵', '❤️',
+  ];
+
+  /// Pide nombre + ícono de un grupo en un diálogo. Devuelve null si se cancela
+  /// o el nombre queda vacío.
+  Future<({String name, String icon})?> _promptGroupName(
+      BuildContext context) async {
     final controller = TextEditingController();
-    final name = await showDialog<String>(
+    String selectedIcon = _groupEmojiChoices.first;
+    final result = await showDialog<({String name, String icon})>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF0F0C1B),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Nuevo grupo',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
-            hintText: 'Nombre del grupo',
-            hintStyle: TextStyle(color: RefColors.muted),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocalState) => AlertDialog(
+          backgroundColor: const Color(0xFF0F0C1B),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: const Text('Nuevo grupo',
+              style:
+                  TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  hintText: 'Nombre del grupo',
+                  hintStyle: TextStyle(color: RefColors.muted),
+                ),
+                onSubmitted: (v) => Navigator.pop(
+                    ctx, (name: v, icon: selectedIcon)),
+              ),
+              const SizedBox(height: 16),
+              const Text('Ícono',
+                  style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final emoji in _groupEmojiChoices)
+                    GestureDetector(
+                      onTap: () => setLocalState(() => selectedIcon = emoji),
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: selectedIcon == emoji
+                              ? RefColors.cyan.withValues(alpha: .18)
+                              : HtmlRefColors.glassSoft,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: selectedIcon == emoji
+                                ? RefColors.cyan
+                                : HtmlRefColors.glassBorder,
+                            width: selectedIcon == emoji ? 1.8 : 1.2,
+                          ),
+                        ),
+                        child: Text(emoji, style: const TextStyle(fontSize: 19)),
+                      ),
+                    ),
+                ],
+              ),
+            ],
           ),
-          onSubmitted: (v) => Navigator.pop(ctx, v),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar',
+                  style: TextStyle(color: RefColors.muted)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(
+                  ctx, (name: controller.text, icon: selectedIcon)),
+              child: const Text('Crear'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar', style: TextStyle(color: RefColors.muted)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('Crear'),
-          ),
-        ],
       ),
     );
-    final trimmed = name?.trim() ?? '';
-    return trimmed.isEmpty ? null : trimmed;
+    final trimmed = result?.name.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    return (name: trimmed, icon: result!.icon);
   }
 
   Future<void> _createGroupSheet(BuildContext context, AppStore store) async {
-    final name = await _promptGroupName(context);
-    if (name != null) await store.createGroup(name);
+    final res = await _promptGroupName(context);
+    if (res != null) await store.createGroup(res.name, icon: res.icon);
   }
 
   /// Hoja para mover un mazo a un grupo (o sin grupo / crear uno nuevo).
@@ -224,9 +282,9 @@ class _RepasarScreenState extends State<RepasarScreen> {
               title: const Text('Nuevo grupo…', style: TextStyle(color: RefColors.cyan)),
               onTap: () async {
                 Navigator.pop(ctx);
-                final name = await _promptGroupName(context);
-                if (name != null) {
-                  final id = await store.createGroup(name);
+                final res = await _promptGroupName(context);
+                if (res != null) {
+                  final id = await store.createGroup(res.name, icon: res.icon);
                   await store.assignDeckToGroup(deck.id, id);
                 }
               },
@@ -614,13 +672,6 @@ class _GroupBanner extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           RefProgress(stats.retention / 100),
-          const SizedBox(height: 8),
-          Text(
-            stats.weakCount > 0
-                ? '${stats.weakCount} ${stats.weakCount == 1 ? 'tarjeta débil' : 'tarjetas débiles'} por reforzar'
-                : '¡Todo este grupo está en buena forma!',
-            style: const TextStyle(fontSize: 11.5, color: RefColors.muted),
-          ),
         ],
       ),
     );
