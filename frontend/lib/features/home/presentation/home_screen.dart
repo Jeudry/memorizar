@@ -995,6 +995,7 @@ class _CommunitySlider extends StatelessWidget {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           for (final deck in sorted) ...[
             Builder(builder: (context) {
@@ -1003,8 +1004,7 @@ class _CommunitySlider extends StatelessWidget {
               return _CommunityCard(
                 emoji: deck.icon,
                 title: deck.title,
-                stats:
-                    '${deck.cards.length} tarjetas · ${deck.retention}% retención',
+                stats: '${deck.cards.length} tarjetas',
                 weakCount: deck.weakCount,
                 groupLabel: group?.name,
                 groupEmoji: group?.icon,
@@ -1077,12 +1077,12 @@ class _CommunityCard extends StatelessWidget {
       onTap: onTap,
       child: GlassCard(
         width: 168,
-        height: 132,
         padding: const EdgeInsets.all(13),
         color: AppColors.glassBg,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1303,6 +1303,7 @@ class _HomeCommunitySliderState extends State<_HomeCommunitySlider> {
       return SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             for (final share in shares) ...[
               _CommunityCard(
