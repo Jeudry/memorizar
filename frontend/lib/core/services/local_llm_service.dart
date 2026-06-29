@@ -25,7 +25,10 @@ class LocalLlmService {
       'https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q2_K.gguf';
   static const String _modelFileName = 'google_gemma-4-E2B-it-Q2_K.gguf';
   static const String _legacyModelFileName = 'gemma-3-4b-it-qat-Q4_0.gguf';
-  static const int _minValidModelBytes = 3000 * 1024 * 1024; // 3.02 GB
+  // Sanity-check de descarga completa. El modelo real pesa ~3.02 GB
+  // (3,020,052,224 bytes); el umbral debe quedar POR DEBAJO de eso o un modelo
+  // ya bajado falla el check y la app pide re-descargarlo en cada arranque.
+  static const int _minValidModelBytes = 2800 * 1000 * 1000; // ~2.8 GB
   static const Duration _generationTimeout = Duration(minutes: 3);
   // 0.9: prioriza la variedad (con la rotación de estilo/enfoque) manteniéndose
   // por debajo del 1.0 que inventaba hechos y degeneraba.
