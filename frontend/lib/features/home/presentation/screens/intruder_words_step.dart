@@ -33,6 +33,10 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
   int _level = 1; // 1, 2, or 3
   String _loadingText = 'Despertando la IA local…';
   String? _errorMessage;
+  // El modelo local no está descargado: ofrecemos descargarlo aquí mismo, sin
+  // sacar al usuario del ejercicio.
+  bool _needsDownload = false;
+  bool _downloadingModel = false;
 
   IntruderVerseSet? _intruderSet;
   List<String> _alteredWords = [];
@@ -92,11 +96,25 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
     setState(() {
       _phase = _IntruderPhase.loadingLlm;
       _errorMessage = null;
+      _needsDownload = false;
     });
     _startLoadingMessages();
 
     final llm = LocalLlmService.instance;
     try {
+      // Si el modelo no está descargado, no fallamos: ofrecemos descargarlo
+      // sin salir del ejercicio.
+      if (!llm.isReady && !await llm.checkModelExists()) {
+        _loadingTextTimer?.cancel();
+        if (!mounted) return;
+        setState(() {
+          _phase = _IntruderPhase.selectLevel;
+          _needsDownload = true;
+          _errorMessage =
+              'Este ejercicio usa la IA local. Descárgala una sola vez para continuar.';
+        });
+        return;
+      }
       await llm.initLlm();
       if (!mounted) return;
 
@@ -137,6 +155,20 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
     } finally {
       _loadingTextTimer?.cancel();
     }
+  }
+
+  /// Descarga el modelo local sin salir del ejercicio y, al terminar, genera.
+  Future<void> _downloadModelAndRetry() async {
+    if (_downloadingModel) return;
+    setState(() => _downloadingModel = true);
+    try {
+      await LocalLlmService.instance.downloadModel();
+    } catch (e) {
+      debugPrint('Error descargando modelo local (intrusas): $e');
+    }
+    if (!mounted) return;
+    setState(() => _downloadingModel = false);
+    await _generateVerse();
   }
 
   void _startTimer() {
@@ -306,6 +338,40 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
     );
   }
 
+  /// Acción de descarga del modelo local mostrada dentro del ejercicio.
+  Widget _buildDownloadAction() {
+    if (_downloadingModel) {
+      return ValueListenableBuilder<double>(
+        valueListenable: LocalLlmService.instance.downloadProgress,
+        builder: (_, p, _) => Column(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: LinearProgressIndicator(
+                value: p > 0 ? p : null,
+                minHeight: 6,
+                backgroundColor: Colors.white12,
+                color: RefColors.pink,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              p > 0
+                  ? 'Descargando IA local… ${(p * 100).round()}%'
+                  : 'Preparando descarga…',
+              style: const TextStyle(
+                color: RefColors.cyan,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return Cta('Descargar IA local (una vez)', onTap: _downloadModelAndRetry);
+  }
+
   Widget _buildLevelSelection() {
     if (widget.level != null && _errorMessage != null) {
       return SingleChildScrollView(
@@ -351,10 +417,13 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
               ),
             ),
             const SizedBox(height: 32),
-            Cta(
-              'Reintentar Nivel $_level',
-              onTap: _generateVerse,
-            ),
+            if (_needsDownload)
+              _buildDownloadAction()
+            else
+              Cta(
+                'Reintentar Nivel $_level',
+                onTap: _generateVerse,
+              ),
           ],
         ),
       );
@@ -420,6 +489,10 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                 ),
               ),
             ),
+            const SizedBox(height: 18),
+          ],
+          if (_needsDownload) ...[
+            _buildDownloadAction(),
             const SizedBox(height: 18),
           ],
           _buildLevelCard(
