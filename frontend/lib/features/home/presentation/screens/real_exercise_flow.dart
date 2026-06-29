@@ -1810,6 +1810,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             (() {
               final isScrollable =
                   (slug != '01-escuchar' &&
+                      slug != '00-solo-lectura' &&
+                      slug != '05-bloques' &&
                       !_isFirstLetterSlug(slug) &&
                       !_isFogSlug(slug) &&
                       !_isFinalVoiceSlug(slug) &&
@@ -2491,151 +2493,149 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          GestureDetector(
-            onTap: () {
-              if (!store.isExerciseStepCompleted(slug)) {
-                _soloLecturaTimer?.cancel();
-                _soloLecturaTimer = null;
-                _soloLecturaPauseUntil = null;
-                setState(() {
-                  _soloLecturaVisibleChars = totalChars;
-                });
-                store.markExerciseStepCompleted('00-solo-lectura');
-              }
-            },
-            child: Glass(
-              padding: const EdgeInsets.fromLTRB(18, 22, 18, 22),
-              gradient: LinearGradient(
-                colors: [
-                  RefColors.violet.withValues(alpha: .28),
-                  RefColors.sun.withValues(alpha: .34),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    deck.isBible ? card.front.toUpperCase() : 'CITA',
-                    style: const TextStyle(
-                      color: RefColors.pink,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.4,
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                if (!store.isExerciseStepCompleted(slug)) {
+                  _soloLecturaTimer?.cancel();
+                  _soloLecturaTimer = null;
+                  _soloLecturaPauseUntil = null;
+                  setState(() {
+                    _soloLecturaVisibleChars = totalChars;
+                  });
+                  store.markExerciseStepCompleted('00-solo-lectura');
+                }
+              },
+              child: Glass(
+                padding: const EdgeInsets.fromLTRB(18, 22, 18, 22),
+                gradient: LinearGradient(
+                  colors: [
+                    RefColors.violet.withValues(alpha: .28),
+                    RefColors.sun.withValues(alpha: .34),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      deck.isBible ? card.front.toUpperCase() : 'CITA',
+                      style: const TextStyle(
+                        color: RefColors.pink,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.4,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: 140,
-                      maxHeight: MediaQuery.of(context).size.height * 0.52,
-                    ),
-                    child: SingleChildScrollView(
-                      child: Container(
-                        alignment: Alignment.center,
-                        child: _buildSoloLecturaText(
-                          context,
-                          _soloLecturaVisibleChars,
+                    const SizedBox(height: 14),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Container(
+                          alignment: Alignment.center,
+                          child: _buildSoloLecturaText(
+                            context,
+                            _soloLecturaVisibleChars,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  if (!store.isExerciseStepCompleted(slug)) ...[
-                    const SizedBox(height: 14),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.touch_app_outlined,
-                          size: 13,
-                          color: RefColors.pink.withValues(alpha: .55),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'TOCA EL TEXTO PARA OMITIR',
-                          style: TextStyle(
-                            color: RefColors.pink.withValues(alpha: .55),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.1,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  if (store.isExerciseStepCompleted(slug)) ...[
-                    const SizedBox(height: 18),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Row(
+                    if (!store.isExerciseStepCompleted(slug)) ...[
+                      const SizedBox(height: 14),
+                      Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(
-                            Icons.check_circle_outline,
-                            size: 16,
-                            color: RefColors.lime,
+                          Icon(
+                            Icons.touch_app_outlined,
+                            size: 13,
+                            color: RefColors.pink.withValues(alpha: .55),
                           ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'Lectura completada',
+                          const SizedBox(width: 6),
+                          Text(
+                            'TOCA EL TEXTO PARA OMITIR',
                             style: TextStyle(
-                              color: RefColors.lime,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(width: 20),
-                          GestureDetector(
-                            onTap: () {
-                              _soloLecturaTimer?.cancel();
-                              _soloLecturaTimer = null;
-                              _soloLecturaPauseUntil = null;
-                              store.resetExerciseStepCompleted(slug);
-                              setState(() {
-                                _soloLecturaVisibleChars = 0;
-                              });
-                              _startSoloLecturaAnimation(
-                                store,
-                                totalChars,
-                                verseEnds,
-                                fullText,
-                              );
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: RefColors.cyan.withValues(alpha: .15),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Row(
-                                children: [
-                                  Icon(
-                                    Icons.replay_rounded,
-                                    size: 16,
-                                    color: RefColors.cyan,
-                                  ),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    'Repetir',
-                                    style: TextStyle(
-                                      color: RefColors.cyan,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                              color: RefColors.pink.withValues(alpha: .55),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.1,
                             ),
                           ),
                         ],
                       ),
-                    ),
+                    ],
+                    if (store.isExerciseStepCompleted(slug)) ...[
+                      const SizedBox(height: 18),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.check_circle_outline,
+                              size: 16,
+                              color: RefColors.lime,
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Lectura completada',
+                              style: TextStyle(
+                                color: RefColors.lime,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(width: 20),
+                            GestureDetector(
+                              onTap: () {
+                                _soloLecturaTimer?.cancel();
+                                _soloLecturaTimer = null;
+                                _soloLecturaPauseUntil = null;
+                                store.resetExerciseStepCompleted(slug);
+                                setState(() {
+                                  _soloLecturaVisibleChars = 0;
+                                });
+                                _startSoloLecturaAnimation(
+                                  store,
+                                  totalChars,
+                                  verseEnds,
+                                  fullText,
+                                );
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: RefColors.cyan.withValues(alpha: .15),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.replay_rounded,
+                                      size: 16,
+                                      color: RefColors.cyan,
+                                    ),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'Repetir',
+                                      style: TextStyle(
+                                        color: RefColors.cyan,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -2751,14 +2751,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             ),
             const SizedBox(height: 14),
           ],
-          ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.5,
-            ),
+          Expanded(
             child: Glass(
               padding: const EdgeInsets.all(14),
               child: ReorderableListView.builder(
-                shrinkWrap: true,
+                shrinkWrap: false,
                 physics: const ClampingScrollPhysics(),
                 buildDefaultDragHandles: false,
                 proxyDecorator: (child, index, animation) {
@@ -2809,16 +2806,16 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               ),
             ),
           ),
-          if (hasInteracted)
-            _InlineResult(
-              correct: hasInteracted && allCorrect,
-              neutral: !allCorrect,
-              text: allCorrect
-                  ? 'Orden correcto.'
-                  : selectingDestination
-                  ? 'Ahora toca una línea de destino para colocar ese bloque ahí.'
-                  : 'Toca un bloque, elige una posición y acomódalo hasta que todo quede verde.',
+          // Solo mostramos la confirmación verde cuando el orden es correcto;
+          // sin guía azul intermedia.
+          if (allCorrect) ...[
+            const SizedBox(height: 12),
+            const _InlineResult(
+              correct: true,
+              neutral: false,
+              text: 'Orden correcto.',
             ),
+          ],
         ],
       );
     }

@@ -468,23 +468,9 @@ class _FogStepState extends State<_FogStep>
                     }
                   });
                 },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    color: RefColors.violet.withValues(alpha: .18),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: RefColors.cyan.withValues(alpha: .30),
-                      width: 1,
-                    ),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: ImageFiltered(
-                      imageFilter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
-                      child: foggyWordWidget,
-                    ),
-                  ),
+                child: ImageFiltered(
+                  imageFilter: ImageFilter.blur(sigmaX: 6.0, sigmaY: 6.0),
+                  child: foggyWordWidget,
                 ),
               );
             }
@@ -556,23 +542,9 @@ class _FogStepState extends State<_FogStep>
                         }
                       });
                     },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      decoration: BoxDecoration(
-                        color: RefColors.violet.withValues(alpha: .18),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: RefColors.cyan.withValues(alpha: .30),
-                          width: 1,
-                        ),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: ImageFiltered(
-                          imageFilter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
-                          child: foggyWordWidget,
-                        ),
-                      ),
+                    child: ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 6.0, sigmaY: 6.0),
+                      child: foggyWordWidget,
                     ),
                   );
                 }
