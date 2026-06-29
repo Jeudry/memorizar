@@ -10,7 +10,13 @@ class _RealExerciseFlowScreen extends StatefulWidget {
       _RealExerciseFlowScreenState();
 }
 
-enum _QuizQuestionType { frontToBack, backToFront, trueFalse, matching, openQuestion }
+enum _QuizQuestionType {
+  frontToBack,
+  backToFront,
+  trueFalse,
+  matching,
+  openQuestion,
+}
 
 class _QuizRound {
   final MemoryCardData target;
@@ -52,7 +58,8 @@ class _QuizRound {
     if (type == _QuizQuestionType.trueFalse) {
       return selectedIdx == (isStatementTrue == true ? 0 : 1);
     }
-    if (type == _QuizQuestionType.matching || type == _QuizQuestionType.openQuestion) {
+    if (type == _QuizQuestionType.matching ||
+        type == _QuizQuestionType.openQuestion) {
       return true; // completed matching or submitted typed answer are always considered correct/passed in study mode
     }
     return options[selectedIdx!].id == target.id;
@@ -73,7 +80,8 @@ class _PrefetchedQuiz {
 class _QuizPrefetch {
   static final Map<String, _PrefetchedQuiz> _cache = {};
 
-  static String _key(List<MemoryCardData> group) => group.map((c) => c.id).join('|');
+  static String _key(List<MemoryCardData> group) =>
+      group.map((c) => c.id).join('|');
 
   /// Arranca la generación del grupo si aún no está en caché (idempotente).
   static void ensure(List<MemoryCardData> group) {
@@ -82,7 +90,9 @@ class _QuizPrefetch {
     if (_cache.containsKey(key)) return;
     final shuffled = [...group]..shuffle();
     final future = LocalLlmService.instance.generateQuizRoundSet(
-      verses: [for (final c in shuffled) (reference: c.front, verseText: c.back)],
+      verses: [
+        for (final c in shuffled) (reference: c.front, verseText: c.back),
+      ],
     );
     // Si nadie lo consume (el usuario omite/sale), evitar "unhandled exception"
     // y limpiar la entrada fallida para poder reintentar luego.
@@ -91,7 +101,8 @@ class _QuizPrefetch {
   }
 
   /// Toma (y remueve) el quiz pre-generado para [group], o null si no hay.
-  static _PrefetchedQuiz? take(List<MemoryCardData> group) => _cache.remove(_key(group));
+  static _PrefetchedQuiz? take(List<MemoryCardData> group) =>
+      _cache.remove(_key(group));
 }
 
 class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
@@ -120,12 +131,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   Timer? _completionTimer;
   int _completionSecondsLeft = 0;
   bool _completionLost = false;
+
   /// Pool de distractores tramposos generado por la IA local para el ejercicio
   /// "Elige la palabra correcta". Si está vacío/null, el banco cae a palabras
   /// random del versículo (comportamiento clásico / fallback sin IA).
   List<String>? _aiDistractorPool;
   String? _aiDistractorCardId;
   bool _aiDistractorLoading = false;
+
   /// Pasos que el usuario "omitió": en vez de saltarlos, se transforman —
   /// los de la fase Preparar en una lectura, el resto (Construir/Probar) en
   /// "Elige la palabra". La clave incluye la tarjeta para que sea per-tarjeta.
@@ -148,7 +161,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   int _quizScore = 0;
   bool _isEvaluatingOpenQuestion = false;
   final _openQuestionController = TextEditingController();
-  
+
   bool _isAiQuizLoading = false;
   String _aiQuizLoadingText = '';
   String? _aiQuizError;
@@ -189,6 +202,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       }
     }
   }
+
   bool _nonVoiceWrongRecent() {
     final ts = _lastNonVoiceWrongAt;
     if (ts == null) return false;
@@ -202,12 +216,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     CoopService.active = null;
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: RefColors.urgent,
-        ),
+        SnackBar(content: Text(message), backgroundColor: RefColors.urgent),
       );
-      Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRoutes.home,
+        (route) => false,
+      );
     }
   }
 
@@ -231,14 +246,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         // Si el host abandonó la partida, cancelar y volver al home
         final hostLeft = !s.memberIds.contains(s.hostId);
         if (hostLeft) {
-          _closeCoopAndGoHome('La partida cooperativa ha sido cancelada por el Host.');
+          _closeCoopAndGoHome(
+            'La partida cooperativa ha sido cancelada por el Host.',
+          );
           return;
         }
 
         // Una vez vimos 2+ jugadores, si la sala baja a 1 se cierra para todos.
         if (s.memberIds.length >= 2) _coopEverHadPeers = true;
         if (_coopEverHadPeers && s.memberIds.length <= 1) {
-          _closeCoopAndGoHome('La sala se cerró: no quedan suficientes jugadores.');
+          _closeCoopAndGoHome(
+            'La sala se cerró: no quedan suficientes jugadores.',
+          );
           return;
         }
 
@@ -264,7 +283,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           return;
         } else if (msg.type == 'step_done') {
           final key = msg.payload?['key'] as String?;
-          if (key != null && key.isNotEmpty && msg.userId != CoopService.activeUserId) {
+          if (key != null &&
+              key.isNotEmpty &&
+              msg.userId != CoopService.activeUserId) {
             AppScope.of(context).applyRemoteStepDone(key);
           }
           return;
@@ -279,7 +300,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           final senderId = msg.userId;
           final slug = msg.payload?['slug'] as String? ?? '';
           final currentSlug = widget.data.slug;
-          if (senderId != CoopService.activeUserId && slug.isNotEmpty && slug != currentSlug) {
+          if (senderId != CoopService.activeUserId &&
+              slug.isNotEmpty &&
+              slug != currentSlug) {
             setState(() {
               _failedUserIds.clear();
               _cooldownSecondsLeft = 0;
@@ -584,7 +607,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     });
   }
 
-  bool _completionCorrect(String slug, MemoryCardData card, {int? levelOverride}) {
+  bool _completionCorrect(
+    String slug,
+    MemoryCardData card, {
+    int? levelOverride,
+  }) {
     final level = levelOverride ?? _completionLevelForSlug(slug);
     _ensureCompletionState(card.id, card.back, level);
     return _completionComplete();
@@ -598,7 +625,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   bool _hasCompletionInput() => _completionAnswers.any(
     (answer) => answer != null && answer.trim().isNotEmpty,
   );
-
 
   bool _quizCorrect(MemoryCardData card, MemoryDeckData deck) {
     if (_quizCardId != card.id || _quizRounds.isEmpty) return false;
@@ -644,7 +670,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     // la navegación.
     unawaited(store.pushProgressSnapshot());
     if (!mounted) return;
-    
+
     if (CoopService.active != null) {
       if (keepGoing) {
         setState(() {
@@ -656,14 +682,23 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           _blockOrderCardId = null;
           _checked = false;
         });
-        
-        final isHost = CoopService.active?.state?.hostId == CoopService.activeUserId;
+
+        final isHost =
+            CoopService.active?.state?.hostId == CoopService.activeUserId;
         if (isHost) {
           final nextIndex = store.sessionCardsCompleted;
-          CoopService.active!.updateLocalCardState(deckId: store.activeDeck.id, cardIndex: nextIndex, slug: '00-solo-lectura');
-          CoopService.active!.broadcastCard(deckId: store.activeDeck.id, cardIndex: nextIndex, slug: '00-solo-lectura');
+          CoopService.active!.updateLocalCardState(
+            deckId: store.activeDeck.id,
+            cardIndex: nextIndex,
+            slug: '00-solo-lectura',
+          );
+          CoopService.active!.broadcastCard(
+            deckId: store.activeDeck.id,
+            cardIndex: nextIndex,
+            slug: '00-solo-lectura',
+          );
         }
-        
+
         Navigator.pushNamedAndRemoveUntil(
           context,
           '${AppRoutes.flow}/00-solo-lectura',
@@ -709,7 +744,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     }
   }
 
-  void _navigateToNextStepOrComplete(BuildContext context, AppStore store, String slug) {
+  void _navigateToNextStepOrComplete(
+    BuildContext context,
+    AppStore store,
+    String slug,
+  ) {
     final steps = _sessionFlowSteps(store);
     final isLastStep = steps.isNotEmpty && steps.last.slug == slug;
     if (isLastStep) {
@@ -722,7 +761,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     }
   }
 
-  void _completeStepAndNavigate(BuildContext context, AppStore store, String slug) {
+  void _completeStepAndNavigate(
+    BuildContext context,
+    AppStore store,
+    String slug,
+  ) {
     _omitOverride.remove(slug);
     store.markExerciseStepCompleted(slug);
     _navigateToNextStepOrComplete(context, store, slug);
@@ -735,8 +778,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   ) {
     if (slug == '05-bloques') return _blocksAreCorrect();
     final isOmitted = _omitOverride.contains(slug);
-    if (_isCompletionSlug(slug) || (isOmitted && _phaseLabelFor(slug) != 'Preparar')) {
-      final level = _isCompletionSlug(slug) ? _completionLevelForSlug(slug) : _omitTargetLevel(slug);
+    if (_isCompletionSlug(slug) ||
+        (isOmitted && _phaseLabelFor(slug) != 'Preparar')) {
+      final level = _isCompletionSlug(slug)
+          ? _completionLevelForSlug(slug)
+          : _omitTargetLevel(slug);
       return _completionCorrect(slug, card, levelOverride: level);
     }
     if (_isFirstLetterSlug(slug)) {
@@ -761,7 +807,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (deck.isBible && deck.cards.length > 1 && store.sessionDailyTarget > 1) {
       final count = store.sessionDailyTarget.clamp(1, deck.cards.length);
       final len = deck.cards.length;
-      final startCardIndex = ((store.currentCardIndex - store.sessionCardsCompleted) % len + len) % len;
+      final startCardIndex =
+          ((store.currentCardIndex - store.sessionCardsCompleted) % len + len) %
+          len;
       final batchCards = <MemoryCardData>[];
       for (var i = 0; i < count; i++) {
         batchCards.add(deck.cards[(startCardIndex + i) % len]);
@@ -874,11 +922,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       setState(() => _aiDistractorLoading = true);
       try {
         if (!llm.isReady) await llm.initLlm();
-        final pool = await (llm.takePrefetchedDistractors(card.front) ??
-            llm.generateCompletionDistractors(
-              reference: card.front,
-              verseText: card.back,
-            ));
+        final pool =
+            await (llm.takePrefetchedDistractors(card.front) ??
+                llm.generateCompletionDistractors(
+                  reference: card.front,
+                  verseText: card.back,
+                ));
         if (!mounted || _aiDistractorCardId != card.id) return;
         setState(() {
           _aiDistractorPool = pool;
@@ -940,7 +989,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_letterCardId == cardId && _letterLevel == level) return;
     _letterCardId = cardId;
     _letterLevel = level;
-    final (targets, positions) = _firstLetterTargetsWithPositions(text, level: level);
+    final (targets, positions) = _firstLetterTargetsWithPositions(
+      text,
+      level: level,
+    );
     _letterTargets = targets;
     _letterTargetPositions = positions;
     _letterAnswers = List<String?>.filled(_letterTargets.length, null);
@@ -967,8 +1019,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (_letterLost) return;
     final currentIndex = _activeLetterIndex.clamp(0, _letterTargets.length - 1);
     final target = _letterTargets[currentIndex];
-    final cleanTarget = target.replaceAll(RegExp(r'[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]'), '');
-    final firstLetter = cleanTarget.isNotEmpty ? cleanTarget.substring(0, 1) : '';
+    final cleanTarget = target.replaceAll(
+      RegExp(r'[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]'),
+      '',
+    );
+    final firstLetter = cleanTarget.isNotEmpty
+        ? cleanTarget.substring(0, 1)
+        : '';
     final correct = _sameAnswer(letter, firstLetter);
     setState(() {
       _checked = true;
@@ -1031,7 +1088,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
   void _ensureQuizRounds(MemoryDeckData deck, List<MemoryCardData> group) {
     final groupKey = _quizGroupKey(group);
-    final alreadyHandledGroup = _quizCardId == groupKey &&
+    final alreadyHandledGroup =
+        _quizCardId == groupKey &&
         (_quizRounds.isNotEmpty || _isAiQuizLoading || _aiQuizError != null);
     if (alreadyHandledGroup) return;
     // Se invoca durante build: mutar campos sin setState; el async sí lo usa.
@@ -1046,9 +1104,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     unawaited(_loadAiQuizRounds(group));
   }
 
-  Future<void> _loadAiQuizRounds(
-    List<MemoryCardData> group,
-  ) async {
+  Future<void> _loadAiQuizRounds(List<MemoryCardData> group) async {
     final llm = LocalLlmService.instance;
     final label = group.length == 1
         ? group.first.front
@@ -1069,9 +1125,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     final quizGroup = prefetched?.group ?? ([...group]..shuffle());
     llm.statusNotifier.addListener(onEngineStatus);
     try {
-      debugPrint('=== QUIZ GROUP (${quizGroup.length} versículos'
-          '${prefetched != null ? ", PREFETCH" : ", orden aleatorio"}): '
-          '${quizGroup.map((c) => c.front).join(" | ")} ===');
+      debugPrint(
+        '=== QUIZ GROUP (${quizGroup.length} versículos'
+        '${prefetched != null ? ", PREFETCH" : ", orden aleatorio"}): '
+        '${quizGroup.map((c) => c.front).join(" | ")} ===',
+      );
       await llm.initLlm();
       if (!mounted) return;
       setState(() {
@@ -1079,13 +1137,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             ? 'Cargando preguntas simuladas sobre $label…'
             : 'Gemma 4 está creando preguntas únicas sobre $label…';
       });
-      final roundSet = await (prefetched?.rounds ??
-          llm.generateQuizRoundSet(
-            verses: [
-              for (final card in quizGroup)
-                (reference: card.front, verseText: card.back),
-            ],
-          ));
+      final roundSet =
+          await (prefetched?.rounds ??
+              llm.generateQuizRoundSet(
+                verses: [
+                  for (final card in quizGroup)
+                    (reference: card.front, verseText: card.back),
+                ],
+              ));
       if (!mounted) return;
       setState(() {
         _quizRounds = _roundsFromAi(quizGroup, roundSet);
@@ -1105,7 +1164,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     }
   }
 
-  List<_QuizRound> _roundsFromAi(List<MemoryCardData> group, AiQuizRoundSet set) {
+  List<_QuizRound> _roundsFromAi(
+    List<MemoryCardData> group,
+    AiQuizRoundSet set,
+  ) {
     // Reparte cada una de las 3 rondas a un item distinto del grupo cuando hay
     // suficientes (3 items → V/F al 1º, opción múltiple al 2º, abierta al 3º).
     // Con menos items, varias rondas comparten item sin romper nada. El target
@@ -1183,7 +1245,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       final delayMs = round.correct ? 1000 : 2500;
       Future.delayed(Duration(milliseconds: delayMs), () {
         if (!mounted) return;
-        if (_quizRoundIndex < _quizRounds.length - 1 && _quizRounds[_quizRoundIndex].selectedIdx == idx) {
+        if (_quizRoundIndex < _quizRounds.length - 1 &&
+            _quizRounds[_quizRoundIndex].selectedIdx == idx) {
           _advanceQuizRound();
         }
       });
@@ -1224,11 +1287,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     final left = _matchingSelectedLeft;
     final right = _matchingSelectedRight;
     if (left == null || right == null) return;
-    
+
     final round = _quizRounds[_quizRoundIndex];
     if (round.matchingPairs == null) return;
 
-    final isCorrect = round.matchingPairs!.any((p) => p.$1 == left && p.$2 == right);
+    final isCorrect = round.matchingPairs!.any(
+      (p) => p.$1 == left && p.$2 == right,
+    );
     if (isCorrect) {
       HapticFeedback.lightImpact();
       setState(() {
@@ -1236,16 +1301,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         _matchingCompletedRight.add(right);
         _matchingSelectedLeft = null;
         _matchingSelectedRight = null;
-        
+
         // If all 4 pairs completed, mark round as answered/correct!
         if (_matchingCompletedLeft.length == 4) {
           round.selectedIdx = 1; // 1 means matching finished successfully!
           _quizScore += 1;
-          
+
           if (_quizRoundIndex < _quizRounds.length - 1) {
             Future.delayed(const Duration(milliseconds: 1200), () {
               if (!mounted) return;
-              if (_quizRoundIndex < _quizRounds.length - 1 && _quizRounds[_quizRoundIndex].answered) {
+              if (_quizRoundIndex < _quizRounds.length - 1 &&
+                  _quizRounds[_quizRoundIndex].answered) {
                 _advanceQuizRound();
               }
             });
@@ -1325,11 +1391,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       barrierDismissible: true,
       builder: (BuildContext context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           backgroundColor: RefColors.bg,
           title: const Row(
             children: [
-              Icon(Icons.warning_amber_rounded, color: RefColors.urgent, size: 28),
+              Icon(
+                Icons.warning_amber_rounded,
+                color: RefColors.urgent,
+                size: 28,
+              ),
               SizedBox(width: 10),
               Text(
                 'Quiz No Superado',
@@ -1364,8 +1436,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: RefColors.urgent,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
               ),
               onPressed: () {
                 Navigator.of(context).pop();
@@ -1373,9 +1450,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               },
               child: const Text(
                 'Reintentar',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w900),
               ),
             ),
           ],
@@ -1387,10 +1462,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   void _submitOpenQuestionResponse(_QuizRound round) async {
     final response = (round.openQuestionResponse ?? '').trim();
     if (response.isEmpty) return;
-    
+
     HapticFeedback.selectionClick();
     FocusScope.of(context).unfocus();
-    
+
     setState(() {
       _isEvaluatingOpenQuestion = true;
     });
@@ -1468,11 +1543,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ),
       ),
     );
-    
+
     if (_quizRoundIndex < _quizRounds.length - 1) {
       Future.delayed(const Duration(milliseconds: 3500), () {
         if (!mounted) return;
-        if (_quizRoundIndex < _quizRounds.length - 1 && _quizRounds[_quizRoundIndex].answered) {
+        if (_quizRoundIndex < _quizRounds.length - 1 &&
+            _quizRounds[_quizRoundIndex].answered) {
           _openQuestionController.clear();
           _advanceQuizRound();
         }
@@ -1510,10 +1586,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     final state = coop.state;
     if (state == null) return null;
     if (state.mode != 'turnos') return null;
-    
+
     final members = state.memberIds.toList()..sort();
     if (members.isEmpty) return null;
-    
+
     int startIndex = state.currentCardIndex % members.length;
     for (int i = 0; i < members.length; i++) {
       final idx = (startIndex + i) % members.length;
@@ -1549,11 +1625,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   void _broadcastFail() {
     final coop = CoopService.active;
     if (coop == null) return;
-    coop.send(CoopMessage(
-      type: 'coop_fail',
-      userId: CoopService.activeUserId ?? '',
-      payload: {'userId': CoopService.activeUserId ?? ''},
-    ));
+    coop.send(
+      CoopMessage(
+        type: 'coop_fail',
+        userId: CoopService.activeUserId ?? '',
+        payload: {'userId': CoopService.activeUserId ?? ''},
+      ),
+    );
   }
 
   bool _isInteractiveCoopSlug(String slug) {
@@ -1567,8 +1645,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         slug == '12-completar-n3' ||
         slug == '13-primera-letra-n3';
   }
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -1595,10 +1671,15 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       _QuizPrefetch.ensure(_quizGroupCards(batch));
     }
     if (_isCompletionSlug(nextSlug)) {
-      llmPrefetch.prefetchCompletionDistractors(reference: card.front, verseText: card.back);
+      llmPrefetch.prefetchCompletionDistractors(
+        reference: card.front,
+        verseText: card.back,
+      );
     }
     if (nextSlug.startsWith('18-palabras-intrusas')) {
-      final level = nextSlug.endsWith('-n2') ? 2 : (nextSlug.endsWith('-n3') ? 3 : 1);
+      final level = nextSlug.endsWith('-n2')
+          ? 2
+          : (nextSlug.endsWith('-n3') ? 3 : 1);
       llmPrefetch.prefetchIntruderVerse(
         reference: card.front,
         verseText: card.back,
@@ -1610,7 +1691,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     }
     if (slug == '00-solo-lectura' && store.isExerciseStepCompleted(slug)) {
       final verses = _currentBatchVerses(context);
-      _soloLecturaVisibleChars = verses.fold<int>(0, (sum, v) => sum + v.text.length);
+      _soloLecturaVisibleChars = verses.fold<int>(
+        0,
+        (sum, v) => sum + v.text.length,
+      );
     }
 
     final isCoop = CoopService.active != null;
@@ -1619,18 +1703,19 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     bool isBlocked = false;
     bool showLockOverlay = false;
     String blockText = '';
-    
+
     if (isCoop && coopState != null) {
       final mode = coopState.mode;
       if (mode == 'turnos' && _isInteractiveCoopSlug(slug)) {
         final activeUser = _activeTurnUserId;
         final isMe = activeUser == CoopService.activeUserId;
         final isMeFailed = _failedUserIds.contains(CoopService.activeUserId);
-        
+
         if (isMeFailed) {
           isBlocked = true;
           showLockOverlay = true;
-          blockText = 'Inhabilitado por fallar ❌\nEspera al siguiente ejercicio';
+          blockText =
+              'Inhabilitado por fallar ❌\nEspera al siguiente ejercicio';
         } else if (!isMe) {
           isBlocked = true;
           showLockOverlay = false;
@@ -1665,18 +1750,19 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         showBottomNav: false,
         scrollable:
             (slug != '01-escuchar' &&
-            !_isFirstLetterSlug(slug) &&
-            !_isFogSlug(slug) &&
-            !_isFinalVoiceSlug(slug) &&
-            !slug.startsWith('18-palabras-intrusas') &&
-            slug != _chooseWordPracticeSlug) ||
+                !_isFirstLetterSlug(slug) &&
+                !_isFogSlug(slug) &&
+                !_isFinalVoiceSlug(slug) &&
+                !slug.startsWith('18-palabras-intrusas') &&
+                slug != _chooseWordPracticeSlug) ||
             _omitOverride.contains(slug),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (isCoop && coopState != null) ...[
               _CoopTopBar(
-                center: 'EN JUEGO · ${store.sessionCardsCompleted + 1}/${store.sessionDailyTarget}',
+                center:
+                    'EN JUEGO · ${store.sessionCardsCompleted + 1}/${store.sessionDailyTarget}',
                 live: true,
                 onBack: () async {
                   final shouldPop = await _showExitConfirmationDialog(context);
@@ -1696,14 +1782,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 failedUserIds: _failedUserIds,
               ),
               const SizedBox(height: 10),
-              RefProgress((store.sessionCardsCompleted + 1) / store.sessionDailyTarget),
+              RefProgress(
+                (store.sessionCardsCompleted + 1) / store.sessionDailyTarget,
+              ),
               const SizedBox(height: 10),
             ] else
               _FlowStepHeader(
                 step: '$step',
                 totalSteps: totalSteps,
                 title: () {
-                  final showSubCardProgress = batch.length > 1 &&
+                  final showSubCardProgress =
+                      batch.length > 1 &&
                       slug != '00-solo-lectura' &&
                       slug != '01-escuchar' &&
                       slug != '03-leer-voz' &&
@@ -1717,21 +1806,26 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 }(),
                 progress: step.clamp(1, totalSteps),
               ),
-            
+
             (() {
-              final isScrollable = (slug != '01-escuchar' &&
-                  !_isFirstLetterSlug(slug) &&
-                  !_isFogSlug(slug) &&
-                  !_isFinalVoiceSlug(slug) &&
-                  !slug.startsWith('18-palabras-intrusas') &&
-                  slug != _chooseWordPracticeSlug) ||
+              final isScrollable =
+                  (slug != '01-escuchar' &&
+                      !_isFirstLetterSlug(slug) &&
+                      !_isFogSlug(slug) &&
+                      !_isFinalVoiceSlug(slug) &&
+                      !slug.startsWith('18-palabras-intrusas') &&
+                      slug != _chooseWordPracticeSlug) ||
                   _omitOverride.contains(slug);
 
-              final isMyTurnActive = isCoop && coopState != null && (
-                coopState.mode == 'libre'
-                    ? _cooldownSecondsLeft <= 0
-                    : (_activeTurnUserId == CoopService.activeUserId && !_failedUserIds.contains(CoopService.activeUserId))
-              );
+              final isMyTurnActive =
+                  isCoop &&
+                  coopState != null &&
+                  (coopState.mode == 'libre'
+                      ? _cooldownSecondsLeft <= 0
+                      : (_activeTurnUserId == CoopService.activeUserId &&
+                            !_failedUserIds.contains(
+                              CoopService.activeUserId,
+                            )));
 
               final exerciseContent = Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1746,7 +1840,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                               active: isMyTurnActive,
                               child: _RedFlash(
                                 active: _nonVoiceWrongRecent(),
-                                child: _realExerciseBody(context, store, card, deck, slug),
+                                child: _realExerciseBody(
+                                  context,
+                                  store,
+                                  card,
+                                  deck,
+                                  slug,
+                                ),
                               ),
                             ),
                           ),
@@ -1756,7 +1856,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                                 borderRadius: BorderRadius.circular(24),
                                 child: Glass(
                                   color: Colors.black.withValues(alpha: 0.55),
-                                  border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.05),
+                                  ),
                                   child: Center(
                                     child: Padding(
                                       padding: const EdgeInsets.all(24.0),
@@ -1766,14 +1868,19 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                                           Icon(
                                             _cooldownSecondsLeft > 0
                                                 ? Icons.timer_outlined
-                                                : _failedUserIds.contains(CoopService.activeUserId)
-                                                    ? Icons.cancel_outlined
-                                                    : Icons.lock_outline_rounded,
-                                            color: _failedUserIds.contains(CoopService.activeUserId)
+                                                : _failedUserIds.contains(
+                                                    CoopService.activeUserId,
+                                                  )
+                                                ? Icons.cancel_outlined
+                                                : Icons.lock_outline_rounded,
+                                            color:
+                                                _failedUserIds.contains(
+                                                  CoopService.activeUserId,
+                                                )
                                                 ? RefColors.pink
                                                 : _cooldownSecondsLeft > 0
-                                                    ? RefColors.sun
-                                                    : RefColors.muted,
+                                                ? RefColors.sun
+                                                : RefColors.muted,
                                             size: 56,
                                           ),
                                           const SizedBox(height: 18),
@@ -1806,7 +1913,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                             active: isMyTurnActive,
                             child: _RedFlash(
                               active: _nonVoiceWrongRecent(),
-                              child: _realExerciseBody(context, store, card, deck, slug),
+                              child: _realExerciseBody(
+                                context,
+                                store,
+                                card,
+                                deck,
+                                slug,
+                              ),
                             ),
                           ),
                         ),
@@ -1816,7 +1929,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                               borderRadius: BorderRadius.circular(24),
                               child: Glass(
                                 color: Colors.black.withValues(alpha: 0.55),
-                                border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.05),
+                                ),
                                 child: Center(
                                   child: Padding(
                                     padding: const EdgeInsets.all(24.0),
@@ -1826,14 +1941,19 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                                         Icon(
                                           _cooldownSecondsLeft > 0
                                               ? Icons.timer_outlined
-                                              : _failedUserIds.contains(CoopService.activeUserId)
-                                                  ? Icons.cancel_outlined
-                                                  : Icons.lock_outline_rounded,
-                                          color: _failedUserIds.contains(CoopService.activeUserId)
+                                              : _failedUserIds.contains(
+                                                  CoopService.activeUserId,
+                                                )
+                                              ? Icons.cancel_outlined
+                                              : Icons.lock_outline_rounded,
+                                          color:
+                                              _failedUserIds.contains(
+                                                CoopService.activeUserId,
+                                              )
                                               ? RefColors.pink
                                               : _cooldownSecondsLeft > 0
-                                                  ? RefColors.sun
-                                                  : RefColors.muted,
+                                              ? RefColors.sun
+                                              : RefColors.muted,
                                           size: 56,
                                         ),
                                         const SizedBox(height: 18),
@@ -1861,14 +1981,26 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     if (isCoop) ...[
                       AbsorbPointer(
                         absorbing: isBlocked,
-                        child: _coopExerciseFooter(context, store, card, deck, slug),
+                        child: _coopExerciseFooter(
+                          context,
+                          store,
+                          card,
+                          deck,
+                          slug,
+                        ),
                       ),
                       const SizedBox(height: 10),
                       const _CoopGameChat(),
                     ] else
                       AbsorbPointer(
                         absorbing: isBlocked,
-                        child: _realExerciseFooter(context, store, card, deck, slug),
+                        child: _realExerciseFooter(
+                          context,
+                          store,
+                          card,
+                          deck,
+                          slug,
+                        ),
                       ),
                   ],
                 ],
@@ -1877,9 +2009,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               if (isScrollable) {
                 return exerciseContent;
               } else {
-                return Expanded(
-                  child: exerciseContent,
-                );
+                return Expanded(child: exerciseContent);
               }
             })(),
           ],
@@ -1904,7 +2034,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     // Preparar → lectura simple. Construir/Probar → "Elige la palabra".
     if (_phaseLabelFor(slug) != 'Preparar') {
       final level = _omitTargetLevel(slug);
-      return _buildCompletionBody(context, store, card, slug, levelOverride: level);
+      return _buildCompletionBody(
+        context,
+        store,
+        card,
+        slug,
+        levelOverride: level,
+      );
     }
 
     final verses = _currentBatchVerses(context);
@@ -1928,9 +2064,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         children: [
           for (var i = 0; i < verses.length; i++)
             Padding(
-              padding: EdgeInsets.only(
-                bottom: i == verses.length - 1 ? 0 : 12,
-              ),
+              padding: EdgeInsets.only(bottom: i == verses.length - 1 ? 0 : 12),
               child: Text.rich(
                 TextSpan(
                   children: [
@@ -1942,10 +2076,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    TextSpan(
-                      text: verses[i].text,
-                      style: textStyle,
-                    ),
+                    TextSpan(text: verses[i].text, style: textStyle),
                   ],
                 ),
                 textAlign: TextAlign.start,
@@ -1971,7 +2102,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           child: Column(
             children: [
               Text(
-                verses.length > 1 ? '📖 LEE LOS VERSÍCULOS' : '📖 LEE EL VERSÍCULO',
+                verses.length > 1
+                    ? '📖 LEE LOS VERSÍCULOS'
+                    : '📖 LEE EL VERSÍCULO',
                 style: const TextStyle(
                   color: RefColors.muted,
                   fontSize: 10,
@@ -1991,7 +2124,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 
   int _omitTargetLevel(String slug) {
-    if (slug.contains('n3') || slug == '15-banco-completo' || slug.startsWith('18-palabras-intrusas')) {
+    if (slug.contains('n3') ||
+        slug == '15-banco-completo' ||
+        slug.startsWith('18-palabras-intrusas')) {
       return 3;
     }
     if (slug.contains('n2') || slug == '09-quiz') {
@@ -2049,13 +2184,15 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           onPistaTap: () => _showPista(context, card),
         ),
         const SizedBox(height: 14),
-        _CompletionPromptCard(
-          label: card.front,
-          text: card.back,
-          targets: _completionTargets,
-          answers: _completionAnswers,
-          activeIndex: _activeCompletionIndex,
-          onBlankTap: _activateCompletionBlank,
+        Expanded(
+          child: _CompletionPromptCard(
+            label: card.front,
+            text: card.back,
+            targets: _completionTargets,
+            answers: _completionAnswers,
+            activeIndex: _activeCompletionIndex,
+            onBlankTap: _activateCompletionBlank,
+          ),
         ),
         const SizedBox(height: 14),
         if (complete)
@@ -2122,15 +2259,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                         width: 12,
                         height: 12,
                         child: CircularProgressIndicator(
-                            strokeWidth: 2, color: RefColors.violet),
+                          strokeWidth: 2,
+                          color: RefColors.violet,
+                        ),
                       ),
                       SizedBox(width: 8),
                       Text(
                         'La IA está generando opciones más difíciles…',
                         style: TextStyle(
-                            color: RefColors.violet,
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w700),
+                          color: RefColors.violet,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ],
                   ),
@@ -2353,128 +2493,149 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          GestureDetector(
-            onTap: () {
-              if (!store.isExerciseStepCompleted(slug)) {
-                _soloLecturaTimer?.cancel();
-                _soloLecturaTimer = null;
-                _soloLecturaPauseUntil = null;
-                setState(() {
-                  _soloLecturaVisibleChars = totalChars;
-                });
-                store.markExerciseStepCompleted('00-solo-lectura');
-              }
-            },
-            child: Glass(
-              padding: const EdgeInsets.fromLTRB(18, 22, 18, 22),
-              gradient: LinearGradient(
-                colors: [
-                  RefColors.violet.withValues(alpha: .28),
-                  RefColors.sun.withValues(alpha: .34),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    deck.isBible ? card.front.toUpperCase() : 'CITA',
-                    style: const TextStyle(
-                      color: RefColors.pink,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 240, minHeight: 120),
-                    child: SingleChildScrollView(
-                      child: Container(
-                        alignment: Alignment.center,
-                        child: _buildSoloLecturaText(context, _soloLecturaVisibleChars),
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                if (!store.isExerciseStepCompleted(slug)) {
+                  _soloLecturaTimer?.cancel();
+                  _soloLecturaTimer = null;
+                  _soloLecturaPauseUntil = null;
+                  setState(() {
+                    _soloLecturaVisibleChars = totalChars;
+                  });
+                  store.markExerciseStepCompleted('00-solo-lectura');
+                }
+              },
+              child: Glass(
+                padding: const EdgeInsets.fromLTRB(18, 22, 18, 22),
+                gradient: LinearGradient(
+                  colors: [
+                    RefColors.violet.withValues(alpha: .28),
+                    RefColors.sun.withValues(alpha: .34),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      deck.isBible ? card.front.toUpperCase() : 'CITA',
+                      style: const TextStyle(
+                        color: RefColors.pink,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.4,
                       ),
                     ),
-                  ),
-                  if (!store.isExerciseStepCompleted(slug)) ...[
                     const SizedBox(height: 14),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.touch_app_outlined,
-                          size: 13,
-                          color: RefColors.pink.withValues(alpha: .55),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'TOCA EL TEXTO PARA OMITIR',
-                          style: TextStyle(
-                            color: RefColors.pink.withValues(alpha: .55),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.1,
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Container(
+                          alignment: Alignment.center,
+                          child: _buildSoloLecturaText(
+                            context,
+                            _soloLecturaVisibleChars,
                           ),
                         ),
-                      ],
+                      ),
                     ),
-                  ],
-                  if (store.isExerciseStepCompleted(slug)) ...[
-                    const SizedBox(height: 18),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.check_circle_outline, size: 16, color: RefColors.lime),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Lectura completada',
-                          style: TextStyle(
-                            color: RefColors.lime,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
+                    if (!store.isExerciseStepCompleted(slug)) ...[
+                      const SizedBox(height: 14),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.touch_app_outlined,
+                            size: 13,
+                            color: RefColors.pink.withValues(alpha: .55),
                           ),
-                        ),
-                        const SizedBox(width: 20),
-                        GestureDetector(
-                          onTap: () {
-                            _soloLecturaTimer?.cancel();
-                            _soloLecturaTimer = null;
-                            _soloLecturaPauseUntil = null;
-                            store.resetExerciseStepCompleted(slug);
-                            setState(() {
-                              _soloLecturaVisibleChars = 0;
-                            });
-                            _startSoloLecturaAnimation(store, totalChars, verseEnds, fullText);
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: RefColors.cyan.withValues(alpha: .15),
-                              borderRadius: BorderRadius.circular(10),
+                          const SizedBox(width: 6),
+                          Text(
+                            'TOCA EL TEXTO PARA OMITIR',
+                            style: TextStyle(
+                              color: RefColors.pink.withValues(alpha: .55),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.1,
                             ),
-                            child: const Row(
-                              children: [
-                                Icon(Icons.replay_rounded, size: 16, color: RefColors.cyan),
-                                SizedBox(width: 6),
-                                Text(
-                                  'Repetir',
-                                  style: TextStyle(
-                                    color: RefColors.cyan,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w900,
-                                  ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (store.isExerciseStepCompleted(slug)) ...[
+                      const SizedBox(height: 18),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.check_circle_outline,
+                              size: 16,
+                              color: RefColors.lime,
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Lectura completada',
+                              style: TextStyle(
+                                color: RefColors.lime,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(width: 20),
+                            GestureDetector(
+                              onTap: () {
+                                _soloLecturaTimer?.cancel();
+                                _soloLecturaTimer = null;
+                                _soloLecturaPauseUntil = null;
+                                store.resetExerciseStepCompleted(slug);
+                                setState(() {
+                                  _soloLecturaVisibleChars = 0;
+                                });
+                                _startSoloLecturaAnimation(
+                                  store,
+                                  totalChars,
+                                  verseEnds,
+                                  fullText,
+                                );
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
                                 ),
-                              ],
+                                decoration: BoxDecoration(
+                                  color: RefColors.cyan.withValues(alpha: .15),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.replay_rounded,
+                                      size: 16,
+                                      color: RefColors.cyan,
+                                    ),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'Repetir',
+                                      style: TextStyle(
+                                        color: RefColors.cyan,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
-                    )),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -2570,11 +2731,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: const Row(
               children: [
-                Icon(
-                  Icons.info_outline,
-                  color: RefColors.cyan,
-                  size: 16,
-                ),
+                Icon(Icons.info_outline, color: RefColors.cyan, size: 16),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -2736,9 +2893,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               onRetry: _retryLetter,
             )
           else ...[
-            _KeyboardCard(
-              onLetterTap: _selectFirstLetter,
-            ),
+            _KeyboardCard(onLetterTap: _selectFirstLetter),
           ],
         ],
       );
@@ -2771,7 +2926,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           neededCounts[key] = left - 1;
         }
       }
-      final partActiveIndex = (_bankActiveIndex - partStart).clamp(0, partTargets.length - 1);
+      final partActiveIndex = (_bankActiveIndex - partStart).clamp(
+        0,
+        partTargets.length - 1,
+      );
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -2815,20 +2973,30 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               border: Border.all(color: RefColors.lime.withValues(alpha: .55)),
               child: Column(
                 children: const [
-                  Icon(Icons.check_circle_rounded, color: RefColors.lime, size: 36),
+                  Icon(
+                    Icons.check_circle_rounded,
+                    color: RefColors.lime,
+                    size: 36,
+                  ),
                   SizedBox(height: 10),
-                  Text('¡Banco vaciado!',
-                      style: TextStyle(
-                          color: RefColors.lime,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900)),
+                  Text(
+                    '¡Banco vaciado!',
+                    style: TextStyle(
+                      color: RefColors.lime,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                   SizedBox(height: 4),
-                  Text('Cada palabra encontró su lugar.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          color: RefColors.ink,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600)),
+                  Text(
+                    'Cada palabra encontró su lugar.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: RefColors.ink,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             )
@@ -2863,8 +3031,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                           scale: _bankRemoving.contains(word.id) ? 0.0 : 1.0,
                           child: AnimatedOpacity(
                             duration: const Duration(milliseconds: 240),
-                            opacity:
-                                _bankRemoving.contains(word.id) ? 0.0 : 1.0,
+                            opacity: _bankRemoving.contains(word.id)
+                                ? 0.0
+                                : 1.0,
                             child: GestureDetector(
                               onTap: () => _selectBankWord(word),
                               child: _WordChip(word.word, active: false),
@@ -2910,8 +3079,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ? (round.openQuestionPrompt ?? 'Responde con tus palabras')
         : isFrontToBack
         ? (round.target.front.startsWith('¿')
-            ? round.target.front
-            : '¿Qué texto corresponde a ${round.target.front}?')
+              ? round.target.front
+              : '¿Qué texto corresponde a ${round.target.front}?')
         : '¿A qué referencia pertenece este texto?\n\n"${round.target.back}"';
 
     final contextLabel = isTrueFalse
@@ -2922,13 +3091,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         ? 'PREGUNTA ${_quizRoundIndex + 1} DE ${_quizRounds.length} · RESPUESTA ABIERTA'
         : isFrontToBack
         ? (deck.isBible
-            ? (round.target.front.contains('¿') || round.target.front.length > 40
-                ? 'BIBLIA · TRIVIA'
-                : 'BIBLIA · ${round.target.front.toUpperCase()}')
-            : deck.title.toUpperCase())
+              ? (round.target.front.contains('¿') ||
+                        round.target.front.length > 40
+                    ? 'BIBLIA · TRIVIA'
+                    : 'BIBLIA · ${round.target.front.toUpperCase()}')
+              : deck.title.toUpperCase())
         : round.type == _QuizQuestionType.backToFront
-        ? (deck.isBible ? 'BIBLIA · RECONOCER REFERENCIA' : 'IDENTIFICAR ORIGEN')
-        : (deck.isBible ? 'BIBLIA · ASOCIACIÓN CONCEPTUAL' : '"${_firstWords(round.target.back, 8)}…"');
+        ? (deck.isBible
+              ? 'BIBLIA · RECONOCER REFERENCIA'
+              : 'IDENTIFICAR ORIGEN')
+        : (deck.isBible
+              ? 'BIBLIA · ASOCIACIÓN CONCEPTUAL'
+              : '"${_firstWords(round.target.back, 8)}…"');
 
     if (isMatching) {
       _ensureMatchingShuffled(round);
@@ -2966,7 +3140,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             padding: const EdgeInsets.only(bottom: 8),
             child: Row(
               children: [
-                const Icon(Icons.menu_book_rounded, size: 13, color: RefColors.muted),
+                const Icon(
+                  Icons.menu_book_rounded,
+                  size: 13,
+                  color: RefColors.muted,
+                ),
                 const SizedBox(width: 5),
                 Expanded(
                   child: Text(
@@ -3012,16 +3190,24 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                       color: answered && round.isStatementTrue == true
                           ? RefColors.lime.withValues(alpha: 0.12)
                           : round.selectedIdx == 0
-                          ? (round.correct ? RefColors.lime.withValues(alpha: 0.12) : RefColors.urgent.withValues(alpha: 0.12))
+                          ? (round.correct
+                                ? RefColors.lime.withValues(alpha: 0.12)
+                                : RefColors.urgent.withValues(alpha: 0.12))
                           : RefColors.glassStrong,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: answered && round.isStatementTrue == true
                             ? RefColors.lime
                             : round.selectedIdx == 0
-                            ? (round.correct ? RefColors.lime : RefColors.urgent)
+                            ? (round.correct
+                                  ? RefColors.lime
+                                  : RefColors.urgent)
                             : RefColors.border,
-                        width: round.selectedIdx == 0 || (answered && round.isStatementTrue == true) ? 2.0 : 1.0,
+                        width:
+                            round.selectedIdx == 0 ||
+                                (answered && round.isStatementTrue == true)
+                            ? 2.0
+                            : 1.0,
                       ),
                     ),
                     child: Column(
@@ -3031,14 +3217,20 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                           color: answered && round.isStatementTrue == true
                               ? RefColors.lime
                               : round.selectedIdx == 0
-                              ? (round.correct ? RefColors.lime : RefColors.urgent)
+                              ? (round.correct
+                                    ? RefColors.lime
+                                    : RefColors.urgent)
                               : RefColors.ink,
                           size: 28,
                         ),
                         const SizedBox(height: 8),
                         const Text(
                           'VERDADERO',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: .5),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .5,
+                          ),
                         ),
                       ],
                     ),
@@ -3056,16 +3248,24 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                       color: answered && round.isStatementTrue == false
                           ? RefColors.lime.withValues(alpha: 0.12)
                           : round.selectedIdx == 1
-                          ? (round.correct ? RefColors.lime.withValues(alpha: 0.12) : RefColors.urgent.withValues(alpha: 0.12))
+                          ? (round.correct
+                                ? RefColors.lime.withValues(alpha: 0.12)
+                                : RefColors.urgent.withValues(alpha: 0.12))
                           : RefColors.glassStrong,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: answered && round.isStatementTrue == false
                             ? RefColors.lime
                             : round.selectedIdx == 1
-                            ? (round.correct ? RefColors.lime : RefColors.urgent)
+                            ? (round.correct
+                                  ? RefColors.lime
+                                  : RefColors.urgent)
                             : RefColors.border,
-                        width: round.selectedIdx == 1 || (answered && round.isStatementTrue == false) ? 2.0 : 1.0,
+                        width:
+                            round.selectedIdx == 1 ||
+                                (answered && round.isStatementTrue == false)
+                            ? 2.0
+                            : 1.0,
                       ),
                     ),
                     child: Column(
@@ -3075,14 +3275,20 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                           color: answered && round.isStatementTrue == false
                               ? RefColors.lime
                               : round.selectedIdx == 1
-                              ? (round.correct ? RefColors.lime : RefColors.urgent)
+                              ? (round.correct
+                                    ? RefColors.lime
+                                    : RefColors.urgent)
                               : RefColors.ink,
                           size: 28,
                         ),
                         const SizedBox(height: 8),
                         const Text(
                           'FALSO',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: .5),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .5,
+                          ),
                         ),
                       ],
                     ),
@@ -3103,7 +3309,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                         onTap: () => _selectMatchingLeft(leftItem),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 14,
+                            horizontal: 10,
+                          ),
                           decoration: BoxDecoration(
                             color: _matchingCompletedLeft.contains(leftItem)
                                 ? RefColors.lime.withValues(alpha: 0.12)
@@ -3117,7 +3326,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                                   : _matchingSelectedLeft == leftItem
                                   ? RefColors.pink
                                   : RefColors.border,
-                              width: _matchingCompletedLeft.contains(leftItem) || _matchingSelectedLeft == leftItem ? 2.0 : 1.0,
+                              width:
+                                  _matchingCompletedLeft.contains(leftItem) ||
+                                      _matchingSelectedLeft == leftItem
+                                  ? 2.0
+                                  : 1.0,
                             ),
                           ),
                           child: Row(
@@ -3129,12 +3342,21 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.bold,
-                                    color: _matchingCompletedLeft.contains(leftItem) ? RefColors.lime : RefColors.ink,
+                                    color:
+                                        _matchingCompletedLeft.contains(
+                                          leftItem,
+                                        )
+                                        ? RefColors.lime
+                                        : RefColors.ink,
                                   ),
                                 ),
                               ),
                               if (_matchingCompletedLeft.contains(leftItem))
-                                const Icon(Icons.check_circle_rounded, color: RefColors.lime, size: 16),
+                                const Icon(
+                                  Icons.check_circle_rounded,
+                                  color: RefColors.lime,
+                                  size: 16,
+                                ),
                             ],
                           ),
                         ),
@@ -3153,7 +3375,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                         onTap: () => _selectMatchingRight(rightItem),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 14,
+                            horizontal: 10,
+                          ),
                           decoration: BoxDecoration(
                             color: _matchingCompletedRight.contains(rightItem)
                                 ? RefColors.lime.withValues(alpha: 0.12)
@@ -3167,7 +3392,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                                   : _matchingSelectedRight == rightItem
                                   ? RefColors.pink
                                   : RefColors.border,
-                              width: _matchingCompletedRight.contains(rightItem) || _matchingSelectedRight == rightItem ? 2.0 : 1.0,
+                              width:
+                                  _matchingCompletedRight.contains(rightItem) ||
+                                      _matchingSelectedRight == rightItem
+                                  ? 2.0
+                                  : 1.0,
                             ),
                           ),
                           child: Row(
@@ -3181,12 +3410,21 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                                   style: TextStyle(
                                     fontSize: 10.5,
                                     fontWeight: FontWeight.w600,
-                                    color: _matchingCompletedRight.contains(rightItem) ? RefColors.lime : RefColors.ink,
+                                    color:
+                                        _matchingCompletedRight.contains(
+                                          rightItem,
+                                        )
+                                        ? RefColors.lime
+                                        : RefColors.ink,
                                   ),
                                 ),
                               ),
                               if (_matchingCompletedRight.contains(rightItem))
-                                const Icon(Icons.check_circle_rounded, color: RefColors.lime, size: 16),
+                                const Icon(
+                                  Icons.check_circle_rounded,
+                                  color: RefColors.lime,
+                                  size: 16,
+                                ),
                             ],
                           ),
                         ),
@@ -3238,20 +3476,32 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 child: GestureDetector(
                   onTap: () {
                     HapticFeedback.selectionClick();
-                    String hint = 'Pista de la IA Local Offline: intenta mencionar ';
+                    String hint =
+                        'Pista de la IA Local Offline: intenta mencionar ';
                     final text = round.target.back.toLowerCase();
                     if (text.contains('puedo') || text.contains('fortalece')) {
-                      hint += 'Cristo, fortaleza, poder y superación frente a la debilidad.';
-                    } else if (text.contains('gracias') || text.contains('misericordia')) {
-                      hint += 'gratitud, misericordia, bondad de Dios y fidelidad eterna.';
-                    } else if (text.contains('angustia') || text.contains('clamar')) {
-                      hint += 'clamar, angustia, oración de fe y salvación de Dios.';
-                    } else if (text.contains('paz') || text.contains('cuidado') || text.contains('ansiedad')) {
-                      hint += 'paz sobrenatural, oración con gratitud, cuidado y mente.';
-                    } else if (round.target.front.contains('Bíceps') || round.target.back.contains('flexor')) {
-                      hint += 'bíceps braquial, flexión, antebrazo y articulación del codo.';
+                      hint +=
+                          'Cristo, fortaleza, poder y superación frente a la debilidad.';
+                    } else if (text.contains('gracias') ||
+                        text.contains('misericordia')) {
+                      hint +=
+                          'gratitud, misericordia, bondad de Dios y fidelidad eterna.';
+                    } else if (text.contains('angustia') ||
+                        text.contains('clamar')) {
+                      hint +=
+                          'clamar, angustia, oración de fe y salvación de Dios.';
+                    } else if (text.contains('paz') ||
+                        text.contains('cuidado') ||
+                        text.contains('ansiedad')) {
+                      hint +=
+                          'paz sobrenatural, oración con gratitud, cuidado y mente.';
+                    } else if (round.target.front.contains('Bíceps') ||
+                        round.target.back.contains('flexor')) {
+                      hint +=
+                          'bíceps braquial, flexión, antebrazo y articulación del codo.';
                     } else {
-                      hint += 'confianza, fe, obediencia y asimilación de la Palabra.';
+                      hint +=
+                          'confianza, fe, obediencia y asimilación de la Palabra.';
                     }
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
@@ -3262,7 +3512,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                         ),
                         content: Text(
                           hint,
-                          style: const TextStyle(color: RefColors.cyan, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: RefColors.cyan,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     );
@@ -3294,19 +3547,20 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: GestureDetector(
-                  onTap: answered || (round.openQuestionResponse ?? '').trim().isEmpty || _isEvaluatingOpenQuestion
+                  onTap:
+                      answered ||
+                          (round.openQuestionResponse ?? '').trim().isEmpty ||
+                          _isEvaluatingOpenQuestion
                       ? null
                       : () => _submitOpenQuestionResponse(round),
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     decoration: BoxDecoration(
-                      gradient: (round.openQuestionResponse ?? '').trim().isEmpty
+                      gradient:
+                          (round.openQuestionResponse ?? '').trim().isEmpty
                           ? null
                           : LinearGradient(
-                              colors: [
-                                RefColors.pink,
-                                RefColors.sun,
-                              ],
+                              colors: [RefColors.pink, RefColors.sun],
                             ),
                       color: (round.openQuestionResponse ?? '').trim().isEmpty
                           ? RefColors.glassSoft
@@ -3325,13 +3579,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                               height: 18,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
                               ),
                             )
                           : Text(
                               'Confirmar →',
                               style: TextStyle(
-                                color: (round.openQuestionResponse ?? '').trim().isEmpty
+                                color:
+                                    (round.openQuestionResponse ?? '')
+                                        .trim()
+                                        .isEmpty
                                     ? RefColors.muted
                                     : Colors.white,
                                 fontSize: 14,
@@ -3366,8 +3625,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             text: round.correct
                 ? '¡Correcto!'
                 : (round.type == _QuizQuestionType.trueFalse
-                    ? 'Respuesta correcta: ${round.isStatementTrue == true ? "VERDADERO" : "FALSO"}'
-                    : 'Respuesta correcta: ${isFrontToBack ? round.target.back : round.target.front}'),
+                      ? 'Respuesta correcta: ${round.isStatementTrue == true ? "VERDADERO" : "FALSO"}'
+                      : 'Respuesta correcta: ${isFrontToBack ? round.target.back : round.target.front}'),
           ),
         if (_quizFinished) ...[
           const SizedBox(height: 14),
@@ -3445,16 +3704,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         for (var i = 0; i < verses.length; i++) ...[
           () {
             final versoText = verses[i].text;
-            final safeGreen = (visibleChars - charsShown).clamp(0, versoText.length);
+            final safeGreen = (visibleChars - charsShown).clamp(
+              0,
+              versoText.length,
+            );
             charsShown += versoText.length;
 
             final lead = versoText.substring(0, safeGreen);
             final tail = versoText.substring(safeGreen);
 
             return Padding(
-              padding: EdgeInsets.only(
-                bottom: i == verses.length - 1 ? 0 : 10,
-              ),
+              padding: EdgeInsets.only(bottom: i == verses.length - 1 ? 0 : 10),
               child: Text.rich(
                 TextSpan(
                   style: style,
@@ -3485,15 +3745,23 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     );
   }
 
-  void _startSoloLecturaAnimation(AppStore store, int totalChars, List<int> verseEnds, String fullText) {
+  void _startSoloLecturaAnimation(
+    AppStore store,
+    int totalChars,
+    List<int> verseEnds,
+    String fullText,
+  ) {
     _soloLecturaTimer?.cancel();
     _soloLecturaPauseUntil = null;
-    _soloLecturaTimer = Timer.periodic(const Duration(milliseconds: 75), (timer) {
+    _soloLecturaTimer = Timer.periodic(const Duration(milliseconds: 75), (
+      timer,
+    ) {
       if (!mounted) {
         timer.cancel();
         return;
       }
-      if (_soloLecturaPauseUntil != null && DateTime.now().isBefore(_soloLecturaPauseUntil!)) {
+      if (_soloLecturaPauseUntil != null &&
+          DateTime.now().isBefore(_soloLecturaPauseUntil!)) {
         return;
       }
       final nextVisible = _soloLecturaVisibleChars + 1;
@@ -3519,7 +3787,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         }
 
         if (pauseDuration > 0) {
-          _soloLecturaPauseUntil = DateTime.now().add(Duration(milliseconds: pauseDuration));
+          _soloLecturaPauseUntil = DateTime.now().add(
+            Duration(milliseconds: pauseDuration),
+          );
         }
 
         setState(() {
@@ -3537,7 +3807,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     String slug,
   ) {
     final completed = store.isExerciseStepCompleted(slug);
-    
+
     if (completed) {
       return Cta(
         'Continuar →',
@@ -3546,18 +3816,18 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           final steps = _sessionFlowSteps(store);
           final isLastStep = steps.isNotEmpty && steps.last.slug == slug;
           final nextSlug = isLastStep ? 'final-review' : 'progress-tree';
-          
+
           CoopService.active!.broadcastCard(
             deckId: deck.id,
             cardIndex: store.sessionCardsCompleted,
             slug: nextSlug,
           );
-          
+
           _navigateToNextStepOrComplete(context, store, slug);
         },
       );
     }
-    
+
     return _realExerciseFooter(context, store, card, deck, slug);
   }
 
@@ -3604,9 +3874,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: _ActionCta(
-              label: completed
-                  ? 'Siguiente →'
-                  : 'Revela todo para continuar',
+              label: completed ? 'Siguiente →' : 'Revela todo para continuar',
               enabled: completed,
               onTap: () {
                 ActiveMediaRegistry.stopAll();
@@ -3626,7 +3894,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           slug == '03-leer-voz' ||
           slug == '04-escuchar-voz';
       final cta = _ActionCta(
-        label: _footerLabel(slug, card, checked: _checked, completed: completed),
+        label: _footerLabel(
+          slug,
+          card,
+          checked: _checked,
+          completed: completed,
+        ),
         enabled: completed,
         onTap: () {
           ActiveMediaRegistry.stopAll();
@@ -3652,7 +3925,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       );
     }
     if ((_isFogSlug(slug) || _isFinalVoiceSlug(slug)) && !isOmitted) {
-      final label = _footerLabel(slug, card, checked: _checked, completed: completed);
+      final label = _footerLabel(
+        slug,
+        card,
+        checked: _checked,
+        completed: completed,
+      );
       final enabled = completed;
       return Row(
         children: [
@@ -3709,7 +3987,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
     if (slug != '05-bloques') {
       final cta = _ActionCta(
-        label: _footerLabel(slug, card, checked: _checked, completed: completed),
+        label: _footerLabel(
+          slug,
+          card,
+          checked: _checked,
+          completed: completed,
+        ),
         enabled: _footerEnabled(
           slug,
           card,
@@ -3770,9 +4053,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
           }
 
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Corrige el ejercicio para avanzar.'),
-            ),
+            const SnackBar(content: Text('Corrige el ejercicio para avanzar.')),
           );
         },
       );
@@ -3821,7 +4102,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         const SizedBox(width: 10),
         Expanded(
           child: _ActionCta(
-            label: _footerLabel(slug, card, checked: _checked, completed: completed),
+            label: _footerLabel(
+              slug,
+              card,
+              checked: _checked,
+              completed: completed,
+            ),
             enabled: _footerEnabled(
               slug,
               card,
@@ -3911,8 +4197,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       return _blocksAreCorrect();
     }
     final isOmitted = _omitOverride.contains(slug);
-    if (_isCompletionSlug(slug) || (isOmitted && _phaseLabelFor(slug) != 'Preparar')) {
-      final level = _isCompletionSlug(slug) ? _completionLevelForSlug(slug) : _omitTargetLevel(slug);
+    if (_isCompletionSlug(slug) ||
+        (isOmitted && _phaseLabelFor(slug) != 'Preparar')) {
+      final level = _isCompletionSlug(slug)
+          ? _completionLevelForSlug(slug)
+          : _omitTargetLevel(slug);
       return _completionCorrect(slug, card, levelOverride: level);
     }
     if (_isFirstLetterSlug(slug)) {
@@ -3952,7 +4241,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     if (slug == '05-bloques') {
       return _blocksAreCorrect() ? 'Siguiente →' : 'Ordena para continuar';
     }
-    if (_isCompletionSlug(slug) || (isOmitted && _phaseLabelFor(slug) != 'Preparar')) {
+    if (_isCompletionSlug(slug) ||
+        (isOmitted && _phaseLabelFor(slug) != 'Preparar')) {
       return _completionComplete() ? 'Completado →' : 'Completa los huecos';
     }
     if (_isFirstLetterSlug(slug)) {
@@ -4064,7 +4354,9 @@ class _CompletionPromptCardState extends State<_CompletionPromptCard> {
         continue;
       }
       usedTargetIndexes.add(targetIndex);
-      final active = widget.activeIndex == targetIndex && widget.answers[targetIndex] == null;
+      final active =
+          widget.activeIndex == targetIndex &&
+          widget.answers[targetIndex] == null;
       spans.add(
         WidgetSpan(
           alignment: PlaceholderAlignment.middle,
@@ -4104,8 +4396,7 @@ class _CompletionPromptCardState extends State<_CompletionPromptCard> {
             ),
           ),
           const SizedBox(height: 12),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 220),
+          Expanded(
             child: SingleChildScrollView(
               controller: _scrollController,
               child: RichText(
@@ -4175,7 +4466,8 @@ class _CoopTurnGlow extends StatefulWidget {
   State<_CoopTurnGlow> createState() => _CoopTurnGlowState();
 }
 
-class _CoopTurnGlowState extends State<_CoopTurnGlow> with SingleTickerProviderStateMixin {
+class _CoopTurnGlowState extends State<_CoopTurnGlow>
+    with SingleTickerProviderStateMixin {
   AnimationController? _controller;
   Animation<double>? _glowAnimation;
 
@@ -4186,9 +4478,10 @@ class _CoopTurnGlowState extends State<_CoopTurnGlow> with SingleTickerProviderS
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     );
-    _glowAnimation = Tween<double>(begin: 4.0, end: 24.0).animate(
-      CurvedAnimation(parent: _controller!, curve: Curves.easeInOut),
-    );
+    _glowAnimation = Tween<double>(
+      begin: 4.0,
+      end: 24.0,
+    ).animate(CurvedAnimation(parent: _controller!, curve: Curves.easeInOut));
     if (widget.active) {
       _controller!.repeat(reverse: true);
     }
@@ -4246,8 +4539,6 @@ class _CoopTurnGlowState extends State<_CoopTurnGlow> with SingleTickerProviderS
   }
 }
 
-
-
 class _CompletionBlank extends StatelessWidget {
   final String? answer;
   final bool active;
@@ -4275,7 +4566,9 @@ class _CompletionBlank extends StatelessWidget {
       onTap: complete ? null : onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        constraints: BoxConstraints(minWidth: (displayLength * 10.0).clamp(28, 160)),
+        constraints: BoxConstraints(
+          minWidth: (displayLength * 10.0).clamp(28, 160),
+        ),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
         decoration: BoxDecoration(
           color: accent.withValues(alpha: complete || active ? .16 : .08),
@@ -4436,14 +4729,18 @@ class _ProgressiveFragmentCard extends StatelessWidget {
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(6),
                             child: ImageFiltered(
-                              imageFilter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+                              imageFilter: ImageFilter.blur(
+                                sigmaX: 12.0,
+                                sigmaY: 12.0,
+                              ),
                               child: Text(
                                 words[i],
                                 style: const TextStyle(
                                   fontSize: 24,
                                   height: 1.25,
                                   fontWeight: FontWeight.w900,
-                                  color: Colors.transparent, // Totalmente impenetrable
+                                  color: Colors
+                                      .transparent, // Totalmente impenetrable
                                 ),
                               ),
                             ),

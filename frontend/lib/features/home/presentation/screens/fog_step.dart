@@ -440,11 +440,11 @@ class _FogStepState extends State<_FogStep>
             );
 
             if (isFoggy && !widget.finished) {
+              // Nubloso, no oculto: el texto sigue visible y se difumina, así
+              // se intuye la palabra entre la niebla.
               final foggyWordWidget = Text(
                 words[i],
-                style: style.copyWith(
-                  color: Colors.transparent,
-                ),
+                style: style,
               );
 
               return GestureDetector(
@@ -481,7 +481,7 @@ class _FogStepState extends State<_FogStep>
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(6),
                     child: ImageFiltered(
-                      imageFilter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+                      imageFilter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
                       child: foggyWordWidget,
                     ),
                   ),
@@ -523,13 +523,14 @@ class _FogStepState extends State<_FogStep>
                 );
 
                 if (isFoggy && !widget.finished) {
+                  // Nubloso, no oculto: texto visible difuminado.
                   final foggyWordWidget = Text(
                     words[i],
                     style: const TextStyle(
                       fontSize: 22,
                       height: 1.36,
                       fontWeight: FontWeight.w900,
-                      color: Colors.transparent, // Texto invisible
+                      color: RefColors.ink,
                       fontFamily: 'Outfit',
                     ),
                   );
@@ -568,7 +569,7 @@ class _FogStepState extends State<_FogStep>
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(6),
                         child: ImageFiltered(
-                          imageFilter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+                          imageFilter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
                           child: foggyWordWidget,
                         ),
                       ),
