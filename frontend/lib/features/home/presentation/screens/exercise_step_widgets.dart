@@ -275,6 +275,89 @@ class _CompleteStatsCard extends StatelessWidget {
   }
 }
 
+/// Header compacto de ejercicio: referencia del versículo a la izquierda, e
+/// intentos + pista a la derecha (en vez de un cuadro grande de estadísticas).
+class _ExerciseHeaderRow extends StatelessWidget {
+  final String title;
+  final int attemptsLeft;
+  final VoidCallback? onPistaTap;
+
+  const _ExerciseHeaderRow({
+    required this.title,
+    required this.attemptsLeft,
+    this.onPistaTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: RefColors.pink,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              letterSpacing: .5,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          '$attemptsLeft/3',
+          style: TextStyle(
+            color: attemptsLeft <= 1 ? RefColors.urgent : RefColors.muted,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(width: 4),
+        const Text(
+          'intentos',
+          style: TextStyle(
+            color: RefColors.muted,
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        if (onPistaTap != null) ...[
+          const SizedBox(width: 12),
+          GestureDetector(
+            onTap: onPistaTap,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: RefColors.cyan.withValues(alpha: .15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: RefColors.cyan.withValues(alpha: .3)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.lightbulb_outline_rounded,
+                      size: 13, color: RefColors.cyan),
+                  SizedBox(width: 4),
+                  Text(
+                    'Pista',
+                    style: TextStyle(
+                      color: RefColors.cyan,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _WordChip extends StatelessWidget {
   final String label;
   final bool active;

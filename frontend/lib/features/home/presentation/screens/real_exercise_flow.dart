@@ -2154,7 +2154,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     int? levelOverride,
   }) {
     final level = levelOverride ?? _completionLevelForSlug(slug);
-    final isHarder = level >= 2;
     _ensureCompletionState(card.id, card.back, level);
     _ensureAiDistractors(card);
     final activeTarget = _completionTargets.isEmpty
@@ -2175,19 +2174,14 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _CompleteStatsCard(
-          level2: isHarder,
-          firstValue:
-              '${_completionAnswers.where((answer) => answer != null).length}/${_completionTargets.length}',
-          firstLabel: 'HUECOS',
-          secondValue: '$remainingAttempts/3',
-          secondLabel: 'INTENTOS',
-          timeValue: _formatMmSs(_completionSecondsLeft),
+        _ExerciseHeaderRow(
+          title: card.front,
+          attemptsLeft: remainingAttempts,
           onPistaTap: () => _showPista(context, card),
         ),
         const SizedBox(height: 14),
         _CompletionPromptCard(
-          label: card.front,
+          label: '',
           text: card.back,
           targets: _completionTargets,
           answers: _completionAnswers,
@@ -4391,15 +4385,17 @@ class _CompletionPromptCardState extends State<_CompletionPromptCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            widget.label,
-            style: const TextStyle(
-              color: RefColors.sun,
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
+          if (widget.label.isNotEmpty) ...[
+            Text(
+              widget.label,
+              style: const TextStyle(
+                color: RefColors.sun,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
+            const SizedBox(height: 12),
+          ],
           ConstrainedBox(
             constraints: BoxConstraints(
               maxHeight: MediaQuery.of(context).size.height * 0.46,
