@@ -1820,27 +1820,6 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: RefProgress(progress.clamp(.03, 1.0)),
           ),
-          const SizedBox(height: 7),
-          Row(
-            children: [
-              Text(
-                _playing ? 'Leyendo' : 'Listo',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '${_completed ? words.length : (safeIndex + 1)}/${words.length} palabras',
-                style: const TextStyle(
-                  color: RefColors.muted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -1849,9 +1828,9 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
                 Icons.replay_rounded,
                 onTap: () => _restart(text),
               ),
-              const SizedBox(width: 18),
+              const SizedBox(width: 14),
               _PlayerMainButton(paused: _playing, onTap: () => _toggle(text)),
-              const SizedBox(width: 18),
+              const SizedBox(width: 14),
               _PlayerSmallButton(
                 Icons.forward_5_rounded,
                 onTap: () => _skipForward(text),
@@ -1884,14 +1863,14 @@ class _PlayerSmallButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 56,
-        height: 56,
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
           color: RefColors.glassStrong,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: RefColors.border),
         ),
-        child: Icon(icon, size: 22),
+        child: Icon(icon, size: 18),
       ),
     );
   }
@@ -1908,22 +1887,22 @@ class _PlayerMainButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 72,
-        height: 72,
+        width: 56,
+        height: 56,
         decoration: BoxDecoration(
           gradient: RefColors.primary,
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
               color: RefColors.pink.withValues(alpha: .42),
-              blurRadius: 28,
-              offset: const Offset(0, 10),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
             ),
           ],
         ),
         child: Icon(
           paused ? Icons.pause_rounded : Icons.play_arrow_rounded,
-          size: 34,
+          size: 28,
         ),
       ),
     );

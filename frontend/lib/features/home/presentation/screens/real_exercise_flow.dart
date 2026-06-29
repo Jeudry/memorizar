@@ -2726,78 +2726,87 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Glass(
-            radius: 18,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: const Row(
-              children: [
-                Icon(Icons.info_outline, color: RefColors.cyan, size: 16),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Mantén presionado un bloque para arrastrarlo a su lugar.',
-                    style: TextStyle(
-                      color: RefColors.dim,
-                      fontSize: 11,
-                      height: 1.35,
-                      fontWeight: FontWeight.w800,
+          // El hint solo es útil antes de la primera interacción.
+          if (!hasInteracted) ...[
+            Glass(
+              radius: 18,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, color: RefColors.cyan, size: 16),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Mantén presionado un bloque para arrastrarlo a su lugar.',
+                      style: TextStyle(
+                        color: RefColors.dim,
+                        fontSize: 11,
+                        height: 1.35,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
-          Glass(
-            padding: const EdgeInsets.all(14),
-            child: ReorderableListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              buildDefaultDragHandles: false,
-              proxyDecorator: (child, index, animation) {
-                return AnimatedBuilder(
-                  animation: animation,
-                  builder: (context, _) {
-                    final t = Curves.easeOutCubic.transform(animation.value);
-                    return Transform.scale(
-                      scale: 1 + 0.06 * t,
-                      child: Material(
-                        color: Colors.transparent,
-                        elevation: 12 * t,
-                        shadowColor: RefColors.pink.withValues(alpha: .55),
-                        borderRadius: BorderRadius.circular(16),
-                        child: child,
+            const SizedBox(height: 14),
+          ],
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.5,
+            ),
+            child: Glass(
+              padding: const EdgeInsets.all(14),
+              child: ReorderableListView.builder(
+                shrinkWrap: true,
+                physics: const ClampingScrollPhysics(),
+                buildDefaultDragHandles: false,
+                proxyDecorator: (child, index, animation) {
+                  return AnimatedBuilder(
+                    animation: animation,
+                    builder: (context, _) {
+                      final t = Curves.easeOutCubic.transform(animation.value);
+                      return Transform.scale(
+                        scale: 1 + 0.06 * t,
+                        child: Material(
+                          color: Colors.transparent,
+                          elevation: 12 * t,
+                          shadowColor: RefColors.pink.withValues(alpha: .55),
+                          borderRadius: BorderRadius.circular(16),
+                          child: child,
+                        ),
+                      );
+                    },
+                  );
+                },
+                itemCount: _blockOrderIndexes.length,
+                itemBuilder: (context, index) {
+                  final blockText = blocks[_blockOrderIndexes[index]];
+                  return _CustomReorderableDelayedDragStartListener(
+                    key: ValueKey('block-$index-${_blockOrderIndexes[index]}'),
+                    index: index,
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        bottom: index == _blockOrderIndexes.length - 1 ? 0 : 8,
                       ),
-                    );
-                  },
-                );
-              },
-              itemCount: _blockOrderIndexes.length,
-              itemBuilder: (context, index) {
-                final blockText = blocks[_blockOrderIndexes[index]];
-                return _CustomReorderableDelayedDragStartListener(
-                  key: ValueKey('block-$index-${_blockOrderIndexes[index]}'),
-                  index: index,
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      bottom: index == _blockOrderIndexes.length - 1 ? 0 : 8,
-                    ),
-                    child: GestureDetector(
-                      onTap: () => _toggleSelectedBlock(index),
-                      child: _VerseBlock(
-                        blockText,
-                        correct:
-                            hasInteracted && _blockOrderIndexes[index] == index,
-                        selected: _selectedBlockPosition == index,
-                        wrong: _checked && _blockOrderIndexes[index] != index,
+                      child: GestureDetector(
+                        onTap: () => _toggleSelectedBlock(index),
+                        child: _VerseBlock(
+                          blockText,
+                          correct:
+                              hasInteracted &&
+                              _blockOrderIndexes[index] == index,
+                          selected: _selectedBlockPosition == index,
+                          wrong: _checked && _blockOrderIndexes[index] != index,
+                        ),
                       ),
                     ),
-                  ),
-                );
-              },
-              onReorder: (oldIndex, newIndex) {
-                _moveBlock(oldIndex, newIndex);
-              },
+                  );
+                },
+                onReorder: (oldIndex, newIndex) {
+                  _moveBlock(oldIndex, newIndex);
+                },
+              ),
             ),
           ),
           if (hasInteracted)
@@ -2829,9 +2838,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         children: [
           _CompleteStatsCard(
             level2: isHarder,
-            firstValue:
-                '${_letterAnswers.where((answer) => answer != null).length}/${_letterTargets.length}',
-            firstLabel: 'LETRAS',
+            showFirst: false,
             secondValue: '$remainingAttempts/3',
             secondLabel: 'INTENTOS',
             timeValue: _formatMmSs(_letterSecondsLeft),
@@ -4224,7 +4231,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       return completed ? 'Siguiente →' : 'Toca el texto para revelar palabras';
     }
     if (slug == '01-escuchar') {
-      return completed ? 'Siguiente →' : 'Escucha completa requerida';
+      return completed ? 'Siguiente →' : 'Escucha completa';
     }
     if (slug == '03-leer-voz') {
       return completed ? 'Siguiente →' : 'Lee en voz alta para continuar';

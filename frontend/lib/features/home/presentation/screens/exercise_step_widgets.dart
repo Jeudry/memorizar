@@ -201,6 +201,7 @@ class _InlineFlashStat extends StatelessWidget {
 
 class _CompleteStatsCard extends StatelessWidget {
   final bool level2;
+  final bool showFirst;
   final String firstValue;
   final String firstLabel;
   final String secondValue;
@@ -210,6 +211,7 @@ class _CompleteStatsCard extends StatelessWidget {
 
   const _CompleteStatsCard({
     this.level2 = false,
+    this.showFirst = true,
     this.firstValue = '1/3',
     this.firstLabel = 'HUECOS',
     this.secondValue = '2/2',
@@ -231,7 +233,7 @@ class _CompleteStatsCard extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _InlineFlashStat(firstLabel, firstValue),
+          if (showFirst) _InlineFlashStat(firstLabel, firstValue),
           _InlineFlashStat(secondLabel, secondValue),
           if (level2)
             _InlineFlashStat('TIEMPO', timeValue, valueColor: RefColors.sun),
