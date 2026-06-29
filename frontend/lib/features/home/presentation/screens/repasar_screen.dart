@@ -958,7 +958,7 @@ class _RecommendedReview extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Glass(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
         gradient: LinearGradient(
           colors: [
             RefColors.cyan.withValues(alpha: .20),
@@ -968,19 +968,22 @@ class _RecommendedReview extends StatelessWidget {
           end: Alignment.centerRight,
         ),
         border: Border.all(color: RefColors.cyan.withValues(alpha: .30)),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            GlyphIcon('✨', size: 18),
-            SizedBox(width: 7),
-            Text(
-              'Repaso',
-              style: TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w900,
+        child: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              GlyphIcon('✨', size: 18),
+              SizedBox(width: 7),
+              Text(
+                'Repaso',
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -998,24 +1001,27 @@ class _NewGroupButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Glass(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
         color: HtmlRefColors.glassSoft,
         border: Border.all(color: RefColors.cyan.withValues(alpha: .30)),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.create_new_folder_rounded,
-                color: RefColors.cyan, size: 18),
-            SizedBox(width: 7),
-            Text(
-              'Grupo',
-              style: TextStyle(
-                color: RefColors.cyan,
-                fontWeight: FontWeight.w900,
-                fontSize: 13.5,
+        child: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.create_new_folder_rounded,
+                  color: RefColors.cyan, size: 18),
+              SizedBox(width: 7),
+              Text(
+                'Grupo',
+                style: TextStyle(
+                  color: RefColors.cyan,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13.5,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1031,23 +1037,26 @@ class _NewDeckButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Glass(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
         color: HtmlRefColors.glassSoft,
         border: Border.all(color: RefColors.pink.withValues(alpha: .30)),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.add_rounded, color: RefColors.pink, size: 18),
-            SizedBox(width: 7),
-            Text(
-              'Mazo',
-              style: TextStyle(
-                color: RefColors.pink,
-                fontWeight: FontWeight.w900,
-                fontSize: 13.5,
+        child: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.add_rounded, color: RefColors.pink, size: 18),
+              SizedBox(width: 7),
+              Text(
+                'Mazo',
+                style: TextStyle(
+                  color: RefColors.pink,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13.5,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
