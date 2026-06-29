@@ -714,7 +714,7 @@ class _FogStepState extends State<_FogStep>
                 onTap: _downloadModels,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
+                    horizontal: 18,
                     vertical: 14,
                   ),
                   decoration: BoxDecoration(
@@ -722,16 +722,19 @@ class _FogStepState extends State<_FogStep>
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: const Row(
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.bolt_rounded, color: Colors.white, size: 18),
                       SizedBox(width: 8),
-                      Text(
-                        'Activar Reconocimiento de Voz',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w900,
+                      Flexible(
+                        child: Text(
+                          'Activar Reconocimiento de Voz',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ),
                     ],

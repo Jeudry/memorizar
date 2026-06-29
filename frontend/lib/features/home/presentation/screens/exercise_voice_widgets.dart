@@ -624,8 +624,8 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
                     onTap: _downloadModels,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 28,
-                        vertical: 16,
+                        horizontal: 18,
+                        vertical: 14,
                       ),
                       decoration: BoxDecoration(
                         gradient: RefColors.cool,
@@ -639,16 +639,19 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
                         ],
                       ),
                       child: const Row(
-                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
                           SizedBox(width: 8),
-                          Text(
-                            'Activar Reconocimiento de Voz',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
+                          Flexible(
+                            child: Text(
+                              'Activar Reconocimiento de Voz',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
                           ),
                         ],
