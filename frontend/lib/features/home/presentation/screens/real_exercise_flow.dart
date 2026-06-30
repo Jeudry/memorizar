@@ -1687,15 +1687,20 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         verseText: card.back,
       );
     }
-    if (nextSlug.startsWith('18-palabras-intrusas')) {
-      final level = nextSlug.endsWith('-n2')
-          ? 2
-          : (nextSlug.endsWith('-n3') ? 3 : 1);
-      llmPrefetch.prefetchIntruderVerse(
-        reference: card.front,
-        verseText: card.back,
-        level: level,
-      );
+    if (nextSlug.startsWith('18-palabras-intrusas') && stepIndex >= 0) {
+      // Pre-carga TODOS los niveles de intrusas que vienen (N1/N2/N3), no solo
+      // el inmediato. La inferencia está serializada, así que se generan en
+      // orden en segundo plano mientras resuelves el primero.
+      for (var i = stepIndex + 1; i < steps.length; i++) {
+        final s = steps[i].slug;
+        if (!s.startsWith('18-palabras-intrusas')) continue;
+        final level = s.endsWith('-n2') ? 2 : (s.endsWith('-n3') ? 3 : 1);
+        llmPrefetch.prefetchIntruderVerse(
+          reference: card.front,
+          verseText: card.back,
+          level: level,
+        );
+      }
     }
     if (slug == '02-lectura-frag' && store.isExerciseStepCompleted(slug)) {
       _fragmentVisibleWords = _studyWords(card.back).length;
