@@ -1067,142 +1067,134 @@ class _CommunityCard extends StatelessWidget {
         width: 168,
         padding: const EdgeInsets.all(13),
         color: AppColors.glassBg,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: AppColors.glassStrong,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.glassBorder),
-              ),
-              child: Center(child: GlyphIcon(emoji, size: 24)),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
+            Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: AppColors.glassStrong,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.glassBorder),
+                  ),
+                  child: Center(child: GlyphIcon(emoji, size: 24)),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    stats,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w800,
-                      height: 1.15,
+                      fontSize: 11,
+                      color: AppColors.inkMuted,
+                      fontWeight: FontWeight.w500,
+                      height: 1.2,
                     ),
                   ),
-                  const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          stats,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: AppColors.inkMuted,
-                            fontWeight: FontWeight.w500,
-                            height: 1.2,
-                          ),
-                        ),
+                ),
+                if (ratingAvg > 0) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentSun.withValues(alpha: .16),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: AppColors.accentSun.withValues(alpha: .4),
                       ),
-                      if (groupLabel != null && groupColor != null) ...[
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 7, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: groupColor!.withValues(alpha: .16),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                  color: groupColor!.withValues(alpha: .5)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (groupEmoji != null) ...[
-                                  Text(groupEmoji!,
-                                      style: const TextStyle(fontSize: 10)),
-                                  const SizedBox(width: 3),
-                                ],
-                                Flexible(
-                                  child: Text(
-                                    groupLabel!,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: groupColor,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('★',
+                            style: TextStyle(
+                                color: AppColors.accentSun, fontSize: 11)),
+                        const SizedBox(width: 2),
+                        Text(
+                          ratingAvg.toStringAsFixed(1),
+                          style: const TextStyle(
+                            color: AppColors.accentSun,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
                       ],
-                    ],
+                    ),
                   ),
-                ],
-              ),
-            ),
-            if (ratingAvg > 0) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.accentSun.withValues(alpha: .16),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: AppColors.accentSun.withValues(alpha: .4),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('★',
-                        style: TextStyle(
-                            color: AppColors.accentSun, fontSize: 11)),
-                    const SizedBox(width: 2),
-                    Text(
-                      ratingAvg.toStringAsFixed(1),
+                ] else if (weakCount > 0) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.urgent.withValues(alpha: .15),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: AppColors.urgent.withValues(alpha: .4),
+                      ),
+                    ),
+                    child: Text(
+                      '$weakCount',
                       style: const TextStyle(
-                        color: AppColors.accentSun,
+                        color: AppColors.urgent,
                         fontSize: 11,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 14.5,
+                fontWeight: FontWeight.w800,
+                height: 1.15,
               ),
-            ] else if (weakCount > 0) ...[
-              const SizedBox(width: 8),
+            ),
+            if (groupLabel != null && groupColor != null) ...[
+              const SizedBox(height: 6),
               Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
-                  color: AppColors.urgent.withValues(alpha: .15),
+                  color: groupColor!.withValues(alpha: .16),
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: AppColors.urgent.withValues(alpha: .4),
-                  ),
+                  border:
+                      Border.all(color: groupColor!.withValues(alpha: .5)),
                 ),
-                child: Text(
-                  '$weakCount',
-                  style: const TextStyle(
-                    color: AppColors.urgent,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (groupEmoji != null) ...[
+                      Text(groupEmoji!,
+                          style: const TextStyle(fontSize: 10)),
+                      const SizedBox(width: 3),
+                    ],
+                    Flexible(
+                      child: Text(
+                        groupLabel!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: groupColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
