@@ -1687,19 +1687,27 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         verseText: card.back,
       );
     }
-    if (nextSlug.startsWith('18-palabras-intrusas') && stepIndex >= 0) {
-      // Pre-carga TODOS los niveles de intrusas que vienen (N1/N2/N3), no solo
-      // el inmediato. La inferencia está serializada, así que se generan en
-      // orden en segundo plano mientras resuelves el primero.
-      for (var i = stepIndex + 1; i < steps.length; i++) {
+    // Palabras intrusas: el ejercicio recorre TODAS las tarjetas del batch en
+    // cada nivel (el "(2/3)" es la tarjeta, no el nivel). Pre-carga cada
+    // (tarjeta, nivel) de los pasos de intrusas que vienen —incluido el actual
+    // si ya estás en él, para adelantar las tarjetas siguientes—. La inferencia
+    // está serializada: se generan en orden en segundo plano.
+    final onOrNearIntruder = slug.startsWith('18-palabras-intrusas') ||
+        nextSlug.startsWith('18-palabras-intrusas');
+    if (onOrNearIntruder && stepIndex >= 0) {
+      final fromIdx =
+          slug.startsWith('18-palabras-intrusas') ? stepIndex : stepIndex + 1;
+      for (var i = fromIdx; i < steps.length; i++) {
         final s = steps[i].slug;
         if (!s.startsWith('18-palabras-intrusas')) continue;
         final level = s.endsWith('-n2') ? 2 : (s.endsWith('-n3') ? 3 : 1);
-        llmPrefetch.prefetchIntruderVerse(
-          reference: card.front,
-          verseText: card.back,
-          level: level,
-        );
+        for (final c in batch) {
+          llmPrefetch.prefetchIntruderVerse(
+            reference: c.front,
+            verseText: c.back,
+            level: level,
+          );
+        }
       }
     }
     if (slug == '02-lectura-frag' && store.isExerciseStepCompleted(slug)) {
