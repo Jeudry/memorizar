@@ -487,7 +487,9 @@ class LocalLlmService {
           '$formatBlock\n\n'
           '$depthInstruction\n'
           '$varietyHint\n'
-          'Todo en español. Responde únicamente con el JSON, sin texto adicional.';
+          'IDIOMA OBLIGATORIO: TODO en ESPAÑOL (preguntas, enunciados y opciones). '
+          'NUNCA respondas en inglés ni en otro idioma, aunque la semilla o el patrón te tienten. '
+          'Responde únicamente con el JSON, sin texto adicional.';
       try {
         final content = await _chat(
           prompt,
@@ -518,7 +520,29 @@ class LocalLlmService {
         'El "trueFalse" llegó como pregunta, no como afirmación.',
       );
     }
+    // El cuestionario DEBE estar en español. Si el modelo se fue al inglés, lo
+    // rechazamos para que el bucle de reintentos genere otro en español.
+    if (_looksEnglish(set.multipleChoice.question) ||
+        _looksEnglish(set.trueFalse.statement) ||
+        _looksEnglish(set.openQuestion.question)) {
+      throw const FormatException('El quiz llegó en inglés, no en español.');
+    }
     return set;
+  }
+
+  /// Heurística simple de inglés: cuenta marcadores que no existen en español.
+  bool _looksEnglish(String s) {
+    final words = s
+        .toLowerCase()
+        .split(RegExp(r'[^a-záéíóúñü]+'))
+        .where((w) => w.isNotEmpty)
+        .toSet();
+    const markers = {
+      'what', 'did', 'say', 'said', 'is', 'are', 'was', 'were', 'the',
+      'and', 'god', 'how', 'why', 'who', 'where', 'of', 'this', 'that',
+      'does', 'do', 'which', 'true', 'false', 'answer', 'verse',
+    };
+    return words.where(markers.contains).length >= 2;
   }
 
   /// ¿El texto parece una pregunta y no una afirmación? Conservador: solo marca
