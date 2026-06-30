@@ -569,22 +569,28 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: RefColors.glassStrong,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: RefColors.border),
-                ),
-                child: Text(
-                  'Nivel $_level',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: RefColors.cyan,
+              Flexible(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: RefColors.glassStrong,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: RefColors.border),
+                  ),
+                  child: Text(
+                    widget.card.front,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      color: RefColors.pink,
+                    ),
                   ),
                 ),
               ),
+              const SizedBox(width: 10),
               Row(
                 children: [
                   for (int i = 0; i < (_level == 1 ? 3 : (_level == 2 ? 2 : 1)); i++)
@@ -631,18 +637,7 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                 const SizedBox(width: 40),
             ],
           ),
-          const SizedBox(height: 18),
-          Center(
-            child: Text(
-              widget.card.front,
-              style: const TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w900,
-                color: RefColors.muted,
-              ),
-            ),
-          ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
           Expanded(
             child: Center(
               child: SingleChildScrollView(
@@ -654,9 +649,7 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                     children: [
                       Center(
                         child: Text(
-                          _isTimedLevel
-                              ? 'Toca las palabras falsas · cada acierto suma +${_timeBonusSeconds}s'
-                              : 'Toca las palabras falsas:',
+                          'Toca las palabras falsas:',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             fontSize: 12,
