@@ -3090,11 +3090,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         : '¿A qué referencia pertenece este texto?\n\n"${round.target.back}"';
 
     final contextLabel = isTrueFalse
-        ? 'PREGUNTA ${_quizRoundIndex + 1} DE ${_quizRounds.length} · VERDADERO / FALSO'
+        ? 'VERDADERO / FALSO'
         : isMatching
-        ? 'PREGUNTA ${_quizRoundIndex + 1} DE ${_quizRounds.length} · EMPAREJAR'
+        ? 'EMPAREJAR'
         : isOpenQuestion
-        ? 'PREGUNTA ${_quizRoundIndex + 1} DE ${_quizRounds.length} · RESPUESTA ABIERTA'
+        ? 'RESPUESTA ABIERTA'
         : isFrontToBack
         ? (deck.isBible
               ? (round.target.front.contains('¿') ||
@@ -3114,29 +3114,43 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       _ensureMatchingShuffled(round);
     }
 
+    // Vidas: empiezas con un corazón por ronda y pierdes uno por cada fallo.
+    final wrong =
+        _quizRounds.where((r) => r.answered && !r.correct).length;
+    final total = _quizRounds.length;
+    final lives = (total - wrong).clamp(0, total);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.only(bottom: 8),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Ronda ${_quizRoundIndex + 1} / ${_quizRounds.length}',
+                'Ronda ${_quizRoundIndex + 1} / $total',
                 style: const TextStyle(
                   color: RefColors.ink,
                   fontSize: 13,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              Text(
-                'Puntos: $_quizScore',
-                style: const TextStyle(
-                  color: RefColors.lime,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < total; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 3),
+                      child: Icon(
+                        i < lives
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                        size: 16,
+                        color: i < lives ? RefColors.pink : RefColors.border,
+                      ),
+                    ),
+                ],
               ),
             ],
           ),
@@ -3144,25 +3158,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         if (round.sourceReference.trim().isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.menu_book_rounded,
-                  size: 13,
-                  color: RefColors.muted,
+            child: Center(
+              child: Text(
+                round.sourceReference,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: RefColors.pink,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .3,
                 ),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Text(
-                    'Basada en ${round.sourceReference}',
-                    style: const TextStyle(
-                      color: RefColors.muted,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         _ExerciseQuestionBlock(contextLabel: contextLabel, question: question),
