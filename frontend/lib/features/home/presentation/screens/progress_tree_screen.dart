@@ -80,12 +80,18 @@ class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
   Widget build(BuildContext context) {
     final store = AppScope.of(context);
     final steps = _sessionFlowSteps(store);
-    final firstIncompleteIndex = steps.indexWhere(
-      (s) => !store.isExerciseStepCompleted(s.slug),
-    );
-    final currentStepIndex = firstIncompleteIndex < 0
-        ? steps.length - 1
-        : firstIncompleteIndex;
+    // El flujo es lineal: sólo se avanza completando el paso actual y los
+    // siguientes quedan bloqueados, así que el progreso es MONÓTONO. El paso
+    // "actual" es el siguiente al más avanzado que se haya completado. De este
+    // modo, si la marca puntual de un paso previo se perdiera, no reaparece
+    // como activo cuando ya pasaste de él (un paso posterior completado implica
+    // que los anteriores también lo están).
+    var lastCompleted = -1;
+    for (var i = 0; i < steps.length; i++) {
+      if (store.isExerciseStepCompleted(steps[i].slug)) lastCompleted = i;
+    }
+    final allDone = steps.isNotEmpty && lastCompleted >= steps.length - 1;
+    final currentStepIndex = allDone ? steps.length - 1 : lastCompleted + 1;
 
     _scheduleScrollToCurrent(currentStepIndex);
 
@@ -181,7 +187,7 @@ class _ProgressTreeScreenState extends State<_ProgressTreeScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (firstIncompleteIndex < 0) ...[
+                if (allDone) ...[
                   Cta(
                     '¡Finalizar ejercicio! →',
                     onTap: () {
@@ -362,7 +368,11 @@ class _ReferenceTimelineStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isCompleted = store.isExerciseStepCompleted(step.slug);
+    // Monótono: un paso anterior al actual cuenta como completado aunque su
+    // marca puntual falte (en el flujo lineal no se llega al actual sin pasar
+    // por él). Evita que un paso previo aparezca "sin terminar".
+    final isCompleted =
+        store.isExerciseStepCompleted(step.slug) || index < currentIndex;
     final isCurrent = index == currentIndex;
     final isLocked = !isCompleted && index > currentIndex;
     final isLast = isLastInGroup || index == totalCount - 1;
