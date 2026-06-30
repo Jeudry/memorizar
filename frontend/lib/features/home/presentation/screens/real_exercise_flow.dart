@@ -1672,41 +1672,34 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     final step = stepIndex < 0 ? _flowStepNumber(slug) : stepIndex + 1;
     final totalSteps = steps.length;
 
-    // Pre-generar en segundo plano la IA del paso SIGUIENTE, para que al llegar
-    // ya esté lista (sin esperar ~20s). Sólo el paso inmediato, para no bloquear
-    // otra generación (la inferencia está serializada). Cubre quiz, distractores
-    // de "elige la palabra" y el ejercicio de palabras intrusas.
-    final nextSlug = _nextFlowSlug(store, slug);
+    // Pre-generación de IA en ORDEN DE FLUJO, arrancando DESDE EL INICIO de la
+    // sesión: aprovecha el tiempo ocioso de los pasos sin IA (lectura, escuchar,
+    // recitar…) para dejar listos quiz, distractores e intrusas ANTES de llegar
+    // a ellos. La inferencia está serializada y deduplicada, así que enqueuamos
+    // en orden (los pasos más cercanos primero) y se generan uno a uno en
+    // segundo plano sin que un paso lejano le quite el turno a uno cercano.
     final llmPrefetch = LocalLlmService.instance;
-    if (slug != '09-quiz' && nextSlug == '09-quiz') {
-      _QuizPrefetch.ensure(_quizGroupCards(batch));
-    }
-    if (_isCompletionSlug(nextSlug)) {
-      llmPrefetch.prefetchCompletionDistractors(
-        reference: card.front,
-        verseText: card.back,
-      );
-    }
-    // Palabras intrusas: el ejercicio recorre TODAS las tarjetas del batch en
-    // cada nivel (el "(2/3)" es la tarjeta, no el nivel). Pre-carga cada
-    // (tarjeta, nivel) de los pasos de intrusas que vienen —incluido el actual
-    // si ya estás en él, para adelantar las tarjetas siguientes—. La inferencia
-    // está serializada: se generan en orden en segundo plano.
-    final onOrNearIntruder = slug.startsWith('18-palabras-intrusas') ||
-        nextSlug.startsWith('18-palabras-intrusas');
-    if (onOrNearIntruder && stepIndex >= 0) {
-      final fromIdx =
-          slug.startsWith('18-palabras-intrusas') ? stepIndex : stepIndex + 1;
-      for (var i = fromIdx; i < steps.length; i++) {
+    if (stepIndex >= 0) {
+      for (var i = stepIndex; i < steps.length; i++) {
         final s = steps[i].slug;
-        if (!s.startsWith('18-palabras-intrusas')) continue;
-        final level = s.endsWith('-n2') ? 2 : (s.endsWith('-n3') ? 3 : 1);
-        for (final c in batch) {
-          llmPrefetch.prefetchIntruderVerse(
-            reference: c.front,
-            verseText: c.back,
-            level: level,
+        if (s == '09-quiz') {
+          if (slug != '09-quiz') _QuizPrefetch.ensure(_quizGroupCards(batch));
+        } else if (_isCompletionSlug(s)) {
+          llmPrefetch.prefetchCompletionDistractors(
+            reference: card.front,
+            verseText: card.back,
           );
+        } else if (s.startsWith('18-palabras-intrusas')) {
+          // El ejercicio recorre TODAS las tarjetas del batch en cada nivel
+          // (el "(2/3)" es la tarjeta, no el nivel): precarga cada una.
+          final level = s.endsWith('-n2') ? 2 : (s.endsWith('-n3') ? 3 : 1);
+          for (final c in batch) {
+            llmPrefetch.prefetchIntruderVerse(
+              reference: c.front,
+              verseText: c.back,
+              level: level,
+            );
+          }
         }
       }
     }
