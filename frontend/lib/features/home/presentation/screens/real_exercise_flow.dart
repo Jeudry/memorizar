@@ -1768,8 +1768,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       },
       child: ReferencePage(
         showBottomNav: false,
+        // Debe coincidir EXACTAMENTE con `isScrollable` (abajo): si la página
+        // hace scroll (alto infinito) pero el body se envuelve en Expanded,
+        // Flutter explota con "unbounded height". Mantener ambas en sync.
         scrollable:
             (slug != '01-escuchar' &&
+                slug != '00-solo-lectura' &&
+                slug != '05-bloques' &&
                 !_isFirstLetterSlug(slug) &&
                 !_isFogSlug(slug) &&
                 !_isFinalVoiceSlug(slug) &&
