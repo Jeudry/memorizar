@@ -176,20 +176,40 @@ class _BibliaScreenState extends State<BibliaScreen> {
         .toSet();
   }
 
-  void _finishBibleSelection() {
-    final createdId = AppScope.of(context).createBibleDeckFromSelection();
+  void _openDeckById(String deckId) {
+    if (widget.embedded && widget.onDeckCreated != null) {
+      final deck = AppScope.of(context).decks.firstWhere((d) => d.id == deckId);
+      widget.onDeckCreated!(deckId, deck.title);
+    } else {
+      Navigator.pushNamed(context, AppRoutes.iniciar);
+    }
+  }
+
+  Future<void> _finishBibleSelection() async {
+    final store = AppScope.of(context);
+    // Si ya existe un mazo con exactamente estos versículos, no lo duplicamos:
+    // ofrecemos abrir el existente o crear uno nuevo igualmente.
+    final dup = store.findDuplicateBibleDeck();
+    if (dup != null) {
+      final choice =
+          await _showDuplicateDeckSheet(context, existingTitle: dup.title);
+      if (choice == null || !mounted) return;
+      if (choice == _DupDeckChoice.useExisting) {
+        store.setActiveDeck(dup.id);
+        _openDeckById(dup.id);
+        return;
+      }
+      // _DupDeckChoice.createNew → continúa al flujo normal de creación.
+    }
+    final createdId = store.createBibleDeckFromSelection();
     if (createdId == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Selecciona al menos un versículo.')),
       );
       return;
     }
-    if (widget.embedded && widget.onDeckCreated != null) {
-      final deck = AppScope.of(context).decks.firstWhere((d) => d.id == createdId);
-      widget.onDeckCreated!(createdId, deck.title);
-    } else {
-      Navigator.pushNamed(context, AppRoutes.iniciar);
-    }
+    _openDeckById(createdId);
   }
 
   @override
@@ -1406,6 +1426,123 @@ void showShareDeckSheet(BuildContext context, {required MemoryDeckData deck}) {
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
     builder: (_) => _ShareDeckSheet(deck: deck),
+  );
+}
+
+enum _DupDeckChoice { useExisting, createNew }
+
+/// Hoja inferior que avisa que ya existe un mazo con el mismo contenido y deja
+/// elegir entre abrir el existente o crear uno nuevo igualmente. Devuelve null
+/// si el usuario cancela. Compartida por los flujos Biblia y Especificar
+/// (ambos son `part of` esta librería).
+Future<_DupDeckChoice?> _showDuplicateDeckSheet(
+  BuildContext context, {
+  required String existingTitle,
+}) {
+  return showModalBottomSheet<_DupDeckChoice>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (sheetCtx) => Padding(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      child: Glass(
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    gradient: RefColors.primary,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.copy_all_rounded,
+                      color: Colors.white, size: 22),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Ya tienes este contenido',
+                    style:
+                        TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text.rich(
+              TextSpan(
+                style: const TextStyle(
+                    fontSize: 13.5, color: RefColors.muted, height: 1.35),
+                children: [
+                  const TextSpan(text: 'Ya existe el mazo '),
+                  TextSpan(
+                    text: '«$existingTitle»',
+                    style: const TextStyle(
+                        color: RefColors.ink, fontWeight: FontWeight.w800),
+                  ),
+                  const TextSpan(
+                    text:
+                        ' con el mismo contenido. ¿Quieres abrir el que ya tienes o crear uno nuevo de todas formas?',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            GestureDetector(
+              onTap: () =>
+                  Navigator.of(sheetCtx).pop(_DupDeckChoice.useExisting),
+              child: Container(
+                height: 48,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  gradient: RefColors.primary,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Text(
+                  'Usar el que ya tengo',
+                  style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: () =>
+                  Navigator.of(sheetCtx).pop(_DupDeckChoice.createNew),
+              child: Container(
+                height: 48,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: RefColors.glassStrong,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: RefColors.border),
+                ),
+                child: const Text(
+                  'Crear uno nuevo igualmente',
+                  style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w800,
+                      color: RefColors.ink),
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            TextButton(
+              onPressed: () => Navigator.of(sheetCtx).pop(),
+              child: const Text('Cancelar',
+                  style: TextStyle(color: RefColors.muted)),
+            ),
+          ],
+        ),
+      ),
+    ),
   );
 }
 

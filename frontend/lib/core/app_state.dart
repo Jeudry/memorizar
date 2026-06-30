@@ -2017,9 +2017,41 @@ class AppStore extends ChangeNotifier {
     }
   }
 
+  /// Busca un mazo ya existente cuyo contenido coincide EXACTAMENTE con la
+  /// selección bíblica actual (mismo conjunto de versículos), para ofrecer
+  /// reutilizarlo en vez de crear un duplicado. Devuelve null si no hay match.
+  MemoryDeckData? findDuplicateBibleDeck() {
+    if (_selectedBibleVerses.isEmpty) return null;
+    final sig = _selectedBibleVerses
+        .map((v) => '${v.book}-${v.chapter}-${v.verse}')
+        .toSet();
+    for (final d in _decks) {
+      if (!d.isBible) continue;
+      final dSig = d.cards.map((c) => c.id).toSet();
+      if (dSig.length == sig.length && dSig.containsAll(sig)) return d;
+    }
+    return null;
+  }
+
+  /// Igual que [findDuplicateBibleDeck] pero para contenido por tarjetas
+  /// (flujo "Especificar"): compara el conjunto de pares frente/dorso.
+  MemoryDeckData? findDuplicateDeckForCards(List<MemoryCardData> cards) {
+    String key(MemoryCardData c) => '${c.front.trim()} ||| ${c.back.trim()}';
+    final sig = cards
+        .where((c) => c.front.trim().isNotEmpty || c.back.trim().isNotEmpty)
+        .map(key)
+        .toSet();
+    if (sig.isEmpty) return null;
+    for (final d in _decks) {
+      final dSig = d.cards.map(key).toSet();
+      if (dSig.length == sig.length && dSig.containsAll(sig)) return d;
+    }
+    return null;
+  }
+
   String? createBibleDeckFromSelection() {
     if (_selectedBibleVerses.isEmpty) return null;
-    
+
     String title;
     String subtitle;
     

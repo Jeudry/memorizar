@@ -102,10 +102,11 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
     });
   }
 
-  void _createDeck() {
+  Future<void> _createDeck() async {
     if (_submitting) return;
+    final store = AppScope.of(context);
     final cards = _segmentedCards.isEmpty
-        ? AppScope.of(context).segmentContent(
+        ? store.segmentContent(
             _contentController.text,
             title: _titleController.text,
           )
@@ -118,8 +119,25 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
       );
       return;
     }
+    // Si ya existe un mazo con estas mismas tarjetas, evitamos duplicarlo.
+    final dup = store.findDuplicateDeckForCards(cards);
+    if (dup != null) {
+      final choice =
+          await _showDuplicateDeckSheet(context, existingTitle: dup.title);
+      if (choice == null || !mounted) return;
+      if (choice == _DupDeckChoice.useExisting) {
+        store.setActiveDeck(dup.id);
+        if (widget.embedded && widget.onDeckCreated != null) {
+          widget.onDeckCreated!(dup.id, dup.title);
+        } else {
+          Navigator.pushNamed(context, AppRoutes.iniciar);
+        }
+        return;
+      }
+      // _DupDeckChoice.createNew → sigue al flujo normal.
+    }
     setState(() => _submitting = true);
-    final created = AppScope.of(context).createDeckFromCards(
+    final created = store.createDeckFromCards(
       title: _titleController.text,
       icon: '🧠',
       cards: cards,
