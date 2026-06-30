@@ -1067,26 +1067,50 @@ class _CommunityCard extends StatelessWidget {
         width: 168,
         padding: const EdgeInsets.all(13),
         color: AppColors.glassBg,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Row(
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: AppColors.glassStrong,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.glassBorder),
+              ),
+              child: Center(child: GlyphIcon(emoji, size: 24)),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w800,
+                      height: 1.15,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
                     children: [
-                      Container(
-                        width: 46,
-                        height: 46,
-                        decoration: BoxDecoration(
-                          color: AppColors.glassStrong,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.glassBorder),
+                      Flexible(
+                        child: Text(
+                          stats,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.inkMuted,
+                            fontWeight: FontWeight.w500,
+                            height: 1.2,
+                          ),
                         ),
-                        child: Center(child: GlyphIcon(emoji, size: 24)),
                       ),
                       if (groupLabel != null && groupColor != null) ...[
                         const SizedBox(width: 6),
@@ -1127,81 +1151,61 @@ class _CommunityCard extends StatelessWidget {
                       ],
                     ],
                   ),
+                ],
+              ),
+            ),
+            if (ratingAvg > 0) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.accentSun.withValues(alpha: .16),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: AppColors.accentSun.withValues(alpha: .4),
+                  ),
                 ),
-                if (ratingAvg > 0)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.accentSun.withValues(alpha: .16),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: AppColors.accentSun.withValues(alpha: .4),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('★',
-                            style: TextStyle(
-                                color: AppColors.accentSun, fontSize: 11)),
-                        const SizedBox(width: 2),
-                        Text(
-                          ratingAvg.toStringAsFixed(1),
-                          style: const TextStyle(
-                            color: AppColors.accentSun,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                else if (weakCount > 0)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: AppColors.urgent.withValues(alpha: .15),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: AppColors.urgent.withValues(alpha: .4),
-                      ),
-                    ),
-                    child: Text(
-                      '$weakCount',
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('★',
+                        style: TextStyle(
+                            color: AppColors.accentSun, fontSize: 11)),
+                    const SizedBox(width: 2),
+                    Text(
+                      ratingAvg.toStringAsFixed(1),
                       style: const TextStyle(
-                        color: AppColors.urgent,
+                        color: AppColors.accentSun,
                         fontSize: 11,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
+                  ],
+                ),
+              ),
+            ] else if (weakCount > 0) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.urgent.withValues(alpha: .15),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: AppColors.urgent.withValues(alpha: .4),
                   ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 14.5,
-                fontWeight: FontWeight.w800,
-                height: 1.15,
+                ),
+                child: Text(
+                  '$weakCount',
+                  style: const TextStyle(
+                    color: AppColors.urgent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              stats,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 11,
-                color: AppColors.inkMuted,
-                fontWeight: FontWeight.w500,
-                height: 1.2,
-              ),
-            ),
+            ],
           ],
         ),
       ),
