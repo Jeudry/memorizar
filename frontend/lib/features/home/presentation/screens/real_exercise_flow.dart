@@ -1688,10 +1688,15 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         if (s == '09-quiz') {
           if (slug != '09-quiz') _QuizPrefetch.ensure(_quizGroupCards(batch));
         } else if (_isCompletionSlug(s)) {
-          llmPrefetch.prefetchCompletionDistractors(
-            reference: card.front,
-            verseText: card.back,
-          );
+          // "Elige la palabra" recorre TODAS las tarjetas del batch (el "(2/3)"
+          // es la tarjeta), así que precargamos los distractores de cada una y
+          // no solo de la actual: al llegar a la 2/3 ya están listos.
+          for (final c in batch) {
+            llmPrefetch.prefetchCompletionDistractors(
+              reference: c.front,
+              verseText: c.back,
+            );
+          }
         } else if (s.startsWith('18-palabras-intrusas')) {
           // El ejercicio recorre TODAS las tarjetas del batch en cada nivel
           // (el "(2/3)" es la tarjeta, no el nivel): precarga cada una.
