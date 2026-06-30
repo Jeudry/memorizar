@@ -859,7 +859,7 @@ class _MemorizarGrid extends StatelessWidget {
             Expanded(
               child: _MemCard(
                 title: 'Biblia',
-                subtitle: 'Versículos · capítulos · libros',
+                subtitle: 'Versículos · capítulos',
                 emoji: '✝️',
                 color: AppColors.accentSun,
                 route: '/biblia',
