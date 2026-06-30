@@ -903,7 +903,7 @@ class _MemCard extends StatelessWidget {
       onTap: () => Navigator.pushNamed(context, route),
       child: GlassCard(
         padding: const EdgeInsets.all(14),
-        height: 104,
+        height: 116,
         color: AppColors.glassBg,
         child: Stack(
           children: [
@@ -940,7 +940,7 @@ class _MemCard extends StatelessWidget {
                   ),
                   child: Center(child: GlyphIcon(emoji, size: 18)),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
