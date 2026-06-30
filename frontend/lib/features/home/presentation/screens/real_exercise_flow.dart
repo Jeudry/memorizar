@@ -3130,9 +3130,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.only(bottom: 10),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 'Ronda ${_quizRoundIndex + 1} / $total',
@@ -3140,6 +3139,20 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                   color: RefColors.ink,
                   fontSize: 13,
                   fontWeight: FontWeight.w900,
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  round.sourceReference,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: RefColors.pink,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: .3,
+                  ),
                 ),
               ),
               Row(
@@ -3161,22 +3174,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             ],
           ),
         ),
-        if (round.sourceReference.trim().isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Center(
-              child: Text(
-                round.sourceReference,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: RefColors.pink,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: .3,
-                ),
-              ),
-            ),
-          ),
         _ExerciseQuestionBlock(contextLabel: contextLabel, question: question),
         const SizedBox(height: 14),
         if (isTrueFalse) ...[
