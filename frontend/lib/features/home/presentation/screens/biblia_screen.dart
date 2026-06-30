@@ -91,13 +91,20 @@ class _BibliaScreenState extends State<BibliaScreen> {
 
   bool get _isSearching => _searchController.text.trim().isNotEmpty;
 
+  // Guardamos la referencia al store en didChangeDependencies para poder usarla
+  // en dispose() sin hacer AppScope.of(context) sobre un widget ya desactivado.
+  AppStore? _storeRef;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _storeRef = AppScope.of(context);
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
-    final store = AppScope.of(context);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      store.clearBibleSelection();
-    });
+    _storeRef?.clearBibleSelection();
     super.dispose();
   }
 

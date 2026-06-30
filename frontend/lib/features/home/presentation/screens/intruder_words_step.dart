@@ -14,12 +14,17 @@ class IntruderWordsBody extends StatefulWidget {
   final MemoryCardData card;
   final VoidCallback onFinished;
   final int? level;
+  /// Notifica cuando el ejercicio entra/sale de la pantalla de resultado, para
+  /// que el flujo pueda ocultar su botón "Omitir" (el resultado trae su propio
+  /// botón de continuar).
+  final ValueChanged<bool>? onResultChanged;
 
   const IntruderWordsBody({
     super.key,
     required this.card,
     required this.onFinished,
     this.level,
+    this.onResultChanged,
   });
 
   @override
@@ -118,7 +123,10 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
       await llm.initLlm();
       if (!mounted) return;
 
-      final set = await (llm.takePrefetchedIntruder(
+      // Fuente, por orden: 1) un intento ya pre-cargado para reintentos (si
+      // fallaste antes), 2) el prefetch del flujo, 3) generación fresca.
+      final source = _nextAttempt ??
+          llm.takePrefetchedIntruder(
             reference: widget.card.front,
             level: _level,
           ) ??
@@ -126,7 +134,9 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
             reference: widget.card.front,
             verseText: widget.card.back,
             level: _level,
-          ));
+          );
+      _nextAttempt = null;
+      final set = await source;
 
       if (!mounted) return;
 
@@ -144,6 +154,9 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
       if (_isTimedLevel) {
         _startTimer();
       }
+      // Adelanta YA un intento de repuesto por si fallas: al reintentar no
+      // esperas la generación.
+      _prepareNextAttempt();
     } catch (e) {
       debugPrint('Error generando palabras intrusas con IA local: $e');
       if (!mounted) return;
@@ -746,26 +759,25 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
       final aligned = originalWords.length == _alteredWords.length;
 
       return SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: 10),
             Center(
               child: Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12),
                 decoration: const BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: RefColors.success,
                 ),
                 child: const Icon(
                   Icons.check,
-                  size: 36,
+                  size: 30,
                   color: Colors.white,
                 ),
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 12),
             const Center(
               child: Text(
                 '¡Excelente Cacería!',
@@ -775,7 +787,7 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                 ),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 14),
             Glass(
               padding: const EdgeInsets.all(18),
               child: Column(
@@ -840,7 +852,7 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                 ],
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 16),
             Cta(
               'Continuar',
               onTap: widget.onFinished,
@@ -912,8 +924,35 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
     }
   }
 
+  /// Intento de repuesto pre-generado para reintentos (si el usuario falla),
+  /// para no esperar la IA al reintentar. Al usarlo se vuelve a preparar otro.
+  Future<IntruderVerseSet>? _nextAttempt;
+  void _prepareNextAttempt() {
+    if (_nextAttempt != null) return;
+    final f = LocalLlmService.instance.generateIntruderVerse(
+      reference: widget.card.front,
+      verseText: widget.card.back,
+      level: _level,
+    );
+    _nextAttempt = f;
+    // Marca el error como manejado para no dejar un future huérfano; si falla,
+    // al consumirlo el try/catch de _generateVerse lo gestiona (o regenera).
+    unawaited(f.then((_) {}, onError: (_) => _nextAttempt = null));
+  }
+
+  bool _lastResultReported = false;
+  void _reportResultState() {
+    final inResult = _phase == _IntruderPhase.result;
+    if (inResult == _lastResultReported) return;
+    _lastResultReported = inResult;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onResultChanged?.call(inResult);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    _reportResultState();
     switch (_phase) {
       case _IntruderPhase.selectLevel:
         return _buildLevelSelection();

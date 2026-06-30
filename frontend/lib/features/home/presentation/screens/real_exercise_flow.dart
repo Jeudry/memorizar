@@ -120,6 +120,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
 
   int _subCardIndex = 0;
   bool _checked = false;
+  // El ejercicio de intrusas está mostrando su pantalla de resultado (trae su
+  // propio botón de continuar): ocultamos el "Omitir" del flujo mientras tanto.
+  bool _intruderInResult = false;
   int _fragmentVisibleWords = 8;
   int _soloLecturaVisibleChars = 0;
   Timer? _soloLecturaTimer;
@@ -2375,6 +2378,11 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         key: ValueKey('intruder-words-${card.id}-${level ?? 0}'),
         card: card,
         level: level,
+        onResultChanged: (inResult) {
+          if (_intruderInResult != inResult) {
+            setState(() => _intruderInResult = inResult);
+          }
+        },
         onFinished: () {
           final batch = _sessionBatchCards(context);
           if (_subCardIndex + 1 < batch.length) {
@@ -3860,6 +3868,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     String slug,
   ) {
     if (slug.startsWith('18-palabras-intrusas')) {
+      // En la pantalla de resultado, el propio ejercicio trae "Continuar":
+      // ocultamos el "Omitir" del flujo para no duplicar botones.
+      if (_intruderInResult) return const SizedBox.shrink();
       // El ejercicio de IA "señala el intruso" maneja su avance internamente;
       // aquí sólo ofrecemos saltarlo (sin reemplazo).
       return Align(
