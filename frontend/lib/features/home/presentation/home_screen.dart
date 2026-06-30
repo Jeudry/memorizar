@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -959,8 +960,55 @@ class _MemCard extends StatelessWidget {
   }
 }
 
-class _CommunitySlider extends StatelessWidget {
+class _CommunitySlider extends StatefulWidget {
   const _CommunitySlider();
+
+  @override
+  State<_CommunitySlider> createState() => _CommunitySliderState();
+}
+
+class _CommunitySliderState extends State<_CommunitySlider> {
+  final ScrollController _ctrl = ScrollController();
+  Timer? _autoTimer;
+  Timer? _resumeTimer;
+  bool _paused = false;
+  // Ancho de tarjeta (168) + separación (10): un "paso" de carrusel.
+  static const double _step = 178;
+
+  @override
+  void initState() {
+    super.initState();
+    _autoTimer = Timer.periodic(const Duration(seconds: 3), (_) => _advance());
+  }
+
+  @override
+  void dispose() {
+    _autoTimer?.cancel();
+    _resumeTimer?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _advance() {
+    if (_paused || !_ctrl.hasClients) return;
+    final max = _ctrl.position.maxScrollExtent;
+    if (max <= 0) return; // todo cabe en pantalla, nada que pasar
+    var next = _ctrl.offset + _step;
+    if (next > max + 4) next = 0; // al final, vuelve al inicio en bucle
+    _ctrl.animateTo(
+      next.clamp(0.0, max),
+      duration: const Duration(milliseconds: 450),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  // Pausa el auto-avance mientras el usuario interactúa y lo reanuda tras
+  // unos segundos de inactividad, para no pelear contra su scroll.
+  void _pauseBriefly() {
+    _paused = true;
+    _resumeTimer?.cancel();
+    _resumeTimer = Timer(const Duration(seconds: 5), () => _paused = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -980,32 +1028,46 @@ class _CommunitySlider extends StatelessWidget {
       ..sort((a, b) => b.weakCount.compareTo(a.weakCount));
     final store = AppScope.of(context);
     final groupsById = {for (final g in store.groups) g.id: g};
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final deck in sorted) ...[
-            Builder(builder: (context) {
-              final group =
-                  deck.groupId != null ? groupsById[deck.groupId] : null;
-              return _CommunityCard(
-                emoji: deck.icon,
-                title: deck.title,
-                stats: '${deck.cards.length} tarjetas',
-                weakCount: deck.weakCount,
-                groupLabel: group?.name,
-                groupEmoji: group?.icon,
-                groupColor: group != null ? groupColor(group.id) : null,
-                onTap: () {
-                  AppScope.of(context).setActiveDeck(deck.id);
-                  Navigator.pushNamed(context, '/iniciar');
-                },
-              );
-            }),
-            const SizedBox(width: 10),
-          ],
-        ],
+    return Listener(
+      onPointerDown: (_) => _pauseBriefly(),
+      onPointerSignal: (_) => _pauseBriefly(),
+      child: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(
+          dragDevices: {
+            PointerDeviceKind.touch,
+            PointerDeviceKind.mouse,
+            PointerDeviceKind.trackpad,
+          },
+        ),
+        child: SingleChildScrollView(
+          controller: _ctrl,
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final deck in sorted) ...[
+                Builder(builder: (context) {
+                  final group =
+                      deck.groupId != null ? groupsById[deck.groupId] : null;
+                  return _CommunityCard(
+                    emoji: deck.icon,
+                    title: deck.title,
+                    stats: '${deck.cards.length} tarjetas',
+                    weakCount: deck.weakCount,
+                    groupLabel: group?.name,
+                    groupEmoji: group?.icon,
+                    groupColor: group != null ? groupColor(group.id) : null,
+                    onTap: () {
+                      AppScope.of(context).setActiveDeck(deck.id);
+                      Navigator.pushNamed(context, '/iniciar');
+                    },
+                  );
+                }),
+                const SizedBox(width: 10),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
