@@ -772,6 +772,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     AppStore store,
     String slug,
   ) {
+    // Al pasar de ejercicio, descarta cualquier veredicto/feedback en pantalla
+    // para que no estorbe en el siguiente paso.
+    ScaffoldMessenger.of(context).clearSnackBars();
     _omitOverride.remove(slug);
     store.markExerciseStepCompleted(slug);
     _navigateToNextStepOrComplete(context, store, slug);
@@ -1532,8 +1535,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     feedbackMessenger.hideCurrentSnackBar();
     feedbackMessenger.showSnackBar(
       SnackBar(
-        // Más tiempo y con botón de cerrar para poder leer el veredicto.
-        duration: const Duration(seconds: 8),
+        // Corto: el veredicto se lee y desaparece; al pasar de ejercicio se
+        // limpia explícitamente para que no estorbe en la siguiente pantalla.
+        duration: const Duration(seconds: 3),
         showCloseIcon: true,
         backgroundColor: RefColors.glassStrong,
         shape: RoundedRectangleBorder(

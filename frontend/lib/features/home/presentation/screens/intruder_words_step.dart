@@ -775,17 +775,7 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                 ),
               ),
             ),
-            const SizedBox(height: 4),
-            Center(
-              child: Text(
-                'Has purificado ${widget.card.front} en Nivel $_level.',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: RefColors.muted,
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             Glass(
               padding: const EdgeInsets.all(18),
               child: Column(

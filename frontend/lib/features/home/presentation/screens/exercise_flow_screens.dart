@@ -32,6 +32,7 @@ class _FlowStepHeader extends StatelessWidget {
               children: [
                 RefBackButton(
                   onTap: () {
+                    ScaffoldMessenger.of(context).clearSnackBars();
                     Navigator.pushNamedAndRemoveUntil(
                       context,
                       '${AppRoutes.flow}/progress-tree',
@@ -40,15 +41,6 @@ class _FlowStepHeader extends StatelessWidget {
                   },
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  'PASO $step/$totalSteps',
-                  style: const TextStyle(
-                    color: RefColors.muted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     title,
@@ -78,30 +70,6 @@ class _FlowStepHeader extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                children: [
-                  for (var i = 1; i <= totalSteps; i++) ...[
-                    Expanded(
-                      child: Container(
-                        height: 4,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(999),
-                          color: i < progress
-                              ? RefColors.lime
-                              : i == progress
-                              ? RefColors.pink
-                              : RefColors.glassSoft,
-                        ),
-                      ),
-                    ),
-                    if (i < totalSteps) const SizedBox(width: 5),
-                  ],
-                ],
-              ),
             ),
           ],
         ),
