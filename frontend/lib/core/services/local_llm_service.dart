@@ -25,10 +25,6 @@ class LocalLlmService {
       'https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q2_K.gguf';
   static const String _modelFileName = 'google_gemma-4-E2B-it-Q2_K.gguf';
   static const String _legacyModelFileName = 'gemma-3-4b-it-qat-Q4_0.gguf';
-  // Sanity-check de descarga completa. El modelo real pesa ~3.02 GB
-  // (3,020,052,224 bytes); el umbral debe quedar POR DEBAJO de eso o un modelo
-  // ya bajado falla el check y la app pide re-descargarlo en cada arranque.
-  static const int _minValidModelBytes = 2800 * 1000 * 1000; // ~2.8 GB
   static const Duration _generationTimeout = Duration(minutes: 3);
   // 0.9: prioriza la variedad (con la rotación de estilo/enfoque) manteniéndose
   // por debajo del 1.0 que inventaba hechos y degeneraba.
@@ -179,16 +175,35 @@ class LocalLlmService {
     return '${dir.path}/$_modelFileName';
   }
 
-  /// Comprueba si el modelo cuantizado ya está descargado y completo.
-  /// En web no hay filesystem: devuelve false sin lanzar.
+  /// Comprueba si el modelo ya está descargado y completo. No usamos el peso
+  /// (frágil): el archivo final solo existe cuando la descarga terminó (se baja
+  /// a un `.part` y se renombra atómicamente al final), y validamos que sea un
+  /// GGUF real por su cabecera mágica. En web no hay filesystem: false.
   Future<bool> checkModelExists() async {
     if (kIsWeb) return false;
     if (_useMobileBackend) return FlutterGemmaBackend.instance.isInstalled();
     final modelFile = File(await _modelPath);
-    final modelFileExists = await modelFile.exists();
-    if (!modelFileExists) return false;
-    final length = await modelFile.length();
-    return length >= _minValidModelBytes;
+    if (!await modelFile.exists()) return false;
+    return _hasGgufMagic(modelFile);
+  }
+
+  /// Los archivos GGUF empiezan con los bytes mágicos "GGUF" (0x47 0x47 0x55
+  /// 0x46). Sirve para descartar un archivo corrupto o vacío sin mirar su peso.
+  Future<bool> _hasGgufMagic(File file) async {
+    RandomAccessFile? raf;
+    try {
+      raf = await file.open();
+      final header = await raf.read(4);
+      return header.length == 4 &&
+          header[0] == 0x47 &&
+          header[1] == 0x47 &&
+          header[2] == 0x55 &&
+          header[3] == 0x46;
+    } catch (_) {
+      return false;
+    } finally {
+      await raf?.close();
+    }
   }
 
   /// La IA está disponible si el modelo está descargado localmente
@@ -220,6 +235,10 @@ class LocalLlmService {
     }
 
     final savePath = await _modelPath;
+    // Descargamos a un temporal y solo lo renombramos al nombre final cuando
+    // terminó completo. Así el archivo final SOLO existe si la descarga acabó
+    // (una descarga interrumpida queda como .part y no cuenta como instalada).
+    final partPath = '$savePath.part';
 
     final alreadyDownloaded = await checkModelExists();
     if (alreadyDownloaded) {
@@ -232,9 +251,14 @@ class LocalLlmService {
     downloadProgress.value = 0.0;
 
     try {
+      // Limpia un .part previo a medias para no reanudar un archivo corrupto.
+      final partFile = File(partPath);
+      if (await partFile.exists()) {
+        await partFile.delete();
+      }
       await _dio.download(
         _modelUrl,
-        savePath,
+        partPath,
         onReceiveProgress: (received, total) {
           if (total > 0) {
             final progress = (received / total).clamp(0.0, 1.0);
@@ -244,6 +268,8 @@ class LocalLlmService {
           }
         },
       );
+      // Rename atómico: el archivo final aparece de golpe, ya completo.
+      await File(partPath).rename(savePath);
 
       downloadProgress.value = 1.0;
       statusNotifier.value = 'Descarga de IA completada con éxito.';
