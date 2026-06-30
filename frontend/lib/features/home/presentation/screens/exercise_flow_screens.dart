@@ -23,7 +23,7 @@ class _FlowStepHeader extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Glass(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         color: RefColors.glassStrong,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -44,7 +44,7 @@ class _FlowStepHeader extends StatelessWidget {
                 Expanded(
                   child: Text(
                     title,
-                    textAlign: TextAlign.right,
+                    textAlign: TextAlign.left,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
