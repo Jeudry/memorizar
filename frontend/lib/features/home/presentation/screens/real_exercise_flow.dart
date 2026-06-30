@@ -160,6 +160,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   List<String?> _letterAnswers = [];
   int _activeLetterIndex = 0;
   int _letterMistakes = 0;
+  // Captura el teclado físico en desktop para el ejercicio de "primera letra".
+  final FocusNode _letterKeyboardFocus = FocusNode(debugLabel: 'letterKeyboard');
   Timer? _letterTimer;
   int _letterSecondsLeft = 0;
   bool _letterLost = false;
@@ -341,6 +343,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     _completionTimer?.cancel();
     _letterTimer?.cancel();
     _openQuestionController.dispose();
+    _letterKeyboardFocus.dispose();
     super.dispose();
   }
 
@@ -1024,6 +1027,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       }
     }
     return true;
+  }
+
+  /// Teclado físico (desktop): enruta una tecla de letra al hueco activo del
+  /// ejercicio de "primera letra". Ignora teclas que no sean una sola letra.
+  void _handleLetterKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return;
+    final ch = event.character;
+    if (ch == null || ch.length != 1) return;
+    if (RegExp(r'[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]').hasMatch(ch)) {
+      _selectFirstLetter(ch);
+    }
   }
 
   void _selectFirstLetter(String letter) {
@@ -2861,7 +2875,13 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       _ensureLetterState(card.id, card.back, level);
       final complete = _letterComplete();
       final remainingAttempts = (3 - _letterMistakes).clamp(0, 3);
-      return Column(
+      // En desktop, además del teclado en pantalla, capturamos el teclado
+      // físico: al teclear una letra se resuelve el hueco activo.
+      return KeyboardListener(
+        focusNode: _letterKeyboardFocus,
+        autofocus: true,
+        onKeyEvent: _handleLetterKey,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _CompleteStatsCard(
@@ -2931,6 +2951,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
             _KeyboardCard(onLetterTap: _selectFirstLetter),
           ],
         ],
+        ),
       );
     }
 
