@@ -71,7 +71,11 @@ class _FlowStepHeader extends StatelessWidget {
                       ),
                     ),
                   ),
-                  child: const RefIconButton(icon: Icons.info_outline_rounded),
+                  child: const RefIconButton(
+                    icon: Icons.info_outline_rounded,
+                    size: 30,
+                    iconSize: 16,
+                  ),
                 ),
               ],
             ),

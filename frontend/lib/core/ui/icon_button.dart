@@ -6,15 +6,22 @@ import 'glass.dart';
 /// shadowing the Material widget of the same name.
 class RefIconButton extends StatelessWidget {
   final IconData icon;
+  final double size;
+  final double iconSize;
 
-  const RefIconButton({super.key, required this.icon});
+  const RefIconButton({
+    super.key,
+    required this.icon,
+    this.size = 42,
+    this.iconSize = 20,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Glass(
-      radius: 14,
+      radius: size < 36 ? 11 : 14,
       padding: EdgeInsets.zero,
-      child: SizedBox(width: 42, height: 42, child: Icon(icon, size: 20)),
+      child: SizedBox(width: size, height: size, child: Icon(icon, size: iconSize)),
     );
   }
 }
