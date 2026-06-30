@@ -447,7 +447,7 @@ class LocalLlmService {
           'trueFalse → Texto 1; multipleChoice → Texto 2; openQuestion → Texto $openForText. '
           'Es OBLIGATORIO cubrir los $n textos; ninguno puede quedar sin su pregunta. '
           'Preguntas CORTAS; el "statement" del trueFalse es una AFIRMACIÓN declarativa que se pueda juzgar como verdadera o falsa: NUNCA una pregunta (sin "¿" ni "?"). Ej válido: "La tierra estaba sin forma y vacía." Ej INVÁLIDO: "¿Qué había sobre las aguas?". Si el trueFalse es falso, el error debe ser comprobable con el texto (puede ser sutil); '
-          'multipleChoice con "correct" breve y exactamente 3 "distractors" breves; '
+          'multipleChoice con "correct" breve y exactamente 3 "distractors" breves; los 3 distractores deben ser del MISMO tipo, categoría y forma gramatical que "correct", de modo que las 4 opciones encajen naturalmente al responder la pregunta (si reemplazas cualquier opción en la pregunta, debe leerse coherente). NO mezcles categorías (p.ej. si la respuesta es una descripción/estado, los distractores también; no pongas nombres de cosas); '
           'la openQuestion es UNA sola pregunta corta (NO juntes dos preguntas con "y").\n'
           'Formato de salida OBLIGATORIO, EXACTAMENTE este array (sin texto adicional antes ni después):\n'
           '{"questions":[\n'
@@ -460,7 +460,7 @@ class LocalLlmService {
       formatBlock =
           'Genera exactamente 3 preguntas sobre el texto:\n'
           '1. "trueFalse": una AFIRMACIÓN declarativa CORTA (NUNCA una pregunta; sin "¿" ni "?") con su veredicto "isTrue". Ej válido: "La tierra estaba sin forma y vacía." Ej INVÁLIDO: "¿Qué había sobre las aguas?". Si es falsa, el error debe ser comprobable con el texto (puede ser sutil).\n'
-          '2. "multipleChoice": pregunta CORTA con "correct" (breve) y "distractors" (exactamente 3, breves).\n'
+          '2. "multipleChoice": pregunta CORTA con "correct" (breve) y "distractors" (exactamente 3, breves). Los 3 distractores deben ser del MISMO tipo, categoría y forma gramatical que "correct", para que las 4 opciones encajen al responder la pregunta (si reemplazas cualquier opción en la pregunta, debe leerse coherente). NO mezcles categorías (si la respuesta es una descripción/estado, los distractores también; no pongas nombres de cosas).\n'
           '3. "openQuestion": UNA sola pregunta abierta, CORTA (una frase), que se responda explicando con pocas palabras. NO juntes dos preguntas en una (nada de "explica X y reflexiona sobre Y").\n'
           'Cada sección debe evaluar un aspecto DIFERENTE del texto.\n'
           'Formato de salida OBLIGATORIO: un ÚNICO objeto JSON, sin envolturas, sin "questions", sin arrays:\n'
