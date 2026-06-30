@@ -441,7 +441,7 @@ class LocalLlmService {
           'Cada una trata SOLO sobre el texto indicado en su "forText". Asignación OBLIGATORIA: '
           'trueFalse → Texto 1; multipleChoice → Texto 2; openQuestion → Texto $openForText. '
           'Es OBLIGATORIO cubrir los $n textos; ninguno puede quedar sin su pregunta. '
-          'Preguntas CORTAS; si el trueFalse es falso, el error debe ser comprobable con el texto (puede ser sutil); '
+          'Preguntas CORTAS; el "statement" del trueFalse es una AFIRMACIÓN declarativa que se pueda juzgar como verdadera o falsa: NUNCA una pregunta (sin "¿" ni "?"). Ej válido: "La tierra estaba sin forma y vacía." Ej INVÁLIDO: "¿Qué había sobre las aguas?". Si el trueFalse es falso, el error debe ser comprobable con el texto (puede ser sutil); '
           'multipleChoice con "correct" breve y exactamente 3 "distractors" breves; '
           'la openQuestion es UNA sola pregunta corta (NO juntes dos preguntas con "y").\n'
           'Formato de salida OBLIGATORIO, EXACTAMENTE este array (sin texto adicional antes ni después):\n'
@@ -454,7 +454,7 @@ class LocalLlmService {
       textBlock = 'Texto a evaluar (${verses.first.reference}): "${verses.first.verseText}"';
       formatBlock =
           'Genera exactamente 3 preguntas sobre el texto:\n'
-          '1. "trueFalse": afirmación CORTA con su veredicto "isTrue". Si es falsa, el error debe ser comprobable con el texto (puede ser sutil).\n'
+          '1. "trueFalse": una AFIRMACIÓN declarativa CORTA (NUNCA una pregunta; sin "¿" ni "?") con su veredicto "isTrue". Ej válido: "La tierra estaba sin forma y vacía." Ej INVÁLIDO: "¿Qué había sobre las aguas?". Si es falsa, el error debe ser comprobable con el texto (puede ser sutil).\n'
           '2. "multipleChoice": pregunta CORTA con "correct" (breve) y "distractors" (exactamente 3, breves).\n'
           '3. "openQuestion": UNA sola pregunta abierta, CORTA (una frase), que se responda explicando con pocas palabras. NO juntes dos preguntas en una (nada de "explica X y reflexiona sobre Y").\n'
           'Cada sección debe evaluar un aspecto DIFERENTE del texto.\n'
@@ -504,7 +504,39 @@ class LocalLlmService {
   /// objeto esperado, un array de sets, `{questions:[...]}` o un array de
   /// preguntas tipadas, con nombres de campo variables.
   AiQuizRoundSet _parseQuizRoundSet(String content) {
-    return AiQuizRoundSet.lenient(_decodeJsonStructure(content));
+    final set = AiQuizRoundSet.lenient(_decodeJsonStructure(content));
+    // Una pregunta de Verdadero/Falso DEBE presentar una afirmación, no una
+    // pregunta interrogativa. Si el modelo devolvió una pregunta, la rechazamos
+    // para que el bucle de reintentos genere otra.
+    if (_looksLikeQuestion(set.trueFalse.statement)) {
+      throw const FormatException(
+        'El "trueFalse" llegó como pregunta, no como afirmación.',
+      );
+    }
+    return set;
+  }
+
+  /// ¿El texto parece una pregunta y no una afirmación? Conservador: solo marca
+  /// signos de interrogación o un arranque con interrogativa acentuada.
+  bool _looksLikeQuestion(String s) {
+    final t = s.trim().toLowerCase();
+    if (t.isEmpty) return false;
+    if (t.contains('?') || t.contains('¿')) return true;
+    const starts = [
+      'qué ',
+      'cuál',
+      'cuáles',
+      'quién',
+      'quiénes',
+      'dónde',
+      'cómo ',
+      'cuándo',
+      'cuánto',
+      'cuánta',
+      'por qué',
+      'para qué',
+    ];
+    return starts.any(t.startsWith);
   }
 
   /// Genera un versículo alterado con palabras intrusas según el nivel de dificultad:
