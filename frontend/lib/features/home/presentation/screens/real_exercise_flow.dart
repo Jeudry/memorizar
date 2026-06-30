@@ -1808,6 +1808,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                       slug != '01-escuchar' &&
                       slug != '03-leer-voz' &&
                       slug != '04-escuchar-voz' &&
+                      // El quiz cubre las 3 tarjetas a la vez, no es por tarjeta.
+                      slug != '09-quiz' &&
                       slug != _chooseWordPracticeSlug &&
                       !_isFogSlug(slug) &&
                       !_isFinalVoiceSlug(slug);
