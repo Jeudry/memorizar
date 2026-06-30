@@ -40,6 +40,11 @@ class _QuizRound {
   // Se asigna en runtime (round.openQuestionResponse = val), no por constructor.
   String? openQuestionResponse;
 
+  /// Enunciado ya listo para una pregunta de opción múltiple generada por IA.
+  /// Si está presente, se muestra TAL CUAL (no se envuelve con la plantilla
+  /// "¿Qué texto corresponde a …?", que es solo para flashcards normales).
+  final String? mcQuestion;
+
   int? selectedIdx;
 
   _QuizRound({
@@ -50,6 +55,7 @@ class _QuizRound {
     this.trueFalseStatement,
     this.isStatementTrue,
     this.openQuestionPrompt,
+    this.mcQuestion,
   });
 
   bool get answered => selectedIdx != null;
@@ -1213,6 +1219,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       type: _QuizQuestionType.frontToBack,
       options: optionCards,
       sourceReference: mcCard.front,
+      mcQuestion: multipleChoice.question,
     );
 
     final openRound = _QuizRound(
@@ -3076,9 +3083,10 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         : isOpenQuestion
         ? (round.openQuestionPrompt ?? 'Responde con tus palabras')
         : isFrontToBack
-        ? (round.target.front.startsWith('¿')
-              ? round.target.front
-              : '¿Qué texto corresponde a ${round.target.front}?')
+        ? (round.mcQuestion ??
+              (round.target.front.startsWith('¿')
+                  ? round.target.front
+                  : '¿Qué texto corresponde a ${round.target.front}?'))
         : '¿A qué referencia pertenece este texto?\n\n"${round.target.back}"';
 
     final contextLabel = isTrueFalse
