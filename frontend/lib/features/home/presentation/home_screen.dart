@@ -902,8 +902,8 @@ class _MemCard extends StatelessWidget {
     return GestureDetector(
       onTap: () => Navigator.pushNamed(context, route),
       child: GlassCard(
-        padding: const EdgeInsets.all(16),
-        height: 132,
+        padding: const EdgeInsets.all(14),
+        height: 104,
         color: AppColors.glassBg,
         child: Stack(
           children: [
@@ -921,7 +921,7 @@ class _MemCard extends StatelessWidget {
             ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.start,
               children: [
                 Container(
                   width: 40,
@@ -940,6 +940,7 @@ class _MemCard extends StatelessWidget {
                   ),
                   child: Center(child: GlyphIcon(emoji, size: 18)),
                 ),
+                const SizedBox(height: 10),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1346,7 +1347,6 @@ class _CoopBar extends StatelessWidget {
         subtitle: 'Crea una sala privada o únete a una partida',
         avatarLabel: '👥',
         avatarColor: AppColors.accentPink,
-        buttonText: 'Abrir',
       );
     }
 
@@ -1362,7 +1362,6 @@ class _CoopBar extends StatelessWidget {
             subtitle: 'Crea una sala privada o únete a una partida',
             avatarLabel: '👥',
             avatarColor: AppColors.accentPink,
-            buttonText: 'Abrir',
           );
         }
 
@@ -1379,7 +1378,6 @@ class _CoopBar extends StatelessWidget {
           subtitle: subtitle,
           avatarLabel: avatarLabel,
           avatarColor: avatarColor,
-          buttonText: 'Volver',
         );
       },
     );
@@ -1391,7 +1389,6 @@ class _CoopBar extends StatelessWidget {
     required String subtitle,
     required String avatarLabel,
     required Color avatarColor,
-    required String buttonText,
   }) {
     return GestureDetector(
       onTap: () => Navigator.pushNamed(context, '/cooperativo'),
@@ -1440,26 +1437,11 @@ class _CoopBar extends StatelessWidget {
                 ],
               ),
             ),
-            InkWell(
-              onTap: () => Navigator.pushNamed(context, '/cooperativo'),
-              borderRadius: BorderRadius.circular(999),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppColors.accentLime, Color(0xFF3ED97A)],
-                  ),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  buttonText,
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.inkMuted,
+              size: 22,
             ),
           ],
         ),
