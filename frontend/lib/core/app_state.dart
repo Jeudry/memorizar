@@ -1139,7 +1139,6 @@ class AppStore extends ChangeNotifier {
   int _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
   bool _isPremium = false;
   bool _doubleExercises = false;
-  bool _hideFiftyPercentPractice = false;
   bool _debugForceQuizFirst = false;
   int _currentCardPass = 0;
 
@@ -1320,7 +1319,6 @@ class AppStore extends ChangeNotifier {
   bool get sessionFinished => _sessionCardsCompleted >= _sessionDailyTarget;
   bool get isPremium => _isPremium;
   bool get doubleExercises => _doubleExercises;
-  bool get hideFiftyPercentPractice => _hideFiftyPercentPractice;
   bool get debugForceQuizFirst => _debugForceQuizFirst;
 
   void setPremiumPreview(bool value) {
@@ -1681,7 +1679,6 @@ class AppStore extends ChangeNotifier {
     required int difficulty,
     required int dailyTarget,
     bool doubleExercises = false,
-    bool hideFiftyPercentPractice = false,
     bool debugForceQuizFirst = false,
   }) {
     _sessionDifficulty = difficulty.clamp(0, 2);
@@ -1693,7 +1690,6 @@ class AppStore extends ChangeNotifier {
     _correctAnswers = 0;
     _wrongAnswers = 0;
     _doubleExercises = doubleExercises;
-    _hideFiftyPercentPractice = hideFiftyPercentPractice;
     _debugForceQuizFirst = debugForceQuizFirst;
     _currentCardPass = 0;
     final deckId = activeDeck.id;
