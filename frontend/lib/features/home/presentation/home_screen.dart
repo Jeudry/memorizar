@@ -44,8 +44,17 @@ class HomeScreen extends StatelessWidget {
           _SectionHeader(
             title: store.hasDecks ? 'Tus mazos' : 'Tu biblioteca',
             trailing: TextButton(
-              onPressed: () =>
-                  Navigator.pushNamed(context, '/comunidad'),
+              onPressed: () {
+                // "Ver más" de Tus mazos lleva a la pestaña Mazos (no a
+                // Comunidad). Dentro del shell cambia de tab como la barra
+                // inferior; fuera del shell, navega por ruta.
+                final shell = MainTabShell.of(context);
+                if (shell != null) {
+                  shell.goToRoute(AppRoutes.repasar);
+                } else {
+                  Navigator.pushNamed(context, AppRoutes.repasar);
+                }
+              },
               child: const Text(
                 'Ver más',
                 style: TextStyle(
