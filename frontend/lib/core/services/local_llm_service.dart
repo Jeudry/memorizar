@@ -528,7 +528,15 @@ class LocalLlmService {
           jsonSchema: _quizRoundSetSchema,
         );
         debugPrint('=== RESPUESTA IA LOCAL QUIZ CRUDA (intento $attempt) ===\n$content\n=====================================');
-        return _parseQuizRoundSet(content);
+        final parsed = _parseQuizRoundSet(content);
+        // El verdadero/falso lo construimos NOSOTROS a partir del texto para no
+        // depender de la etiqueta del modelo (que a veces afirmaba algo cierto y
+        // lo marcaba como falso). El trueFalse del modelo se descarta.
+        return AiQuizRoundSet(
+          trueFalse: _buildCodeTrueFalse(verses.first.verseText),
+          multipleChoice: parsed.multipleChoice,
+          openQuestion: parsed.openQuestion,
+        );
       } catch (e) {
         lastError = e;
         debugPrint('Generación de quiz falló (intento $attempt/$_quizMaxAttempts): $e');
@@ -537,31 +545,72 @@ class LocalLlmService {
     throw StateError('No se pudo generar el quiz tras $_quizMaxAttempts intentos: $lastError');
   }
 
+  /// Palabras de contenido "plausibles pero de otro tema" para fabricar una
+  /// versión FALSA del versículo (sustituyendo una palabra por una de aquí que
+  /// no esté en el texto). Bíblicas y comunes para que suene natural.
+  static const List<String> _tfFalsePool = [
+    'cielo', 'tierra', 'luz', 'agua', 'fuego', 'viento', 'monte', 'mar',
+    'desierto', 'ciudad', 'templo', 'pueblo', 'rey', 'profeta', 'ángel',
+    'justicia', 'pecado', 'gloria', 'pan', 'vino', 'camino', 'verdad', 'vida',
+    'muerte', 'día', 'noche', 'sol', 'luna', 'estrella', 'árbol', 'fruto',
+    'piedra', 'río', 'monte', 'siervo', 'palabra', 'mano', 'corazón',
+  ];
+
+  /// Construye en CÓDIGO el enunciado de verdadero/falso a partir del texto,
+  /// sin depender de la etiqueta del modelo. TRUE = el versículo tal cual;
+  /// FALSE = el versículo con UNA palabra de contenido sustituida por otra que
+  /// no aparece en él → afirmación realmente falsa (y la etiqueta nunca miente).
+  AiTrueFalseRound _buildCodeTrueFalse(String verseText) {
+    final clean = verseText.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (clean.isEmpty || _seedRandom.nextBool()) {
+      return AiTrueFalseRound(statement: clean, isTrue: true);
+    }
+    String norm(String w) =>
+        w.toLowerCase().replaceAll(RegExp(r'[^a-záéíóúñü]'), '');
+    const stop = {
+      'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'de', 'del', 'y',
+      'o', 'en', 'a', 'que', 'se', 'su', 'sus', 'con', 'por', 'para', 'al',
+      'lo', 'le', 'es', 'fue', 'era', 'sin', 'sobre', 'mi', 'tu', 'no', 'ni',
+      'como', 'más', 'muy', 'ya', 'esto', 'esta', 'este',
+    };
+    final tokens = clean.split(' ');
+    final verseWords = {for (final t in tokens) norm(t)}..remove('');
+    final contentIdx = [
+      for (var i = 0; i < tokens.length; i++)
+        if (norm(tokens[i]).length >= 4 && !stop.contains(norm(tokens[i]))) i,
+    ];
+    final candidates =
+        _tfFalsePool.where((w) => !verseWords.contains(norm(w))).toList();
+    if (contentIdx.isEmpty || candidates.isEmpty) {
+      // No se pudo alterar de forma segura → devolvemos una verdadera.
+      return AiTrueFalseRound(statement: clean, isTrue: true);
+    }
+    final idx = contentIdx[_seedRandom.nextInt(contentIdx.length)];
+    final replacement = candidates[_seedRandom.nextInt(candidates.length)];
+    final orig = tokens[idx];
+    // Conserva puntuación al inicio/fin y la mayúscula inicial de la palabra.
+    final lead = RegExp(r'^[^0-9A-Za-zÁÉÍÓÚÜÑáéíóúüñ]*').firstMatch(orig)!.group(0)!;
+    final trail = RegExp(r'[^0-9A-Za-zÁÉÍÓÚÜÑáéíóúüñ]*$').firstMatch(orig)!.group(0)!;
+    final coreStart = lead.length;
+    final wasUpper = orig.length > coreStart &&
+        orig[coreStart] == orig[coreStart].toUpperCase() &&
+        orig[coreStart] != orig[coreStart].toLowerCase();
+    final repl = wasUpper
+        ? '${replacement[0].toUpperCase()}${replacement.substring(1)}'
+        : replacement;
+    tokens[idx] = '$lead$repl$trail';
+    return AiTrueFalseRound(statement: tokens.join(' '), isTrue: false);
+  }
+
   /// Parsea la respuesta del quiz con el normalizador tolerante: acepta el
   /// objeto esperado, un array de sets, `{questions:[...]}` o un array de
   /// preguntas tipadas, con nombres de campo variables.
   AiQuizRoundSet _parseQuizRoundSet(String content) {
     final set = AiQuizRoundSet.lenient(_decodeJsonStructure(content));
-    // Una pregunta de Verdadero/Falso DEBE presentar una afirmación, no una
-    // pregunta interrogativa. Si el modelo devolvió una pregunta, la rechazamos
-    // para que el bucle de reintentos genere otra.
-    if (_looksLikeQuestion(set.trueFalse.statement)) {
-      throw const FormatException(
-        'El "trueFalse" llegó como pregunta, no como afirmación.',
-      );
-    }
-    // Si copió el ejemplo de formato verbatim, su isTrue es basura → re-roll.
-    String tfNorm(String s) =>
-        s.toLowerCase().replaceAll(RegExp(r'[^a-záéíóúñü0-9]'), '');
-    if (tfNorm(set.trueFalse.statement) == tfNorm(_tfFormatExample)) {
-      throw const FormatException(
-        'El "trueFalse" copió el ejemplo de formato en lugar de usar el texto.',
-      );
-    }
-    // El cuestionario DEBE estar en español. Si el modelo se fue al inglés, lo
-    // rechazamos para que el bucle de reintentos genere otro en español.
+    // (El verdadero/falso del modelo se descarta y se genera en código; no lo
+    // validamos aquí.) El resto del cuestionario DEBE estar en español: si el
+    // modelo se fue al inglés, lo rechazamos para que el bucle re-genere.
     if (_looksEnglish(set.multipleChoice.question) ||
-        _looksEnglish(set.trueFalse.statement) ||
         _looksEnglish(set.openQuestion.question)) {
       throw const FormatException('El quiz llegó en inglés, no en español.');
     }
@@ -581,29 +630,6 @@ class LocalLlmService {
       'does', 'do', 'which', 'true', 'false', 'answer', 'verse',
     };
     return words.where(markers.contains).length >= 2;
-  }
-
-  /// ¿El texto parece una pregunta y no una afirmación? Conservador: solo marca
-  /// signos de interrogación o un arranque con interrogativa acentuada.
-  bool _looksLikeQuestion(String s) {
-    final t = s.trim().toLowerCase();
-    if (t.isEmpty) return false;
-    if (t.contains('?') || t.contains('¿')) return true;
-    const starts = [
-      'qué ',
-      'cuál',
-      'cuáles',
-      'quién',
-      'quiénes',
-      'dónde',
-      'cómo ',
-      'cuándo',
-      'cuánto',
-      'cuánta',
-      'por qué',
-      'para qué',
-    ];
-    return starts.any(t.startsWith);
   }
 
   /// Genera un versículo alterado con palabras intrusas según el nivel de dificultad:
