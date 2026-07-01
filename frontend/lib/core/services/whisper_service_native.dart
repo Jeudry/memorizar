@@ -191,7 +191,9 @@ class WhisperService {
     }
 
     final Float32List floatSamples = _pcm16ToFloat32(pcmBytes);
-    debugPrint('Read ${floatSamples.length} float samples from audio file.');
+    final audioSeconds = (floatSamples.length / 16000).toStringAsFixed(1);
+    debugPrint(
+        'Whisper: audio de ${audioSeconds}s (${floatSamples.length} samples). Decodificando…');
 
     final recognizer = _recognizer!;
     final stream = recognizer.createStream();
@@ -199,12 +201,15 @@ class WhisperService {
     // Pausa el prefetch de la IA local (llama-server) durante el decode: whisper
     // corre en CPU y, si compiten, el "Evaluando audio…" se eterniza.
     LocalLlmService.instance.setVoiceCaptureActive(true);
+    final sw = Stopwatch()..start();
     try {
       stream.acceptWaveform(samples: floatSamples, sampleRate: 16000);
       recognizer.decode(stream);
       final text = recognizer.getResult(stream).text;
 
-      debugPrint('Whisper transcription result: "$text"');
+      sw.stop();
+      debugPrint(
+          'Whisper: decode de ${audioSeconds}s tardó ${sw.elapsedMilliseconds} ms → "$text"');
       return _sanitizeTranscription(text.trim());
     } catch (e) {
       debugPrint('Error transcribing audio with Whisper: $e');
