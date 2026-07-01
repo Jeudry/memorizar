@@ -1143,6 +1143,12 @@ class LocalLlmService {
         'temperature': temperature,
         'max_tokens': maxTokens,
         'seed': _seedRandom.nextInt(1 << 30),
+        // CLAVE: desactiva la fase de "razonamiento" del modelo. Sin esto, el
+        // modelo gasta cientos de tokens PENSANDO antes de responder y, con un
+        // max_tokens acotado, se queda sin presupuesto y devuelve content VACÍO
+        // (finish_reason: length) → fallaban distractores/eval/intrusas. Sin
+        // razonar, responde el JSON directo: mucho más rápido y fiable.
+        'chat_template_kwargs': {'enable_thinking': false},
         if (jsonSchema != null)
           'response_format': {
             'type': 'json_object',
