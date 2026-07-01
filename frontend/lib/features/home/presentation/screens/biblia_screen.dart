@@ -218,10 +218,10 @@ class _BibliaScreenState extends State<BibliaScreen> {
         .map((verse) => verse.verse)
         .toSet();
     final confirmingSelection = _step == 'continue';
-    // La barra de búsqueda global solo tiene sentido mientras se elige libro o
-    // capítulo. Al seleccionar un capítulo (paso 'verse') o al confirmar, se
-    // oculta para dejar todo el espacio a la selección de versículos.
-    final showSearchBar = _step == 'book' || _step == 'chap';
+    // La barra de búsqueda global solo tiene sentido en la selección de libro.
+    // En cuanto se elige un libro (paso 'chap' en adelante) se oculta para
+    // dejar todo el espacio a la selección de capítulo/versículos.
+    final showSearchBar = _step == 'book';
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -761,7 +761,7 @@ class _BookPickerState extends State<_BookPicker> {
               const SizedBox(width: 10),
               // Los tabs Antiguo/Nuevo van junto al dropdown de versión.
               SizedBox(
-                width: 176,
+                width: 148,
                 child: _TestamentTabs(
                   showNew: _showNew,
                   onChanged: (v) => setState(() => _showNew = v),
@@ -793,31 +793,26 @@ class _TestamentTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: HtmlRefColors.glassSoft,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: HtmlRefColors.glassBorder),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _TestamentTabButton(
-              label: 'Antiguo',
-              active: !showNew,
-              onTap: () => onChanged(false),
-            ),
+    // Sin contenedor/borde/padding: solo los dos botones. El botón activo trae
+    // su propio relleno, así que ganamos ancho para el dropdown de versión.
+    return Row(
+      children: [
+        Expanded(
+          child: _TestamentTabButton(
+            label: 'Antiguo',
+            active: !showNew,
+            onTap: () => onChanged(false),
           ),
-          Expanded(
-            child: _TestamentTabButton(
-              label: 'Nuevo',
-              active: showNew,
-              onTap: () => onChanged(true),
-            ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: _TestamentTabButton(
+            label: 'Nuevo',
+            active: showNew,
+            onTap: () => onChanged(true),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -1330,11 +1325,8 @@ class _BibleVersionDropdown extends StatelessWidget {
         isExpanded: true,
         dropdownColor: RefColors.glassStrong,
         borderRadius: BorderRadius.circular(12),
-        icon: const Icon(
-          Icons.keyboard_arrow_down_rounded,
-          color: RefColors.muted,
-          size: 18,
-        ),
+        // Sin flecha hacia abajo: innecesaria y roba ancho al nombre.
+        icon: const SizedBox.shrink(),
         style: const TextStyle(
           color: RefColors.ink,
           fontSize: 12,
