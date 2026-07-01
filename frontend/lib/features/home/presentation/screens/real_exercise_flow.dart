@@ -584,6 +584,17 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final store = AppScope.of(context);
+      // El banco completo, como los demás pasos, recorre TODAS las tarjetas del
+      // batch antes de terminar el paso; no debe cerrarse tras la primera.
+      final batch = _sessionBatchCards(context);
+      if (_subCardIndex + 1 < batch.length) {
+        setState(() {
+          _subCardIndex++;
+          _resetSubCardState();
+        });
+        return;
+      }
+      _subCardIndex = 0;
       _completeStepAndNavigate(context, store, '15-banco-completo');
     });
   }
@@ -1065,14 +1076,20 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   }
 
   /// Teclado físico (desktop): enruta una tecla de letra al hueco activo del
-  /// ejercicio de "primera letra". Ignora teclas que no sean una sola letra.
-  void _handleLetterKey(KeyEvent event) {
-    if (event is! KeyDownEvent) return;
-    final ch = event.character;
-    if (ch == null || ch.length != 1) return;
-    if (RegExp(r'[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]').hasMatch(ch)) {
-      _selectFirstLetter(ch);
+  /// ejercicio de "primera letra". Devuelve `handled` para CONSUMIR la tecla y
+  /// que macOS no reproduzca el "beep" de sistema por tecla no manejada.
+  KeyEventResult _handleLetterKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
     }
+    final ch = event.character;
+    if (ch != null &&
+        ch.length == 1 &&
+        RegExp(r'[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]').hasMatch(ch)) {
+      if (event is KeyDownEvent) _selectFirstLetter(ch);
+      return KeyEventResult.handled; // consume: sin beep
+    }
+    return KeyEventResult.ignored;
   }
 
   void _selectFirstLetter(String letter) {
@@ -2917,8 +2934,9 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       final complete = _letterComplete();
       final remainingAttempts = (3 - _letterMistakes).clamp(0, 3);
       // En desktop, además del teclado en pantalla, capturamos el teclado
-      // físico: al teclear una letra se resuelve el hueco activo.
-      return KeyboardListener(
+      // físico: al teclear una letra se resuelve el hueco activo. Usamos Focus
+      // (no KeyboardListener) para poder CONSUMIR la tecla y evitar el beep.
+      return Focus(
         focusNode: _letterKeyboardFocus,
         autofocus: true,
         onKeyEvent: _handleLetterKey,
