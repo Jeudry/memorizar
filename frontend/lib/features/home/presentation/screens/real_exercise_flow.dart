@@ -773,6 +773,39 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     }
   }
 
+  // TODO(dev-only): QUITAR ANTES DE PRODUCCIÓN. Botón de omitir universal para
+  // pruebas manuales. Marca el paso como completado y avanza, igual que
+  // terminarlo. Sólo se construye bajo kDebugMode (ver call site).
+  Widget _buildDevSkipButton(BuildContext context, AppStore store, String slug) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: GestureDetector(
+        onTap: () {
+          ActiveMediaRegistry.stopAll();
+          _completeStepAndNavigate(context, store, slug);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: RefColors.urgent.withValues(alpha: .16),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: RefColors.urgent.withValues(alpha: .55)),
+          ),
+          child: const Text(
+            '⏭  DEV · omitir ejercicio (no prod)',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+              color: RefColors.urgent,
+              letterSpacing: .3,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _completeStepAndNavigate(
     BuildContext context,
     AppStore store,
@@ -1852,6 +1885,12 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                 }(),
                 progress: step.clamp(1, totalSteps),
               ),
+
+            // TODO(dev-only): QUITAR ANTES DE PRODUCCIÓN. Botón de omitir para
+            // agilizar las pruebas manuales: aparece en TODOS los ejercicios
+            // pero SOLO en builds de desarrollo (kDebugMode es false en
+            // release, así que no llega a producción).
+            if (kDebugMode) _buildDevSkipButton(context, store, slug),
 
             (() {
               final isScrollable =
