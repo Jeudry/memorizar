@@ -104,7 +104,16 @@ class _BibliaScreenState extends State<BibliaScreen> {
   @override
   void dispose() {
     _searchController.dispose();
-    _storeRef?.clearBibleSelection();
+    // clearBibleSelection() hace notifyListeners(); llamarlo dentro de dispose
+    // (árbol bloqueado) lanza "setState called when widget tree was locked".
+    // Lo diferimos al siguiente frame: el store persiste al widget, así que es
+    // seguro limpiar la selección una vez desbloqueado el árbol.
+    final store = _storeRef;
+    if (store != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => store.clearBibleSelection(),
+      );
+    }
     super.dispose();
   }
 
