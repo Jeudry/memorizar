@@ -854,34 +854,52 @@ class LocalLlmService {
     required String verseText,
     int count = 8,
   }) async {
-    final entropy = _seedRandom.nextInt(100000);
-    final prompt =
-        'Eres un tutor de memorización de versículos en español.\n'
-        'Semilla de variación aleatoria: $entropy\n'
-        'Texto ($reference): "$verseText"\n\n'
-        'Devuelve "distractors": exactamente $count PALABRAS sueltas (una sola palabra, sin frases) '
-        'que funcionen como opciones INCORRECTAS pero MUY confundibles en un ejercicio de rellenar '
-        'huecos de este texto. Cada distractor debe poder colocarse en lugar de ALGUNA palabra del '
-        'versículo y sonar casi creíble: usa sinónimos cercanos, la misma familia o raíz, otra '
-        'conjugación, o palabras de longitud y forma parecidas a las del texto, y que encajen '
-        'gramaticalmente (mismo tipo: si reemplaza un verbo, que sea verbo; si un sustantivo, '
-        'sustantivo; respeta género/número). '
-        'PROHIBIDO: palabras que ya estén en el texto, y palabras genéricas sin relación con el '
-        'versículo. Todo en español. Solo el JSON.';
-    final content = await _chat(
-      prompt,
-      temperature: 0.9,
-      maxTokens: 200,
-      jsonSchema: _distractorSchema,
-    );
-    final decoded = _decodeJsonObject(content);
-    final raw = (decoded['distractors'] as List?) ?? const [];
-    final words = <String>[];
-    for (final item in raw) {
-      final word = item.toString().trim().split(RegExp(r'\s+')).first;
-      if (word.length > 2 && !words.contains(word)) words.add(word);
+    // El modelo on-device a veces devuelve una respuesta VACÍA en una
+    // generación concreta; sin reintento, el prefetch fallaba siempre y el
+    // ejercicio se quedaba sin distractores de IA. Reintentamos unas pocas
+    // veces y, si aun así no hay nada, devolvemos vacío (el ejercicio usa su
+    // banco local) SIN lanzar, para no spamear ni colgar el spinner.
+    const maxAttempts = 3;
+    Object? lastError;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        final entropy = _seedRandom.nextInt(100000);
+        final prompt =
+            'Eres un tutor de memorización de versículos en español.\n'
+            'Semilla de variación aleatoria: $entropy\n'
+            'Texto ($reference): "$verseText"\n\n'
+            'Devuelve "distractors": exactamente $count PALABRAS sueltas (una sola palabra, sin frases) '
+            'que funcionen como opciones INCORRECTAS pero MUY confundibles en un ejercicio de rellenar '
+            'huecos de este texto. Cada distractor debe poder colocarse en lugar de ALGUNA palabra del '
+            'versículo y sonar casi creíble: usa sinónimos cercanos, la misma familia o raíz, otra '
+            'conjugación, o palabras de longitud y forma parecidas a las del texto, y que encajen '
+            'gramaticalmente (mismo tipo: si reemplaza un verbo, que sea verbo; si un sustantivo, '
+            'sustantivo; respeta género/número). '
+            'PROHIBIDO: palabras que ya estén en el texto, y palabras genéricas sin relación con el '
+            'versículo. Todo en español. Solo el JSON.';
+        final content = await _chat(
+          prompt,
+          temperature: 0.9,
+          maxTokens: 160,
+          jsonSchema: _distractorSchema,
+        );
+        final decoded = _decodeJsonObject(content);
+        final raw = (decoded['distractors'] as List?) ?? const [];
+        final words = <String>[];
+        for (final item in raw) {
+          final word = item.toString().trim().split(RegExp(r'\s+')).first;
+          if (word.length > 2 && !words.contains(word)) words.add(word);
+        }
+        if (words.isNotEmpty) return words;
+        lastError = StateError('lista de distractores vacía');
+      } catch (e) {
+        lastError = e;
+        debugPrint('Distractores IA fallaron (intento $attempt/$maxAttempts): $e');
+      }
     }
-    return words;
+    debugPrint('Distractores IA sin resultado tras $maxAttempts intentos '
+        '($lastError); el ejercicio usará su banco local.');
+    return const [];
   }
 
   // ---------------------------------------------------------------------------
