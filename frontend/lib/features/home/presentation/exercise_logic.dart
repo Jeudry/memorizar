@@ -98,9 +98,20 @@ List<String> completionTargets(String text,
   return ordered.map((i) => words[i]).toList();
 }
 
+/// Pool genérico de respaldo para cuando no hay suficientes distractores (todas
+/// las palabras ocultas, o la IA aún cargando). Palabras comunes/bíblicas.
+const List<String> _fallbackDistractorPool = [
+  'cielo', 'tierra', 'luz', 'agua', 'fuego', 'viento', 'monte', 'mar',
+  'desierto', 'ciudad', 'templo', 'pueblo', 'rey', 'profeta', 'ángel',
+  'justicia', 'pecado', 'gloria', 'pan', 'vino', 'camino', 'verdad', 'vida',
+  'muerte', 'noche', 'día', 'palabra', 'mano', 'corazón', 'siervo', 'piedra',
+  'río', 'fruto', 'árbol', 'nombre', 'casa', 'monte', 'sol', 'luna',
+];
+
 /// Banco de opciones para "Elige la palabra correcta": la palabra correcta +
 /// hasta 4 distractores. Prefiere `aiPool` (distractores tramposos de la IA);
-/// si no alcanza, rellena con otras palabras del versículo.
+/// si no alcanza, rellena con otras palabras del versículo y, como último
+/// recurso, con [_fallbackDistractorPool].
 List<String> completionOptions(
   String text,
   String target, {
@@ -136,6 +147,16 @@ List<String> completionOptions(
   }
   for (final word in studyWords(text)) {
     addCandidate(word);
+  }
+  // Respaldo: si tras excluir quedan pocos distractores (p.ej. cuando casi
+  // todas las palabras del versículo son huecos, o mientras la IA aún carga su
+  // pool), rellenamos con un pool genérico para que SIEMPRE haya varias
+  // opciones jugables y no quede solo la palabra correcta.
+  if (candidates.length < 4) {
+    for (final word in _fallbackDistractorPool) {
+      if (candidates.length >= 6) break;
+      addCandidate(word);
+    }
   }
 
   // Coherencia sintáctica: en español la TERMINACIÓN marca tipo y concordancia
