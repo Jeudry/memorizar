@@ -60,6 +60,14 @@ class LocalLlmService {
   // tokens hace cada intento MUCHO más rápido (evita generación larga inútil).
   static const int _evaluationMaxTokens = 128;
 
+  /// Ejemplo de FORMATO para el enunciado de verdadero/falso. Debe ser NEUTRAL
+  /// (no una verdad de ningún versículo real): el modelo pequeño tiende a copiar
+  /// el ejemplo verbatim, y si fuera contenido bíblico real lo pegaría como
+  /// respuesta con la etiqueta isTrue a la suerte (bug: marcaba FALSO una
+  /// afirmación verdadera del versículo).
+  static const String _tfFormatExample =
+      'El mensajero llegó al pueblo al amanecer.';
+
   /// Reintentos de la evaluación de respuesta abierta. Con los tokens acotados
   /// cada intento es rápido, así que damos 3 oportunidades (el fallo típico es
   /// una respuesta vacía transitoria que un re-roll resuelve) sin que la espera
@@ -468,7 +476,7 @@ class LocalLlmService {
           'Cada una trata SOLO sobre el texto indicado en su "forText". Asignación OBLIGATORIA: '
           'trueFalse → Texto 1; multipleChoice → Texto 2; openQuestion → Texto $openForText. '
           'Es OBLIGATORIO cubrir los $n textos; ninguno puede quedar sin su pregunta. '
-          'Preguntas CORTAS; el "statement" del trueFalse es una AFIRMACIÓN declarativa que se pueda juzgar como verdadera o falsa: NUNCA una pregunta (sin "¿" ni "?"). Ej válido: "La tierra estaba sin forma y vacía." Ej INVÁLIDO: "¿Qué había sobre las aguas?". Si el trueFalse es falso, el error debe ser comprobable con el texto (puede ser sutil); '
+          'Preguntas CORTAS; el "statement" del trueFalse es una AFIRMACIÓN declarativa SOBRE EL TEXTO que se pueda juzgar como verdadera o falsa: NUNCA una pregunta (sin "¿" ni "?"). Escríbela con TUS palabras a partir del texto; NO copies este ejemplo, es solo de FORMATO: "$_tfFormatExample". Ej INVÁLIDO: "¿Qué había sobre las aguas?". Si el trueFalse es falso, el error debe ser comprobable con el texto (puede ser sutil), y asegúrate de que "isTrue" sea COHERENTE con la afirmación; '
           'multipleChoice con "correct" breve y exactamente 3 "distractors" breves; los 3 distractores deben ser del MISMO tipo, categoría y forma gramatical que "correct", de modo que las 4 opciones encajen naturalmente al responder la pregunta (si reemplazas cualquier opción en la pregunta, debe leerse coherente). NO mezcles categorías (p.ej. si la respuesta es una descripción/estado, los distractores también; no pongas nombres de cosas); '
           'la openQuestion es UNA sola pregunta corta (NO juntes dos preguntas con "y").\n'
           'Formato de salida OBLIGATORIO, EXACTAMENTE este array (sin texto adicional antes ni después):\n'
@@ -481,7 +489,7 @@ class LocalLlmService {
       textBlock = 'Texto a evaluar (${verses.first.reference}): "${verses.first.verseText}"';
       formatBlock =
           'Genera exactamente 3 preguntas sobre el texto:\n'
-          '1. "trueFalse": una AFIRMACIÓN declarativa CORTA (NUNCA una pregunta; sin "¿" ni "?") con su veredicto "isTrue". Ej válido: "La tierra estaba sin forma y vacía." Ej INVÁLIDO: "¿Qué había sobre las aguas?". Si es falsa, el error debe ser comprobable con el texto (puede ser sutil).\n'
+          '1. "trueFalse": una AFIRMACIÓN declarativa CORTA SOBRE EL TEXTO (NUNCA una pregunta; sin "¿" ni "?") con su veredicto "isTrue" COHERENTE. Escríbela con TUS palabras a partir del texto; NO copies este ejemplo, es solo de FORMATO: "$_tfFormatExample". Ej INVÁLIDO: "¿Qué había sobre las aguas?". Si es falsa, el error debe ser comprobable con el texto (puede ser sutil).\n'
           '2. "multipleChoice": pregunta CORTA con "correct" (breve) y "distractors" (exactamente 3, breves). Los 3 distractores deben ser del MISMO tipo, categoría y forma gramatical que "correct", para que las 4 opciones encajen al responder la pregunta (si reemplazas cualquier opción en la pregunta, debe leerse coherente). NO mezcles categorías (si la respuesta es una descripción/estado, los distractores también; no pongas nombres de cosas).\n'
           '3. "openQuestion": UNA sola pregunta abierta, CORTA (una frase), que se responda explicando con pocas palabras. NO juntes dos preguntas en una (nada de "explica X y reflexiona sobre Y").\n'
           'Cada sección debe evaluar un aspecto DIFERENTE del texto.\n'
@@ -540,6 +548,14 @@ class LocalLlmService {
     if (_looksLikeQuestion(set.trueFalse.statement)) {
       throw const FormatException(
         'El "trueFalse" llegó como pregunta, no como afirmación.',
+      );
+    }
+    // Si copió el ejemplo de formato verbatim, su isTrue es basura → re-roll.
+    String tfNorm(String s) =>
+        s.toLowerCase().replaceAll(RegExp(r'[^a-záéíóúñü0-9]'), '');
+    if (tfNorm(set.trueFalse.statement) == tfNorm(_tfFormatExample)) {
+      throw const FormatException(
+        'El "trueFalse" copió el ejemplo de formato en lugar de usar el texto.',
       );
     }
     // El cuestionario DEBE estar en español. Si el modelo se fue al inglés, lo
