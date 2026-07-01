@@ -114,7 +114,10 @@ class WhisperService {
       whisper: whisperConfig,
       tokens: tokensPath,
       modelType: 'whisper',
-      numThreads: 2,
+      // whisper-small en CPU es el cuello de botella del "Evaluando audio…".
+      // Con 2 hilos infrautilizaba el equipo; escalamos con los núcleos
+      // disponibles (dejando margen para la UI) para acelerar la decodificación.
+      numThreads: Platform.numberOfProcessors.clamp(2, 6),
       debug: kDebugMode,
     );
 
