@@ -271,17 +271,26 @@ class _FogStepState extends State<_FogStep>
     _pulse.stop();
     _pulse.value = 0;
     try {
-      debugPrint('FOG: _finishCapture → isRecording?');
       final isRecording = await _audioRecorder.isRecording();
-      debugPrint('FOG: isRecording=$isRecording → stop()');
       if (!isRecording) {
         throw Exception('El micrófono no está grabando. Verifica permisos del sistema.');
       }
-      final path = await _audioRecorder.stop();
-      debugPrint('FOG: recorder.stop() → path=$path');
+      // El `record` en macOS a veces DEJA COLGADO el stop() (nunca resuelve),
+      // dejando el "Evaluando audio…" para siempre. Le ponemos timeout y, si no
+      // responde, usamos el .raw que ya se venía escribiendo durante la
+      // grabación (ruta fijada en _recordedPath al iniciar).
+      final rawPath = _recordedPath;
+      final path = await _audioRecorder.stop().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {
+          debugPrint('FOG: recorder.stop() no respondió; uso el .raw grabado.');
+          // Fuerza cierre en segundo plano para soltar el micrófono.
+          unawaited(_audioRecorder.cancel().catchError((_) {}));
+          return rawPath;
+        },
+      );
       if (path != null) {
         final wavPath = await _convertPcmToWav(path);
-        debugPrint('FOG: convertido a wav=$wavPath');
         _recordedPath = wavPath;
       }
       if (!mounted) return;
