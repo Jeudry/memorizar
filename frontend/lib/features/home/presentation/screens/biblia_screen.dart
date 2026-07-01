@@ -2205,8 +2205,10 @@ List<String> _completionOptions(
   String target, {
   int seed = 0,
   List<String>? aiPool,
+  List<String> exclude = const [],
 }) =>
-    completionOptions(text, target, seed: seed, aiPool: aiPool);
+    completionOptions(text, target,
+        seed: seed, aiPool: aiPool, exclude: exclude);
 
 (List<String>, List<int>) _firstLetterTargetsWithPositions(String text, {required int level}) {
   final words = _studyWords(text);

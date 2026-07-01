@@ -56,12 +56,15 @@ class LocalLlmService {
   /// on-device. Cada generación tarda ~20s, así que el normalizador tolerante
   /// hace el trabajo pesado y esto sólo cubre fallos extremos; mantenerlo bajo.
   static const int _quizMaxAttempts = 2;
-  static const int _evaluationMaxTokens = 300;
+  // El veredicto es un JSON diminuto ({isCorrect, feedback corto}); acotar los
+  // tokens hace cada intento MUCHO más rápido (evita generación larga inútil).
+  static const int _evaluationMaxTokens = 128;
 
-  /// Reintentos de la evaluación de respuesta abierta. Cada intento cuesta
-  /// ~20s, así que lo mantenemos bajo para no hacer esperar demasiado al usuario
-  /// cuando el modelo no coopera.
-  static const int _evaluationMaxAttempts = 2;
+  /// Reintentos de la evaluación de respuesta abierta. Con los tokens acotados
+  /// cada intento es rápido, así que damos 3 oportunidades (el fallo típico es
+  /// una respuesta vacía transitoria que un re-roll resuelve) sin que la espera
+  /// total se vuelva eterna.
+  static const int _evaluationMaxAttempts = 3;
 
   static const Map<String, dynamic> _quizRoundSetSchema = {
     'type': 'object',

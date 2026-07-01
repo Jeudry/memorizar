@@ -2271,6 +2271,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       activeTarget,
       seed: _completionSeed,
       aiPool: _aiDistractorPool,
+      // No ofrecer como distractor la respuesta de otro hueco.
+      exclude: _completionTargets,
     );
     final hasInput = _hasCompletionInput();
     final complete = _completionComplete();

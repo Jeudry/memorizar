@@ -106,20 +106,26 @@ List<String> completionOptions(
   String target, {
   int seed = 0,
   List<String>? aiPool,
+  List<String> exclude = const [],
 }) {
   final cleanRegex = RegExp(r'[^\wÁÉÍÓÚÜÑáéíóúüñ]');
   final cleanTarget = target.replaceAll(cleanRegex, '');
+  final excludeClean =
+      exclude.map((e) => e.replaceAll(cleanRegex, '')).toList();
   final rng = math.Random(
     seed == 0 ? DateTime.now().microsecondsSinceEpoch : seed,
   );
 
   // Candidatos: primero el pool de la IA (más tramposos), luego palabras del
-  // versículo como respaldo. Dedup y sin la palabra correcta.
+  // versículo como respaldo. Dedup, sin la palabra correcta y sin las palabras
+  // que son respuesta de OTROS huecos (no mostrar como distractor lo que el
+  // usuario debe adivinar en otro hueco).
   final candidates = <String>[];
   void addCandidate(String word) {
     final clean = word.replaceAll(cleanRegex, '');
     if (clean.length > 2 &&
         !sameAnswer(clean, cleanTarget) &&
+        !excludeClean.any((e) => sameAnswer(e, clean)) &&
         !candidates.any((c) => sameAnswer(c, clean))) {
       candidates.add(clean);
     }
