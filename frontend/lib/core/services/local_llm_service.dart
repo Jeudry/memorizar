@@ -320,6 +320,10 @@ class LocalLlmService {
     if (_initialized) return Future.value();
     return _initInFlight ??= _doInit().whenComplete(() {
       _initInFlight = null;
+      // Si quedó el motor cargado sin inferencias en curso (p.ej. tras el
+      // warm-up del arranque), arma igual el apagado por inactividad para no
+      // retener ~2 GB de RAM esperando un uso que quizá no llegue pronto.
+      if (_initialized && _pendingInferences == 0) _armIdleUnload();
     });
   }
 
