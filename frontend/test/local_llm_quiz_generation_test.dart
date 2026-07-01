@@ -23,6 +23,10 @@ void main() {
     }
   }
 
+  // Los ejercicios con IA están gateados por premium; en integración lo
+  // desbloqueamos para poder ejercitar el motor real.
+  setUpAll(() => LocalLlmService.instance.setPremiumUnlocked(true));
+
   test(
     'generateQuizRoundSet devuelve preguntas reales y variadas del modelo',
     () async {

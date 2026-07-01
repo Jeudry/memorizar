@@ -2091,7 +2091,9 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     if (difficulty >= 0) ...[
       ...pick(level2, difficulty == 0 ? 1 : (difficulty == 1 ? 2 : 3)),
       '17-niebla-n2',
-      '09-quiz',
+      // El quiz es 100% IA (sin fallback local) → función premium. Sin premium
+      // se omite del flujo para no mostrar un paso que fallaría.
+      if (store.isPremium) '09-quiz',
     ],
     
     // Nivel 3: práctica premium/avanzada + niebla N3 al final del nivel 3

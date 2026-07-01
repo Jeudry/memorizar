@@ -161,6 +161,18 @@ class LocalLlmService {
   bool get voiceCaptureActive => _voiceCaptureActive;
   void setVoiceCaptureActive(bool active) => _voiceCaptureActive = active;
 
+  // Los ejercicios con IA son una función PREMIUM. Sin premium NO se levanta el
+  // motor ni se hace ninguna inferencia (los ejercicios usan sus fallbacks
+  // locales/código). Lo sincroniza el store al cargar/cambiar el estado premium.
+  bool _premiumUnlocked = false;
+  bool get premiumUnlocked => _premiumUnlocked;
+  void setPremiumUnlocked(bool value) {
+    if (_premiumUnlocked == value) return;
+    _premiumUnlocked = value;
+    // Si se pierde premium, apaga el motor para no retener RAM.
+    if (!value) unawaited(unloadForIdle());
+  }
+
   bool _initialized = false;
   Future<void>? _initInFlight;
   final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0.0);
@@ -235,6 +247,7 @@ class LocalLlmService {
   /// La IA está disponible si el modelo está descargado localmente
   /// (o si estamos en web y ya hay un motor sano respondiendo).
   Future<bool> isAvailable() async {
+    if (!_premiumUnlocked) return false; // la IA es premium
     if (kIsWeb) {
       return LlamaServerManager.instance.isHealthy();
     }
@@ -414,6 +427,7 @@ class LocalLlmService {
   /// Calienta el motor en segundo plano al arrancar la app si el modelo ya
   /// está descargado, para que el primer quiz no espere la carga del modelo.
   Future<void> warmUpIfModelReady() async {
+    if (!_premiumUnlocked) return; // sin premium no se calienta el motor
     if (!_useMobileBackend && !LlamaServerManager.instance.isSupportedPlatform) {
       return;
     }
@@ -918,6 +932,7 @@ class LocalLlmService {
     required String verseText,
     required int level,
   }) {
+    if (!_premiumUnlocked) return; // IA premium
     if (_voiceCaptureActive) return; // no competir con Whisper en CPU
     final key = _intruderKey(reference, level);
     if (_intruderPrefetch.containsKey(key)) return;
@@ -938,6 +953,7 @@ class LocalLlmService {
     required String reference,
     required String verseText,
   }) {
+    if (!_premiumUnlocked) return; // IA premium
     if (_voiceCaptureActive) return; // no competir con Whisper en CPU
     if (_distractorPrefetch.containsKey(reference)) return;
     final f = generateCompletionDistractors(reference: reference, verseText: verseText);
@@ -1114,6 +1130,11 @@ class LocalLlmService {
     required int maxTokens,
     Map<String, dynamic>? jsonSchema,
   }) async {
+    // Gate central: sin premium no se hace NINGUNA inferencia con IA. Los
+    // ejercicios que llaman a la IA deben tolerar este fallo y usar su fallback.
+    if (!_premiumUnlocked) {
+      throw StateError('Los ejercicios con IA requieren premium.');
+    }
     if (!_initialized) {
       await initLlm();
     }
