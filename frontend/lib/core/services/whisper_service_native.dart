@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 
+import 'local_llm_service.dart';
+
 class WhisperService {
   WhisperService._privateConstructor();
   static final WhisperService instance = WhisperService._privateConstructor();
@@ -193,12 +195,15 @@ class WhisperService {
 
     final recognizer = _recognizer!;
     final stream = recognizer.createStream();
-    
+
+    // Pausa el prefetch de la IA local (llama-server) durante el decode: whisper
+    // corre en CPU y, si compiten, el "Evaluando audio…" se eterniza.
+    LocalLlmService.instance.setVoiceCaptureActive(true);
     try {
       stream.acceptWaveform(samples: floatSamples, sampleRate: 16000);
       recognizer.decode(stream);
       final text = recognizer.getResult(stream).text;
-      
+
       debugPrint('Whisper transcription result: "$text"');
       return _sanitizeTranscription(text.trim());
     } catch (e) {
@@ -206,6 +211,7 @@ class WhisperService {
       rethrow;
     } finally {
       stream.free();
+      LocalLlmService.instance.setVoiceCaptureActive(false);
       // Terminada la transcripción, programa la liberación por inactividad.
       _armIdleRelease();
     }

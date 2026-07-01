@@ -191,6 +191,8 @@ class _FogStepState extends State<_FogStep>
   void dispose() {
     _autoStopTimer?.cancel();
     _pulse.dispose();
+    // Por si se sale a mitad de una grabación, no dejar el prefetch pausado.
+    LocalLlmService.instance.setVoiceCaptureActive(false);
     try {
       WhisperService.instance.downloadProgress.removeListener(_onDownloadProgressChanged);
       WhisperService.instance.statusNotifier.removeListener(_onStatusChanged);
@@ -212,6 +214,9 @@ class _FogStepState extends State<_FogStep>
       await _finishCapture();
       return;
     }
+    // Desde que arranca la grabación pausamos el prefetch de IA local para que
+    // el prefetch en vuelo drene y el decode de Whisper corra con CPU libre.
+    LocalLlmService.instance.setVoiceCaptureActive(true);
     setState(() {
       _recognized = '';
       _score = 0;
@@ -293,6 +298,9 @@ class _FogStepState extends State<_FogStep>
         });
       }
     } finally {
+      // Reanuda el prefetch de IA local pase lo que pase (incl. si no hubo
+      // audio y no se llamó a transcribe, que ya lo limpia por su cuenta).
+      LocalLlmService.instance.setVoiceCaptureActive(false);
       if (mounted) {
         setState(() {
           _finalizing = false;

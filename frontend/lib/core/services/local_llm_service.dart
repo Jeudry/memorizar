@@ -142,6 +142,14 @@ class LocalLlmService {
   int _pendingInferences = 0;
   static const Duration _idleUnloadTimeout = Duration(seconds: 120);
 
+  // Mientras se captura/transcribe voz (Whisper en CPU), pausamos el prefetch
+  // de IA local para no pelear por la CPU: si no, el "Evaluando audio…" se
+  // eterniza porque el decode de Whisper queda hambriento. El prefetch se
+  // reanuda solo en el siguiente rebuild cuando esto vuelve a false.
+  bool _voiceCaptureActive = false;
+  bool get voiceCaptureActive => _voiceCaptureActive;
+  void setVoiceCaptureActive(bool active) => _voiceCaptureActive = active;
+
   bool _initialized = false;
   Future<void>? _initInFlight;
   final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0.0);
@@ -847,6 +855,7 @@ class LocalLlmService {
     required String verseText,
     required int level,
   }) {
+    if (_voiceCaptureActive) return; // no competir con Whisper en CPU
     final key = _intruderKey(reference, level);
     if (_intruderPrefetch.containsKey(key)) return;
     final f = generateIntruderVerse(reference: reference, verseText: verseText, level: level);
@@ -866,6 +875,7 @@ class LocalLlmService {
     required String reference,
     required String verseText,
   }) {
+    if (_voiceCaptureActive) return; // no competir con Whisper en CPU
     if (_distractorPrefetch.containsKey(reference)) return;
     final f = generateCompletionDistractors(reference: reference, verseText: verseText);
     _distractorPrefetch[reference] = f;

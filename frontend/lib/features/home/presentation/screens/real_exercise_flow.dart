@@ -92,6 +92,8 @@ class _QuizPrefetch {
   /// Arranca la generación del grupo si aún no está en caché (idempotente).
   static void ensure(List<MemoryCardData> group) {
     if (group.isEmpty) return;
+    // No arrancar prefetch de quiz mientras se transcribe voz (CPU para Whisper).
+    if (LocalLlmService.instance.voiceCaptureActive) return;
     final key = _key(group);
     if (_cache.containsKey(key)) return;
     final shuffled = [...group]..shuffle();
