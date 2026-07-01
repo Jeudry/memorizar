@@ -26,11 +26,8 @@ import '../../../core/import/csv_import.dart';
 import 'screens/coop_recap_share.dart';
 import 'screens/practice_choose_word_screen.dart';
 import 'screens/deck_csv_export.dart';
-import 'screens/deck_rating_sheet.dart';
-import 'screens/deck_comments_sheet.dart';
 import 'exercise_logic.dart';
 import '../../../core/services/local_llm_service.dart';
-import '../../../core/srs_forecast.dart';
 import '../../../core/services/ai_quiz_models.dart';
 import '../../account/presentation/account_screen.dart';
 import '../../auth/presentation/login_screen.dart';
@@ -46,7 +43,6 @@ import '../../legal/presentation/privacy_policy_screen.dart';
 import '../../legal/presentation/terms_of_service_screen.dart';
 import '../../legal/presentation/visibility_consent_dialog.dart';
 import '../../moderation/presentation/moderation_queue_screen.dart';
-import '../../moderation/presentation/report_dialog.dart';
 import '../../settings/presentation/settings_screen.dart';
 import 'glyph_icon.dart';
 import '../../plans/presentation/plans_screen.dart';
@@ -193,6 +189,7 @@ Map<String, WidgetBuilder> buildAppRoutes() => {
   AppRoutes.biblia: (_) => const BibliaScreen(),
   AppRoutes.especificar: (_) => const EspecificarScreen(),
   AppRoutes.iniciar: (_) => const IniciarScreen(),
+  AppRoutes.agregarMazo: (_) => const AgregarMazoScreen(),
   AppRoutes.repasar: (_) => const MainTabShell(initialRoute: AppRoutes.repasar),
   AppRoutes.comunidad: (_) => const MainTabShell(initialRoute: AppRoutes.comunidad),
   AppRoutes.amigos: (_) => const MainTabShell(initialRoute: AppRoutes.amigos),

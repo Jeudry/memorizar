@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../../../core/app_state.dart';
 import '../../../../core/theme/ref_colors.dart';
 import '../../../../core/ui/widgets.dart';
 import '../exercise_logic.dart';
@@ -13,7 +12,7 @@ import '../exercise_logic.dart';
 /// A diferencia de los ejercicios con nivel de la sesión (intentos, cronómetro
 /// y distractores de IA), esta versión es de práctica:
 ///  - sin niveles ni límite de intentos (fallar no penaliza, solo no avanza);
-///  - 100% de las palabras ocultas;
+///  - 50% de las palabras ocultas (fijo, sin opción de configurarlo);
 ///  - hay que completarlo DOS veces para terminar.
 ///
 /// No incluye scaffold ni top bar propios: devuelve solo el contenido para que
@@ -88,21 +87,20 @@ class _ChooseWordPracticeBodyState extends State<ChooseWordPracticeBody> {
     if (_cardId == cardId) return;
     _cardId = cardId;
     _words = _splitWords(targetText);
-    final hideFifty = AppScope.of(context).hideFiftyPercentPractice;
     final allWordPositions = [
       for (var i = 0; i < _words.length; i++)
         if (_norm(_words[i]).isNotEmpty) i,
     ];
-    if (hideFifty) {
-      if (allWordPositions.isEmpty) {
-        _blankPositions = [];
-      } else {
-        final list = [...allWordPositions]..shuffle(math.Random());
-        final count = (allWordPositions.length / 2).round().clamp(1, allWordPositions.length);
-        _blankPositions = list.take(count).toList()..sort();
-      }
+    // La práctica oculta siempre el 50% de las palabras (la mitad), sin opción
+    // de configurarlo: es la dificultad fija de este paso de Preparar.
+    if (allWordPositions.isEmpty) {
+      _blankPositions = [];
     } else {
-      _blankPositions = allWordPositions;
+      final list = [...allWordPositions]..shuffle(math.Random());
+      final count = (allWordPositions.length / 2)
+          .round()
+          .clamp(1, allWordPositions.length);
+      _blankPositions = list.take(count).toList()..sort();
     }
     _startPass(0, targetText);
   }

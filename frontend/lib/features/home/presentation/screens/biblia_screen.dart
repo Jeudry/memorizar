@@ -91,13 +91,29 @@ class _BibliaScreenState extends State<BibliaScreen> {
 
   bool get _isSearching => _searchController.text.trim().isNotEmpty;
 
+  // Guardamos la referencia al store en didChangeDependencies para poder usarla
+  // en dispose() sin hacer AppScope.of(context) sobre un widget ya desactivado.
+  AppStore? _storeRef;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _storeRef = AppScope.of(context);
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
-    final store = AppScope.of(context);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      store.clearBibleSelection();
-    });
+    // clearBibleSelection() hace notifyListeners(); llamarlo dentro de dispose
+    // (árbol bloqueado) lanza "setState called when widget tree was locked".
+    // Lo diferimos al siguiente frame: el store persiste al widget, así que es
+    // seguro limpiar la selección una vez desbloqueado el árbol.
+    final store = _storeRef;
+    if (store != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => store.clearBibleSelection(),
+      );
+    }
     super.dispose();
   }
 
@@ -148,11 +164,6 @@ class _BibliaScreenState extends State<BibliaScreen> {
     setState(() {});
   }
 
-  void _selectAllInBible() {
-    AppScope.of(context).addAllVersesInBible();
-    setState(() {});
-  }
-
   Set<String> _fullBooks(AppStore store) {
     final selectedBookNames =
         store.selectedBibleVerses.map((v) => v.book).toSet();
@@ -169,20 +180,40 @@ class _BibliaScreenState extends State<BibliaScreen> {
         .toSet();
   }
 
-  void _finishBibleSelection() {
-    final createdId = AppScope.of(context).createBibleDeckFromSelection();
+  void _openDeckById(String deckId) {
+    if (widget.embedded && widget.onDeckCreated != null) {
+      final deck = AppScope.of(context).decks.firstWhere((d) => d.id == deckId);
+      widget.onDeckCreated!(deckId, deck.title);
+    } else {
+      Navigator.pushNamed(context, AppRoutes.iniciar);
+    }
+  }
+
+  Future<void> _finishBibleSelection() async {
+    final store = AppScope.of(context);
+    // Si ya existe un mazo con exactamente estos versículos, no lo duplicamos:
+    // ofrecemos abrir el existente o crear uno nuevo igualmente.
+    final dup = store.findDuplicateBibleDeck();
+    if (dup != null) {
+      final choice =
+          await _showDuplicateDeckSheet(context, existingTitle: dup.title);
+      if (choice == null || !mounted) return;
+      if (choice == _DupDeckChoice.useExisting) {
+        store.setActiveDeck(dup.id);
+        _openDeckById(dup.id);
+        return;
+      }
+      // _DupDeckChoice.createNew → continúa al flujo normal de creación.
+    }
+    final createdId = store.createBibleDeckFromSelection();
     if (createdId == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Selecciona al menos un versículo.')),
       );
       return;
     }
-    if (widget.embedded && widget.onDeckCreated != null) {
-      final deck = AppScope.of(context).decks.firstWhere((d) => d.id == createdId);
-      widget.onDeckCreated!(createdId, deck.title);
-    } else {
-      Navigator.pushNamed(context, AppRoutes.iniciar);
-    }
+    _openDeckById(createdId);
   }
 
   @override
@@ -196,13 +227,17 @@ class _BibliaScreenState extends State<BibliaScreen> {
         .map((verse) => verse.verse)
         .toSet();
     final confirmingSelection = _step == 'continue';
+    // La barra de búsqueda global solo tiene sentido en la selección de libro.
+    // En cuanto se elige un libro (paso 'chap' en adelante) se oculta para
+    // dejar todo el espacio a la selección de capítulo/versículos.
+    final showSearchBar = _step == 'book';
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (!widget.embedded) ...[
           const RefTopBar(title: 'Elegir de la Biblia'),
         ],
-        if (!confirmingSelection) ...[
+        if (showSearchBar) ...[
           Glass(
             radius: 18,
             color: HtmlRefColors.glassBg,
@@ -309,7 +344,6 @@ class _BibliaScreenState extends State<BibliaScreen> {
               onFinish: _finishBibleSelection,
               onSelectAllChapter: _selectAllInChapter,
               onSelectAllBook: _selectAllInBook,
-              onSelectAllBible: _selectAllInBible,
               fullBooks: _fullBooks(store),
               partialBooks: _partialBooks(store),
             ),
@@ -575,7 +609,6 @@ class _BibleBrowseStep extends StatelessWidget {
   final VoidCallback onFinish;
   final VoidCallback onSelectAllChapter;
   final VoidCallback onSelectAllBook;
-  final VoidCallback onSelectAllBible;
   final Set<String> fullBooks;
   final Set<String> partialBooks;
 
@@ -592,7 +625,6 @@ class _BibleBrowseStep extends StatelessWidget {
     required this.onFinish,
     required this.onSelectAllChapter,
     required this.onSelectAllBook,
-    required this.onSelectAllBible,
     required this.fullBooks,
     required this.partialBooks,
   });
@@ -626,7 +658,6 @@ class _BibleBrowseStep extends StatelessWidget {
     }
     return _BookPicker(
       onBook: onBook,
-      onSelectAllBible: onSelectAllBible,
       fullBooks: fullBooks,
       partialBooks: partialBooks,
     );
@@ -707,13 +738,11 @@ const _newTestamentCategories = <_BibleCategory>[
 
 class _BookPicker extends StatefulWidget {
   final ValueChanged<String> onBook;
-  final VoidCallback? onSelectAllBible;
   final Set<String> fullBooks;
   final Set<String> partialBooks;
 
   const _BookPicker({
     required this.onBook,
-    this.onSelectAllBible,
     this.fullBooks = const {},
     this.partialBooks = const {},
   });
@@ -728,14 +757,6 @@ class _BookPickerState extends State<_BookPicker> {
   @override
   Widget build(BuildContext context) {
     final categories = _showNew ? _newTestamentCategories : _oldTestamentCategories;
-    final chip = RefChip(
-      'Toda la Biblia',
-      dense: true,
-      color: widget.onSelectAllBible != null
-          ? RefColors.pink.withValues(alpha: .22)
-          : HtmlRefColors.glassSoft,
-      textColor: RefColors.ink,
-    );
     return Glass(
       color: HtmlRefColors.glassBg,
       border: Border.all(color: HtmlRefColors.glassBorder),
@@ -747,16 +768,15 @@ class _BookPickerState extends State<_BookPicker> {
             children: [
               const Expanded(child: _BibleVersionDropdown()),
               const SizedBox(width: 10),
-              if (widget.onSelectAllBible != null)
-                GestureDetector(onTap: widget.onSelectAllBible, child: chip)
-              else
-                chip,
+              // Los tabs Antiguo/Nuevo van junto al dropdown de versión.
+              SizedBox(
+                width: 148,
+                child: _TestamentTabs(
+                  showNew: _showNew,
+                  onChanged: (v) => setState(() => _showNew = v),
+                ),
+              ),
             ],
-          ),
-          const SizedBox(height: 10),
-          _TestamentTabs(
-            showNew: _showNew,
-            onChanged: (v) => setState(() => _showNew = v),
           ),
           const SizedBox(height: 10),
           _BookGrid(
@@ -782,31 +802,26 @@ class _TestamentTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: HtmlRefColors.glassSoft,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: HtmlRefColors.glassBorder),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _TestamentTabButton(
-              label: 'Antiguo',
-              active: !showNew,
-              onTap: () => onChanged(false),
-            ),
+    // Sin contenedor/borde/padding: solo los dos botones. El botón activo trae
+    // su propio relleno, así que ganamos ancho para el dropdown de versión.
+    return Row(
+      children: [
+        Expanded(
+          child: _TestamentTabButton(
+            label: 'Antiguo',
+            active: !showNew,
+            onTap: () => onChanged(false),
           ),
-          Expanded(
-            child: _TestamentTabButton(
-              label: 'Nuevo',
-              active: showNew,
-              onTap: () => onChanged(true),
-            ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: _TestamentTabButton(
+            label: 'Nuevo',
+            active: showNew,
+            onTap: () => onChanged(true),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -1319,11 +1334,8 @@ class _BibleVersionDropdown extends StatelessWidget {
         isExpanded: true,
         dropdownColor: RefColors.glassStrong,
         borderRadius: BorderRadius.circular(12),
-        icon: const Icon(
-          Icons.keyboard_arrow_down_rounded,
-          color: RefColors.muted,
-          size: 18,
-        ),
+        // Sin flecha hacia abajo: innecesaria y roba ancho al nombre.
+        icon: const SizedBox.shrink(),
         style: const TextStyle(
           color: RefColors.ink,
           fontSize: 12,
@@ -1399,6 +1411,123 @@ void showShareDeckSheet(BuildContext context, {required MemoryDeckData deck}) {
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
     builder: (_) => _ShareDeckSheet(deck: deck),
+  );
+}
+
+enum _DupDeckChoice { useExisting, createNew }
+
+/// Hoja inferior que avisa que ya existe un mazo con el mismo contenido y deja
+/// elegir entre abrir el existente o crear uno nuevo igualmente. Devuelve null
+/// si el usuario cancela. Compartida por los flujos Biblia y Especificar
+/// (ambos son `part of` esta librería).
+Future<_DupDeckChoice?> _showDuplicateDeckSheet(
+  BuildContext context, {
+  required String existingTitle,
+}) {
+  return showModalBottomSheet<_DupDeckChoice>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (sheetCtx) => Padding(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      child: Glass(
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    gradient: RefColors.primary,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.copy_all_rounded,
+                      color: Colors.white, size: 22),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Ya tienes este contenido',
+                    style:
+                        TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text.rich(
+              TextSpan(
+                style: const TextStyle(
+                    fontSize: 13.5, color: RefColors.muted, height: 1.35),
+                children: [
+                  const TextSpan(text: 'Ya existe el mazo '),
+                  TextSpan(
+                    text: '«$existingTitle»',
+                    style: const TextStyle(
+                        color: RefColors.ink, fontWeight: FontWeight.w800),
+                  ),
+                  const TextSpan(
+                    text:
+                        ' con el mismo contenido. ¿Quieres abrir el que ya tienes o crear uno nuevo de todas formas?',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            GestureDetector(
+              onTap: () =>
+                  Navigator.of(sheetCtx).pop(_DupDeckChoice.useExisting),
+              child: Container(
+                height: 48,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  gradient: RefColors.primary,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Text(
+                  'Usar el que ya tengo',
+                  style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: () =>
+                  Navigator.of(sheetCtx).pop(_DupDeckChoice.createNew),
+              child: Container(
+                height: 48,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: RefColors.glassStrong,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: RefColors.border),
+                ),
+                child: const Text(
+                  'Crear uno nuevo igualmente',
+                  style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w800,
+                      color: RefColors.ink),
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            TextButton(
+              onPressed: () => Navigator.of(sheetCtx).pop(),
+              child: const Text('Cancelar',
+                  style: TextStyle(color: RefColors.muted)),
+            ),
+          ],
+        ),
+      ),
+    ),
   );
 }
 
@@ -1953,22 +2082,16 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
   ];
 
   final slugs = <String>[
-    if (store.debugForceQuizFirst) ...[
-      '09-quiz',
-      '18-palabras-intrusas-n1',
-      '18-palabras-intrusas-n2',
-      '18-palabras-intrusas-n3',
-    ],
     ...intro,
     // Nivel 1: práctica activa + niebla N1 al final del nivel 1
     ...pick(level1, difficulty == 0 ? 1 : 2),
     '02-niebla-n1',
-    
+
     // Nivel 2: práctica activa + niebla N2 al final del nivel 2
     if (difficulty >= 0) ...[
       ...pick(level2, difficulty == 0 ? 1 : (difficulty == 1 ? 2 : 3)),
       '17-niebla-n2',
-      if (!store.debugForceQuizFirst) '09-quiz',
+      '09-quiz',
     ],
     
     // Nivel 3: práctica premium/avanzada + niebla N3 al final del nivel 3

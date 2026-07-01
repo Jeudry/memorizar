@@ -1,8 +1,67 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
+
+import 'local_llm_service.dart';
+
+/// Punto de entrada del isolate de Whisper. Crea el recognizer (carga el modelo
+/// en ESTE isolate) y atiende peticiones de decode por puerto. Correr el
+/// `decode()` —que es una llamada nativa síncrona y pesada— fuera del isolate de
+/// la UI evita que la app se congele mientras "Evaluando audio…".
+void _whisperIsolateEntry(List<Object> args) {
+  final SendPort mainPort = args[0] as SendPort;
+  final String encoder = args[1] as String;
+  final String decoder = args[2] as String;
+  final String tokens = args[3] as String;
+  final int numThreads = args[4] as int;
+
+  sherpa_onnx.initBindings();
+  final recognizer = sherpa_onnx.OfflineRecognizer(
+    sherpa_onnx.OfflineRecognizerConfig(
+      model: sherpa_onnx.OfflineModelConfig(
+        whisper: sherpa_onnx.OfflineWhisperModelConfig(
+          encoder: encoder,
+          decoder: decoder,
+          language: 'es',
+          task: 'transcribe',
+          tailPaddings: -1,
+        ),
+        tokens: tokens,
+        modelType: 'whisper',
+        numThreads: numThreads,
+      ),
+    ),
+  );
+
+  final commandPort = ReceivePort();
+  // Devuelve el puerto de comandos al isolate principal (handshake de "listo").
+  mainPort.send(commandPort.sendPort);
+
+  commandPort.listen((dynamic msg) {
+    if (msg is List && msg.isNotEmpty && msg[0] == 'decode') {
+      final samples = msg[1] as Float32List;
+      final reply = msg[2] as SendPort;
+      try {
+        final stream = recognizer.createStream();
+        stream.acceptWaveform(samples: samples, sampleRate: 16000);
+        recognizer.decode(stream);
+        final text = recognizer.getResult(stream).text;
+        stream.free();
+        reply.send(text);
+      } catch (e) {
+        reply.send('__ERROR__$e');
+      }
+    } else if (msg == 'dispose') {
+      recognizer.free();
+      commandPort.close();
+      Isolate.exit();
+    }
+  });
+}
 
 class WhisperService {
   WhisperService._privateConstructor();
@@ -13,12 +72,19 @@ class WhisperService {
   static const String _decoderFile = 'small-decoder.int8.onnx';
   static const String _tokensFile = 'small-tokens.txt';
 
-  bool _initialized = false;
-  sherpa_onnx.OfflineRecognizer? _recognizer;
   final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0.0);
   final ValueNotifier<String> statusNotifier = ValueNotifier<String>('');
 
-  bool get isReady => _initialized && _recognizer != null;
+  // El decode corre en un isolate propio que retiene el modelo (~370 MB). Se
+  // mata tras un rato sin transcribir (o al ir la app a segundo plano) para no
+  // comer RAM —clave en móvil— y se re-levanta on-demand.
+  Isolate? _isolate;
+  SendPort? _cmdPort;
+  Future<SendPort>? _spawning;
+  Timer? _idleTimer;
+  static const Duration _idleTimeout = Duration(seconds: 90);
+
+  bool get isReady => _cmdPort != null;
 
   Future<Directory> get _modelDirectory async {
     final docDir = await getApplicationSupportDirectory();
@@ -90,60 +156,73 @@ class WhisperService {
     statusNotifier.value = 'Modelos descargados con éxito.';
   }
 
+  /// Arranca (o reutiliza) el isolate de Whisper con el modelo cargado.
   Future<void> initWhisper() async {
-    if (_initialized) return;
+    await _ensureIsolate();
+  }
 
-    statusNotifier.value = 'Inicializando motor local...';
+  Future<SendPort> _ensureIsolate() {
+    if (_cmdPort != null) return Future.value(_cmdPort!);
+    return _spawning ??= _spawnIsolate().whenComplete(() => _spawning = null);
+  }
+
+  Future<SendPort> _spawnIsolate() async {
+    statusNotifier.value = 'Inicializando motor de voz...';
     final dir = await _modelDirectory;
-
-    final encoderPath = '${dir.path}/$_encoderFile';
-    final decoderPath = '${dir.path}/$_decoderFile';
-    final tokensPath = '${dir.path}/$_tokensFile';
-
-    sherpa_onnx.initBindings();
-
-    final whisperConfig = sherpa_onnx.OfflineWhisperModelConfig(
-      encoder: encoderPath,
-      decoder: decoderPath,
-      language: 'es',
-      task: 'transcribe',
-      tailPaddings: -1,
-    );
-
-    final modelConfig = sherpa_onnx.OfflineModelConfig(
-      whisper: whisperConfig,
-      tokens: tokensPath,
-      modelType: 'whisper',
-      numThreads: 2,
-      debug: kDebugMode,
-    );
-
-    final config = sherpa_onnx.OfflineRecognizerConfig(
-      model: modelConfig,
-    );
-
-    _recognizer = sherpa_onnx.OfflineRecognizer(config);
-    _initialized = true;
+    final handshake = ReceivePort();
+    _isolate = await Isolate.spawn(_whisperIsolateEntry, <Object>[
+      handshake.sendPort,
+      '${dir.path}/$_encoderFile',
+      '${dir.path}/$_decoderFile',
+      '${dir.path}/$_tokensFile',
+      // whisper-small en CPU es pesado; usamos varios núcleos (con margen).
+      Platform.numberOfProcessors.clamp(2, 6),
+    ]);
+    final cmdPort = await handshake.first as SendPort;
+    handshake.close();
+    _cmdPort = cmdPort;
     statusNotifier.value = 'Motor listo.';
-    debugPrint('Whisper Local Offline Recognizer initialized successfully.');
+    debugPrint('Whisper isolate listo (modelo cargado fuera de la UI).');
+    return cmdPort;
+  }
+
+  /// Mata el isolate y libera el modelo de memoria. La próxima transcripción
+  /// lo re-levanta automáticamente.
+  Future<void> dispose() async {
+    _idleTimer?.cancel();
+    _idleTimer = null;
+    final cmd = _cmdPort;
+    final iso = _isolate;
+    _cmdPort = null;
+    _isolate = null;
+    if (cmd == null && iso == null) return;
+    try {
+      cmd?.send('dispose'); // el isolate libera el recognizer y sale solo
+    } catch (_) {}
+    // Backstop: si no salió por su cuenta, mátalo.
+    if (iso != null) {
+      Future.delayed(const Duration(milliseconds: 600),
+          () => iso.kill(priority: Isolate.immediate));
+    }
+    statusNotifier.value = 'Motor de voz en reposo (memoria liberada).';
+    debugPrint('Whisper isolate liberado por inactividad.');
+  }
+
+  void _armIdleRelease() {
+    _idleTimer?.cancel();
+    _idleTimer = Timer(_idleTimeout, () => unawaited(dispose()));
   }
 
   Future<String> transcribe(String audioPath) async {
-    if (!_initialized || _recognizer == null) {
-      throw Exception('Whisper no está inicializado.');
-    }
+    // Estamos usando el motor: cancela cualquier liberación pendiente.
+    _idleTimer?.cancel();
 
     final file = File(audioPath);
     if (!await file.exists()) {
       throw Exception('Archivo de audio no encontrado: $audioPath');
     }
-
-    debugPrint('Starting transcription for audio file: $audioPath');
-    
     final bytes = await file.readAsBytes();
-    if (bytes.isEmpty) {
-      return '';
-    }
+    if (bytes.isEmpty) return '';
 
     Uint8List pcmBytes = bytes;
     if (bytes.length >= 44 &&
@@ -155,29 +234,38 @@ class WhisperService {
     }
 
     final Float32List floatSamples = _pcm16ToFloat32(pcmBytes);
-    debugPrint('Read ${floatSamples.length} float samples from audio file.');
+    final audioSeconds = (floatSamples.length / 16000).toStringAsFixed(1);
+    debugPrint('Whisper: audio de ${audioSeconds}s → decode en isolate…');
 
-    final recognizer = _recognizer!;
-    final stream = recognizer.createStream();
-    
+    final cmd = await _ensureIsolate();
+
+    // Pausa el prefetch de la IA local (llama-server) durante el decode: aunque
+    // ahora corre en otro isolate, ambos compiten por la CPU.
+    LocalLlmService.instance.setVoiceCaptureActive(true);
+    final sw = Stopwatch()..start();
     try {
-      stream.acceptWaveform(samples: floatSamples, sampleRate: 16000);
-      recognizer.decode(stream);
-      final text = recognizer.getResult(stream).text;
-      
-      debugPrint('Whisper transcription result: "$text"');
-      return _sanitizeTranscription(text.trim());
-    } catch (e) {
-      debugPrint('Error transcribing audio with Whisper: $e');
-      rethrow;
+      final reply = ReceivePort();
+      cmd.send(<Object>['decode', floatSamples, reply.sendPort]);
+      final result = await reply.first;
+      reply.close();
+      sw.stop();
+      if (result is String && result.startsWith('__ERROR__')) {
+        throw Exception('Whisper decode: ${result.substring(9)}');
+      }
+      final text = (result as String).trim();
+      debugPrint(
+          'Whisper: decode de ${audioSeconds}s tardó ${sw.elapsedMilliseconds} ms → "$text"');
+      return _sanitizeTranscription(text);
     } finally {
-      stream.free();
+      LocalLlmService.instance.setVoiceCaptureActive(false);
+      // Terminada la transcripción, programa la liberación por inactividad.
+      _armIdleRelease();
     }
   }
 
   String _sanitizeTranscription(String text) {
     if (text.isEmpty) return '';
-    
+
     String cleanText = text.replaceAll(RegExp(r'\s+'), ' ').trim();
     List<String> words = cleanText.split(' ');
     if (words.length < 2) return cleanText;

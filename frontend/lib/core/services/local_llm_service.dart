@@ -25,7 +25,6 @@ class LocalLlmService {
       'https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q2_K.gguf';
   static const String _modelFileName = 'google_gemma-4-E2B-it-Q2_K.gguf';
   static const String _legacyModelFileName = 'gemma-3-4b-it-qat-Q4_0.gguf';
-  static const int _minValidModelBytes = 3000 * 1024 * 1024; // 3.02 GB
   static const Duration _generationTimeout = Duration(minutes: 3);
   // 0.9: prioriza la variedad (con la rotación de estilo/enfoque) manteniéndose
   // por debajo del 1.0 que inventaba hechos y degeneraba.
@@ -136,6 +135,21 @@ class LocalLlmService {
   /// pre-generar en segundo plano sin chocar con una generación en curso.
   Future<void> _inferenceChain = Future.value();
 
+  // Apagado por inactividad: el motor (llama-server ~2 GB en desktop, o el
+  // modelo Gemma on-device en móvil) se libera tras un rato sin inferencias y
+  // se re-levanta on-demand. Clave para no comer RAM, sobre todo en móvil.
+  Timer? _idleTimer;
+  int _pendingInferences = 0;
+  static const Duration _idleUnloadTimeout = Duration(seconds: 120);
+
+  // Mientras se captura/transcribe voz (Whisper en CPU), pausamos el prefetch
+  // de IA local para no pelear por la CPU: si no, el "Evaluando audio…" se
+  // eterniza porque el decode de Whisper queda hambriento. El prefetch se
+  // reanuda solo en el siguiente rebuild cuando esto vuelve a false.
+  bool _voiceCaptureActive = false;
+  bool get voiceCaptureActive => _voiceCaptureActive;
+  void setVoiceCaptureActive(bool active) => _voiceCaptureActive = active;
+
   bool _initialized = false;
   Future<void>? _initInFlight;
   final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0.0);
@@ -176,16 +190,35 @@ class LocalLlmService {
     return '${dir.path}/$_modelFileName';
   }
 
-  /// Comprueba si el modelo cuantizado ya está descargado y completo.
-  /// En web no hay filesystem: devuelve false sin lanzar.
+  /// Comprueba si el modelo ya está descargado y completo. No usamos el peso
+  /// (frágil): el archivo final solo existe cuando la descarga terminó (se baja
+  /// a un `.part` y se renombra atómicamente al final), y validamos que sea un
+  /// GGUF real por su cabecera mágica. En web no hay filesystem: false.
   Future<bool> checkModelExists() async {
     if (kIsWeb) return false;
     if (_useMobileBackend) return FlutterGemmaBackend.instance.isInstalled();
     final modelFile = File(await _modelPath);
-    final modelFileExists = await modelFile.exists();
-    if (!modelFileExists) return false;
-    final length = await modelFile.length();
-    return length >= _minValidModelBytes;
+    if (!await modelFile.exists()) return false;
+    return _hasGgufMagic(modelFile);
+  }
+
+  /// Los archivos GGUF empiezan con los bytes mágicos "GGUF" (0x47 0x47 0x55
+  /// 0x46). Sirve para descartar un archivo corrupto o vacío sin mirar su peso.
+  Future<bool> _hasGgufMagic(File file) async {
+    RandomAccessFile? raf;
+    try {
+      raf = await file.open();
+      final header = await raf.read(4);
+      return header.length == 4 &&
+          header[0] == 0x47 &&
+          header[1] == 0x47 &&
+          header[2] == 0x55 &&
+          header[3] == 0x46;
+    } catch (_) {
+      return false;
+    } finally {
+      await raf?.close();
+    }
   }
 
   /// La IA está disponible si el modelo está descargado localmente
@@ -217,6 +250,10 @@ class LocalLlmService {
     }
 
     final savePath = await _modelPath;
+    // Descargamos a un temporal y solo lo renombramos al nombre final cuando
+    // terminó completo. Así el archivo final SOLO existe si la descarga acabó
+    // (una descarga interrumpida queda como .part y no cuenta como instalada).
+    final partPath = '$savePath.part';
 
     final alreadyDownloaded = await checkModelExists();
     if (alreadyDownloaded) {
@@ -229,9 +266,14 @@ class LocalLlmService {
     downloadProgress.value = 0.0;
 
     try {
+      // Limpia un .part previo a medias para no reanudar un archivo corrupto.
+      final partFile = File(partPath);
+      if (await partFile.exists()) {
+        await partFile.delete();
+      }
       await _dio.download(
         _modelUrl,
-        savePath,
+        partPath,
         onReceiveProgress: (received, total) {
           if (total > 0) {
             final progress = (received / total).clamp(0.0, 1.0);
@@ -241,6 +283,8 @@ class LocalLlmService {
           }
         },
       );
+      // Rename atómico: el archivo final aparece de golpe, ya completo.
+      await File(partPath).rename(savePath);
 
       downloadProgress.value = 1.0;
       statusNotifier.value = 'Descarga de IA completada con éxito.';
@@ -284,6 +328,10 @@ class LocalLlmService {
     if (_initialized) return Future.value();
     return _initInFlight ??= _doInit().whenComplete(() {
       _initInFlight = null;
+      // Si quedó el motor cargado sin inferencias en curso (p.ej. tras el
+      // warm-up del arranque), arma igual el apagado por inactividad para no
+      // retener ~2 GB de RAM esperando un uso que quizá no llegue pronto.
+      if (_initialized && _pendingInferences == 0) _armIdleUnload();
     });
   }
 
@@ -382,7 +430,12 @@ class LocalLlmService {
         'PROHIBIDO el relleno académico o pomposo: nada de "se describe", "acción fundamental", '
         '"en el versículo proporcionado/dado", "según el texto bíblico", ni frases rebuscadas. '
         'Pueden tener algo de fondo (no triviales), pero SIEMPRE preguntadas de forma simple. '
+        'CONCRETAS: pregunta por un dato PUNTUAL que esté en el texto (una palabra, un nombre, '
+        'una acción, un lugar, un orden), con respuesta breve y literal. PROHIBIDO lo vago, '
+        'interpretativo o genérico: nada de "¿qué enseña?", "¿cuál es el propósito/mensaje?", '
+        '"¿qué representa?", "¿qué reflexión?". '
         'Ejemplo MAL (rebuscado): "¿Qué acción fundamental se describe como el inicio de la existencia en el versículo proporcionado?". '
+        'Ejemplo MAL (genérico): "¿Qué nos enseña este versículo?". '
         'Ejemplo BIEN (directo): "¿Qué hizo Dios al principio?". '
         'EXACTITUD: la respuesta correcta debe poder verificarse SIEMPRE con el texto dado y ser '
         'inequívoca; nunca inventes datos que no estén en el texto ni hagas preguntas sin respuesta '
@@ -412,8 +465,8 @@ class LocalLlmService {
           'Cada una trata SOLO sobre el texto indicado en su "forText". Asignación OBLIGATORIA: '
           'trueFalse → Texto 1; multipleChoice → Texto 2; openQuestion → Texto $openForText. '
           'Es OBLIGATORIO cubrir los $n textos; ninguno puede quedar sin su pregunta. '
-          'Preguntas CORTAS; si el trueFalse es falso, el error debe ser comprobable con el texto (puede ser sutil); '
-          'multipleChoice con "correct" breve y exactamente 3 "distractors" breves; '
+          'Preguntas CORTAS; el "statement" del trueFalse es una AFIRMACIÓN declarativa que se pueda juzgar como verdadera o falsa: NUNCA una pregunta (sin "¿" ni "?"). Ej válido: "La tierra estaba sin forma y vacía." Ej INVÁLIDO: "¿Qué había sobre las aguas?". Si el trueFalse es falso, el error debe ser comprobable con el texto (puede ser sutil); '
+          'multipleChoice con "correct" breve y exactamente 3 "distractors" breves; los 3 distractores deben ser del MISMO tipo, categoría y forma gramatical que "correct", de modo que las 4 opciones encajen naturalmente al responder la pregunta (si reemplazas cualquier opción en la pregunta, debe leerse coherente). NO mezcles categorías (p.ej. si la respuesta es una descripción/estado, los distractores también; no pongas nombres de cosas); '
           'la openQuestion es UNA sola pregunta corta (NO juntes dos preguntas con "y").\n'
           'Formato de salida OBLIGATORIO, EXACTAMENTE este array (sin texto adicional antes ni después):\n'
           '{"questions":[\n'
@@ -425,8 +478,8 @@ class LocalLlmService {
       textBlock = 'Texto a evaluar (${verses.first.reference}): "${verses.first.verseText}"';
       formatBlock =
           'Genera exactamente 3 preguntas sobre el texto:\n'
-          '1. "trueFalse": afirmación CORTA con su veredicto "isTrue". Si es falsa, el error debe ser comprobable con el texto (puede ser sutil).\n'
-          '2. "multipleChoice": pregunta CORTA con "correct" (breve) y "distractors" (exactamente 3, breves).\n'
+          '1. "trueFalse": una AFIRMACIÓN declarativa CORTA (NUNCA una pregunta; sin "¿" ni "?") con su veredicto "isTrue". Ej válido: "La tierra estaba sin forma y vacía." Ej INVÁLIDO: "¿Qué había sobre las aguas?". Si es falsa, el error debe ser comprobable con el texto (puede ser sutil).\n'
+          '2. "multipleChoice": pregunta CORTA con "correct" (breve) y "distractors" (exactamente 3, breves). Los 3 distractores deben ser del MISMO tipo, categoría y forma gramatical que "correct", para que las 4 opciones encajen al responder la pregunta (si reemplazas cualquier opción en la pregunta, debe leerse coherente). NO mezcles categorías (si la respuesta es una descripción/estado, los distractores también; no pongas nombres de cosas).\n'
           '3. "openQuestion": UNA sola pregunta abierta, CORTA (una frase), que se responda explicando con pocas palabras. NO juntes dos preguntas en una (nada de "explica X y reflexiona sobre Y").\n'
           'Cada sección debe evaluar un aspecto DIFERENTE del texto.\n'
           'Formato de salida OBLIGATORIO: un ÚNICO objeto JSON, sin envolturas, sin "questions", sin arrays:\n'
@@ -444,16 +497,18 @@ class LocalLlmService {
       final mcFocus = _quizFocusAngles[_seedRandom.nextInt(_quizFocusAngles.length)];
       final varietyHint =
           'VARIEDAD: cada cuestionario debe ser DISTINTO a los anteriores; no repitas el mismo '
-          'patrón ni la misma frase de siempre. EVITA la pregunta más obvia: elige un ángulo MENOS '
-          'evidente del texto. Esta vez parte la pregunta de verdadero/falso desde $tfFocus, y la de '
-          'opción múltiple desde $mcFocus. $style';
+          'patrón ni la misma frase de siempre. Varía el ángulo, pero la pregunta debe seguir siendo '
+          'CONCRETA y de respuesta clara (no la hagas rebuscada por buscar variedad). Esta vez parte '
+          'la de verdadero/falso desde $tfFocus, y la de opción múltiple desde $mcFocus. $style';
       final prompt = 'Eres un generador de cuestionarios en español para una app de memorización de versículos bíblicos.\n'
           'Semilla de variación aleatoria: $entropy\n'
           '$textBlock\n\n'
           '$formatBlock\n\n'
           '$depthInstruction\n'
           '$varietyHint\n'
-          'Todo en español. Responde únicamente con el JSON, sin texto adicional.';
+          'IDIOMA OBLIGATORIO: TODO en ESPAÑOL (preguntas, enunciados y opciones). '
+          'NUNCA respondas en inglés ni en otro idioma, aunque la semilla o el patrón te tienten. '
+          'Responde únicamente con el JSON, sin texto adicional.';
       try {
         final content = await _chat(
           prompt,
@@ -475,7 +530,61 @@ class LocalLlmService {
   /// objeto esperado, un array de sets, `{questions:[...]}` o un array de
   /// preguntas tipadas, con nombres de campo variables.
   AiQuizRoundSet _parseQuizRoundSet(String content) {
-    return AiQuizRoundSet.lenient(_decodeJsonStructure(content));
+    final set = AiQuizRoundSet.lenient(_decodeJsonStructure(content));
+    // Una pregunta de Verdadero/Falso DEBE presentar una afirmación, no una
+    // pregunta interrogativa. Si el modelo devolvió una pregunta, la rechazamos
+    // para que el bucle de reintentos genere otra.
+    if (_looksLikeQuestion(set.trueFalse.statement)) {
+      throw const FormatException(
+        'El "trueFalse" llegó como pregunta, no como afirmación.',
+      );
+    }
+    // El cuestionario DEBE estar en español. Si el modelo se fue al inglés, lo
+    // rechazamos para que el bucle de reintentos genere otro en español.
+    if (_looksEnglish(set.multipleChoice.question) ||
+        _looksEnglish(set.trueFalse.statement) ||
+        _looksEnglish(set.openQuestion.question)) {
+      throw const FormatException('El quiz llegó en inglés, no en español.');
+    }
+    return set;
+  }
+
+  /// Heurística simple de inglés: cuenta marcadores que no existen en español.
+  bool _looksEnglish(String s) {
+    final words = s
+        .toLowerCase()
+        .split(RegExp(r'[^a-záéíóúñü]+'))
+        .where((w) => w.isNotEmpty)
+        .toSet();
+    const markers = {
+      'what', 'did', 'say', 'said', 'is', 'are', 'was', 'were', 'the',
+      'and', 'god', 'how', 'why', 'who', 'where', 'of', 'this', 'that',
+      'does', 'do', 'which', 'true', 'false', 'answer', 'verse',
+    };
+    return words.where(markers.contains).length >= 2;
+  }
+
+  /// ¿El texto parece una pregunta y no una afirmación? Conservador: solo marca
+  /// signos de interrogación o un arranque con interrogativa acentuada.
+  bool _looksLikeQuestion(String s) {
+    final t = s.trim().toLowerCase();
+    if (t.isEmpty) return false;
+    if (t.contains('?') || t.contains('¿')) return true;
+    const starts = [
+      'qué ',
+      'cuál',
+      'cuáles',
+      'quién',
+      'quiénes',
+      'dónde',
+      'cómo ',
+      'cuándo',
+      'cuánto',
+      'cuánta',
+      'por qué',
+      'para qué',
+    ];
+    return starts.any(t.startsWith);
   }
 
   /// Genera un versículo alterado con palabras intrusas según el nivel de dificultad:
@@ -746,6 +855,7 @@ class LocalLlmService {
     required String verseText,
     required int level,
   }) {
+    if (_voiceCaptureActive) return; // no competir con Whisper en CPU
     final key = _intruderKey(reference, level);
     if (_intruderPrefetch.containsKey(key)) return;
     final f = generateIntruderVerse(reference: reference, verseText: verseText, level: level);
@@ -765,6 +875,7 @@ class LocalLlmService {
     required String reference,
     required String verseText,
   }) {
+    if (_voiceCaptureActive) return; // no competir con Whisper en CPU
     if (_distractorPrefetch.containsKey(reference)) return;
     final f = generateCompletionDistractors(reference: reference, verseText: verseText);
     _distractorPrefetch[reference] = f;
@@ -886,6 +997,10 @@ class LocalLlmService {
     required int maxTokens,
     Map<String, dynamic>? jsonSchema,
   }) {
+    // Estamos por usar el motor: cancela cualquier apagado pendiente y cuenta
+    // esta inferencia como "en vuelo" para no descargar el modelo a mitad.
+    _idleTimer?.cancel();
+    _pendingInferences++;
     final result = _inferenceChain.then((_) => _chatImpl(
           prompt,
           temperature: temperature,
@@ -894,7 +1009,40 @@ class LocalLlmService {
         ));
     // El siguiente en la cola espera a este, haya éxito o error (sin propagar).
     _inferenceChain = result.then((_) {}, onError: (_) {});
+    result.whenComplete(() {
+      _pendingInferences--;
+      if (_pendingInferences == 0) _armIdleUnload();
+    });
     return result;
+  }
+
+  void _armIdleUnload() {
+    _idleTimer?.cancel();
+    _idleTimer = Timer(_idleUnloadTimeout, () {
+      if (_pendingInferences == 0) unawaited(unloadForIdle());
+    });
+  }
+
+  /// Apaga el motor y libera su memoria: en desktop detiene el subproceso
+  /// `llama-server`; en móvil cierra el modelo Gemma on-device. La siguiente
+  /// inferencia lo re-levanta automáticamente (initLlm en _chatImpl).
+  Future<void> unloadForIdle() async {
+    _idleTimer?.cancel();
+    _idleTimer = null;
+    if (!_initialized || _pendingInferences > 0) return;
+    _initialized = false;
+    _initInFlight = null;
+    try {
+      if (_useMobileBackend) {
+        await FlutterGemmaBackend.instance.dispose();
+      } else {
+        await LlamaServerManager.instance.stop();
+      }
+      statusNotifier.value = 'IA en reposo (memoria liberada).';
+      debugPrint('IA local descargada por inactividad.');
+    } catch (e) {
+      debugPrint('Error al descargar IA local: $e');
+    }
   }
 
   Future<String> _chatImpl(

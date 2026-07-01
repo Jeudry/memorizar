@@ -14,6 +14,7 @@ import 'core/services/deeplink_service.dart';
 import 'core/services/llama_server_manager.dart';
 import 'core/services/local_llm_service.dart';
 import 'core/services/push_service.dart';
+import 'core/services/whisper_service.dart';
 import 'core/theme.dart';
 import 'core/ui/reference_page.dart';
 import 'features/home/presentation/home_screen.dart';
@@ -115,6 +116,15 @@ class _MemorizarAppState extends State<MemorizarApp> with WidgetsBindingObserver
     // GBs de RAM con el modelo cargado. Al detach (cierre/quit) lo apagamos.
     if (state == AppLifecycleState.detached) {
       unawaited(LlamaServerManager.instance.stop());
+      unawaited(WhisperService.instance.dispose());
+    } else if (state == AppLifecycleState.paused) {
+      // App a segundo plano: en MÓVIL liberamos la RAM de las IA (se recargan
+      // on-demand al volver). En desktop no, para no re-levantar el motor cada
+      // vez que se pierde el foco; ahí el apagado por inactividad se encarga.
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        unawaited(LocalLlmService.instance.unloadForIdle());
+        unawaited(WhisperService.instance.dispose());
+      }
     }
   }
 

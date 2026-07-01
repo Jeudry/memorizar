@@ -2243,6 +2243,10 @@ class _CooperativoGameScreenState extends State<CooperativoGameScreen> {
       _coop?.broadcastRoomClosed();
     }
     await _coop?.disconnect();
+    // Al salir, deja de haber sala activa: limpia el estado global para que el
+    // inicio no siga mostrando "Sala Cooperativa Activa".
+    CoopService.active = null;
+    CoopService.activeUserId = null;
     if (!mounted) return;
     Navigator.pushReplacementNamed(context, AppRoutes.cooperativo);
   }

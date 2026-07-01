@@ -23,7 +23,7 @@ class _FlowStepHeader extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Glass(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         color: RefColors.glassStrong,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -32,6 +32,7 @@ class _FlowStepHeader extends StatelessWidget {
               children: [
                 RefBackButton(
                   onTap: () {
+                    ScaffoldMessenger.of(context).clearSnackBars();
                     Navigator.pushNamedAndRemoveUntil(
                       context,
                       '${AppRoutes.flow}/progress-tree',
@@ -40,19 +41,10 @@ class _FlowStepHeader extends StatelessWidget {
                   },
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  'PASO $step/$totalSteps',
-                  style: const TextStyle(
-                    color: RefColors.muted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     title,
-                    textAlign: TextAlign.right,
+                    textAlign: TextAlign.left,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -71,33 +63,13 @@ class _FlowStepHeader extends StatelessWidget {
                       ),
                     ),
                   ),
-                  child: const RefIconButton(icon: Icons.info_outline_rounded),
+                  child: const RefIconButton(
+                    icon: Icons.info_outline_rounded,
+                    size: 30,
+                    iconSize: 16,
+                  ),
                 ),
               ],
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                children: [
-                  for (var i = 1; i <= totalSteps; i++) ...[
-                    Expanded(
-                      child: Container(
-                        height: 4,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(999),
-                          color: i < progress
-                              ? RefColors.lime
-                              : i == progress
-                              ? RefColors.pink
-                              : RefColors.glassSoft,
-                        ),
-                      ),
-                    ),
-                    if (i < totalSteps) const SizedBox(width: 5),
-                  ],
-                ],
-              ),
             ),
           ],
         ),

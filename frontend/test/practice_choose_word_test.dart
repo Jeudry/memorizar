@@ -3,8 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:frontend/core/app_state.dart';
 import 'package:frontend/features/home/presentation/screens/practice_choose_word_screen.dart';
 
-/// Práctica de "Elige la palabra correcta": sin niveles ni intentos, banco
-/// completo, hay que completar el versículo DOS veces para terminar.
+/// Práctica de "Elige la palabra correcta": sin niveles ni intentos, oculta el
+/// 50% de las palabras (aleatorio) y hay que completar el versículo para
+/// terminar. Como los huecos son aleatorios, los tests no dependen de CUÁLES
+/// palabras se ocultan: recorren el versículo tocando la opción correcta del
+/// hueco activo hasta completar.
 void main() {
   Future<void> pumpScreen(WidgetTester tester, AppStore store) async {
     await tester.pumpWidget(AppScope(
@@ -23,8 +26,7 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('completar el versículo muestra el éxito',
-      (tester) async {
+  AppStore buildStore() {
     final store = AppStore(enableDatabasePersistence: false);
     store.createDeckFromCards(
       title: 'Test',
@@ -39,58 +41,51 @@ void main() {
         ),
       ],
     );
+    return store;
+  }
 
-    await pumpScreen(tester, store);
+  /// Toca la opción (botón) cuya palabra coincide con [word], si está visible
+  /// entre las opciones del hueco activo. Devuelve true si tocó algo.
+  Future<bool> tapOption(WidgetTester tester, String word) async {
+    final option = find.widgetWithText(GestureDetector, word);
+    if (option.evaluate().isEmpty) return false;
+    await tester.tap(option.last);
+    await tester.pump();
+    // El parpadeo rojo del fallo usa un timer de 400ms: lo dejamos disparar
+    // para no dejar timers pendientes.
+    await tester.pump(const Duration(milliseconds: 450));
+    return true;
+  }
 
-    // El banco se muestra y arranca en la vuelta 1.
+  testWidgets('completar el versículo muestra el éxito', (tester) async {
+    await pumpScreen(tester, buildStore());
+
     expect(find.text('ELIGE LA PALABRA CORRECTA'), findsOneWidget);
-    expect(find.textContaining('Vuelta 1/1'), findsOneWidget);
 
-    // Huecos = todas las palabras, en orden: "Jehová", "es", "mi", "pastor".
-    // (En el banco las palabras son únicas; .last desambigua del hueco lleno.)
+    // Recorremos las palabras en orden del texto: la del hueco activo avanza;
+    // las incorrectas solo parpadean. Como los huecos van en orden, al terminar
+    // el recorrido quedan todos llenos.
     for (final word in ['Jehová', 'es', 'mi', 'pastor']) {
-      await tester.tap(find.text(word).last);
-      await tester.pump();
+      if (find.text('¡Lo completaste!').evaluate().isNotEmpty) break;
+      await tapOption(tester, word);
     }
 
     expect(find.text('🎉'), findsOneWidget);
     expect(find.text('¡Lo completaste!'), findsOneWidget);
   });
 
-  testWidgets('tocar una palabra incorrecta no avanza (sin penalización)',
-      (tester) async {
-    final store = AppStore(enableDatabasePersistence: false);
-    store.createDeckFromCards(
-      title: 'Test',
-      icon: '✝️',
-      cards: const [
-        MemoryCardData(
-          id: 'c1',
-          front: 'Salmo 23:1',
-          back: 'Jehová es mi pastor',
-          source: 'RV1909',
-          icon: '✝️',
-        ),
-      ],
-    );
+  testWidgets('una sola acción no completa (quedan huecos)', (tester) async {
+    await pumpScreen(tester, buildStore());
 
-    await pumpScreen(tester, store);
-
-    // Arranca con 0 huecos llenos.
-    expect(find.textContaining('· 0/4'), findsOneWidget);
-
-    // El primer hueco correcto es "Jehová"; tocar "pastor" es incorrecto:
-    // no llena nada (sin penalización pero sin avanzar). El parpadeo rojo usa
-    // un timer de 400ms — lo dejamos disparar para no dejar timers pendientes.
-    await tester.tap(find.text('pastor').last);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.textContaining('· 0/4'), findsOneWidget);
+    // 4 palabras → 50% = 2 huecos, así que una sola acción nunca completa.
     expect(find.text('¡Lo completaste!'), findsNothing);
 
-    // Tocar el correcto sí avanza a 1/4.
-    await tester.tap(find.text('Jehová').last);
-    await tester.pump();
-    expect(find.textContaining('· 1/4'), findsOneWidget);
+    // Toca una única opción del hueco activo (una de las palabras del texto
+    // está entre las opciones): con 2 huecos, no puede completar todavía.
+    for (final word in ['Jehová', 'es', 'mi', 'pastor']) {
+      if (await tapOption(tester, word)) break;
+    }
+
+    expect(find.text('¡Lo completaste!'), findsNothing);
   });
 }

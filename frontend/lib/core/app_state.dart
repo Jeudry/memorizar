@@ -825,6 +825,11 @@ class AppStore extends ChangeNotifier {
   static const _kBigFontKey = 'memorizar.big.font';
   static const _kReminderEnabledKey = 'memorizar.reminder.enabled';
   static const _kReminderHourKey = 'memorizar.reminder.hour';
+  static const _kCompletedDecksKey = 'memorizar.decks.completed';
+
+  /// Ids de mazos que el usuario marcó como completados. Se persiste en
+  /// SharedPreferences (no requiere migración de Drift).
+  final Set<String> _completedDeckIds = {};
 
   ThemeMode _themeMode = ThemeMode.dark;
   String _locale = 'es';
@@ -853,6 +858,9 @@ class AppStore extends ChangeNotifier {
     _bigFont = prefs.getBool(_kBigFontKey) ?? false;
     _reminderEnabled = prefs.getBool(_kReminderEnabledKey) ?? false;
     _reminderHour = prefs.getInt(_kReminderHourKey) ?? 20;
+    _completedDeckIds
+      ..clear()
+      ..addAll(prefs.getStringList(_kCompletedDecksKey) ?? const []);
     // Re-programar al arrancar mantiene el recordatorio vigente aunque el
     // sistema lo haya purgado (reinicios, actualizaciones de la app).
     if (_reminderEnabled) {
@@ -1131,8 +1139,9 @@ class AppStore extends ChangeNotifier {
   int _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
   bool _isPremium = false;
   bool _doubleExercises = false;
-  bool _hideFiftyPercentPractice = false;
-  bool _debugForceQuizFirst = false;
+  // TODO(dev-only): navegación libre por el árbol de ejercicios para pruebas.
+  // Sólo se activa desde el toggle DEV (kDebugMode) de configurar sesión.
+  bool _devFreeNavigation = false;
   int _currentCardPass = 0;
 
   List<MemoryDeckData> get decks => List.unmodifiable(_decks);
@@ -1174,6 +1183,30 @@ class AppStore extends ChangeNotifier {
     return id;
   }
 
+  /// Renombra o cambia el ícono de un grupo y lo persiste.
+  Future<void> updateGroup(String groupId, {String? name, String? icon}) async {
+    final i = _groups.indexWhere((g) => g.id == groupId);
+    if (i < 0) return;
+    final g = _groups[i];
+    final cleanName = (name ?? g.name).trim();
+    final updated = MemoryGroupData(
+      id: g.id,
+      name: cleanName.isEmpty ? g.name : cleanName,
+      icon: icon ?? g.icon,
+      createdAt: g.createdAt,
+    );
+    _groups[i] = updated;
+    notifyListeners();
+    if (enableDatabasePersistence && db != null) {
+      await db!.upsertGroup(DeckGroupsCompanion(
+        id: drift.Value(updated.id),
+        name: drift.Value(updated.name),
+        icon: drift.Value(updated.icon),
+        createdAt: drift.Value(updated.createdAt),
+      ));
+    }
+  }
+
   /// Asigna (o quita, con null) el grupo de un mazo y lo persiste.
   Future<void> assignDeckToGroup(String deckId, String? groupId) async {
     final index = _decks.indexWhere((d) => d.id == deckId);
@@ -1183,6 +1216,60 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
     if (enableDatabasePersistence && db != null) {
       await _persistDeckToDatabase(updated);
+    }
+  }
+
+  /// Borra un mazo por completo (sus tarjetas y rastros locales).
+  Future<void> deleteDeck(String deckId) async {
+    _decks.removeWhere((d) => d.id == deckId);
+    _completedDeckIds.remove(deckId);
+    _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));
+    notifyListeners();
+    if (enableDatabasePersistence && db != null) {
+      await db!.deleteDeck(deckId);
+    }
+    await _saveCompletedDecks();
+  }
+
+  /// Borra varios mazos de una sola pasada (un único refresh y guardado),
+  /// para la selección múltiple de "Mis Mazos".
+  Future<void> deleteDecks(Iterable<String> deckIds) async {
+    final ids = deckIds.toSet();
+    if (ids.isEmpty) return;
+    _decks.removeWhere((d) => ids.contains(d.id));
+    _completedDeckIds.removeAll(ids);
+    _completedExerciseSteps
+        .removeWhere((key) => ids.any((id) => key.startsWith('$id:')));
+    notifyListeners();
+    if (enableDatabasePersistence && db != null) {
+      for (final id in ids) {
+        await db!.deleteDeck(id);
+      }
+    }
+    await _saveCompletedDecks();
+  }
+
+  /// ¿El usuario marcó este mazo como completado?
+  bool isDeckCompleted(String deckId) => _completedDeckIds.contains(deckId);
+
+  /// Marca/desmarca un mazo como completado y lo persiste.
+  Future<void> setDeckCompleted(String deckId, bool completed) async {
+    if (completed) {
+      _completedDeckIds.add(deckId);
+    } else {
+      _completedDeckIds.remove(deckId);
+    }
+    notifyListeners();
+    await _saveCompletedDecks();
+  }
+
+  Future<void> _saveCompletedDecks() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(
+          _kCompletedDecksKey, _completedDeckIds.toList());
+    } catch (_) {
+      // Sin SharedPreferences (tests): se mantiene solo en memoria.
     }
   }
 
@@ -1234,8 +1321,7 @@ class AppStore extends ChangeNotifier {
   bool get sessionFinished => _sessionCardsCompleted >= _sessionDailyTarget;
   bool get isPremium => _isPremium;
   bool get doubleExercises => _doubleExercises;
-  bool get hideFiftyPercentPractice => _hideFiftyPercentPractice;
-  bool get debugForceQuizFirst => _debugForceQuizFirst;
+  bool get devFreeNavigation => _devFreeNavigation;
 
   void setPremiumPreview(bool value) {
     if (_isPremium == value) return;
@@ -1595,8 +1681,7 @@ class AppStore extends ChangeNotifier {
     required int difficulty,
     required int dailyTarget,
     bool doubleExercises = false,
-    bool hideFiftyPercentPractice = false,
-    bool debugForceQuizFirst = false,
+    bool devFreeNavigation = false,
   }) {
     _sessionDifficulty = difficulty.clamp(0, 2);
     // El total configurable siempre es el número real de tarjetas en el mazo.
@@ -1607,8 +1692,7 @@ class AppStore extends ChangeNotifier {
     _correctAnswers = 0;
     _wrongAnswers = 0;
     _doubleExercises = doubleExercises;
-    _hideFiftyPercentPractice = hideFiftyPercentPractice;
-    _debugForceQuizFirst = debugForceQuizFirst;
+    _devFreeNavigation = devFreeNavigation;
     _currentCardPass = 0;
     final deckId = activeDeck.id;
     _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));
@@ -1931,9 +2015,41 @@ class AppStore extends ChangeNotifier {
     }
   }
 
+  /// Busca un mazo ya existente cuyo contenido coincide EXACTAMENTE con la
+  /// selección bíblica actual (mismo conjunto de versículos), para ofrecer
+  /// reutilizarlo en vez de crear un duplicado. Devuelve null si no hay match.
+  MemoryDeckData? findDuplicateBibleDeck() {
+    if (_selectedBibleVerses.isEmpty) return null;
+    final sig = _selectedBibleVerses
+        .map((v) => '${v.book}-${v.chapter}-${v.verse}')
+        .toSet();
+    for (final d in _decks) {
+      if (!d.isBible) continue;
+      final dSig = d.cards.map((c) => c.id).toSet();
+      if (dSig.length == sig.length && dSig.containsAll(sig)) return d;
+    }
+    return null;
+  }
+
+  /// Igual que [findDuplicateBibleDeck] pero para contenido por tarjetas
+  /// (flujo "Especificar"): compara el conjunto de pares frente/dorso.
+  MemoryDeckData? findDuplicateDeckForCards(List<MemoryCardData> cards) {
+    String key(MemoryCardData c) => '${c.front.trim()} ||| ${c.back.trim()}';
+    final sig = cards
+        .where((c) => c.front.trim().isNotEmpty || c.back.trim().isNotEmpty)
+        .map(key)
+        .toSet();
+    if (sig.isEmpty) return null;
+    for (final d in _decks) {
+      final dSig = d.cards.map(key).toSet();
+      if (dSig.length == sig.length && dSig.containsAll(sig)) return d;
+    }
+    return null;
+  }
+
   String? createBibleDeckFromSelection() {
     if (_selectedBibleVerses.isEmpty) return null;
-    
+
     String title;
     String subtitle;
     

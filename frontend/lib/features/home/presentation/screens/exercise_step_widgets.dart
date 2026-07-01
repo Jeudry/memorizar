@@ -201,6 +201,7 @@ class _InlineFlashStat extends StatelessWidget {
 
 class _CompleteStatsCard extends StatelessWidget {
   final bool level2;
+  final bool showFirst;
   final String firstValue;
   final String firstLabel;
   final String secondValue;
@@ -210,6 +211,7 @@ class _CompleteStatsCard extends StatelessWidget {
 
   const _CompleteStatsCard({
     this.level2 = false,
+    this.showFirst = true,
     this.firstValue = '1/3',
     this.firstLabel = 'HUECOS',
     this.secondValue = '2/2',
@@ -231,7 +233,7 @@ class _CompleteStatsCard extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _InlineFlashStat(firstLabel, firstValue),
+          if (showFirst) _InlineFlashStat(firstLabel, firstValue),
           _InlineFlashStat(secondLabel, secondValue),
           if (level2)
             _InlineFlashStat('TIEMPO', timeValue, valueColor: RefColors.sun),
@@ -269,6 +271,89 @@ class _CompleteStatsCard extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// Header compacto de ejercicio: referencia del versículo a la izquierda, e
+/// intentos + pista a la derecha (en vez de un cuadro grande de estadísticas).
+class _ExerciseHeaderRow extends StatelessWidget {
+  final String title;
+  final int attemptsLeft;
+  final VoidCallback? onPistaTap;
+
+  const _ExerciseHeaderRow({
+    required this.title,
+    required this.attemptsLeft,
+    this.onPistaTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: RefColors.pink,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              letterSpacing: .5,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          '$attemptsLeft/3',
+          style: TextStyle(
+            color: attemptsLeft <= 1 ? RefColors.urgent : RefColors.muted,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(width: 4),
+        const Text(
+          'intentos',
+          style: TextStyle(
+            color: RefColors.muted,
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        if (onPistaTap != null) ...[
+          const SizedBox(width: 12),
+          GestureDetector(
+            onTap: onPistaTap,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: RefColors.cyan.withValues(alpha: .15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: RefColors.cyan.withValues(alpha: .3)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.lightbulb_outline_rounded,
+                      size: 13, color: RefColors.cyan),
+                  SizedBox(width: 4),
+                  Text(
+                    'Pista',
+                    style: TextStyle(
+                      color: RefColors.cyan,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -624,6 +709,10 @@ class _VoiceRecitationPracticeCardState
   late List<String> _targetBlocks;
   late List<bool> _blockSolved;
   final _audioRecorder = AudioRecorder();
+  // Grabación por STREAM en memoria (ver _FogStep / ReadAloud): evita el stop()
+  // colgado del `record` en macOS y el archivo que no se escribe hasta stop().
+  StreamSubscription<Uint8List>? _pcmSub;
+  final BytesBuilder _pcmBuffer = BytesBuilder();
 
   bool _isModelDownloaded = false;
   bool _isDownloadingModel = false;
@@ -760,7 +849,13 @@ class _VoiceRecitationPracticeCardState
       WhisperService.instance.downloadProgress.removeListener(_onDownloadProgressChanged);
       WhisperService.instance.statusNotifier.removeListener(_onStatusChanged);
     } catch (_) {}
-    _audioRecorder.stop().then((_) => _audioRecorder.dispose());
+    _pcmSub?.cancel();
+    _pcmSub = null;
+    unawaited(_audioRecorder
+        .stop()
+        .timeout(const Duration(seconds: 1), onTimeout: () => null)
+        .catchError((Object _) => null)
+        .whenComplete(_audioRecorder.dispose));
     super.dispose();
   }
 
@@ -796,16 +891,21 @@ class _VoiceRecitationPracticeCardState
     try {
       if (await _audioRecorder.hasPermission()) {
         final dir = await getTemporaryDirectory();
-        final path = '${dir.path}/recit_${DateTime.now().millisecondsSinceEpoch}.raw';
-        await _audioRecorder.start(
+        _recordedPath =
+            '${dir.path}/recit_${DateTime.now().millisecondsSinceEpoch}.wav';
+        _pcmBuffer.clear();
+        final stream = await _audioRecorder.startStream(
           const RecordConfig(
             encoder: AudioEncoder.pcm16bits,
             sampleRate: 16000,
             numChannels: 1,
           ),
-          path: path,
         );
-        _recordedPath = path;
+        _pcmSub?.cancel();
+        _pcmSub = stream.listen(
+          (chunk) => _pcmBuffer.add(chunk),
+          onError: (Object e) => debugPrint('[Recit] PCM stream error: $e'),
+        );
         _pulse.repeat();
       }
     } catch (e) {
@@ -821,30 +921,39 @@ class _VoiceRecitationPracticeCardState
     _autoStopTimer = null;
     _pulse.stop();
     _pulse.value = 0;
-    try {
-      final isRecording = await _audioRecorder.isRecording();
-      if (!isRecording) {
-        throw Exception('El micrófono no está grabando. Verifica permisos del sistema.');
-      }
-      final path = await _audioRecorder.stop();
-      if (path != null) {
-        final wavPath = await _convertPcmToWav(path);
-        _recordedPath = wavPath;
-      }
-      if (!mounted) return;
+    if (mounted) {
       setState(() {
         _listening = false;
         _recognized = 'Analizando tu voz...';
       });
+    }
+    try {
+      // Corta el stream y suelta el micrófono sin bloquear (stop() puede
+      // colgarse en macOS); el audio ya está en _pcmBuffer.
+      await _pcmSub?.cancel();
+      _pcmSub = null;
+      unawaited(_audioRecorder
+          .stop()
+          .timeout(const Duration(seconds: 2), onTimeout: () => null)
+          .catchError((Object _) => null));
 
-      if (_recordedPath != null) {
-        final text = await WhisperService.instance.transcribe(_recordedPath!);
-        _evaluateBlock(text);
-      } else {
-        setState(() {
-          _recognized = '';
-        });
+      final pcmBytes = _pcmBuffer.toBytes();
+      _pcmBuffer.clear();
+      if (!mounted) return;
+      if (pcmBytes.isEmpty || _recordedPath == null) {
+        setState(() => _recognized = '');
+        return;
       }
+
+      final wavFile = File(_recordedPath!);
+      await wavFile.parent.create(recursive: true);
+      final builder = BytesBuilder()
+        ..add(_buildWavHeader(pcmBytes.length))
+        ..add(pcmBytes);
+      await wavFile.writeAsBytes(builder.toBytes());
+
+      final text = await WhisperService.instance.transcribe(_recordedPath!);
+      _evaluateBlock(text);
     } catch (e) {
       debugPrint('Error transcribing recitation: $e');
       if (mounted) {
@@ -856,31 +965,6 @@ class _VoiceRecitationPracticeCardState
     } finally {
       _finalizing = false;
     }
-  }
-
-  Future<String> _convertPcmToWav(String rawPath) async {
-    final file = File(rawPath);
-    if (!await file.exists()) return rawPath;
-
-    final bytes = await file.readAsBytes();
-    final wavHeader = _buildWavHeader(bytes.length);
-
-    final wavPath = rawPath.replaceAll('.raw', '.wav');
-    final wavFile = File(wavPath);
-
-    final builder = BytesBuilder();
-    builder.add(wavHeader);
-    builder.add(bytes);
-
-    await wavFile.writeAsBytes(builder.toBytes());
-
-    try {
-      await file.delete();
-    } catch (e) {
-      debugPrint('Error deleting raw file: $e');
-    }
-
-    return wavPath;
   }
 
   Uint8List _buildWavHeader(int dataLength) {
@@ -1156,7 +1240,7 @@ class _VoiceRecitationPracticeCardState
                 onTap: _downloadModels,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 26,
+                    horizontal: 18,
                     vertical: 14,
                   ),
                   decoration: BoxDecoration(
@@ -1171,16 +1255,19 @@ class _VoiceRecitationPracticeCardState
                     ],
                   ),
                   child: const Row(
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.bolt_rounded, color: Colors.white, size: 18),
                       SizedBox(width: 8),
-                      Text(
-                        'Activar Reconocimiento de Voz',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w900,
+                      Flexible(
+                        child: Text(
+                          'Activar Reconocimiento de Voz',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ),
                     ],

@@ -24,6 +24,13 @@ class _FogStep extends StatefulWidget {
 class _FogStepState extends State<_FogStep>
     with SingleTickerProviderStateMixin {
   final _audioRecorder = AudioRecorder();
+  // Grabamos por STREAM (bytes PCM en memoria) en vez de a archivo: en macOS el
+  // stop() del grabador a veces no resuelve y, con `start(path:)`, el archivo no
+  // se escribe hasta ese stop → quedaba "Evaluando audio…" para siempre o sin
+  // archivo. Con el stream capturamos el audio conforme llega, sin depender del
+  // stop() ni del archivo intermedio.
+  StreamSubscription<Uint8List>? _audioSub;
+  final BytesBuilder _pcmChunks = BytesBuilder();
   bool _isCheckingModel = true;
   bool _isModelDownloaded = false;
   bool _isModelInitializing = true;
@@ -33,7 +40,6 @@ class _FogStepState extends State<_FogStep>
   String _status = 'Módulo de voz cargando...';
   bool _ready = false;
   bool _listening = false;
-  String? _recordedPath;
   Timer? _autoStopTimer;
 
   late AnimationController _pulse;
@@ -191,11 +197,21 @@ class _FogStepState extends State<_FogStep>
   void dispose() {
     _autoStopTimer?.cancel();
     _pulse.dispose();
+    // Por si se sale a mitad de una grabación, no dejar el prefetch pausado.
+    LocalLlmService.instance.setVoiceCaptureActive(false);
     try {
       WhisperService.instance.downloadProgress.removeListener(_onDownloadProgressChanged);
       WhisperService.instance.statusNotifier.removeListener(_onStatusChanged);
     } catch (_) {}
-    _audioRecorder.stop().then((_) => _audioRecorder.dispose());
+    _audioSub?.cancel();
+    _audioSub = null;
+    // stop() puede colgarse en macOS; con timeout garantizamos que igual se
+    // libere el grabador (dispose) y no quede el micrófono tomado.
+    unawaited(_audioRecorder
+        .stop()
+        .timeout(const Duration(seconds: 1), onTimeout: () => null)
+        .catchError((_) => null)
+        .whenComplete(_audioRecorder.dispose));
     super.dispose();
   }
 
@@ -212,6 +228,9 @@ class _FogStepState extends State<_FogStep>
       await _finishCapture();
       return;
     }
+    // Desde que arranca la grabación pausamos el prefetch de IA local para que
+    // el prefetch en vuelo drene y el decode de Whisper corra con CPU libre.
+    LocalLlmService.instance.setVoiceCaptureActive(true);
     setState(() {
       _recognized = '';
       _score = 0;
@@ -230,17 +249,18 @@ class _FogStepState extends State<_FogStep>
 
     try {
       if (await _audioRecorder.hasPermission()) {
-        final dir = await getTemporaryDirectory();
-        final path = '${dir.path}/voice_fog_${DateTime.now().millisecondsSinceEpoch}.raw';
-        await _audioRecorder.start(
+        _pcmChunks.clear();
+        final stream = await _audioRecorder.startStream(
           const RecordConfig(
             encoder: AudioEncoder.pcm16bits,
             sampleRate: 16000,
             numChannels: 1,
           ),
-          path: path,
         );
-        _recordedPath = path;
+        _audioSub = stream.listen(
+          (chunk) => _pcmChunks.add(chunk),
+          onError: (e) => debugPrint('FOG: error en stream de audio: $e'),
+        );
         _pulse.repeat();
       }
     } catch (e) {
@@ -266,25 +286,36 @@ class _FogStepState extends State<_FogStep>
     _pulse.stop();
     _pulse.value = 0;
     try {
-      final isRecording = await _audioRecorder.isRecording();
-      if (!isRecording) {
-        throw Exception('El micrófono no está grabando. Verifica permisos del sistema.');
-      }
-      final path = await _audioRecorder.stop();
-      if (path != null) {
-        final wavPath = await _convertPcmToWav(path);
-        _recordedPath = wavPath;
-      }
-      if (!mounted) return;
+      // Corta el stream (deja de recibir bytes) y suelta el micrófono. stop()
+      // puede colgarse en macOS, así que va con timeout y sin bloquear: ya
+      // tenemos todo el audio en _pcmChunks.
+      await _audioSub?.cancel();
+      _audioSub = null;
+      unawaited(_audioRecorder
+          .stop()
+          .timeout(const Duration(seconds: 2), onTimeout: () => null)
+          .catchError((_) => null));
 
-      if (_recordedPath != null) {
-        final text = await WhisperService.instance.transcribe(_recordedPath!);
-        _gradeReal(text);
-      } else {
-        setState(() {
-          _status = 'No se grabó ningún audio.';
-        });
+      final pcm = _pcmChunks.toBytes();
+      if (!mounted) return;
+      if (pcm.isEmpty) {
+        setState(() => _status = 'No se grabó ningún audio.');
+        return;
       }
+
+      // Empaqueta los bytes PCM capturados en un WAV temporal y transcribe.
+      // El dir temporal de macOS puede no existir todavía → lo creamos.
+      final dir = await getTemporaryDirectory();
+      if (!await dir.exists()) await dir.create(recursive: true);
+      final wavPath =
+          '${dir.path}/voice_fog_${DateTime.now().millisecondsSinceEpoch}.wav';
+      final builder = BytesBuilder()
+        ..add(_buildWavHeader(pcm.length))
+        ..add(pcm);
+      await File(wavPath).writeAsBytes(builder.toBytes());
+
+      final text = await WhisperService.instance.transcribe(wavPath);
+      _gradeReal(text);
     } catch (e) {
       debugPrint('Error deteniendo grabación: $e');
       if (mounted) {
@@ -293,6 +324,9 @@ class _FogStepState extends State<_FogStep>
         });
       }
     } finally {
+      // Reanuda el prefetch de IA local pase lo que pase (incl. si no hubo
+      // audio y no se llamó a transcribe, que ya lo limpia por su cuenta).
+      LocalLlmService.instance.setVoiceCaptureActive(false);
       if (mounted) {
         setState(() {
           _finalizing = false;
@@ -318,31 +352,6 @@ class _FogStepState extends State<_FogStep>
         _status = 'Similitud muy baja (${(score * 100).round()}%). Lee de nuevo con claridad.';
       }
     });
-  }
-
-  Future<String> _convertPcmToWav(String rawPath) async {
-    final file = File(rawPath);
-    if (!await file.exists()) return rawPath;
-
-    final bytes = await file.readAsBytes();
-    final wavHeader = _buildWavHeader(bytes.length);
-
-    final wavPath = rawPath.replaceAll('.raw', '.wav');
-    final wavFile = File(wavPath);
-
-    final builder = BytesBuilder();
-    builder.add(wavHeader);
-    builder.add(bytes);
-
-    await wavFile.writeAsBytes(builder.toBytes());
-
-    try {
-      await file.delete();
-    } catch (e) {
-      debugPrint('Error deleting raw file: $e');
-    }
-
-    return wavPath;
   }
 
   Uint8List _buildWavHeader(int dataLength) {
@@ -440,11 +449,11 @@ class _FogStepState extends State<_FogStep>
             );
 
             if (isFoggy && !widget.finished) {
+              // Nubloso, no oculto: el texto sigue visible y se difumina, así
+              // se intuye la palabra entre la niebla.
               final foggyWordWidget = Text(
                 words[i],
-                style: style.copyWith(
-                  color: Colors.transparent,
-                ),
+                style: style,
               );
 
               return GestureDetector(
@@ -468,23 +477,9 @@ class _FogStepState extends State<_FogStep>
                     }
                   });
                 },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    color: RefColors.violet.withValues(alpha: .18),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: RefColors.cyan.withValues(alpha: .30),
-                      width: 1,
-                    ),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: ImageFiltered(
-                      imageFilter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
-                      child: foggyWordWidget,
-                    ),
-                  ),
+                child: ImageFiltered(
+                  imageFilter: ImageFilter.blur(sigmaX: 6.0, sigmaY: 6.0),
+                  child: foggyWordWidget,
                 ),
               );
             }
@@ -523,13 +518,14 @@ class _FogStepState extends State<_FogStep>
                 );
 
                 if (isFoggy && !widget.finished) {
+                  // Nubloso, no oculto: texto visible difuminado.
                   final foggyWordWidget = Text(
                     words[i],
                     style: const TextStyle(
                       fontSize: 22,
                       height: 1.36,
                       fontWeight: FontWeight.w900,
-                      color: Colors.transparent, // Texto invisible
+                      color: RefColors.ink,
                       fontFamily: 'Outfit',
                     ),
                   );
@@ -555,23 +551,9 @@ class _FogStepState extends State<_FogStep>
                         }
                       });
                     },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      decoration: BoxDecoration(
-                        color: RefColors.violet.withValues(alpha: .18),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: RefColors.cyan.withValues(alpha: .30),
-                          width: 1,
-                        ),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: ImageFiltered(
-                          imageFilter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
-                          child: foggyWordWidget,
-                        ),
-                      ),
+                    child: ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 6.0, sigmaY: 6.0),
+                      child: foggyWordWidget,
                     ),
                   );
                 }
@@ -713,7 +695,7 @@ class _FogStepState extends State<_FogStep>
                 onTap: _downloadModels,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
+                    horizontal: 18,
                     vertical: 14,
                   ),
                   decoration: BoxDecoration(
@@ -721,16 +703,19 @@ class _FogStepState extends State<_FogStep>
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: const Row(
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.bolt_rounded, color: Colors.white, size: 18),
                       SizedBox(width: 8),
-                      Text(
-                        'Activar Reconocimiento de Voz',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w900,
+                      Flexible(
+                        child: Text(
+                          'Activar Reconocimiento de Voz',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ),
                     ],
@@ -878,7 +863,7 @@ class _FogStepState extends State<_FogStep>
                 ),
               )
             else ...[
-              // Mic + score/ondas DEBAJO del texto.
+              // Mic + texto; las ondas van a la derecha de "Grabando voz…".
               Row(
                 children: [
                   GestureDetector(
@@ -943,13 +928,24 @@ class _FogStepState extends State<_FogStep>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (_listening) ...[
-                          const Text(
-                            'Grabando voz...',
-                            style: TextStyle(
-                              color: RefColors.cyan,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                            ),
+                          Row(
+                            children: const [
+                              Text(
+                                'Grabando voz...',
+                                style: TextStyle(
+                                  color: RefColors.cyan,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              SizedBox(width: 12),
+                              // Las ondas van a la derecha del texto, no debajo,
+                              // para no ocupar tanto alto.
+                              Expanded(
+                                child: _ListeningWaveIndicator(
+                                    color: RefColors.cyan),
+                              ),
+                            ],
                           ),
                         ] else ...[
                           if (_score > 0) ...[
@@ -980,26 +976,6 @@ class _FogStepState extends State<_FogStep>
                 ],
               ),
               
-              if (_listening) ...[
-                const SizedBox(height: 10),
-                // Panel flotante animado de ondas de voz en tiempo real
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: RefColors.cyan.withValues(alpha: .04),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: RefColors.cyan.withValues(alpha: .15),
-                      width: 1,
-                    ),
-                  ),
-                  child: const Column(
-                    children: [
-                      _ListeningWaveIndicator(color: RefColors.cyan),
-                    ],
-                  ),
-                ),
-              ],
 
               if (!_listening && _recognized.isNotEmpty) ...[
                 const SizedBox(height: 16),

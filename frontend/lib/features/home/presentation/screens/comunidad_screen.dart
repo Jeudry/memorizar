@@ -63,7 +63,7 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
   Future<void> _loadOverview() async {
     if (_loadingOverview || !mounted) return;
     final store = AppScope.of(context);
-    if (!store.isLoggedIn) return;
+    // El catálogo es público: cargamos también para invitados.
     setState(() {
       _loadingOverview = true;
       _overviewError = null;
@@ -277,12 +277,6 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
 
   Future<void> _runSearch(String q) async {
     final store = AppScope.of(context);
-    if (!store.isLoggedIn) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Inicia sesión para buscar en la comunidad.')),
-      );
-      return;
-    }
     setState(() => _searching = true);
     try {
       final results =
@@ -322,7 +316,7 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
                 icon: (c['icon'] as String?) ?? '🌍',
               ))
           .toList();
-      store.createDeckFromCards(
+      final deck = store.createDeckFromCards(
         title: '${payload['title'] ?? share['title']} (comunidad)',
         icon: (payload['icon'] as String?) ?? '🌍',
         cards: cards,
@@ -335,9 +329,14 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
         }));
       }
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Mazo importado a tu colección')),
-      );
+      if (deck == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Este mazo no tiene tarjetas válidas.')),
+        );
+        return;
+      }
+      // El mazo ya quedó activo: llevamos al usuario directo a él.
+      Navigator.pushNamed(context, AppRoutes.iniciar);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -442,16 +441,7 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        for (final r in liked)
-          _CommunityHit(
-            share: r,
-            onImport: () => _import(r),
-            onReport: () => showReportDeckSheet(
-              context,
-              deckId: (r['id'] as String?) ?? '',
-              deckTitle: r['title'] as String? ?? 'Sin título',
-            ),
-          ),
+        _communityGrid(liked),
       ],
     );
   }
@@ -535,10 +525,7 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const RefTopBar(title: 'Comunidad'),
-          const _PageHead(
-            'Descubre mazos',
-            'Creados por personas que aprenden como tú',
-          ),
+          const SizedBox(height: 8),
           _buildTabSwitcher(),
           const SizedBox(height: 12),
           if (_tabIndex == _myDecksTab) ...[
@@ -565,7 +552,7 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
                     decoration: const InputDecoration(
                       isDense: true,
                       border: InputBorder.none,
-                      hintText: 'Buscar por tema, idioma, asignatura…',
+                      hintText: 'Buscar por tema, idioma, creador…',
                       hintStyle: TextStyle(color: RefColors.dim, fontSize: 12),
                     ),
                   ),
@@ -616,16 +603,7 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
                 ),
               )
             else
-              for (final r in _results!)
-                _CommunityHit(
-                  share: r,
-                  onImport: () => _import(r),
-                  onReport: () => showReportDeckSheet(
-                    context,
-                    deckId: (r['id'] as String?) ?? '',
-                    deckTitle: r['title'] as String? ?? 'Sin título',
-                  ),
-                ),
+              _communityGrid(_results!),
           ],
           const SizedBox(height: 12),
           ..._buildExploreSections(store),
@@ -637,35 +615,6 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
 
   /// Portada del tab Explorar con datos reales del catálogo comunitario.
   List<Widget> _buildExploreSections(AppStore store) {
-    if (!store.isLoggedIn) {
-      return [
-        Glass(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 28),
-          child: Column(
-            children: [
-              const Icon(Icons.public_rounded, color: RefColors.cyan, size: 40),
-              const SizedBox(height: 12),
-              const Text(
-                'Inicia sesión para explorar la comunidad',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Los mazos publicados, los más importados y sus creadores aparecen aquí con datos reales.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: RefColors.muted, fontSize: 12, height: 1.4),
-              ),
-              const SizedBox(height: 14),
-              Cta(
-                'Iniciar sesión',
-                onTap: () => Navigator.pushNamed(context, AppRoutes.login),
-              ),
-            ],
-          ),
-        ),
-      ];
-    }
     if (_loadingOverview && _overview == null) {
       return const [
         Padding(
@@ -701,6 +650,8 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
         (overview['featured'] as List? ?? const []).cast<Map<String, dynamic>>();
     final popular =
         (overview['popular'] as List? ?? const []).cast<Map<String, dynamic>>();
+    final recent =
+        (overview['recent'] as List? ?? const []).cast<Map<String, dynamic>>();
     final creators =
         (overview['creators'] as List? ?? const []).cast<Map<String, dynamic>>();
     final totalDecks = (overview['totalDecks'] as int?) ?? 0;
@@ -737,7 +688,7 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
           physics: const NeverScrollableScrollPhysics(),
           crossAxisSpacing: 6,
           mainAxisSpacing: 6,
-          childAspectRatio: 1.45,
+          childAspectRatio: 1.2,
           children: [
             for (final category in categories)
               _CategoryTile(
@@ -753,7 +704,7 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
       if (featured.isNotEmpty) ...[
         const SectionHead('Destacado esta semana'),
         SizedBox(
-          height: 130,
+          height: 116,
           child: ListView(
             scrollDirection: Axis.horizontal,
             children: [
@@ -761,8 +712,8 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
                 _FeaturedDeck(
                   _shareIcon(share),
                   (share['title'] as String?) ?? 'Sin título',
-                  'por ${_shareOwnerLabel(share, creators)} · ${(share['importCount'] as int?) ?? 0} importaciones',
-                  '📥 ${(share['importCount'] as int?) ?? 0}',
+                  'por ${_shareOwnerLabel(share, creators)}',
+                  _shareRatingLabel(share),
                   LinearGradient(
                     colors: [
                       RefColors.pink.withValues(alpha: .22),
@@ -779,35 +730,33 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
       ],
       if (popular.isNotEmpty) ...[
         const SectionHead('Populares'),
-        for (final share in popular)
-          _CommunityHit(
-            share: share,
-            onImport: () => _import(share),
-            onReport: () => showReportDeckSheet(
-              context,
-              deckId: (share['id'] as String?) ?? '',
-              deckTitle: (share['title'] as String?) ?? 'Sin título',
-            ),
-          ),
+        _communityGrid(popular),
       ],
-      if (creators.isNotEmpty) ...[
-        const SectionHead('Creadores a seguir'),
-        for (final creator in creators)
-          _Creator(
-            ((creator['displayName'] as String?) ?? '?')
-                .characters
-                .first
-                .toUpperCase(),
-            (creator['displayName'] as String?) ?? 'Creador',
-            '${(creator['deckCount'] as int?) ?? 0} ${((creator['deckCount'] as int?) ?? 0) == 1 ? 'mazo publicado' : 'mazos publicados'}',
-            '${(creator['importCount'] as int?) ?? 0} 📥',
-            cyan: true,
-            creatorId: (creator['userId'] as String?) ?? '',
-            following: (creator['followedByMe'] as bool?) ?? false,
-            followerCount: (creator['followerCount'] as int?) ?? 0,
-          ),
+      if (recent.isNotEmpty) ...[
+        const SectionHead('Nuevos mazos'),
+        _communityGrid(recent),
       ],
     ];
+  }
+
+  /// Grilla de 2 columnas de mazos comunitarios (tarjetas compactas tocables).
+  Widget _communityGrid(List<Map<String, dynamic>> items) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(bottom: 4),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        mainAxisExtent: 96,
+      ),
+      itemCount: items.length,
+      itemBuilder: (_, i) => _CommunityHit(
+        share: items[i],
+        onImport: () => _import(items[i]),
+      ),
+    );
   }
 
   String _shareIcon(Map<String, dynamic> share) {
@@ -833,6 +782,20 @@ class _ComunidadScreenState extends State<ComunidadScreen> {
       }
     }
     return 'creador';
+  }
+
+  /// Rating compacto (★ promedio · ❤ likes · 📥 importaciones) de un share,
+  /// igual que en las tarjetas de "Populares".
+  String _shareRatingLabel(Map<String, dynamic> share) {
+    final ratingAvg = ((share['ratingAvg'] as num?) ?? 0).toDouble();
+    final ratingCount = (share['ratingCount'] as int?) ?? 0;
+    final likeCount = (share['likeCount'] as int?) ?? 0;
+    final importCount = (share['importCount'] as int?) ?? 0;
+    return <String>[
+      if (ratingCount > 0) '★ ${ratingAvg.toStringAsFixed(1)}',
+      if (likeCount > 0) '❤ $likeCount',
+      '📥 $importCount',
+    ].join('  ·  ');
   }
 }
 
@@ -1056,398 +1019,66 @@ class _MyDeckStat extends StatelessWidget {
   }
 }
 
-class _CommunityHit extends StatefulWidget {
+class _CommunityHit extends StatelessWidget {
   final Map<String, dynamic> share;
   final VoidCallback onImport;
-  final VoidCallback onReport;
 
   const _CommunityHit({
     required this.share,
     required this.onImport,
-    required this.onReport,
   });
 
   @override
-  State<_CommunityHit> createState() => _CommunityHitState();
-}
-
-class _CommunityHitState extends State<_CommunityHit> {
-  late bool _liked = (widget.share['likedByMe'] as bool?) ?? false;
-  late int _likeCount = (widget.share['likeCount'] as int?) ?? 0;
-  late double _ratingAvg = ((widget.share['ratingAvg'] as num?) ?? 0).toDouble();
-  late int _ratingCount = (widget.share['ratingCount'] as int?) ?? 0;
-  late int _myRating = (widget.share['myRating'] as int?) ?? 0;
-  late int _commentCount = (widget.share['commentCount'] as int?) ?? 0;
-  bool _likeBusy = false;
-
-  Future<void> _openCommentsSheet() async {
-    final shareId = (widget.share['id'] as String?) ?? '';
-    if (shareId.isEmpty) return;
-    final store = AppScope.of(context);
-    if (!store.isLoggedIn) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Inicia sesión para comentar mazos.')),
-      );
-      return;
-    }
-    await showDeckCommentsSheet(
-      context,
-      shareId: shareId,
-      deckTitle: (widget.share['title'] as String?) ?? 'este mazo',
-      initialCount: _commentCount,
-      onCountChanged: (n) {
-        if (mounted) setState(() => _commentCount = n);
-      },
-    );
-  }
-
-  Future<void> _openRatingSheet() async {
-    final shareId = (widget.share['id'] as String?) ?? '';
-    if (shareId.isEmpty) return;
-    final store = AppScope.of(context);
-    if (!store.isLoggedIn) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Inicia sesión para valorar mazos.')),
-      );
-      return;
-    }
-    final result = await showDeckRatingSheet(
-      context,
-      shareId: shareId,
-      deckTitle: (widget.share['title'] as String?) ?? 'este mazo',
-      currentStars: _myRating,
-    );
-    if (result != null && mounted) {
-      setState(() {
-        _ratingAvg = result.avg;
-        _ratingCount = result.count;
-        _myRating = result.myStars;
-      });
-    }
-  }
-
-  Future<void> _toggleLike() async {
-    if (_likeBusy) return;
-    final shareId = (widget.share['id'] as String?) ?? '';
-    if (shareId.isEmpty) return;
-    final store = AppScope.of(context);
-    if (!store.isLoggedIn) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Inicia sesión para dar me gusta.')),
-      );
-      return;
-    }
-    // Optimista: refleja el cambio y revierte si el backend falla.
-    final prevLiked = _liked;
-    final prevCount = _likeCount;
-    setState(() {
-      _likeBusy = true;
-      _liked = !prevLiked;
-      _likeCount = prevCount + (_liked ? 1 : -1);
-    });
-    try {
-      final res = await store.api.toggleDeckLike(shareId);
-      if (!mounted) return;
-      setState(() {
-        _liked = (res['liked'] as bool?) ?? _liked;
-        _likeCount = (res['likeCount'] as int?) ?? _likeCount;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _liked = prevLiked;
-        _likeCount = prevCount;
-      });
-      debugPrint('Error toggling like: $e');
-    } finally {
-      if (mounted) setState(() => _likeBusy = false);
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final share = widget.share;
-    final onReport = widget.onReport;
-    final onImport = widget.onImport;
     final title = (share['title'] as String?) ?? 'Sin título';
-    final summary = (share['summary'] as String?) ?? '';
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: HtmlRefColors.glassSoft,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: HtmlRefColors.glassBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Encabezado: ícono + título/resumen + CTA importar.
-          Row(
-            children: [
-              const Icon(Icons.public_rounded, color: RefColors.cyan, size: 22),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w900),
-                    ),
-                    if (summary.isNotEmpty)
-                      Text(
-                        summary,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: RefColors.muted, fontSize: 11),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: onImport,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: RefColors.lime.withValues(alpha: .15),
-                    borderRadius: BorderRadius.circular(10),
-                    border:
-                        Border.all(color: RefColors.lime.withValues(alpha: .55)),
-                  ),
-                  child: const Text('Importar',
-                      style: TextStyle(
-                          color: RefColors.lime,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900)),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          // Acciones secundarias: valorar · comentar — like · reportar.
-          Row(
-            children: [
-              GestureDetector(
-                onTap: _openRatingSheet,
-                behavior: HitTestBehavior.opaque,
-                child: RatingStarsRow(
-                  avg: _ratingAvg,
-                  count: _ratingCount,
-                  myRating: _myRating,
-                ),
-              ),
-              const SizedBox(width: 12),
-              GestureDetector(
-                onTap: _openCommentsSheet,
-                behavior: HitTestBehavior.opaque,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.mode_comment_outlined,
-                        size: 13, color: RefColors.cyan),
-                    const SizedBox(width: 3),
-                    Text(
-                      _commentCount > 0 ? '$_commentCount' : 'Comentar',
-                      style: const TextStyle(
-                          color: RefColors.cyan,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800),
-                    ),
-                  ],
-                ),
-              ),
-              const Spacer(),
-              GestureDetector(
-                onTap: _toggleLike,
-                behavior: HitTestBehavior.opaque,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _liked
-                          ? Icons.favorite_rounded
-                          : Icons.favorite_border_rounded,
-                      color: _liked ? RefColors.pink : RefColors.muted,
-                      size: 17,
-                    ),
-                    if (_likeCount > 0) ...[
-                      const SizedBox(width: 4),
-                      Text('$_likeCount',
-                          style: TextStyle(
-                              color: _liked ? RefColors.pink : RefColors.muted,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800)),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              GestureDetector(
-                onTap: onReport,
-                behavior: HitTestBehavior.opaque,
-                child: const Icon(Icons.flag_outlined,
-                    color: RefColors.muted, size: 16),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Creator extends StatefulWidget {
-  final String initial;
-  final String title;
-  final String subtitle;
-  final String stats;
-  final bool cyan;
-  final String creatorId;
-  final bool following;
-  final int followerCount;
-
-  const _Creator(
-    this.initial,
-    this.title,
-    this.subtitle,
-    this.stats, {
-    this.cyan = false,
-    this.creatorId = '',
-    this.following = false,
-    this.followerCount = 0,
-  });
-
-  @override
-  State<_Creator> createState() => _CreatorState();
-}
-
-class _CreatorState extends State<_Creator> {
-  late bool _following = widget.following;
-  late int _followerCount = widget.followerCount;
-  bool _busy = false;
-
-  Future<void> _toggleFollow() async {
-    if (_busy || widget.creatorId.isEmpty) return;
-    final store = AppScope.of(context);
-    if (!store.isLoggedIn) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Inicia sesión para seguir creadores.')),
-      );
-      return;
-    }
-    final prevFollowing = _following;
-    final prevCount = _followerCount;
-    setState(() {
-      _busy = true;
-      _following = !prevFollowing;
-      _followerCount = prevCount + (_following ? 1 : -1);
-    });
-    try {
-      final res = await store.api.toggleFollow(widget.creatorId);
-      if (!mounted) return;
-      setState(() {
-        _following = (res['following'] as bool?) ?? _following;
-        _followerCount = (res['followerCount'] as int?) ?? _followerCount;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _following = prevFollowing;
-        _followerCount = prevCount;
-      });
-      debugPrint('Error toggling follow: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final subtitle = _followerCount > 0
-        ? '${widget.subtitle} · $_followerCount ${_followerCount == 1 ? 'seguidor' : 'seguidores'}'
-        : widget.subtitle;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Glass(
-        radius: 16,
-        padding: const EdgeInsets.all(12),
-        child: Row(
+    final ratingAvg = ((share['ratingAvg'] as num?) ?? 0).toDouble();
+    final ratingCount = (share['ratingCount'] as int?) ?? 0;
+    final likeCount = (share['likeCount'] as int?) ?? 0;
+    final importCount = (share['importCount'] as int?) ?? 0;
+    final pop = <String>[
+      if (ratingCount > 0) '★ ${ratingAvg.toStringAsFixed(1)}',
+      if (likeCount > 0) '❤ $likeCount',
+      '📥 $importCount',
+    ].join('  ·  ');
+    // Toda la tarjeta es tocable: al tocarla se obtiene el mazo.
+    return GestureDetector(
+      onTap: onImport,
+      child: Container(
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: HtmlRefColors.glassSoft,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: HtmlRefColors.glassBorder),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Fav(
-              widget.initial,
-              gradient: widget.cyan ? RefColors.cool : RefColors.primary,
-              size: 42,
-              online: widget.cyan,
+            const Icon(Icons.public_rounded, color: RefColors.cyan, size: 20),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style:
+                  const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: RefColors.muted,
-                    ),
-                  ),
-                ],
-              ),
+            const SizedBox(height: 4),
+            Text(
+              pop,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  color: RefColors.dim,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700),
             ),
-            if (widget.creatorId.isNotEmpty)
-              GestureDetector(
-                onTap: _toggleFollow,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                  decoration: BoxDecoration(
-                    gradient: _following ? null : RefColors.primary,
-                    color: _following ? RefColors.glassStrong : null,
-                    borderRadius: BorderRadius.circular(10),
-                    border: _following
-                        ? Border.all(color: RefColors.border)
-                        : null,
-                  ),
-                  child: Text(
-                    _following ? 'Siguiendo' : '+ Seguir',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      color: _following ? RefColors.muted : Colors.white,
-                    ),
-                  ),
-                ),
-              )
-            else
-              Text(
-                widget.stats,
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  color: RefColors.muted,
-                ),
-              ),
           ],
         ),
       ),
     );
   }
 }
-
 
 class _CategoryTile extends StatelessWidget {
   final String emoji;
@@ -1466,23 +1097,27 @@ class _CategoryTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
       color: const Color(0x10FFFFFF),
       border: Border.all(color: const Color(0x24FFFFFF)),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          GlyphIcon(emoji, size: 21),
-          const SizedBox(height: 3),
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            count,
-            style: const TextStyle(fontSize: 8.5, color: RefColors.muted),
-          ),
-        ],
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            GlyphIcon(emoji, size: 21),
+            const SizedBox(height: 3),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              count,
+              style: const TextStyle(fontSize: 8.5, color: RefColors.muted),
+            ),
+          ],
+        ),
       ),
       ),
     );
@@ -1533,6 +1168,8 @@ class _FeaturedDeck extends StatelessWidget {
                 children: [
                   Text(
                     title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.w900,
@@ -1542,12 +1179,14 @@ class _FeaturedDeck extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 11,
                       color: RefColors.muted,
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(height: 8),
                   RefChip(
                     rating,
                     dense: true,

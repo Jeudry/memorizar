@@ -12,6 +12,7 @@ class AppRoutes {
   static const biblia = '/biblia';
   static const especificar = '/especificar';
   static const iniciar = '/iniciar';
+  static const agregarMazo = '/agregar-mazo';
   static const repasar = '/repasar';
   static const comunidad = '/comunidad';
   static const amigos = '/amigos';

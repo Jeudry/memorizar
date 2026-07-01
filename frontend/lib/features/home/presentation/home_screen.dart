@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../../core/api/models.dart';
@@ -32,25 +33,28 @@ class HomeScreen extends StatelessWidget {
           const _AppHeader(),
           const SizedBox(height: 18),
 
-          // Hero Section (Pendientes)
-          const _HeroSection(),
-          const SizedBox(height: 18),
-
           // Memorizar algo nuevo
           const _SectionHeader(title: 'Memorizar algo nuevo'),
           const _MemorizarGrid(),
           const SizedBox(height: 12),
           const _CoopBar(),
-          const SizedBox(height: 12),
-          const _PremiumHomeCard(),
           const SizedBox(height: 18),
 
           // De la comunidad
           _SectionHeader(
             title: store.hasDecks ? 'Tus mazos' : 'Tu biblioteca',
             trailing: TextButton(
-              onPressed: () =>
-                  Navigator.pushNamed(context, '/comunidad'),
+              onPressed: () {
+                // "Ver más" de Tus mazos lleva a la pestaña Mazos (no a
+                // Comunidad). Dentro del shell cambia de tab como la barra
+                // inferior; fuera del shell, navega por ruta.
+                final shell = MainTabShell.of(context);
+                if (shell != null) {
+                  shell.goToRoute(AppRoutes.repasar);
+                } else {
+                  Navigator.pushNamed(context, AppRoutes.repasar);
+                }
+              },
               child: const Text(
                 'Ver más',
                 style: TextStyle(
@@ -61,6 +65,23 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
           const _CommunitySlider(),
+          const SizedBox(height: 18),
+
+          // Comunidad
+          _SectionHeader(
+            title: 'Comunidad',
+            trailing: TextButton(
+              onPressed: () => Navigator.pushNamed(context, '/comunidad'),
+              child: const Text(
+                'Explorar',
+                style: TextStyle(
+                  color: AppColors.inkMuted,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+          const _HomeCommunitySlider(),
           const SizedBox(height: 18),
 
           // Amigos
@@ -810,227 +831,6 @@ class _IconButton extends StatelessWidget {
   }
 }
 
-class _HeroSection extends StatefulWidget {
-  const _HeroSection();
-
-  @override
-  State<_HeroSection> createState() => _HeroSectionState();
-}
-
-class _HeroSectionState extends State<_HeroSection> {
-  final PageController _pc = PageController();
-  Timer? _timer;
-  int _count = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    // Slide automático: avanza solo cada 4s entre mazos con pendientes.
-    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
-      if (!mounted || !_pc.hasClients || _count <= 1) return;
-      final next = (((_pc.page ?? 0).round()) + 1) % _count;
-      _pc.animateToPage(
-        next,
-        duration: const Duration(milliseconds: 450),
-        curve: Curves.easeInOut,
-      );
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _pc.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final store = AppScope.of(context);
-
-    if (!store.hasDecks) {
-      return _heroMessage(
-        badge: 'INICIO',
-        badgeColor: AppColors.inkMuted,
-        title: 'Listo para memorizar',
-        body: 'Crea un mazo abajo y empieza una sesión cuando tengas contenido preparado.',
-      );
-    }
-
-    final pending = <({MemoryDeckData deck, int due})>[
-      for (final d in store.decks)
-        if (d.cards.any((c) => c.isDueForReview))
-          (deck: d, due: d.cards.where((c) => c.isDueForReview).length),
-    ];
-    _count = pending.length;
-
-    if (pending.isEmpty) {
-      return _heroMessage(
-        badge: 'TODO AL DÍA',
-        badgeColor: AppColors.accentLime,
-        title: '¡Mente afilada!',
-        body: 'No tienes tarjetas pendientes. Memoriza algo nuevo abajo.',
-      );
-    }
-
-    return SizedBox(
-      height: 92,
-      child: PageView.builder(
-        controller: _pc,
-        itemCount: pending.length,
-        itemBuilder: (context, i) =>
-            _PendingDeckSuggestion(deck: pending[i].deck, due: pending[i].due),
-      ),
-    );
-  }
-
-  Widget _heroMessage({
-    required String badge,
-    required Color badgeColor,
-    required String title,
-    required String body,
-  }) {
-    return GlassCard(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.glassStrong,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: AppColors.glassBorder),
-            ),
-            child: Text(
-              badge,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.4,
-                color: badgeColor,
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 6),
-          Text(
-            body,
-            style: const TextStyle(color: AppColors.inkMuted, fontSize: 12, height: 1.35),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Una "slide" del hero: sugiere UN mazo con tarjetas pendientes. Al tocarlo
-/// abre ese mazo para empezar la sesión.
-class _PendingDeckSuggestion extends StatelessWidget {
-  final MemoryDeckData deck;
-  final int due;
-  const _PendingDeckSuggestion({required this.deck, required this.due});
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = deck.isBible ? AppColors.accentSun : AppColors.accentCyan;
-    return GestureDetector(
-      onTap: () {
-        AppScope.of(context).setActiveDeck(deck.id);
-        Navigator.pushNamed(context, '/iniciar');
-      },
-      child: GlassCard(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: AppColors.glassStrong,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: accent.withValues(alpha: 0.35)),
-              ),
-              child: Center(child: GlyphIcon(deck.icon, size: 22)),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      const Text(
-                        'PENDIENTE',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.3,
-                          color: AppColors.inkMuted,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: AppColors.accentPink,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          '$due',
-                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    deck.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    due == 1 ? '1 tarjeta por repasar' : '$due tarjetas por repasar',
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      color: AppColors.inkMuted,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: accent.withValues(alpha: 0.4)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Repasar',
-                    style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(width: 3),
-                  Icon(Icons.arrow_forward_rounded, color: accent, size: 14),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _SectionHeader extends StatelessWidget {
   final String title;
   final Widget? trailing;
@@ -1069,7 +869,7 @@ class _MemorizarGrid extends StatelessWidget {
             Expanded(
               child: _MemCard(
                 title: 'Biblia',
-                subtitle: 'Versículos · capítulos · libros',
+                subtitle: 'Versículos · capítulos',
                 emoji: '✝️',
                 color: AppColors.accentSun,
                 route: '/biblia',
@@ -1112,138 +912,56 @@ class _MemCard extends StatelessWidget {
     return GestureDetector(
       onTap: () => Navigator.pushNamed(context, route),
       child: GlassCard(
-        padding: const EdgeInsets.all(16),
-        height: 132,
-        color: AppColors.glassBg,
-        child: Stack(
-          children: [
-            Positioned(
-              top: -10,
-              right: -10,
-              child: Opacity(
-                opacity: 0.18,
-                child: GlyphIcon(
-                  emoji,
-                  size: 70,
-                  color: AppColors.ink.withValues(alpha: .65),
-                ),
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.glassBorder),
-                    gradient: LinearGradient(
-                      colors: [
-                        color.withValues(alpha: 0.5),
-                        color.withValues(alpha: 0.15),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                  ),
-                  child: Center(child: GlyphIcon(emoji, size: 18)),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.inkMuted,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PremiumHomeCard extends StatelessWidget {
-  const _PremiumHomeCard();
-
-  @override
-  Widget build(BuildContext context) {
-    final isPremium = AppScope.of(context).isPremium;
-    return GestureDetector(
-      onTap: () => Navigator.pushNamed(context, '/premium'),
-      child: GlassCard(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         color: AppColors.glassBg,
         child: Row(
           children: [
             Container(
-              width: 46,
-              height: 46,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
-                gradient: AppColors.gradPrimary,
-                borderRadius: BorderRadius.circular(15),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.accentPink.withValues(alpha: .22),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.glassBorder),
+                gradient: LinearGradient(
+                  colors: [
+                    color.withValues(alpha: 0.5),
+                    color.withValues(alpha: 0.15),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
               ),
-              child: const Icon(Icons.workspace_premium_rounded, size: 24),
+              child: Center(child: GlyphIcon(emoji, size: 18)),
             ),
-            const SizedBox(width: 13),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Premium',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      _SmallStatusPill(isPremium ? 'Activo' : 'Próximamente'),
-                    ],
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Quizes inteligentes, sin anuncios y ejercicios avanzados.',
-                    style: TextStyle(
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
                       color: AppColors.inkMuted,
-                      fontSize: 12,
-                      height: 1.25,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right_rounded, color: AppColors.inkMuted),
           ],
         ),
       ),
@@ -1251,34 +969,55 @@ class _PremiumHomeCard extends StatelessWidget {
   }
 }
 
-class _SmallStatusPill extends StatelessWidget {
-  final String label;
-
-  const _SmallStatusPill(this.label);
+class _CommunitySlider extends StatefulWidget {
+  const _CommunitySlider();
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.accentSun.withValues(alpha: .18),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.accentSun.withValues(alpha: .42)),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: AppColors.accentSun,
-          fontSize: 10,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
+  State<_CommunitySlider> createState() => _CommunitySliderState();
 }
 
-class _CommunitySlider extends StatelessWidget {
-  const _CommunitySlider();
+class _CommunitySliderState extends State<_CommunitySlider> {
+  final ScrollController _ctrl = ScrollController();
+  Timer? _autoTimer;
+  Timer? _resumeTimer;
+  bool _paused = false;
+  // Ancho de tarjeta (168) + separación (10): un "paso" de carrusel.
+  static const double _step = 178;
+
+  @override
+  void initState() {
+    super.initState();
+    _autoTimer = Timer.periodic(const Duration(seconds: 3), (_) => _advance());
+  }
+
+  @override
+  void dispose() {
+    _autoTimer?.cancel();
+    _resumeTimer?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _advance() {
+    if (_paused || !_ctrl.hasClients) return;
+    final max = _ctrl.position.maxScrollExtent;
+    if (max <= 0) return; // todo cabe en pantalla, nada que pasar
+    var next = _ctrl.offset + _step;
+    if (next > max + 4) next = 0; // al final, vuelve al inicio en bucle
+    _ctrl.animateTo(
+      next.clamp(0.0, max),
+      duration: const Duration(milliseconds: 450),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  // Pausa el auto-avance mientras el usuario interactúa y lo reanuda tras
+  // unos segundos de inactividad, para no pelear contra su scroll.
+  void _pauseBriefly() {
+    _paused = true;
+    _resumeTimer?.cancel();
+    _resumeTimer = Timer(const Duration(seconds: 5), () => _paused = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1291,29 +1030,75 @@ class _CommunitySlider extends StatelessWidget {
             'Cuando crees contenido desde Biblia o Especificar, aparecerá aquí.',
       );
     }
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (final deck in decks.take(4)) ...[
-            _CommunityCard(
-              emoji: deck.icon,
-              title: deck.title,
-              stats:
-                  '${deck.cards.length} tarjetas · ${deck.retention}% retención',
-              weakCount: deck.weakCount,
-              onTap: () {
-                AppScope.of(context).setActiveDeck(deck.id);
-                Navigator.pushNamed(context, '/iniciar');
-              },
-            ),
-            const SizedBox(width: 10),
-          ],
-        ],
+    // Mostramos los mazos como un slide ordenado por los que más tarjetas
+    // pendientes (débiles/por repasar) tienen, para empujar al usuario hacia
+    // lo más urgente primero.
+    final sorted = [...decks]
+      ..sort((a, b) => b.weakCount.compareTo(a.weakCount));
+    final store = AppScope.of(context);
+    final groupsById = {for (final g in store.groups) g.id: g};
+    return Listener(
+      onPointerDown: (_) => _pauseBriefly(),
+      onPointerSignal: (_) => _pauseBriefly(),
+      child: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(
+          dragDevices: {
+            PointerDeviceKind.touch,
+            PointerDeviceKind.mouse,
+            PointerDeviceKind.trackpad,
+          },
+        ),
+        child: SingleChildScrollView(
+          controller: _ctrl,
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final deck in sorted) ...[
+                Builder(builder: (context) {
+                  final group =
+                      deck.groupId != null ? groupsById[deck.groupId] : null;
+                  return _CommunityCard(
+                    emoji: deck.icon,
+                    title: deck.title,
+                    stats: '${deck.cards.length} tarjetas',
+                    weakCount: deck.weakCount,
+                    groupLabel: group?.name,
+                    groupEmoji: group?.icon,
+                    groupColor: group != null ? groupColor(group.id) : null,
+                    onTap: () {
+                      AppScope.of(context).setActiveDeck(deck.id);
+                      Navigator.pushNamed(context, '/iniciar');
+                    },
+                  );
+                }),
+                const SizedBox(width: 10),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
 }
+
+/// Paleta de colores distintivos para las carpetas/grupos. Se asigna de forma
+/// estable a partir del id del grupo, para que cada carpeta tenga su propio
+/// color consistente entre sesiones.
+const List<Color> _groupPalette = [
+  AppColors.accentCyan,
+  AppColors.accentPink,
+  AppColors.accentLime,
+  AppColors.accentViolet,
+  AppColors.accentSun,
+  Color(0xFF4ECDC4),
+  Color(0xFFFF8A5B),
+  Color(0xFF59B0FF),
+];
+
+/// Color distintivo y estable para un grupo, derivado de su id.
+Color groupColor(String groupId) =>
+    _groupPalette[groupId.hashCode.abs() % _groupPalette.length];
 
 class _CommunityCard extends StatelessWidget {
   final String emoji;
@@ -1321,6 +1106,15 @@ class _CommunityCard extends StatelessWidget {
   final String stats;
   /// Tarjetas débiles/por repasar del mazo. > 0 muestra un badge accionable.
   final int weakCount;
+  /// Carpeta/grupo del mazo (si aplica): se muestra como chip de color junto
+  /// al emoji.
+  final String? groupLabel;
+  final String? groupEmoji;
+  final Color? groupColor;
+  /// Promedio de estrellas (0–5) para mazos de comunidad. > 0 muestra un badge
+  /// de popularidad con la valoración.
+  final double ratingAvg;
+  final int ratingCount;
   final VoidCallback? onTap;
 
   const _CommunityCard({
@@ -1328,6 +1122,11 @@ class _CommunityCard extends StatelessWidget {
     required this.title,
     required this.stats,
     this.weakCount = 0,
+    this.ratingAvg = 0,
+    this.ratingCount = 0,
+    this.groupLabel,
+    this.groupEmoji,
+    this.groupColor,
     this.onTap,
   });
 
@@ -1336,28 +1135,72 @@ class _CommunityCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: GlassCard(
-        width: 150,
-        height: 150,
-        padding: const EdgeInsets.all(12),
+        width: 168,
+        padding: const EdgeInsets.all(13),
         color: AppColors.glassBg,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Container(
-                  width: 36,
-                  height: 36,
+                  width: 46,
+                  height: 46,
                   decoration: BoxDecoration(
                     color: AppColors.glassStrong,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: AppColors.glassBorder),
                   ),
-                  child: Center(child: GlyphIcon(emoji, size: 18)),
+                  child: Center(child: GlyphIcon(emoji, size: 24)),
                 ),
-                if (weakCount > 0)
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    stats,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.inkMuted,
+                      fontWeight: FontWeight.w500,
+                      height: 1.2,
+                    ),
+                  ),
+                ),
+                if (ratingAvg > 0) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentSun.withValues(alpha: .16),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: AppColors.accentSun.withValues(alpha: .4),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('★',
+                            style: TextStyle(
+                                color: AppColors.accentSun, fontSize: 11)),
+                        const SizedBox(width: 2),
+                        Text(
+                          ratingAvg.toStringAsFixed(1),
+                          style: const TextStyle(
+                            color: AppColors.accentSun,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else if (weakCount > 0) ...[
+                  const SizedBox(width: 8),
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -1369,36 +1212,176 @@ class _CommunityCard extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      '$weakCount por repasar',
+                      '$weakCount',
                       style: const TextStyle(
                         color: AppColors.urgent,
-                        fontSize: 9,
+                        fontSize: 11,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                   ),
+                ],
               ],
             ),
-            const Spacer(),
+            const SizedBox(height: 8),
             Text(
               title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                height: 1.2,
+                fontSize: 14.5,
+                fontWeight: FontWeight.w800,
+                height: 1.15,
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              stats,
-              style: const TextStyle(
-                fontSize: 10,
-                color: AppColors.inkMuted,
-                fontWeight: FontWeight.w500,
+            if (groupLabel != null && groupColor != null) ...[
+              const SizedBox(height: 6),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: groupColor!.withValues(alpha: .16),
+                  borderRadius: BorderRadius.circular(999),
+                  border:
+                      Border.all(color: groupColor!.withValues(alpha: .5)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (groupEmoji != null) ...[
+                      Text(groupEmoji!,
+                          style: const TextStyle(fontSize: 10)),
+                      const SizedBox(width: 3),
+                    ],
+                    Flexible(
+                      child: Text(
+                        groupLabel!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: groupColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Slide horizontal de mazos publicados por la comunidad, con el mismo estilo
+/// de tarjeta que "Tus mazos". Carga el overview del backend; si no hay sesión
+/// o aún no hay mazos publicados, muestra un panel breve que invita a explorar.
+class _HomeCommunitySlider extends StatefulWidget {
+  const _HomeCommunitySlider();
+
+  @override
+  State<_HomeCommunitySlider> createState() => _HomeCommunitySliderState();
+}
+
+class _HomeCommunitySliderState extends State<_HomeCommunitySlider> {
+  List<Map<String, dynamic>>? _shares;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    final store = AppScope.of(context);
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      final overview = await store.api.getCommunityOverview();
+      // Combinamos destacados + populares y deduplicamos por shareId, dejando
+      // los más relevantes primero (orden de llegada del backend).
+      final featured =
+          (overview['featured'] as List? ?? const []).cast<Map<String, dynamic>>();
+      final popular =
+          (overview['popular'] as List? ?? const []).cast<Map<String, dynamic>>();
+      final seen = <String>{};
+      final merged = <Map<String, dynamic>>[];
+      for (final share in [...featured, ...popular]) {
+        final id = (share['shareId'] as String?) ?? (share['title'] as String?) ?? '';
+        if (id.isEmpty || seen.contains(id)) continue;
+        seen.add(id);
+        merged.add(share);
+      }
+      if (!mounted) return;
+      setState(() => _shares = merged);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _shares = const []);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _shareIcon(Map<String, dynamic> share) {
+    try {
+      final raw = (share['payloadJson'] as String?) ?? '';
+      if (raw.isEmpty) return '🌍';
+      final payload = jsonDecode(raw) as Map<String, dynamic>;
+      final icon = (payload['icon'] as String?)?.trim() ?? '';
+      return icon.isEmpty ? '🌍' : icon;
+    } catch (_) {
+      return '🌍';
+    }
+  }
+
+  /// Línea de popularidad del mazo: importaciones + me gusta (+ nº de
+  /// valoraciones cuando las hay), para dar señal social en la tarjeta.
+  String _shareStats(Map<String, dynamic> share) {
+    final imports = (share['importCount'] as int?) ?? 0;
+    final likes = (share['likeCount'] as int?) ?? 0;
+    final ratings = (share['ratingCount'] as int?) ?? 0;
+    final parts = <String>['$imports 📥', '$likes ❤️'];
+    if (ratings > 0) {
+      parts.add('$ratings ${ratings == 1 ? 'reseña' : 'reseñas'}');
+    }
+    return parts.join(' · ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shares = _shares;
+    if (shares != null && shares.isNotEmpty) {
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final share in shares) ...[
+              _CommunityCard(
+                emoji: _shareIcon(share),
+                title: (share['title'] as String?) ?? 'Sin título',
+                stats: _shareStats(share),
+                ratingAvg: (share['ratingAvg'] as num?)?.toDouble() ?? 0,
+                ratingCount: (share['ratingCount'] as int?) ?? 0,
+                onTap: () => Navigator.pushNamed(context, '/comunidad'),
+              ),
+              const SizedBox(width: 10),
+            ],
+          ],
+        ),
+      );
+    }
+    // Sin sesión o sin mazos publicados todavía: panel breve que invita.
+    return GestureDetector(
+      onTap: () => Navigator.pushNamed(context, '/comunidad'),
+      child: const _EmptyHomePanel(
+        icon: '🌍',
+        title: 'Explora la comunidad',
+        body: 'Descubre y descarga mazos publicados por otras personas.',
       ),
     );
   }
@@ -1418,7 +1401,6 @@ class _CoopBar extends StatelessWidget {
         subtitle: 'Crea una sala privada o únete a una partida',
         avatarLabel: '👥',
         avatarColor: AppColors.accentPink,
-        buttonText: 'Abrir',
       );
     }
 
@@ -1434,7 +1416,6 @@ class _CoopBar extends StatelessWidget {
             subtitle: 'Crea una sala privada o únete a una partida',
             avatarLabel: '👥',
             avatarColor: AppColors.accentPink,
-            buttonText: 'Abrir',
           );
         }
 
@@ -1451,7 +1432,6 @@ class _CoopBar extends StatelessWidget {
           subtitle: subtitle,
           avatarLabel: avatarLabel,
           avatarColor: avatarColor,
-          buttonText: 'Volver',
         );
       },
     );
@@ -1463,7 +1443,6 @@ class _CoopBar extends StatelessWidget {
     required String subtitle,
     required String avatarLabel,
     required Color avatarColor,
-    required String buttonText,
   }) {
     return GestureDetector(
       onTap: () => Navigator.pushNamed(context, '/cooperativo'),
@@ -1512,26 +1491,11 @@ class _CoopBar extends StatelessWidget {
                 ],
               ),
             ),
-            InkWell(
-              onTap: () => Navigator.pushNamed(context, '/cooperativo'),
-              borderRadius: BorderRadius.circular(999),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppColors.accentLime, Color(0xFF3ED97A)],
-                  ),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  buttonText,
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.inkMuted,
+              size: 22,
             ),
           ],
         ),

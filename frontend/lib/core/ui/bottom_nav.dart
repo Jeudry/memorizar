@@ -17,7 +17,7 @@ class RefBottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     return Glass(
       radius: 22,
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
       color: RefColors.bg.withValues(alpha: .6),
       child: Row(
         children: [
@@ -72,7 +72,7 @@ class RefBottomItem extends StatelessWidget {
           }
         },
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
           decoration: isActive
               ? BoxDecoration(
                   gradient: RefColors.primary,
@@ -95,12 +95,19 @@ class RefBottomItem extends StatelessWidget {
                 color: isActive ? Colors.white : RefColors.muted,
               ),
               const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w600,
-                  color: isActive ? Colors.white : RefColors.muted,
+              // Una sola línea siempre: si no cabe, se reduce un poco (no se
+              // parte en dos, que descuadraba la altura de la barra).
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w600,
+                    color: isActive ? Colors.white : RefColors.muted,
+                  ),
                 ),
               ),
             ],

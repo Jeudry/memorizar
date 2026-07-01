@@ -1,4 +1,7 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/app_state.dart';
 import '../../../core/router/app_routes.dart';
@@ -16,7 +19,8 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
+class _LoginScreenState extends State<LoginScreen>
+    with SingleTickerProviderStateMixin {
   final _social = SocialAuthService();
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
@@ -26,9 +30,30 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   DateTime? _selectedBirthDate;
   bool _busy = false;
   String? _error;
-  
+  bool _success = false;
+
+  /// "Recuérdame": si está activo, persistimos el correo en este dispositivo
+  /// para precargarlo la próxima vez. Por defecto encendido.
+  bool _remember = true;
+  static const _kRememberFlag = 'auth_remember_me';
+  static const _kRememberedEmail = 'auth_remembered_email';
+
   /// Sub-modo dentro de email: false = sign in, true = sign up.
   bool _isSignUp = false;
+
+  /// Muestra una breve celebración de éxito y luego entra al home. Se usa
+  /// tanto para el login por correo como para el social, para que el usuario
+  /// reciba siempre confirmación visual antes de cambiar de pantalla.
+  Future<void> _celebrateAndGoHome() async {
+    if (!mounted) return;
+    setState(() {
+      _success = true;
+      _error = null;
+    });
+    await Future.delayed(const Duration(milliseconds: 1000));
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (_) => false);
+  }
 
   late AnimationController _logoAnimationCtrl;
 
@@ -39,6 +64,32 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       vsync: this,
       duration: const Duration(seconds: 4),
     )..repeat(reverse: true);
+    _loadRemembered();
+  }
+
+  /// Precarga el correo recordado en este dispositivo (si lo hay).
+  Future<void> _loadRemembered() async {
+    final prefs = await SharedPreferences.getInstance();
+    final remember = prefs.getBool(_kRememberFlag) ?? true;
+    final email = prefs.getString(_kRememberedEmail) ?? '';
+    if (!mounted) return;
+    setState(() {
+      _remember = remember;
+      if (remember && email.isNotEmpty && _emailCtrl.text.isEmpty) {
+        _emailCtrl.text = email;
+      }
+    });
+  }
+
+  /// Guarda o limpia el correo recordado según el estado de "Recuérdame".
+  Future<void> _persistRemembered(String email) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kRememberFlag, _remember);
+    if (_remember) {
+      await prefs.setString(_kRememberedEmail, email);
+    } else {
+      await prefs.remove(_kRememberedEmail);
+    }
   }
 
   @override
@@ -55,7 +106,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   int _calculateAge(DateTime birthDate) {
     final today = DateTime.now();
     int age = today.year - birthDate.year;
-    if (today.month < birthDate.month || (today.month == birthDate.month && today.day < birthDate.day)) {
+    if (today.month < birthDate.month ||
+        (today.month == birthDate.month && today.day < birthDate.day)) {
       age--;
     }
     return age;
@@ -77,7 +129,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
               onPrimary: Colors.black,
               surface: Color(0xFF161A22),
               onSurface: Colors.white,
-            ), dialogTheme: DialogThemeData(backgroundColor: const Color(0xFF0F1219)),
+            ),
+            dialogTheme: DialogThemeData(
+              backgroundColor: const Color(0xFF0F1219),
+            ),
           ),
           child: child!,
         );
@@ -86,7 +141,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     if (picked != null) {
       setState(() {
         _selectedBirthDate = picked;
-        _birthDateCtrl.text = "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+        _birthDateCtrl.text =
+            "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
       });
     }
   }
@@ -117,14 +173,18 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           throw Exception('El nombre de usuario es obligatorio.');
         }
         if (!RegExp(r'^[a-zA-Z0-9_]{3,15}$').hasMatch(username)) {
-          throw Exception('El usuario debe tener entre 3 y 15 caracteres y solo contener letras, números o guiones bajos.');
+          throw Exception(
+            'El usuario debe tener entre 3 y 15 caracteres y solo contener letras, números o guiones bajos.',
+          );
         }
         if (birthDate == null) {
           throw Exception('La fecha de nacimiento es obligatoria.');
         }
         final age = _calculateAge(birthDate);
         if (age < 0 || age > 120) {
-          throw Exception('Por favor, selecciona una fecha de nacimiento válida.');
+          throw Exception(
+            'Por favor, selecciona una fecha de nacimiento válida.',
+          );
         }
         if (pass.length < 8) {
           throw Exception('La contraseña debe tener al menos 8 caracteres.');
@@ -139,12 +199,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       } else {
         await store.loginWithEmail(email: email, password: pass);
       }
+      await _persistRemembered(email);
       if (!mounted) return;
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        AppRoutes.home,
-        (_) => false,
-      );
+      await _celebrateAndGoHome();
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = _parseError(e));
@@ -165,11 +222,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       );
       if (completed == true) {
         if (!mounted) return;
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          AppRoutes.home,
-          (_) => false,
-        );
+        await _celebrateAndGoHome();
       } else {
         await store.logout();
         if (mounted) {
@@ -181,11 +234,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       }
     } else {
       if (!mounted) return;
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        AppRoutes.home,
-        (_) => false,
-      );
+      await _celebrateAndGoHome();
     }
   }
 
@@ -245,21 +294,24 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         }
       }
     }
-    
+
     // Mapeo en español amigable
-    if (raw.contains('email already in use') || raw.contains('already in use')) {
+    if (raw.contains('email already in use') ||
+        raw.contains('already in use')) {
       return 'Este correo electrónico ya está registrado. Por favor, inicia sesión.';
     }
-    if (raw.contains('invalid credentials') || raw.contains('invalid session')) {
+    if (raw.contains('invalid credentials') ||
+        raw.contains('invalid session')) {
       return 'Correo o contraseña incorrectos.';
     }
-    if (raw.contains('weak password') || raw.contains('at least 8 characters')) {
+    if (raw.contains('weak password') ||
+        raw.contains('at least 8 characters')) {
       return 'La contraseña debe tener al menos 8 caracteres.';
     }
     if (raw.contains('SERVICE_DISABLED') || raw.contains('People API')) {
       return 'Acceso denegado: Habilita la People API en Google Cloud.';
     }
-    
+
     return raw;
   }
 
@@ -268,6 +320,15 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     final size = MediaQuery.of(context).size;
     final isDesktop = size.width > 600;
 
+    return Stack(
+      children: [
+        _buildPage(isDesktop),
+        if (_success) const _LoginSuccessOverlay(),
+      ],
+    );
+  }
+
+  Widget _buildPage(bool isDesktop) {
     return ReferencePage(
       showBottomNav: false,
       active: AppRoutes.home,
@@ -335,7 +396,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 if (_error != null) ...[
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
                       color: RefColors.urgent.withValues(alpha: .1),
                       borderRadius: BorderRadius.circular(14),
@@ -403,7 +467,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   ],
                 ),
                 const SizedBox(height: 22),
-                
+
                 // 2. Divisor estético intermedio
                 Row(
                   children: [
@@ -476,13 +540,20 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         icon: Icons.lock_outline_rounded,
                         obscure: true,
                       ),
+                      const SizedBox(height: 12),
+                      _RememberMeToggle(
+                        value: _remember,
+                        onChanged: (v) => setState(() => _remember = v),
+                      ),
                       const SizedBox(height: 16),
                       _busy
                           ? const Center(
                               child: Padding(
                                 padding: EdgeInsets.symmetric(vertical: 10),
                                 child: CircularProgressIndicator(
-                                  valueColor: AlwaysStoppedAnimation<Color>(RefColors.pink),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    RefColors.pink,
+                                  ),
                                 ),
                               ),
                             )
@@ -518,7 +589,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   ),
                 ),
                 const SizedBox(height: 24),
-                
+
                 // Divisor a invitado
                 Row(
                   children: [
@@ -553,11 +624,12 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   ),
                 ),
                 const SizedBox(height: 24),
-                
+
                 // Enlaces Legales
                 Center(
                   child: GestureDetector(
-                    onTap: () => Navigator.pushNamed(context, AppRoutes.legalMenu),
+                    onTap: () =>
+                        Navigator.pushNamed(context, AppRoutes.legalMenu),
                     child: const MouseRegion(
                       cursor: SystemMouseCursors.click,
                       child: Text(
@@ -608,10 +680,12 @@ class _LoginField extends StatefulWidget {
 class _LoginFieldState extends State<_LoginField> {
   final FocusNode _focusNode = FocusNode();
   bool _isFocused = false;
+  late bool _obscured;
 
   @override
   void initState() {
     super.initState();
+    _obscured = widget.obscure;
     _focusNode.addListener(() {
       setState(() {
         _isFocused = _focusNode.hasFocus;
@@ -629,37 +703,48 @@ class _LoginFieldState extends State<_LoginField> {
   Widget build(BuildContext context) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
       decoration: BoxDecoration(
         color: _isFocused ? HtmlRefColors.glassStrong : HtmlRefColors.glassSoft,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: _isFocused ? RefColors.cyan : HtmlRefColors.glassBorder,
-          width: 1.5,
+          width: _isFocused ? 1.8 : 1.4,
         ),
         boxShadow: _isFocused
             ? [
                 BoxShadow(
-                  color: RefColors.cyan.withValues(alpha: .1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
+                  color: RefColors.cyan.withValues(alpha: .16),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
                 ),
               ]
             : null,
       ),
       child: Row(
         children: [
-          Icon(
-            widget.icon, 
-            color: _isFocused ? RefColors.cyan : RefColors.muted, 
-            size: 18,
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: _isFocused
+                  ? RefColors.cyan.withValues(alpha: .14)
+                  : Colors.white.withValues(alpha: .04),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              widget.icon,
+              color: _isFocused ? RefColors.cyan : RefColors.muted,
+              size: 20,
+            ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: TextField(
               controller: widget.controller,
               focusNode: _focusNode,
-              obscureText: widget.obscure,
+              obscureText: _obscured,
               keyboardType: widget.keyboardType,
               readOnly: widget.readOnly,
               onTap: widget.onTap,
@@ -667,18 +752,196 @@ class _LoginFieldState extends State<_LoginField> {
               enableSuggestions: !widget.obscure,
               style: const TextStyle(
                 color: RefColors.ink,
-                fontSize: 13.5,
+                fontSize: 15.5,
                 fontWeight: FontWeight.w700,
+                height: 1.2,
               ),
               decoration: InputDecoration(
                 border: InputBorder.none,
                 isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 hintText: widget.hint,
-                hintStyle: const TextStyle(color: RefColors.dim, fontSize: 13.5),
+                hintStyle: const TextStyle(
+                  color: RefColors.dim,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),
+          if (widget.obscure)
+            GestureDetector(
+              onTap: () => setState(() => _obscured = !_obscured),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Icon(
+                  _obscured
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  color: _isFocused ? RefColors.cyan : RefColors.muted,
+                  size: 20,
+                ),
+              ),
+            ),
         ],
+      ),
+    );
+  }
+}
+
+/// Fila "Recuérdame": un checkbox compacto que controla si se persiste el
+/// correo en este dispositivo para precargarlo la próxima vez.
+class _RememberMeToggle extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _RememberMeToggle({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onChanged(!value),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: value ? RefColors.cyan : Colors.transparent,
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(
+                  color: value ? RefColors.cyan : HtmlRefColors.glassBorder,
+                  width: 1.6,
+                ),
+              ),
+              child: value
+                  ? const Icon(
+                      Icons.check_rounded,
+                      color: Colors.black,
+                      size: 16,
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 10),
+            const Text(
+              'Recuérdame en este dispositivo',
+              style: TextStyle(
+                color: RefColors.muted,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Overlay de celebración que se muestra brevemente tras un login/registro
+/// exitoso: un fondo difuminado con un check animado y un mensaje de bienvenida.
+class _LoginSuccessOverlay extends StatefulWidget {
+  const _LoginSuccessOverlay();
+
+  @override
+  State<_LoginSuccessOverlay> createState() => _LoginSuccessOverlayState();
+}
+
+class _LoginSuccessOverlayState extends State<_LoginSuccessOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+  late final Animation<double> _fade;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 520),
+    );
+    _scale = CurvedAnimation(parent: _ctrl, curve: Curves.elasticOut);
+    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: Material(
+        type: MaterialType.transparency,
+        child: FadeTransition(
+          opacity: _fade,
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+            child: Container(
+              color: const Color(0xFF0B0A14).withValues(alpha: .72),
+              alignment: Alignment.center,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ScaleTransition(
+                    scale: _scale,
+                    child: Container(
+                      width: 96,
+                      height: 96,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF2BD980), Color(0xFF16B486)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(
+                              0xFF2BD980,
+                            ).withValues(alpha: .5),
+                            blurRadius: 30,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.check_rounded,
+                        color: Colors.white,
+                        size: 54,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  const Text(
+                    '¡Bienvenido!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Sesión iniciada con éxito',
+                    style: TextStyle(
+                      color: RefColors.muted,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -707,11 +970,13 @@ class _CompactProviderButtonState extends State<_CompactProviderButton> {
   @override
   Widget build(BuildContext context) {
     final disabled = widget.onTap == null;
-    
+
     return Opacity(
       opacity: disabled ? .45 : 1,
       child: MouseRegion(
-        cursor: disabled ? SystemMouseCursors.forbidden : SystemMouseCursors.click,
+        cursor: disabled
+            ? SystemMouseCursors.forbidden
+            : SystemMouseCursors.click,
         onEnter: (_) => setState(() => _isHovered = true),
         onExit: (_) => setState(() => _isHovered = false),
         child: GestureDetector(
@@ -720,10 +985,14 @@ class _CompactProviderButtonState extends State<_CompactProviderButton> {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: _isHovered ? HtmlRefColors.glassStrong : HtmlRefColors.glassSoft,
+              color: _isHovered
+                  ? HtmlRefColors.glassStrong
+                  : HtmlRefColors.glassSoft,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: _isHovered ? widget.color.withValues(alpha: .4) : HtmlRefColors.glassBorder,
+                color: _isHovered
+                    ? widget.color.withValues(alpha: .4)
+                    : HtmlRefColors.glassBorder,
                 width: 1.5,
               ),
               boxShadow: _isHovered
@@ -748,8 +1017,8 @@ class _CompactProviderButtonState extends State<_CompactProviderButton> {
                   ),
                   child: Center(
                     child: Icon(
-                      widget.icon, 
-                      color: widget.color, 
+                      widget.icon,
+                      color: widget.color,
                       size: widget.icon == Icons.g_mobiledata_rounded ? 22 : 16,
                     ),
                   ),
@@ -796,7 +1065,8 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
   int _calculateAge(DateTime birthDate) {
     final today = DateTime.now();
     int age = today.year - birthDate.year;
-    if (today.month < birthDate.month || (today.month == birthDate.month && today.day < birthDate.day)) {
+    if (today.month < birthDate.month ||
+        (today.month == birthDate.month && today.day < birthDate.day)) {
       age--;
     }
     return age;
@@ -817,7 +1087,10 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
               onPrimary: Colors.white,
               surface: Color(0xFF140F26),
               onSurface: Colors.white,
-            ), dialogTheme: DialogThemeData(backgroundColor: const Color(0xFF0F0C1B)),
+            ),
+            dialogTheme: DialogThemeData(
+              backgroundColor: const Color(0xFF0F0C1B),
+            ),
           ),
           child: child!,
         );
@@ -826,7 +1099,8 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
     if (picked != null) {
       setState(() {
         _selectedBirthDate = picked;
-        _birthDateCtrl.text = "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+        _birthDateCtrl.text =
+            "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
       });
     }
   }
@@ -841,7 +1115,10 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
       return;
     }
     if (!RegExp(r'^[a-zA-Z0-9_]{3,15}$').hasMatch(username)) {
-      setState(() => _error = 'El nombre de usuario debe tener entre 3 y 15 caracteres y solo contener letras, números o guiones bajos.');
+      setState(
+        () => _error =
+            'El nombre de usuario debe tener entre 3 y 15 caracteres y solo contener letras, números o guiones bajos.',
+      );
       return;
     }
     if (birthDate == null) {
@@ -850,7 +1127,9 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
     }
     final age = _calculateAge(birthDate);
     if (age < 0 || age > 120) {
-      setState(() => _error = 'Por favor, introduce una fecha de nacimiento válida.');
+      setState(
+        () => _error = 'Por favor, introduce una fecha de nacimiento válida.',
+      );
       return;
     }
 
@@ -860,10 +1139,7 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
     });
 
     try {
-      await widget.store.updateProfile(
-        username: username,
-        age: age,
-      );
+      await widget.store.updateProfile(username: username, age: age);
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -912,7 +1188,10 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
               const SizedBox(height: 20),
               if (_error != null) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: RefColors.urgent.withValues(alpha: .1),
                     borderRadius: BorderRadius.circular(10),
@@ -923,12 +1202,20 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.error_outline_rounded, color: RefColors.urgent, size: 16),
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        color: RefColors.urgent,
+                        size: 16,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           _error!,
-                          style: const TextStyle(color: RefColors.urgent, fontSize: 11, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: RefColors.urgent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
@@ -953,16 +1240,15 @@ class _CompleteProfileDialogState extends State<_CompleteProfileDialog> {
               _busy
                   ? const Center(
                       child: CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(RefColors.pink),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          RefColors.pink,
+                        ),
                       ),
                     )
                   : Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Cta(
-                          'Finalizar Registro',
-                          onTap: _submit,
-                        ),
+                        Cta('Finalizar Registro', onTap: _submit),
                         const SizedBox(height: 10),
                         GhostButton(
                           'Cancelar',

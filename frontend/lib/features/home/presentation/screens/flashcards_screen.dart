@@ -52,6 +52,9 @@ class PremiumScreen extends StatefulWidget {
 
 class _PremiumScreenState extends State<PremiumScreen> {
   bool _downloading = false;
+  // El modelo ya está en disco (persistido entre reinicios). Es independiente
+  // de isReady (que solo refleja si el motor está inicializado en memoria).
+  bool _modelExists = false;
 
   @override
   void initState() {
@@ -62,10 +65,12 @@ class _PremiumScreenState extends State<PremiumScreen> {
   Future<void> _checkExistingModel() async {
     final llm = LocalLlmService.instance;
     final exists = await llm.checkModelExists();
-    if (exists && mounted) {
+    if (!mounted) return;
+    setState(() => _modelExists = exists);
+    if (exists) {
       try {
         await llm.initLlm();
-        setState(() {});
+        if (mounted) setState(() {});
       } catch (e) {
         debugPrint('Failed to auto-init LLM: $e');
       }
@@ -202,7 +207,8 @@ class _PremiumScreenState extends State<PremiumScreen> {
                   return ValueListenableBuilder<double>(
                     valueListenable: llmService.downloadProgress,
                     builder: (context, progress, _) {
-                      final isReady = llmService.isReady || progress >= 1.0;
+                      final isReady =
+                          _modelExists || llmService.isReady || progress >= 1.0;
                       
                       return Glass(
                         padding: const EdgeInsets.all(16),
@@ -259,8 +265,12 @@ class _PremiumScreenState extends State<PremiumScreen> {
                                     try {
                                       await llmService.downloadModel();
                                     } catch (_) {}
+                                    final nowExists =
+                                        await llmService.checkModelExists();
+                                    if (!mounted) return;
                                     setState(() {
                                       _downloading = false;
+                                      _modelExists = nowExists;
                                     });
                                   },
                                 ),
@@ -273,12 +283,21 @@ class _PremiumScreenState extends State<PremiumScreen> {
                               ),
                               const SizedBox(height: 14),
                               Cta(
-                                'Continuar al Quiz →',
-                                onTap: () {
+                                'Continuar →',
+                                onTap: () async {
+                                  // Deja el motor inicializado antes de volver,
+                                  // para que el ejercicio funcione enseguida.
+                                  if (!llmService.isReady) {
+                                    try {
+                                      await llmService.initLlm();
+                                    } catch (_) {}
+                                  }
+                                  if (!context.mounted) return;
                                   if (Navigator.canPop(context)) {
                                     Navigator.pop(context);
                                   } else {
-                                    Navigator.pushReplacementNamed(context, AppRoutes.home);
+                                    Navigator.pushReplacementNamed(
+                                        context, AppRoutes.home);
                                   }
                                 },
                               ),

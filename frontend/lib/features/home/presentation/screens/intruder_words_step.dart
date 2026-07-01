@@ -14,12 +14,17 @@ class IntruderWordsBody extends StatefulWidget {
   final MemoryCardData card;
   final VoidCallback onFinished;
   final int? level;
+  /// Notifica cuando el ejercicio entra/sale de la pantalla de resultado, para
+  /// que el flujo pueda ocultar su botón "Omitir" (el resultado trae su propio
+  /// botón de continuar).
+  final ValueChanged<bool>? onResultChanged;
 
   const IntruderWordsBody({
     super.key,
     required this.card,
     required this.onFinished,
     this.level,
+    this.onResultChanged,
   });
 
   @override
@@ -33,6 +38,10 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
   int _level = 1; // 1, 2, or 3
   String _loadingText = 'Despertando la IA local…';
   String? _errorMessage;
+  // El modelo local no está descargado: ofrecemos descargarlo aquí mismo, sin
+  // sacar al usuario del ejercicio.
+  bool _needsDownload = false;
+  bool _downloadingModel = false;
 
   IntruderVerseSet? _intruderSet;
   List<String> _alteredWords = [];
@@ -92,15 +101,32 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
     setState(() {
       _phase = _IntruderPhase.loadingLlm;
       _errorMessage = null;
+      _needsDownload = false;
     });
     _startLoadingMessages();
 
     final llm = LocalLlmService.instance;
     try {
+      // Si el modelo no está descargado, no fallamos: ofrecemos descargarlo
+      // sin salir del ejercicio.
+      if (!llm.isReady && !await llm.checkModelExists()) {
+        _loadingTextTimer?.cancel();
+        if (!mounted) return;
+        setState(() {
+          _phase = _IntruderPhase.selectLevel;
+          _needsDownload = true;
+          _errorMessage =
+              'Este ejercicio usa la IA local. Descárgala una sola vez para continuar.';
+        });
+        return;
+      }
       await llm.initLlm();
       if (!mounted) return;
 
-      final set = await (llm.takePrefetchedIntruder(
+      // Fuente, por orden: 1) un intento ya pre-cargado para reintentos (si
+      // fallaste antes), 2) el prefetch del flujo, 3) generación fresca.
+      final source = _nextAttempt ??
+          llm.takePrefetchedIntruder(
             reference: widget.card.front,
             level: _level,
           ) ??
@@ -108,7 +134,9 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
             reference: widget.card.front,
             verseText: widget.card.back,
             level: _level,
-          ));
+          );
+      _nextAttempt = null;
+      final set = await source;
 
       if (!mounted) return;
 
@@ -126,6 +154,9 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
       if (_isTimedLevel) {
         _startTimer();
       }
+      // Adelanta YA un intento de repuesto por si fallas: al reintentar no
+      // esperas la generación.
+      _prepareNextAttempt();
     } catch (e) {
       debugPrint('Error generando palabras intrusas con IA local: $e');
       if (!mounted) return;
@@ -137,6 +168,20 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
     } finally {
       _loadingTextTimer?.cancel();
     }
+  }
+
+  /// Descarga el modelo local sin salir del ejercicio y, al terminar, genera.
+  Future<void> _downloadModelAndRetry() async {
+    if (_downloadingModel) return;
+    setState(() => _downloadingModel = true);
+    try {
+      await LocalLlmService.instance.downloadModel();
+    } catch (e) {
+      debugPrint('Error descargando modelo local (intrusas): $e');
+    }
+    if (!mounted) return;
+    setState(() => _downloadingModel = false);
+    await _generateVerse();
   }
 
   void _startTimer() {
@@ -306,6 +351,40 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
     );
   }
 
+  /// Acción de descarga del modelo local mostrada dentro del ejercicio.
+  Widget _buildDownloadAction() {
+    if (_downloadingModel) {
+      return ValueListenableBuilder<double>(
+        valueListenable: LocalLlmService.instance.downloadProgress,
+        builder: (_, p, _) => Column(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: LinearProgressIndicator(
+                value: p > 0 ? p : null,
+                minHeight: 6,
+                backgroundColor: Colors.white12,
+                color: RefColors.pink,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              p > 0
+                  ? 'Descargando IA local… ${(p * 100).round()}%'
+                  : 'Preparando descarga…',
+              style: const TextStyle(
+                color: RefColors.cyan,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return Cta('Descargar IA local (una vez)', onTap: _downloadModelAndRetry);
+  }
+
   Widget _buildLevelSelection() {
     if (widget.level != null && _errorMessage != null) {
       return SingleChildScrollView(
@@ -351,10 +430,13 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
               ),
             ),
             const SizedBox(height: 32),
-            Cta(
-              'Reintentar Nivel $_level',
-              onTap: _generateVerse,
-            ),
+            if (_needsDownload)
+              _buildDownloadAction()
+            else
+              Cta(
+                'Reintentar Nivel $_level',
+                onTap: _generateVerse,
+              ),
           ],
         ),
       );
@@ -420,6 +502,10 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                 ),
               ),
             ),
+            const SizedBox(height: 18),
+          ],
+          if (_needsDownload) ...[
+            _buildDownloadAction(),
             const SizedBox(height: 18),
           ],
           _buildLevelCard(
@@ -496,22 +582,28 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: RefColors.glassStrong,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: RefColors.border),
-                ),
-                child: Text(
-                  'Nivel $_level',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: RefColors.cyan,
+              Flexible(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: RefColors.glassStrong,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: RefColors.border),
+                  ),
+                  child: Text(
+                    widget.card.front,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      color: RefColors.pink,
+                    ),
                   ),
                 ),
               ),
+              const SizedBox(width: 10),
               Row(
                 children: [
                   for (int i = 0; i < (_level == 1 ? 3 : (_level == 2 ? 2 : 1)); i++)
@@ -558,18 +650,7 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                 const SizedBox(width: 40),
             ],
           ),
-          const SizedBox(height: 18),
-          Center(
-            child: Text(
-              widget.card.front,
-              style: const TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w900,
-                color: RefColors.muted,
-              ),
-            ),
-          ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
           Expanded(
             child: Center(
               child: SingleChildScrollView(
@@ -581,9 +662,7 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                     children: [
                       Center(
                         child: Text(
-                          _isTimedLevel
-                              ? 'Toca las palabras falsas · cada acierto suma +${_timeBonusSeconds}s'
-                              : 'Toca las palabras falsas:',
+                          'Toca las palabras falsas:',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             fontSize: 12,
@@ -680,26 +759,25 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
       final aligned = originalWords.length == _alteredWords.length;
 
       return SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: 10),
             Center(
               child: Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12),
                 decoration: const BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: RefColors.success,
                 ),
                 child: const Icon(
                   Icons.check,
-                  size: 36,
+                  size: 30,
                   color: Colors.white,
                 ),
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 12),
             const Center(
               child: Text(
                 '¡Excelente Cacería!',
@@ -709,17 +787,7 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                 ),
               ),
             ),
-            const SizedBox(height: 4),
-            Center(
-              child: Text(
-                'Has purificado ${widget.card.front} en Nivel $_level.',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: RefColors.muted,
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 14),
             Glass(
               padding: const EdgeInsets.all(18),
               child: Column(
@@ -784,7 +852,7 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
                 ],
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 16),
             Cta(
               'Continuar',
               onTap: widget.onFinished,
@@ -856,8 +924,35 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
     }
   }
 
+  /// Intento de repuesto pre-generado para reintentos (si el usuario falla),
+  /// para no esperar la IA al reintentar. Al usarlo se vuelve a preparar otro.
+  Future<IntruderVerseSet>? _nextAttempt;
+  void _prepareNextAttempt() {
+    if (_nextAttempt != null) return;
+    final f = LocalLlmService.instance.generateIntruderVerse(
+      reference: widget.card.front,
+      verseText: widget.card.back,
+      level: _level,
+    );
+    _nextAttempt = f;
+    // Marca el error como manejado para no dejar un future huérfano; si falla,
+    // al consumirlo el try/catch de _generateVerse lo gestiona (o regenera).
+    unawaited(f.then((_) {}, onError: (_) => _nextAttempt = null));
+  }
+
+  bool _lastResultReported = false;
+  void _reportResultState() {
+    final inResult = _phase == _IntruderPhase.result;
+    if (inResult == _lastResultReported) return;
+    _lastResultReported = inResult;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onResultChanged?.call(inResult);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    _reportResultState();
     switch (_phase) {
       case _IntruderPhase.selectLevel:
         return _buildLevelSelection();

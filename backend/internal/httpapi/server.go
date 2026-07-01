@@ -53,9 +53,12 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/social/user", s.withAuth(s.handleGetUser))
 	s.mux.HandleFunc("/v1/social/suggestions", s.withAuth(s.handleSuggestions))
 	s.mux.HandleFunc("/v1/social/search", s.withAuth(s.handleSearch))
-	s.mux.HandleFunc("/v1/community/decks", s.withAuth(s.handleCommunitySearch))
+	// Browsing público de la comunidad (sin sesión): cualquiera puede explorar
+	// el catálogo y buscar. Las acciones (importar, like, comentar, publicar)
+	// siguen requiriendo auth más abajo.
+	s.mux.HandleFunc("/v1/community/decks", s.withOptionalAuth(s.handleCommunitySearch))
 	s.mux.HandleFunc("/v1/community/mine", s.withAuth(s.handleCommunityMine))
-	s.mux.HandleFunc("/v1/community/overview", s.withAuth(s.handleCommunityOverview))
+	s.mux.HandleFunc("/v1/community/overview", s.withOptionalAuth(s.handleCommunityOverview))
 	s.mux.HandleFunc("/v1/community/reports", s.withAuth(s.handleCommunityReports))
 	s.mux.HandleFunc("/v1/community/reports/resolve", s.withAuth(s.handleCommunityReportResolve))
 	s.mux.HandleFunc("/v1/analytics/events", s.withOptionalAuth(s.handleAnalyticsEvents))
