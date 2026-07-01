@@ -304,7 +304,9 @@ class _FogStepState extends State<_FogStep>
       }
 
       // Empaqueta los bytes PCM capturados en un WAV temporal y transcribe.
+      // El dir temporal de macOS puede no existir todavía → lo creamos.
       final dir = await getTemporaryDirectory();
+      if (!await dir.exists()) await dir.create(recursive: true);
       final wavPath =
           '${dir.path}/voice_fog_${DateTime.now().millisecondsSinceEpoch}.wav';
       final builder = BytesBuilder()
