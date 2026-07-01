@@ -271,19 +271,25 @@ class _FogStepState extends State<_FogStep>
     _pulse.stop();
     _pulse.value = 0;
     try {
+      debugPrint('FOG: _finishCapture → isRecording?');
       final isRecording = await _audioRecorder.isRecording();
+      debugPrint('FOG: isRecording=$isRecording → stop()');
       if (!isRecording) {
         throw Exception('El micrófono no está grabando. Verifica permisos del sistema.');
       }
       final path = await _audioRecorder.stop();
+      debugPrint('FOG: recorder.stop() → path=$path');
       if (path != null) {
         final wavPath = await _convertPcmToWav(path);
+        debugPrint('FOG: convertido a wav=$wavPath');
         _recordedPath = wavPath;
       }
       if (!mounted) return;
 
       if (_recordedPath != null) {
+        debugPrint('FOG: llamando transcribe($_recordedPath)…');
         final text = await WhisperService.instance.transcribe(_recordedPath!);
+        debugPrint('FOG: transcribe devolvió "$text"');
         _gradeReal(text);
       } else {
         setState(() {
