@@ -18,7 +18,8 @@ class _IniciarScreenState extends State<IniciarScreen> {
   int _difficulty = 1;
   int? _dailyTarget;
   bool _doubleExercises = false;
-  bool _debugForceQuizFirst = false;
+  // TODO(dev-only): navegación libre por el árbol de ejercicios (kDebugMode).
+  bool _devFreeNavigation = false;
   _DailyQuickPick _quickPick = _DailyQuickPick.recomendado;
   String? _deckId;
   String _selectedIcon = '✝️';
@@ -135,7 +136,7 @@ class _IniciarScreenState extends State<IniciarScreen> {
       difficulty: _difficulty,
       dailyTarget: target,
       doubleExercises: _doubleExercises,
-      debugForceQuizFirst: _debugForceQuizFirst,
+      devFreeNavigation: _devFreeNavigation,
     );
     Navigator.pushNamed(context, '${AppRoutes.flow}/progress-tree');
   }
@@ -597,69 +598,75 @@ class _IniciarScreenState extends State<IniciarScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: () => setState(() => _debugForceQuizFirst = !_debugForceQuizFirst),
-            child: Glass(
-              color: HtmlRefColors.glassBg,
-              border: Border.all(
-                color: _debugForceQuizFirst
-                    ? RefColors.violet
-                    : HtmlRefColors.glassBorder,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: [
-                  const Text('🧠', style: TextStyle(fontSize: 20)),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Forzar Ejercicios IA al inicio (Debug)',
-                          style: TextStyle(
-                              fontSize: 12.5, fontWeight: FontWeight.w900),
-                        ),
-                        Text(
-                          _debugForceQuizFirst
-                              ? 'Quiz y Palabras Intrusas saldrán como los primeros pasos de la sesión.'
-                              : 'Flujo de pasos estándar de la sesión.',
-                          style: const TextStyle(
-                              color: RefColors.muted, fontSize: 10.5),
-                        ),
-
-                      ],
+          // TODO(dev-only): QUITAR ANTES DE PRODUCCIÓN. Toggle de navegación
+          // libre por el árbol de ejercicios para pruebas. Sólo bajo kDebugMode
+          // (false en release, así que no llega a producción).
+          if (kDebugMode) ...[
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: () =>
+                  setState(() => _devFreeNavigation = !_devFreeNavigation),
+              child: Glass(
+                color: HtmlRefColors.glassBg,
+                border: Border.all(
+                  color: _devFreeNavigation
+                      ? RefColors.urgent
+                      : HtmlRefColors.glassBorder,
+                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Row(
+                  children: [
+                    const Text('🧭', style: TextStyle(fontSize: 20)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'DEV · Ir a cualquier ejercicio',
+                            style: TextStyle(
+                                fontSize: 12.5, fontWeight: FontWeight.w900),
+                          ),
+                          Text(
+                            _devFreeNavigation
+                                ? 'El árbol deja tocar cualquier paso, aunque esté bloqueado.'
+                                : 'El árbol respeta el orden normal (pasos bloqueados).',
+                            style: const TextStyle(
+                                color: RefColors.muted, fontSize: 10.5),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Container(
-                    width: 42,
-                    height: 24,
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: _debugForceQuizFirst
-                          ? RefColors.violet
-                          : HtmlRefColors.glassStrong,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Align(
-                      alignment: _debugForceQuizFirst
-                          ? Alignment.centerRight
-                          : Alignment.centerLeft,
-                      child: Container(
-                        width: 20,
-                        height: 20,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
+                    Container(
+                      width: 42,
+                      height: 24,
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: _devFreeNavigation
+                            ? RefColors.urgent
+                            : HtmlRefColors.glassStrong,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Align(
+                        alignment: _devFreeNavigation
+                            ? Alignment.centerRight
+                            : Alignment.centerLeft,
+                        child: Container(
+                          width: 20,
+                          height: 20,
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
+          ],
           const SizedBox(height: 14),
           Row(
             children: [

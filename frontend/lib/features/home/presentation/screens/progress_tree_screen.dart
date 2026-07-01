@@ -374,7 +374,10 @@ class _ReferenceTimelineStep extends StatelessWidget {
     final isCompleted =
         store.isExerciseStepCompleted(step.slug) || index < currentIndex;
     final isCurrent = index == currentIndex;
-    final isLocked = !isCompleted && index > currentIndex;
+    // TODO(dev-only): con navegación libre (toggle DEV) ningún paso se bloquea,
+    // para poder saltar a cualquier ejercicio durante las pruebas.
+    final isLocked =
+        !store.devFreeNavigation && !isCompleted && index > currentIndex;
     final isLast = isLastInGroup || index == totalCount - 1;
     final accent = isCompleted
         ? RefColors.lime

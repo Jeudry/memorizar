@@ -2082,22 +2082,16 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
   ];
 
   final slugs = <String>[
-    if (store.debugForceQuizFirst) ...[
-      '09-quiz',
-      '18-palabras-intrusas-n1',
-      '18-palabras-intrusas-n2',
-      '18-palabras-intrusas-n3',
-    ],
     ...intro,
     // Nivel 1: práctica activa + niebla N1 al final del nivel 1
     ...pick(level1, difficulty == 0 ? 1 : 2),
     '02-niebla-n1',
-    
+
     // Nivel 2: práctica activa + niebla N2 al final del nivel 2
     if (difficulty >= 0) ...[
       ...pick(level2, difficulty == 0 ? 1 : (difficulty == 1 ? 2 : 3)),
       '17-niebla-n2',
-      if (!store.debugForceQuizFirst) '09-quiz',
+      '09-quiz',
     ],
     
     // Nivel 3: práctica premium/avanzada + niebla N3 al final del nivel 3

@@ -1139,7 +1139,9 @@ class AppStore extends ChangeNotifier {
   int _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
   bool _isPremium = false;
   bool _doubleExercises = false;
-  bool _debugForceQuizFirst = false;
+  // TODO(dev-only): navegación libre por el árbol de ejercicios para pruebas.
+  // Sólo se activa desde el toggle DEV (kDebugMode) de configurar sesión.
+  bool _devFreeNavigation = false;
   int _currentCardPass = 0;
 
   List<MemoryDeckData> get decks => List.unmodifiable(_decks);
@@ -1319,7 +1321,7 @@ class AppStore extends ChangeNotifier {
   bool get sessionFinished => _sessionCardsCompleted >= _sessionDailyTarget;
   bool get isPremium => _isPremium;
   bool get doubleExercises => _doubleExercises;
-  bool get debugForceQuizFirst => _debugForceQuizFirst;
+  bool get devFreeNavigation => _devFreeNavigation;
 
   void setPremiumPreview(bool value) {
     if (_isPremium == value) return;
@@ -1679,7 +1681,7 @@ class AppStore extends ChangeNotifier {
     required int difficulty,
     required int dailyTarget,
     bool doubleExercises = false,
-    bool debugForceQuizFirst = false,
+    bool devFreeNavigation = false,
   }) {
     _sessionDifficulty = difficulty.clamp(0, 2);
     // El total configurable siempre es el número real de tarjetas en el mazo.
@@ -1690,7 +1692,7 @@ class AppStore extends ChangeNotifier {
     _correctAnswers = 0;
     _wrongAnswers = 0;
     _doubleExercises = doubleExercises;
-    _debugForceQuizFirst = debugForceQuizFirst;
+    _devFreeNavigation = devFreeNavigation;
     _currentCardPass = 0;
     final deckId = activeDeck.id;
     _completedExerciseSteps.removeWhere((key) => key.startsWith('$deckId:'));
