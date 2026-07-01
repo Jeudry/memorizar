@@ -24,6 +24,13 @@ class _FogStep extends StatefulWidget {
 class _FogStepState extends State<_FogStep>
     with SingleTickerProviderStateMixin {
   final _audioRecorder = AudioRecorder();
+  // Grabamos por STREAM (bytes PCM en memoria) en vez de a archivo: en macOS el
+  // stop() del grabador a veces no resuelve y, con `start(path:)`, el archivo no
+  // se escribe hasta ese stop → quedaba "Evaluando audio…" para siempre o sin
+  // archivo. Con el stream capturamos el audio conforme llega, sin depender del
+  // stop() ni del archivo intermedio.
+  StreamSubscription<Uint8List>? _audioSub;
+  final BytesBuilder _pcmChunks = BytesBuilder();
   bool _isCheckingModel = true;
   bool _isModelDownloaded = false;
   bool _isModelInitializing = true;
@@ -33,7 +40,6 @@ class _FogStepState extends State<_FogStep>
   String _status = 'Módulo de voz cargando...';
   bool _ready = false;
   bool _listening = false;
-  String? _recordedPath;
   Timer? _autoStopTimer;
 
   late AnimationController _pulse;
@@ -197,7 +203,15 @@ class _FogStepState extends State<_FogStep>
       WhisperService.instance.downloadProgress.removeListener(_onDownloadProgressChanged);
       WhisperService.instance.statusNotifier.removeListener(_onStatusChanged);
     } catch (_) {}
-    _audioRecorder.stop().then((_) => _audioRecorder.dispose());
+    _audioSub?.cancel();
+    _audioSub = null;
+    // stop() puede colgarse en macOS; con timeout garantizamos que igual se
+    // libere el grabador (dispose) y no quede el micrófono tomado.
+    unawaited(_audioRecorder
+        .stop()
+        .timeout(const Duration(seconds: 1), onTimeout: () => null)
+        .catchError((_) => null)
+        .whenComplete(_audioRecorder.dispose));
     super.dispose();
   }
 
@@ -235,17 +249,18 @@ class _FogStepState extends State<_FogStep>
 
     try {
       if (await _audioRecorder.hasPermission()) {
-        final dir = await getTemporaryDirectory();
-        final path = '${dir.path}/voice_fog_${DateTime.now().millisecondsSinceEpoch}.raw';
-        await _audioRecorder.start(
+        _pcmChunks.clear();
+        final stream = await _audioRecorder.startStream(
           const RecordConfig(
             encoder: AudioEncoder.pcm16bits,
             sampleRate: 16000,
             numChannels: 1,
           ),
-          path: path,
         );
-        _recordedPath = path;
+        _audioSub = stream.listen(
+          (chunk) => _pcmChunks.add(chunk),
+          onError: (e) => debugPrint('FOG: error en stream de audio: $e'),
+        );
         _pulse.repeat();
       }
     } catch (e) {
@@ -271,40 +286,37 @@ class _FogStepState extends State<_FogStep>
     _pulse.stop();
     _pulse.value = 0;
     try {
-      final isRecording = await _audioRecorder.isRecording();
-      if (!isRecording) {
-        throw Exception('El micrófono no está grabando. Verifica permisos del sistema.');
-      }
-      // El `record` en macOS a veces DEJA COLGADO el stop() (nunca resuelve),
-      // dejando el "Evaluando audio…" para siempre. Le ponemos timeout y, si no
-      // responde, usamos el .raw que ya se venía escribiendo durante la
-      // grabación (ruta fijada en _recordedPath al iniciar).
-      final rawPath = _recordedPath;
-      final path = await _audioRecorder.stop().timeout(
-        const Duration(seconds: 3),
-        onTimeout: () {
-          debugPrint('FOG: recorder.stop() no respondió; uso el .raw grabado.');
-          // Fuerza cierre en segundo plano para soltar el micrófono.
-          unawaited(_audioRecorder.cancel().catchError((_) {}));
-          return rawPath;
-        },
-      );
-      if (path != null) {
-        final wavPath = await _convertPcmToWav(path);
-        _recordedPath = wavPath;
-      }
-      if (!mounted) return;
+      // Corta el stream (deja de recibir bytes) y suelta el micrófono. stop()
+      // puede colgarse en macOS, así que va con timeout y sin bloquear: ya
+      // tenemos todo el audio en _pcmChunks.
+      await _audioSub?.cancel();
+      _audioSub = null;
+      unawaited(_audioRecorder
+          .stop()
+          .timeout(const Duration(seconds: 2), onTimeout: () => null)
+          .catchError((_) => null));
 
-      if (_recordedPath != null) {
-        debugPrint('FOG: llamando transcribe($_recordedPath)…');
-        final text = await WhisperService.instance.transcribe(_recordedPath!);
-        debugPrint('FOG: transcribe devolvió "$text"');
-        _gradeReal(text);
-      } else {
-        setState(() {
-          _status = 'No se grabó ningún audio.';
-        });
+      final pcm = _pcmChunks.toBytes();
+      if (!mounted) return;
+      if (pcm.isEmpty) {
+        setState(() => _status = 'No se grabó ningún audio.');
+        return;
       }
+
+      // Empaqueta los bytes PCM capturados en un WAV temporal y transcribe.
+      final dir = await getTemporaryDirectory();
+      final wavPath =
+          '${dir.path}/voice_fog_${DateTime.now().millisecondsSinceEpoch}.wav';
+      final builder = BytesBuilder()
+        ..add(_buildWavHeader(pcm.length))
+        ..add(pcm);
+      await File(wavPath).writeAsBytes(builder.toBytes());
+
+      final audioSeconds = (pcm.length / 2 / 16000).toStringAsFixed(1);
+      debugPrint('FOG: audio ${audioSeconds}s capturado → transcribe($wavPath)');
+      final text = await WhisperService.instance.transcribe(wavPath);
+      debugPrint('FOG: transcribe devolvió "$text"');
+      _gradeReal(text);
     } catch (e) {
       debugPrint('Error deteniendo grabación: $e');
       if (mounted) {
@@ -341,31 +353,6 @@ class _FogStepState extends State<_FogStep>
         _status = 'Similitud muy baja (${(score * 100).round()}%). Lee de nuevo con claridad.';
       }
     });
-  }
-
-  Future<String> _convertPcmToWav(String rawPath) async {
-    final file = File(rawPath);
-    if (!await file.exists()) return rawPath;
-
-    final bytes = await file.readAsBytes();
-    final wavHeader = _buildWavHeader(bytes.length);
-
-    final wavPath = rawPath.replaceAll('.raw', '.wav');
-    final wavFile = File(wavPath);
-
-    final builder = BytesBuilder();
-    builder.add(wavHeader);
-    builder.add(bytes);
-
-    await wavFile.writeAsBytes(builder.toBytes());
-
-    try {
-      await file.delete();
-    } catch (e) {
-      debugPrint('Error deleting raw file: $e');
-    }
-
-    return wavPath;
   }
 
   Uint8List _buildWavHeader(int dataLength) {
