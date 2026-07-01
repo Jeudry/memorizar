@@ -135,6 +135,13 @@ class LocalLlmService {
   /// pre-generar en segundo plano sin chocar con una generación en curso.
   Future<void> _inferenceChain = Future.value();
 
+  // Apagado por inactividad: el motor (llama-server ~2 GB en desktop, o el
+  // modelo Gemma on-device en móvil) se libera tras un rato sin inferencias y
+  // se re-levanta on-demand. Clave para no comer RAM, sobre todo en móvil.
+  Timer? _idleTimer;
+  int _pendingInferences = 0;
+  static const Duration _idleUnloadTimeout = Duration(seconds: 120);
+
   bool _initialized = false;
   Future<void>? _initInFlight;
   final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0.0);
@@ -976,6 +983,10 @@ class LocalLlmService {
     required int maxTokens,
     Map<String, dynamic>? jsonSchema,
   }) {
+    // Estamos por usar el motor: cancela cualquier apagado pendiente y cuenta
+    // esta inferencia como "en vuelo" para no descargar el modelo a mitad.
+    _idleTimer?.cancel();
+    _pendingInferences++;
     final result = _inferenceChain.then((_) => _chatImpl(
           prompt,
           temperature: temperature,
@@ -984,7 +995,40 @@ class LocalLlmService {
         ));
     // El siguiente en la cola espera a este, haya éxito o error (sin propagar).
     _inferenceChain = result.then((_) {}, onError: (_) {});
+    result.whenComplete(() {
+      _pendingInferences--;
+      if (_pendingInferences == 0) _armIdleUnload();
+    });
     return result;
+  }
+
+  void _armIdleUnload() {
+    _idleTimer?.cancel();
+    _idleTimer = Timer(_idleUnloadTimeout, () {
+      if (_pendingInferences == 0) unawaited(unloadForIdle());
+    });
+  }
+
+  /// Apaga el motor y libera su memoria: en desktop detiene el subproceso
+  /// `llama-server`; en móvil cierra el modelo Gemma on-device. La siguiente
+  /// inferencia lo re-levanta automáticamente (initLlm en _chatImpl).
+  Future<void> unloadForIdle() async {
+    _idleTimer?.cancel();
+    _idleTimer = null;
+    if (!_initialized || _pendingInferences > 0) return;
+    _initialized = false;
+    _initInFlight = null;
+    try {
+      if (_useMobileBackend) {
+        await FlutterGemmaBackend.instance.dispose();
+      } else {
+        await LlamaServerManager.instance.stop();
+      }
+      statusNotifier.value = 'IA en reposo (memoria liberada).';
+      debugPrint('IA local descargada por inactividad.');
+    } catch (e) {
+      debugPrint('Error al descargar IA local: $e');
+    }
   }
 
   Future<String> _chatImpl(

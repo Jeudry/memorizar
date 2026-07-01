@@ -25,4 +25,6 @@ class WhisperService {
   Future<String> transcribe(String audioPath) async {
     throw UnsupportedError('Whisper local no está soportado en Web.');
   }
+
+  Future<void> dispose() async {}
 }

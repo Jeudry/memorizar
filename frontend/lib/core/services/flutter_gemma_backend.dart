@@ -164,4 +164,18 @@ class FlutterGemmaBackend {
       await session.close();
     }
   }
+
+  /// Libera el modelo on-device de memoria (pesado). La próxima inferencia lo
+  /// recarga on-demand. Se usa para no retener RAM cuando la IA está ociosa.
+  Future<void> dispose() async {
+    if (_model == null && !_initialized) return;
+    try {
+      await _model?.close();
+    } catch (e) {
+      debugPrint('Error cerrando modelo Gemma on-device: $e');
+    }
+    _model = null;
+    _initialized = false;
+    _initInFlight = null;
+  }
 }

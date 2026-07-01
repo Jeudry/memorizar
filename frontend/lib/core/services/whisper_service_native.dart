@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -18,7 +19,35 @@ class WhisperService {
   final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0.0);
   final ValueNotifier<String> statusNotifier = ValueNotifier<String>('');
 
+  // El modelo whisper-small en memoria ronda los ~370 MB. Se libera tras un
+  // rato sin transcribir (o al ir la app a segundo plano) para no comer RAM
+  // —clave en móvil— y se recarga on-demand en la siguiente transcripción.
+  Timer? _idleTimer;
+  static const Duration _idleTimeout = Duration(seconds: 90);
+
   bool get isReady => _initialized && _recognizer != null;
+
+  /// Libera el recognizer y su modelo de memoria. La próxima transcripción
+  /// re-inicializa automáticamente.
+  Future<void> dispose() async {
+    _idleTimer?.cancel();
+    _idleTimer = null;
+    if (_recognizer == null && !_initialized) return;
+    try {
+      _recognizer?.free();
+    } catch (e) {
+      debugPrint('Error liberando recognizer Whisper: $e');
+    }
+    _recognizer = null;
+    _initialized = false;
+    statusNotifier.value = 'Motor de voz en reposo (memoria liberada).';
+    debugPrint('Whisper recognizer liberado por inactividad.');
+  }
+
+  void _armIdleRelease() {
+    _idleTimer?.cancel();
+    _idleTimer = Timer(_idleTimeout, () => unawaited(dispose()));
+  }
 
   Future<Directory> get _modelDirectory async {
     final docDir = await getApplicationSupportDirectory();
@@ -132,6 +161,8 @@ class WhisperService {
   }
 
   Future<String> transcribe(String audioPath) async {
+    // Estamos usando el motor: cancela cualquier liberación pendiente.
+    _idleTimer?.cancel();
     if (!_initialized || _recognizer == null) {
       throw Exception('Whisper no está inicializado.');
     }
@@ -175,6 +206,8 @@ class WhisperService {
       rethrow;
     } finally {
       stream.free();
+      // Terminada la transcripción, programa la liberación por inactividad.
+      _armIdleRelease();
     }
   }
 
