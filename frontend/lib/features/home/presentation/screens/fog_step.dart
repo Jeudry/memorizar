@@ -314,10 +314,7 @@ class _FogStepState extends State<_FogStep>
         ..add(pcm);
       await File(wavPath).writeAsBytes(builder.toBytes());
 
-      final audioSeconds = (pcm.length / 2 / 16000).toStringAsFixed(1);
-      debugPrint('FOG: audio ${audioSeconds}s capturado → transcribe($wavPath)');
       final text = await WhisperService.instance.transcribe(wavPath);
-      debugPrint('FOG: transcribe devolvió "$text"');
       _gradeReal(text);
     } catch (e) {
       debugPrint('Error deteniendo grabación: $e');
