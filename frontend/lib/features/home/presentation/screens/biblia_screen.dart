@@ -155,11 +155,6 @@ class _BibliaScreenState extends State<BibliaScreen> {
     setState(() {});
   }
 
-  void _selectAllInBible() {
-    AppScope.of(context).addAllVersesInBible();
-    setState(() {});
-  }
-
   Set<String> _fullBooks(AppStore store) {
     final selectedBookNames =
         store.selectedBibleVerses.map((v) => v.book).toSet();
@@ -223,13 +218,17 @@ class _BibliaScreenState extends State<BibliaScreen> {
         .map((verse) => verse.verse)
         .toSet();
     final confirmingSelection = _step == 'continue';
+    // La barra de búsqueda global solo tiene sentido mientras se elige libro o
+    // capítulo. Al seleccionar un capítulo (paso 'verse') o al confirmar, se
+    // oculta para dejar todo el espacio a la selección de versículos.
+    final showSearchBar = _step == 'book' || _step == 'chap';
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (!widget.embedded) ...[
           const RefTopBar(title: 'Elegir de la Biblia'),
         ],
-        if (!confirmingSelection) ...[
+        if (showSearchBar) ...[
           Glass(
             radius: 18,
             color: HtmlRefColors.glassBg,
@@ -336,7 +335,6 @@ class _BibliaScreenState extends State<BibliaScreen> {
               onFinish: _finishBibleSelection,
               onSelectAllChapter: _selectAllInChapter,
               onSelectAllBook: _selectAllInBook,
-              onSelectAllBible: _selectAllInBible,
               fullBooks: _fullBooks(store),
               partialBooks: _partialBooks(store),
             ),
@@ -602,7 +600,6 @@ class _BibleBrowseStep extends StatelessWidget {
   final VoidCallback onFinish;
   final VoidCallback onSelectAllChapter;
   final VoidCallback onSelectAllBook;
-  final VoidCallback onSelectAllBible;
   final Set<String> fullBooks;
   final Set<String> partialBooks;
 
@@ -619,7 +616,6 @@ class _BibleBrowseStep extends StatelessWidget {
     required this.onFinish,
     required this.onSelectAllChapter,
     required this.onSelectAllBook,
-    required this.onSelectAllBible,
     required this.fullBooks,
     required this.partialBooks,
   });
@@ -653,7 +649,6 @@ class _BibleBrowseStep extends StatelessWidget {
     }
     return _BookPicker(
       onBook: onBook,
-      onSelectAllBible: onSelectAllBible,
       fullBooks: fullBooks,
       partialBooks: partialBooks,
     );
@@ -734,13 +729,11 @@ const _newTestamentCategories = <_BibleCategory>[
 
 class _BookPicker extends StatefulWidget {
   final ValueChanged<String> onBook;
-  final VoidCallback? onSelectAllBible;
   final Set<String> fullBooks;
   final Set<String> partialBooks;
 
   const _BookPicker({
     required this.onBook,
-    this.onSelectAllBible,
     this.fullBooks = const {},
     this.partialBooks = const {},
   });
@@ -755,14 +748,6 @@ class _BookPickerState extends State<_BookPicker> {
   @override
   Widget build(BuildContext context) {
     final categories = _showNew ? _newTestamentCategories : _oldTestamentCategories;
-    final chip = RefChip(
-      'Toda la Biblia',
-      dense: true,
-      color: widget.onSelectAllBible != null
-          ? RefColors.pink.withValues(alpha: .22)
-          : HtmlRefColors.glassSoft,
-      textColor: RefColors.ink,
-    );
     return Glass(
       color: HtmlRefColors.glassBg,
       border: Border.all(color: HtmlRefColors.glassBorder),
@@ -774,16 +759,15 @@ class _BookPickerState extends State<_BookPicker> {
             children: [
               const Expanded(child: _BibleVersionDropdown()),
               const SizedBox(width: 10),
-              if (widget.onSelectAllBible != null)
-                GestureDetector(onTap: widget.onSelectAllBible, child: chip)
-              else
-                chip,
+              // Los tabs Antiguo/Nuevo van junto al dropdown de versión.
+              SizedBox(
+                width: 176,
+                child: _TestamentTabs(
+                  showNew: _showNew,
+                  onChanged: (v) => setState(() => _showNew = v),
+                ),
+              ),
             ],
-          ),
-          const SizedBox(height: 10),
-          _TestamentTabs(
-            showNew: _showNew,
-            onChanged: (v) => setState(() => _showNew = v),
           ),
           const SizedBox(height: 10),
           _BookGrid(
