@@ -671,27 +671,31 @@ class _AppHeader extends StatelessWidget {
               Container(
                 width: 46,
                 height: 46,
+                clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
                   gradient: AppColors.gradPrimary,
                   border: Border.all(color: AppColors.glassBorder),
                 ),
-                child: Center(
-                  child: store.isLoggedIn
-                      ? Text(
-                          store.currentUser?.initial ?? 'U',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            fontSize: 18,
-                          ),
-                        )
-                      : const Icon(
+                child: !store.isLoggedIn
+                    ? const Center(
+                        child: Icon(
                           Icons.login_rounded,
                           color: Colors.white,
                           size: 20,
                         ),
-                ),
+                      )
+                    : ((store.currentUser?.avatarUrl ?? '').isNotEmpty
+                        // Foto de perfil real; si falla la carga, la inicial.
+                        ? Image.network(
+                            store.currentUser!.avatarUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) =>
+                                _headerInitial(store),
+                            loadingBuilder: (_, child, prog) =>
+                                prog == null ? child : _headerInitial(store),
+                          )
+                        : _headerInitial(store)),
               ),
               if (store.totalNotifications > 0)
                 Positioned(
@@ -1973,3 +1977,16 @@ class _NavItem extends StatelessWidget {
     );
   }
 }
+
+/// Inicial del usuario para el avatar del header (fallback cuando no hay foto
+/// o mientras/si falla la carga de la imagen de perfil).
+Widget _headerInitial(AppStore store) => Center(
+      child: Text(
+        store.currentUser?.initial ?? 'U',
+        style: const TextStyle(
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+          fontSize: 18,
+        ),
+      ),
+    );
