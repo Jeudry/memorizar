@@ -166,11 +166,22 @@ class LocalLlmService {
   // locales/código). Lo sincroniza el store al cargar/cambiar el estado premium.
   bool _premiumUnlocked = false;
   bool get premiumUnlocked => _premiumUnlocked;
+  /// Notifica cambios del gate premium para que los ejercicios en curso que
+  /// cayeron al fallback re-intenten la IA cuando se activa premium a mitad de
+  /// sesión (y para que el prefetch arranque desde ese punto).
+  final ValueNotifier<bool> premiumNotifier = ValueNotifier<bool>(false);
   void setPremiumUnlocked(bool value) {
     if (_premiumUnlocked == value) return;
     _premiumUnlocked = value;
-    // Si se pierde premium, apaga el motor para no retener RAM.
-    if (!value) unawaited(unloadForIdle());
+    premiumNotifier.value = value;
+    if (value) {
+      // Premium recién activado: calienta el motor para que el prefetch y los
+      // ejercicios de IA arranquen de inmediato desde este punto.
+      unawaited(warmUpIfModelReady());
+    } else {
+      // Si se pierde premium, apaga el motor para no retener RAM.
+      unawaited(unloadForIdle());
+    }
   }
 
   bool _initialized = false;
