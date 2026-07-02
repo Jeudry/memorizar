@@ -1493,21 +1493,8 @@ class _VoiceRecitationPracticeCardState
                       width: 1,
                     ),
                   ),
-                  child: Column(
-                    children: [
-                      _ListeningWaveIndicator(color: accent),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Grabando voz...',
-                        style: TextStyle(
-                          color: RefColors.dim,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                    ],
-                  ),
+                  // Mientras graba: solo el efecto de ondas, sin la palabra.
+                  child: _ListeningWaveIndicator(color: accent),
                 ),
               ],
             ],

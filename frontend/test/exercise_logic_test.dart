@@ -72,14 +72,24 @@ void main() {
       expect(opts.any((o) => o == 'oveja' || o == 'rebaño' || o == 'cordero'),
           isTrue);
     });
-    test('sin IA, los distractores salen del versículo', () {
-      final opts = completionOptions(verse, 'pastor', seed: 9);
-      final verseWords = studyWords(verse).map((w) => w).toList();
+    test('sin IA, con suficientes palabras los distractores salen del versículo', () {
+      // Versículo con >=5 palabras de contenido para que no entre el banco de
+      // respaldo genérico (que sí se usa cuando quedan pocas).
+      const longVerse = 'En el principio creó Dios los cielos y la tierra hermosa';
+      final opts = completionOptions(longVerse, 'cielos', seed: 9);
+      final verseWords = studyWords(longVerse);
       for (final o in opts) {
-        if (sameAnswer(o, 'pastor')) continue;
+        if (sameAnswer(o, 'cielos')) continue;
         expect(verseWords.any((w) => sameAnswer(w, o)), isTrue,
             reason: '$o debería venir del versículo');
       }
+    });
+    test('sin IA y con pocas palabras, igual ofrece varias opciones', () {
+      // 'Jehová es mi pastor' deja pocos candidatos → se rellena con el banco
+      // de respaldo para no dejar una sola opción.
+      final opts = completionOptions('Jehová es mi pastor', 'pastor', seed: 9);
+      expect(opts.length, greaterThanOrEqualTo(3));
+      expect(opts.where((o) => sameAnswer(o, 'pastor')).length, 1);
     });
     test('coherencia: prefiere distractores con la misma terminación que el target', () {
       // target "creó" (verbo, termina en -ó). El pool mezcla verbos -ó con

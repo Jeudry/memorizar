@@ -12,6 +12,7 @@ import 'api/models.dart';
 import 'db/app_database.dart';
 import 'streak_logic.dart';
 import 'srs_forecast.dart';
+import 'services/local_llm_service.dart';
 import 'services/push_service.dart';
 import 'services/secure_store.dart';
 import 'srs/sm2.dart';
@@ -1323,9 +1324,16 @@ class AppStore extends ChangeNotifier {
   bool get doubleExercises => _doubleExercises;
   bool get devFreeNavigation => _devFreeNavigation;
 
+  /// Punto único para cambiar el estado premium: mantiene sincronizado el gate
+  /// de la IA (los ejercicios con IA solo funcionan con premium).
+  void _applyPremium(bool value) {
+    _isPremium = value;
+    LocalLlmService.instance.setPremiumUnlocked(value);
+  }
+
   void setPremiumPreview(bool value) {
     if (_isPremium == value) return;
-    _isPremium = value;
+    _applyPremium(value);
     _sessionFlowSeed = DateTime.now().microsecondsSinceEpoch;
     notifyListeners();
   }
@@ -1376,7 +1384,7 @@ class AppStore extends ChangeNotifier {
       final status = await api.getPremiumStatus();
       final active = (status['active'] as bool?) ?? false;
       if (_isPremium != active) {
-        _isPremium = active;
+        _applyPremium(active);
         notifyListeners();
       }
     } catch (e) {
@@ -1394,7 +1402,7 @@ class AppStore extends ChangeNotifier {
     }
     try {
       await api.activatePremiumTrial();
-      _isPremium = true;
+      _applyPremium(true);
       notifyListeners();
       return null;
     } catch (e) {
@@ -2047,7 +2055,7 @@ class AppStore extends ChangeNotifier {
     return null;
   }
 
-  String? createBibleDeckFromSelection() {
+  String? createBibleDeckFromSelection({String? groupId}) {
     if (_selectedBibleVerses.isEmpty) return null;
 
     String title;
@@ -2081,6 +2089,7 @@ class AppStore extends ChangeNotifier {
       icon: '✝️',
       isBible: true,
       createdAt: DateTime.now(),
+      groupId: groupId,
       cards: [
         for (final verse in _selectedBibleVerses)
           MemoryCardData(

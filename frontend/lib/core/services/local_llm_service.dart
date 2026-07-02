@@ -56,12 +56,23 @@ class LocalLlmService {
   /// on-device. Cada generación tarda ~20s, así que el normalizador tolerante
   /// hace el trabajo pesado y esto sólo cubre fallos extremos; mantenerlo bajo.
   static const int _quizMaxAttempts = 2;
-  static const int _evaluationMaxTokens = 300;
+  // El veredicto es un JSON diminuto ({isCorrect, feedback corto}); acotar los
+  // tokens hace cada intento MUCHO más rápido (evita generación larga inútil).
+  static const int _evaluationMaxTokens = 128;
 
-  /// Reintentos de la evaluación de respuesta abierta. Cada intento cuesta
-  /// ~20s, así que lo mantenemos bajo para no hacer esperar demasiado al usuario
-  /// cuando el modelo no coopera.
-  static const int _evaluationMaxAttempts = 2;
+  /// Ejemplo de FORMATO para el enunciado de verdadero/falso. Debe ser NEUTRAL
+  /// (no una verdad de ningún versículo real): el modelo pequeño tiende a copiar
+  /// el ejemplo verbatim, y si fuera contenido bíblico real lo pegaría como
+  /// respuesta con la etiqueta isTrue a la suerte (bug: marcaba FALSO una
+  /// afirmación verdadera del versículo).
+  static const String _tfFormatExample =
+      'El mensajero llegó al pueblo al amanecer.';
+
+  /// Reintentos de la evaluación de respuesta abierta. Con los tokens acotados
+  /// cada intento es rápido, así que damos 3 oportunidades (el fallo típico es
+  /// una respuesta vacía transitoria que un re-roll resuelve) sin que la espera
+  /// total se vuelva eterna.
+  static const int _evaluationMaxAttempts = 3;
 
   static const Map<String, dynamic> _quizRoundSetSchema = {
     'type': 'object',
@@ -150,6 +161,29 @@ class LocalLlmService {
   bool get voiceCaptureActive => _voiceCaptureActive;
   void setVoiceCaptureActive(bool active) => _voiceCaptureActive = active;
 
+  // Los ejercicios con IA son una función PREMIUM. Sin premium NO se levanta el
+  // motor ni se hace ninguna inferencia (los ejercicios usan sus fallbacks
+  // locales/código). Lo sincroniza el store al cargar/cambiar el estado premium.
+  bool _premiumUnlocked = false;
+  bool get premiumUnlocked => _premiumUnlocked;
+  /// Notifica cambios del gate premium para que los ejercicios en curso que
+  /// cayeron al fallback re-intenten la IA cuando se activa premium a mitad de
+  /// sesión (y para que el prefetch arranque desde ese punto).
+  final ValueNotifier<bool> premiumNotifier = ValueNotifier<bool>(false);
+  void setPremiumUnlocked(bool value) {
+    if (_premiumUnlocked == value) return;
+    _premiumUnlocked = value;
+    premiumNotifier.value = value;
+    if (value) {
+      // Premium recién activado: calienta el motor para que el prefetch y los
+      // ejercicios de IA arranquen de inmediato desde este punto.
+      unawaited(warmUpIfModelReady());
+    } else {
+      // Si se pierde premium, apaga el motor para no retener RAM.
+      unawaited(unloadForIdle());
+    }
+  }
+
   bool _initialized = false;
   Future<void>? _initInFlight;
   final ValueNotifier<double> downloadProgress = ValueNotifier<double>(0.0);
@@ -224,6 +258,7 @@ class LocalLlmService {
   /// La IA está disponible si el modelo está descargado localmente
   /// (o si estamos en web y ya hay un motor sano respondiendo).
   Future<bool> isAvailable() async {
+    if (!_premiumUnlocked) return false; // la IA es premium
     if (kIsWeb) {
       return LlamaServerManager.instance.isHealthy();
     }
@@ -403,6 +438,7 @@ class LocalLlmService {
   /// Calienta el motor en segundo plano al arrancar la app si el modelo ya
   /// está descargado, para que el primer quiz no espere la carga del modelo.
   Future<void> warmUpIfModelReady() async {
+    if (!_premiumUnlocked) return; // sin premium no se calienta el motor
     if (!_useMobileBackend && !LlamaServerManager.instance.isSupportedPlatform) {
       return;
     }
@@ -465,7 +501,7 @@ class LocalLlmService {
           'Cada una trata SOLO sobre el texto indicado en su "forText". Asignación OBLIGATORIA: '
           'trueFalse → Texto 1; multipleChoice → Texto 2; openQuestion → Texto $openForText. '
           'Es OBLIGATORIO cubrir los $n textos; ninguno puede quedar sin su pregunta. '
-          'Preguntas CORTAS; el "statement" del trueFalse es una AFIRMACIÓN declarativa que se pueda juzgar como verdadera o falsa: NUNCA una pregunta (sin "¿" ni "?"). Ej válido: "La tierra estaba sin forma y vacía." Ej INVÁLIDO: "¿Qué había sobre las aguas?". Si el trueFalse es falso, el error debe ser comprobable con el texto (puede ser sutil); '
+          'Preguntas CORTAS; el "statement" del trueFalse es una AFIRMACIÓN declarativa SOBRE EL TEXTO que se pueda juzgar como verdadera o falsa: NUNCA una pregunta (sin "¿" ni "?"). Escríbela con TUS palabras a partir del texto; NO copies este ejemplo, es solo de FORMATO: "$_tfFormatExample". Ej INVÁLIDO: "¿Qué había sobre las aguas?". Si el trueFalse es falso, el error debe ser comprobable con el texto (puede ser sutil), y asegúrate de que "isTrue" sea COHERENTE con la afirmación; '
           'multipleChoice con "correct" breve y exactamente 3 "distractors" breves; los 3 distractores deben ser del MISMO tipo, categoría y forma gramatical que "correct", de modo que las 4 opciones encajen naturalmente al responder la pregunta (si reemplazas cualquier opción en la pregunta, debe leerse coherente). NO mezcles categorías (p.ej. si la respuesta es una descripción/estado, los distractores también; no pongas nombres de cosas); '
           'la openQuestion es UNA sola pregunta corta (NO juntes dos preguntas con "y").\n'
           'Formato de salida OBLIGATORIO, EXACTAMENTE este array (sin texto adicional antes ni después):\n'
@@ -478,7 +514,7 @@ class LocalLlmService {
       textBlock = 'Texto a evaluar (${verses.first.reference}): "${verses.first.verseText}"';
       formatBlock =
           'Genera exactamente 3 preguntas sobre el texto:\n'
-          '1. "trueFalse": una AFIRMACIÓN declarativa CORTA (NUNCA una pregunta; sin "¿" ni "?") con su veredicto "isTrue". Ej válido: "La tierra estaba sin forma y vacía." Ej INVÁLIDO: "¿Qué había sobre las aguas?". Si es falsa, el error debe ser comprobable con el texto (puede ser sutil).\n'
+          '1. "trueFalse": una AFIRMACIÓN declarativa CORTA SOBRE EL TEXTO (NUNCA una pregunta; sin "¿" ni "?") con su veredicto "isTrue" COHERENTE. Escríbela con TUS palabras a partir del texto; NO copies este ejemplo, es solo de FORMATO: "$_tfFormatExample". Ej INVÁLIDO: "¿Qué había sobre las aguas?". Si es falsa, el error debe ser comprobable con el texto (puede ser sutil).\n'
           '2. "multipleChoice": pregunta CORTA con "correct" (breve) y "distractors" (exactamente 3, breves). Los 3 distractores deben ser del MISMO tipo, categoría y forma gramatical que "correct", para que las 4 opciones encajen al responder la pregunta (si reemplazas cualquier opción en la pregunta, debe leerse coherente). NO mezcles categorías (si la respuesta es una descripción/estado, los distractores también; no pongas nombres de cosas).\n'
           '3. "openQuestion": UNA sola pregunta abierta, CORTA (una frase), que se responda explicando con pocas palabras. NO juntes dos preguntas en una (nada de "explica X y reflexiona sobre Y").\n'
           'Cada sección debe evaluar un aspecto DIFERENTE del texto.\n'
@@ -517,7 +553,15 @@ class LocalLlmService {
           jsonSchema: _quizRoundSetSchema,
         );
         debugPrint('=== RESPUESTA IA LOCAL QUIZ CRUDA (intento $attempt) ===\n$content\n=====================================');
-        return _parseQuizRoundSet(content);
+        final parsed = _parseQuizRoundSet(content);
+        // El verdadero/falso lo construimos NOSOTROS a partir del texto para no
+        // depender de la etiqueta del modelo (que a veces afirmaba algo cierto y
+        // lo marcaba como falso). El trueFalse del modelo se descarta.
+        return AiQuizRoundSet(
+          trueFalse: _buildCodeTrueFalse(verses.first.verseText),
+          multipleChoice: parsed.multipleChoice,
+          openQuestion: parsed.openQuestion,
+        );
       } catch (e) {
         lastError = e;
         debugPrint('Generación de quiz falló (intento $attempt/$_quizMaxAttempts): $e');
@@ -526,23 +570,72 @@ class LocalLlmService {
     throw StateError('No se pudo generar el quiz tras $_quizMaxAttempts intentos: $lastError');
   }
 
+  /// Palabras de contenido "plausibles pero de otro tema" para fabricar una
+  /// versión FALSA del versículo (sustituyendo una palabra por una de aquí que
+  /// no esté en el texto). Bíblicas y comunes para que suene natural.
+  static const List<String> _tfFalsePool = [
+    'cielo', 'tierra', 'luz', 'agua', 'fuego', 'viento', 'monte', 'mar',
+    'desierto', 'ciudad', 'templo', 'pueblo', 'rey', 'profeta', 'ángel',
+    'justicia', 'pecado', 'gloria', 'pan', 'vino', 'camino', 'verdad', 'vida',
+    'muerte', 'día', 'noche', 'sol', 'luna', 'estrella', 'árbol', 'fruto',
+    'piedra', 'río', 'monte', 'siervo', 'palabra', 'mano', 'corazón',
+  ];
+
+  /// Construye en CÓDIGO el enunciado de verdadero/falso a partir del texto,
+  /// sin depender de la etiqueta del modelo. TRUE = el versículo tal cual;
+  /// FALSE = el versículo con UNA palabra de contenido sustituida por otra que
+  /// no aparece en él → afirmación realmente falsa (y la etiqueta nunca miente).
+  AiTrueFalseRound _buildCodeTrueFalse(String verseText) {
+    final clean = verseText.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (clean.isEmpty || _seedRandom.nextBool()) {
+      return AiTrueFalseRound(statement: clean, isTrue: true);
+    }
+    String norm(String w) =>
+        w.toLowerCase().replaceAll(RegExp(r'[^a-záéíóúñü]'), '');
+    const stop = {
+      'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'de', 'del', 'y',
+      'o', 'en', 'a', 'que', 'se', 'su', 'sus', 'con', 'por', 'para', 'al',
+      'lo', 'le', 'es', 'fue', 'era', 'sin', 'sobre', 'mi', 'tu', 'no', 'ni',
+      'como', 'más', 'muy', 'ya', 'esto', 'esta', 'este',
+    };
+    final tokens = clean.split(' ');
+    final verseWords = {for (final t in tokens) norm(t)}..remove('');
+    final contentIdx = [
+      for (var i = 0; i < tokens.length; i++)
+        if (norm(tokens[i]).length >= 4 && !stop.contains(norm(tokens[i]))) i,
+    ];
+    final candidates =
+        _tfFalsePool.where((w) => !verseWords.contains(norm(w))).toList();
+    if (contentIdx.isEmpty || candidates.isEmpty) {
+      // No se pudo alterar de forma segura → devolvemos una verdadera.
+      return AiTrueFalseRound(statement: clean, isTrue: true);
+    }
+    final idx = contentIdx[_seedRandom.nextInt(contentIdx.length)];
+    final replacement = candidates[_seedRandom.nextInt(candidates.length)];
+    final orig = tokens[idx];
+    // Conserva puntuación al inicio/fin y la mayúscula inicial de la palabra.
+    final lead = RegExp(r'^[^0-9A-Za-zÁÉÍÓÚÜÑáéíóúüñ]*').firstMatch(orig)!.group(0)!;
+    final trail = RegExp(r'[^0-9A-Za-zÁÉÍÓÚÜÑáéíóúüñ]*$').firstMatch(orig)!.group(0)!;
+    final coreStart = lead.length;
+    final wasUpper = orig.length > coreStart &&
+        orig[coreStart] == orig[coreStart].toUpperCase() &&
+        orig[coreStart] != orig[coreStart].toLowerCase();
+    final repl = wasUpper
+        ? '${replacement[0].toUpperCase()}${replacement.substring(1)}'
+        : replacement;
+    tokens[idx] = '$lead$repl$trail';
+    return AiTrueFalseRound(statement: tokens.join(' '), isTrue: false);
+  }
+
   /// Parsea la respuesta del quiz con el normalizador tolerante: acepta el
   /// objeto esperado, un array de sets, `{questions:[...]}` o un array de
   /// preguntas tipadas, con nombres de campo variables.
   AiQuizRoundSet _parseQuizRoundSet(String content) {
     final set = AiQuizRoundSet.lenient(_decodeJsonStructure(content));
-    // Una pregunta de Verdadero/Falso DEBE presentar una afirmación, no una
-    // pregunta interrogativa. Si el modelo devolvió una pregunta, la rechazamos
-    // para que el bucle de reintentos genere otra.
-    if (_looksLikeQuestion(set.trueFalse.statement)) {
-      throw const FormatException(
-        'El "trueFalse" llegó como pregunta, no como afirmación.',
-      );
-    }
-    // El cuestionario DEBE estar en español. Si el modelo se fue al inglés, lo
-    // rechazamos para que el bucle de reintentos genere otro en español.
+    // (El verdadero/falso del modelo se descarta y se genera en código; no lo
+    // validamos aquí.) El resto del cuestionario DEBE estar en español: si el
+    // modelo se fue al inglés, lo rechazamos para que el bucle re-genere.
     if (_looksEnglish(set.multipleChoice.question) ||
-        _looksEnglish(set.trueFalse.statement) ||
         _looksEnglish(set.openQuestion.question)) {
       throw const FormatException('El quiz llegó en inglés, no en español.');
     }
@@ -562,29 +655,6 @@ class LocalLlmService {
       'does', 'do', 'which', 'true', 'false', 'answer', 'verse',
     };
     return words.where(markers.contains).length >= 2;
-  }
-
-  /// ¿El texto parece una pregunta y no una afirmación? Conservador: solo marca
-  /// signos de interrogación o un arranque con interrogativa acentuada.
-  bool _looksLikeQuestion(String s) {
-    final t = s.trim().toLowerCase();
-    if (t.isEmpty) return false;
-    if (t.contains('?') || t.contains('¿')) return true;
-    const starts = [
-      'qué ',
-      'cuál',
-      'cuáles',
-      'quién',
-      'quiénes',
-      'dónde',
-      'cómo ',
-      'cuándo',
-      'cuánto',
-      'cuánta',
-      'por qué',
-      'para qué',
-    ];
-    return starts.any(t.startsWith);
   }
 
   /// Genera un versículo alterado con palabras intrusas según el nivel de dificultad:
@@ -636,6 +706,25 @@ class LocalLlmService {
 
   static String _intruderNorm(String w) =>
       w.toLowerCase().replaceAll(RegExp(r'[^0-9a-záéíóúüñ]'), '');
+
+  /// Heurística de plural en español para concordar el intruso en número (evita
+  /// meter una palabra singular donde el texto va en plural). Excluye singulares
+  /// comunes acabados en -s poco frecuentes en versículos.
+  static bool _isPluralWord(String norm) {
+    if (norm.length < 4 || !norm.endsWith('s')) return false;
+    const singularEndingInS = {'jesus', 'dios', 'mies', 'pais', 'mas', 'jamas'};
+    return !singularEndingInS.contains(norm);
+  }
+
+  /// Pluraliza una palabra en español (regla básica: vocal → +s, consonante →
+  /// +es, terminación en -z → -ces).
+  static String _pluralize(String w) {
+    if (w.isEmpty) return w;
+    final last = w[w.length - 1].toLowerCase();
+    if ('aeiouáéíóú'.contains(last)) return '${w}s';
+    if (last == 'z') return '${w.substring(0, w.length - 1)}ces';
+    return '${w}es';
+  }
 
   /// Verifica que el ejercicio es JUGABLE y real, tal como lo consume el juego:
   /// el versículo cambió, las palabras intrusas son NUEVAS (no estaban en el
@@ -737,7 +826,9 @@ class LocalLlmService {
       return '$lead$cased$trail';
     }
 
-    // Género que impone el artículo previo (si lo hay), para elegir el genérico.
+    // Elige un genérico coherente con el ARTÍCULO previo (género) y con el
+    // NÚMERO de la palabra que reemplaza (singular/plural), y de forma
+    // ALEATORIA para no repetir siempre la misma palabra (p.ej. "firmamento").
     String pickGeneric(int idx) {
       final prev = idx > 0 ? _intruderNorm(tokens[idx - 1]) : '';
       final List<String> pool;
@@ -748,7 +839,13 @@ class LocalLlmService {
       } else {
         pool = [..._intruderMascGeneric, ..._intruderFemGeneric];
       }
-      return pool.firstWhere((w) => !usedNew.contains(w), orElse: () => '');
+      final plural = _isPluralWord(_intruderNorm(tokens[idx]));
+      final shuffled = [...pool]..shuffle(rng);
+      for (final w in shuffled) {
+        final cand = plural ? _pluralize(w) : w;
+        if (!usedNew.contains(cand)) return cand;
+      }
+      return '';
     }
 
     // Candidatos: SÓLO palabras de contenido (>= 3 letras y no función),
@@ -809,34 +906,52 @@ class LocalLlmService {
     required String verseText,
     int count = 8,
   }) async {
-    final entropy = _seedRandom.nextInt(100000);
-    final prompt =
-        'Eres un tutor de memorización de versículos en español.\n'
-        'Semilla de variación aleatoria: $entropy\n'
-        'Texto ($reference): "$verseText"\n\n'
-        'Devuelve "distractors": exactamente $count PALABRAS sueltas (una sola palabra, sin frases) '
-        'que funcionen como opciones INCORRECTAS pero MUY confundibles en un ejercicio de rellenar '
-        'huecos de este texto. Cada distractor debe poder colocarse en lugar de ALGUNA palabra del '
-        'versículo y sonar casi creíble: usa sinónimos cercanos, la misma familia o raíz, otra '
-        'conjugación, o palabras de longitud y forma parecidas a las del texto, y que encajen '
-        'gramaticalmente (mismo tipo: si reemplaza un verbo, que sea verbo; si un sustantivo, '
-        'sustantivo; respeta género/número). '
-        'PROHIBIDO: palabras que ya estén en el texto, y palabras genéricas sin relación con el '
-        'versículo. Todo en español. Solo el JSON.';
-    final content = await _chat(
-      prompt,
-      temperature: 0.9,
-      maxTokens: 200,
-      jsonSchema: _distractorSchema,
-    );
-    final decoded = _decodeJsonObject(content);
-    final raw = (decoded['distractors'] as List?) ?? const [];
-    final words = <String>[];
-    for (final item in raw) {
-      final word = item.toString().trim().split(RegExp(r'\s+')).first;
-      if (word.length > 2 && !words.contains(word)) words.add(word);
+    // El modelo on-device a veces devuelve una respuesta VACÍA en una
+    // generación concreta; sin reintento, el prefetch fallaba siempre y el
+    // ejercicio se quedaba sin distractores de IA. Reintentamos unas pocas
+    // veces y, si aun así no hay nada, devolvemos vacío (el ejercicio usa su
+    // banco local) SIN lanzar, para no spamear ni colgar el spinner.
+    const maxAttempts = 3;
+    Object? lastError;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        final entropy = _seedRandom.nextInt(100000);
+        final prompt =
+            'Eres un tutor de memorización de versículos en español.\n'
+            'Semilla de variación aleatoria: $entropy\n'
+            'Texto ($reference): "$verseText"\n\n'
+            'Devuelve "distractors": exactamente $count PALABRAS sueltas (una sola palabra, sin frases) '
+            'que funcionen como opciones INCORRECTAS pero MUY confundibles en un ejercicio de rellenar '
+            'huecos de este texto. Cada distractor debe poder colocarse en lugar de ALGUNA palabra del '
+            'versículo y sonar casi creíble: usa sinónimos cercanos, la misma familia o raíz, otra '
+            'conjugación, o palabras de longitud y forma parecidas a las del texto, y que encajen '
+            'gramaticalmente (mismo tipo: si reemplaza un verbo, que sea verbo; si un sustantivo, '
+            'sustantivo; respeta género/número). '
+            'PROHIBIDO: palabras que ya estén en el texto, y palabras genéricas sin relación con el '
+            'versículo. Todo en español. Solo el JSON.';
+        final content = await _chat(
+          prompt,
+          temperature: 0.9,
+          maxTokens: 160,
+          jsonSchema: _distractorSchema,
+        );
+        final decoded = _decodeJsonObject(content);
+        final raw = (decoded['distractors'] as List?) ?? const [];
+        final words = <String>[];
+        for (final item in raw) {
+          final word = item.toString().trim().split(RegExp(r'\s+')).first;
+          if (word.length > 2 && !words.contains(word)) words.add(word);
+        }
+        if (words.isNotEmpty) return words;
+        lastError = StateError('lista de distractores vacía');
+      } catch (e) {
+        lastError = e;
+        debugPrint('Distractores IA fallaron (intento $attempt/$maxAttempts): $e');
+      }
     }
-    return words;
+    debugPrint('Distractores IA sin resultado tras $maxAttempts intentos '
+        '($lastError); el ejercicio usará su banco local.');
+    return const [];
   }
 
   // ---------------------------------------------------------------------------
@@ -855,6 +970,7 @@ class LocalLlmService {
     required String verseText,
     required int level,
   }) {
+    if (!_premiumUnlocked) return; // IA premium
     if (_voiceCaptureActive) return; // no competir con Whisper en CPU
     final key = _intruderKey(reference, level);
     if (_intruderPrefetch.containsKey(key)) return;
@@ -875,6 +991,7 @@ class LocalLlmService {
     required String reference,
     required String verseText,
   }) {
+    if (!_premiumUnlocked) return; // IA premium
     if (_voiceCaptureActive) return; // no competir con Whisper en CPU
     if (_distractorPrefetch.containsKey(reference)) return;
     final f = generateCompletionDistractors(reference: reference, verseText: verseText);
@@ -1051,6 +1168,11 @@ class LocalLlmService {
     required int maxTokens,
     Map<String, dynamic>? jsonSchema,
   }) async {
+    // Gate central: sin premium no se hace NINGUNA inferencia con IA. Los
+    // ejercicios que llaman a la IA deben tolerar este fallo y usar su fallback.
+    if (!_premiumUnlocked) {
+      throw StateError('Los ejercicios con IA requieren premium.');
+    }
     if (!_initialized) {
       await initLlm();
     }
@@ -1080,6 +1202,12 @@ class LocalLlmService {
         'temperature': temperature,
         'max_tokens': maxTokens,
         'seed': _seedRandom.nextInt(1 << 30),
+        // CLAVE: desactiva la fase de "razonamiento" del modelo. Sin esto, el
+        // modelo gasta cientos de tokens PENSANDO antes de responder y, con un
+        // max_tokens acotado, se queda sin presupuesto y devuelve content VACÍO
+        // (finish_reason: length) → fallaban distractores/eval/intrusas. Sin
+        // razonar, responde el JSON directo: mucho más rápido y fiable.
+        'chat_template_kwargs': {'enable_thinking': false},
         if (jsonSchema != null)
           'response_format': {
             'type': 'json_object',

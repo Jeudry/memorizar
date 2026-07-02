@@ -68,6 +68,10 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
   @override
   void initState() {
     super.initState();
+    // Si se activa premium a mitad de sesión, re-generamos con IA en vez de
+    // quedarnos con el fallback de código (siempre que no hayas empezado a
+    // resolver el actual).
+    LocalLlmService.instance.premiumNotifier.addListener(_onPremiumChanged);
     if (widget.level != null) {
       _level = widget.level!;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -76,8 +80,17 @@ class _IntruderWordsBodyState extends State<IntruderWordsBody> {
     }
   }
 
+  void _onPremiumChanged() {
+    if (!mounted) return;
+    if (LocalLlmService.instance.premiumUnlocked && _foundIntruders.isEmpty) {
+      _nextAttempt = null; // descarta cualquier repuesto de fallback
+      _generateVerse();
+    }
+  }
+
   @override
   void dispose() {
+    LocalLlmService.instance.premiumNotifier.removeListener(_onPremiumChanged);
     _countdownTimer?.cancel();
     _loadingTextTimer?.cancel();
     super.dispose();

@@ -2912,7 +2912,7 @@ class _CoopLobbyCardState extends State<_CoopLobbyCard> {
                             Stack(
                               clipBehavior: Clip.none,
                               children: [
-                                Fav(f.initial, size: 20, gradient: RefColors.cool),
+                                Fav(f.initial, avatarUrl: f.avatarUrl, size: 20, gradient: RefColors.cool),
                                 if (f.isOnline)
                                   Positioned(
                                     right: -2,

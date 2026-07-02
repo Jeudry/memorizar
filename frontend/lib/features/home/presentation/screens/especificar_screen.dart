@@ -350,115 +350,6 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
     setState(() => _segmentedCards = cards);
   }
 
-  /// Pide el nombre de un grupo nuevo, lo crea y lo deja seleccionado.
-  Future<void> _promptNewGroup(BuildContext context) async {
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1430),
-        title: const Text('Nuevo grupo',
-            style: TextStyle(color: RefColors.ink, fontWeight: FontWeight.w800)),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          style: const TextStyle(color: RefColors.ink),
-          decoration: const InputDecoration(
-            hintText: 'Nombre del grupo',
-            hintStyle: TextStyle(color: RefColors.muted),
-          ),
-          onSubmitted: (v) => Navigator.pop(ctx, v),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar',
-                style: TextStyle(color: RefColors.muted)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('Crear',
-                style: TextStyle(color: RefColors.cyan, fontWeight: FontWeight.w800)),
-          ),
-        ],
-      ),
-    );
-    if (name == null || name.trim().isEmpty || !context.mounted) return;
-    final id = await AppScope.of(context).createGroup(name.trim());
-    if (mounted) setState(() => _selectedGroupId = id);
-  }
-
-  /// Selector de grupo para el mazo nuevo: sin grupo / grupos existentes /
-  /// crear nuevo. Un mazo pertenece a 0 o 1 grupo.
-  Widget _buildGroupSelector(BuildContext context) {
-    final store = AppScope.of(context);
-    final groups = store.groups;
-    return Glass(
-      color: HtmlRefColors.glassBg,
-      border: Border.all(color: HtmlRefColors.glassBorder),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'GRUPO (OPCIONAL)',
-            style: TextStyle(
-              color: RefColors.muted,
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.4,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _groupChip('Sin grupo', _selectedGroupId == null,
-                  () => setState(() => _selectedGroupId = null)),
-              for (final g in groups)
-                _groupChip('${g.icon} ${g.name}', _selectedGroupId == g.id,
-                    () => setState(() => _selectedGroupId = g.id)),
-              _groupChip('＋ Nuevo grupo', false,
-                  () => _promptNewGroup(context),
-                  outlined: true),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _groupChip(String label, bool selected, VoidCallback onTap,
-      {bool outlined = false}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected
-              ? RefColors.cyan.withValues(alpha: .18)
-              : HtmlRefColors.glassSoft,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: selected
-                ? RefColors.cyan
-                : (outlined ? RefColors.cyan.withValues(alpha: .5)
-                            : HtmlRefColors.glassBorder),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? RefColors.cyan : RefColors.ink,
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final cards = _segmentedCards;
@@ -543,7 +434,10 @@ class _EspecificarScreenState extends State<EspecificarScreen> {
             ),
           ),
           const SizedBox(height: 14),
-          _buildGroupSelector(context),
+          _GroupSelector(
+            selectedGroupId: _selectedGroupId,
+            onChanged: (id) => setState(() => _selectedGroupId = id),
+          ),
           const SizedBox(height: 14),
           Glass(
             color: Colors.transparent,
@@ -982,3 +876,122 @@ class _EditCard extends StatelessWidget {
   }
 }
 
+
+/// Selector reutilizable de grupo/carpeta para un mazo nuevo: sin grupo /
+/// grupos existentes / crear nuevo. Compartido por Especificar y Biblia (ambos
+/// son `part of` esta librería). Un mazo pertenece a 0 o 1 grupo.
+class _GroupSelector extends StatelessWidget {
+  final String? selectedGroupId;
+  final ValueChanged<String?> onChanged;
+
+  const _GroupSelector({
+    required this.selectedGroupId,
+    required this.onChanged,
+  });
+
+  Future<void> _promptNewGroup(BuildContext context) async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1430),
+        title: const Text('Nuevo grupo',
+            style: TextStyle(color: RefColors.ink, fontWeight: FontWeight.w800)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: RefColors.ink),
+          decoration: const InputDecoration(
+            hintText: 'Nombre del grupo',
+            hintStyle: TextStyle(color: RefColors.muted),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar',
+                style: TextStyle(color: RefColors.muted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Crear',
+                style: TextStyle(
+                    color: RefColors.cyan, fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.trim().isEmpty || !context.mounted) return;
+    final id = await AppScope.of(context).createGroup(name.trim());
+    onChanged(id);
+  }
+
+  Widget _chip(String label, bool selected, VoidCallback onTap,
+      {bool outlined = false}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? RefColors.cyan.withValues(alpha: .18)
+              : HtmlRefColors.glassSoft,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected
+                ? RefColors.cyan
+                : (outlined
+                    ? RefColors.cyan.withValues(alpha: .5)
+                    : HtmlRefColors.glassBorder),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? RefColors.cyan : RefColors.ink,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = AppScope.of(context).groups;
+    return Glass(
+      color: HtmlRefColors.glassBg,
+      border: Border.all(color: HtmlRefColors.glassBorder),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'GRUPO (OPCIONAL)',
+            style: TextStyle(
+              color: RefColors.muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.4,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _chip('Sin grupo', selectedGroupId == null, () => onChanged(null)),
+              for (final g in groups)
+                _chip('${g.icon} ${g.name}', selectedGroupId == g.id,
+                    () => onChanged(g.id)),
+              _chip('＋ Nuevo grupo', false, () => _promptNewGroup(context),
+                  outlined: true),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}

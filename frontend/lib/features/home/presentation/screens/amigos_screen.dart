@@ -384,7 +384,7 @@ class _FriendshipRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Fav(friend.initial),
+          Fav(friend.initial, avatarUrl: friend.avatarUrl),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -440,7 +440,7 @@ class _SuggestionRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Fav(user.initial),
+          Fav(user.initial, avatarUrl: user.avatarUrl),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -756,7 +756,7 @@ class _SearchHitRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Fav(user.initial, size: 32),
+          Fav(user.initial, avatarUrl: user.avatarUrl, size: 32),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -1031,7 +1031,7 @@ class _AddFriendModalState extends State<AddFriendModal> {
                       ),
                       child: Row(
                         children: [
-                          Fav(f.initial, size: 32),
+                          Fav(f.initial, avatarUrl: f.avatarUrl, size: 32),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(
@@ -1189,7 +1189,7 @@ class _AddFriendModalState extends State<AddFriendModal> {
                       ),
                       child: Row(
                         children: [
-                          Fav(u.initial, size: 32),
+                          Fav(u.initial, avatarUrl: u.avatarUrl, size: 32),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(

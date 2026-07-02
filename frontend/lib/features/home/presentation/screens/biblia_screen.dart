@@ -88,6 +88,8 @@ class _BibliaScreenState extends State<BibliaScreen> {
   String _step = 'book';
   String _selectedBook = 'Salmos';
   int _selectedChapter = 23;
+  /// Grupo (carpeta) al que se asignará el mazo bíblico. null = sin grupo.
+  String? _selectedGroupId;
 
   bool get _isSearching => _searchController.text.trim().isNotEmpty;
 
@@ -205,7 +207,8 @@ class _BibliaScreenState extends State<BibliaScreen> {
       }
       // _DupDeckChoice.createNew → continúa al flujo normal de creación.
     }
-    final createdId = store.createBibleDeckFromSelection();
+    final createdId =
+        store.createBibleDeckFromSelection(groupId: _selectedGroupId);
     if (createdId == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -325,7 +328,16 @@ class _BibliaScreenState extends State<BibliaScreen> {
                 setState(() {});
               },
             )
-          else
+          else ...[
+            // Al finalizar (paso 'continue') se elige a qué grupo mandar el
+            // mazo bíblico, igual que en "Especificar".
+            if (_step == 'continue') ...[
+              _GroupSelector(
+                selectedGroupId: _selectedGroupId,
+                onChanged: (id) => setState(() => _selectedGroupId = id),
+              ),
+              const SizedBox(height: 12),
+            ],
             _BibleBrowseStep(
               step: _step,
               selectedBook: _selectedBook,
@@ -347,6 +359,7 @@ class _BibliaScreenState extends State<BibliaScreen> {
               fullBooks: _fullBooks(store),
               partialBooks: _partialBooks(store),
             ),
+          ],
           const SizedBox(height: 14),
           Glass(
             color: HtmlRefColors.glassBg,
@@ -2091,7 +2104,9 @@ List<ExerciseFlowData> _sessionFlowSteps(AppStore store) {
     if (difficulty >= 0) ...[
       ...pick(level2, difficulty == 0 ? 1 : (difficulty == 1 ? 2 : 3)),
       '17-niebla-n2',
-      '09-quiz',
+      // El quiz es 100% IA (sin fallback local) → función premium. Sin premium
+      // se omite del flujo para no mostrar un paso que fallaría.
+      if (store.isPremium) '09-quiz',
     ],
     
     // Nivel 3: práctica premium/avanzada + niebla N3 al final del nivel 3
@@ -2205,8 +2220,10 @@ List<String> _completionOptions(
   String target, {
   int seed = 0,
   List<String>? aiPool,
+  List<String> exclude = const [],
 }) =>
-    completionOptions(text, target, seed: seed, aiPool: aiPool);
+    completionOptions(text, target,
+        seed: seed, aiPool: aiPool, exclude: exclude);
 
 (List<String>, List<int>) _firstLetterTargetsWithPositions(String text, {required int level}) {
   final words = _studyWords(text);

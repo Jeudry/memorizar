@@ -138,6 +138,10 @@ class _IniciarScreenState extends State<IniciarScreen> {
       doubleExercises: _doubleExercises,
       devFreeNavigation: _devFreeNavigation,
     );
+    // Calienta el motor de IA al ARRANCAR la sesión (puede estar apagado por
+    // inactividad): así el prefetch de quiz/distractores/intrusas durante la
+    // lectura no espera el re-init y llega listo a los ejercicios.
+    unawaited(LocalLlmService.instance.warmUpIfModelReady());
     Navigator.pushNamed(context, '${AppRoutes.flow}/progress-tree');
   }
 
