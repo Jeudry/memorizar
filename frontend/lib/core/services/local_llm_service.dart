@@ -696,6 +696,25 @@ class LocalLlmService {
   static String _intruderNorm(String w) =>
       w.toLowerCase().replaceAll(RegExp(r'[^0-9a-záéíóúüñ]'), '');
 
+  /// Heurística de plural en español para concordar el intruso en número (evita
+  /// meter una palabra singular donde el texto va en plural). Excluye singulares
+  /// comunes acabados en -s poco frecuentes en versículos.
+  static bool _isPluralWord(String norm) {
+    if (norm.length < 4 || !norm.endsWith('s')) return false;
+    const singularEndingInS = {'jesus', 'dios', 'mies', 'pais', 'mas', 'jamas'};
+    return !singularEndingInS.contains(norm);
+  }
+
+  /// Pluraliza una palabra en español (regla básica: vocal → +s, consonante →
+  /// +es, terminación en -z → -ces).
+  static String _pluralize(String w) {
+    if (w.isEmpty) return w;
+    final last = w[w.length - 1].toLowerCase();
+    if ('aeiouáéíóú'.contains(last)) return '${w}s';
+    if (last == 'z') return '${w.substring(0, w.length - 1)}ces';
+    return '${w}es';
+  }
+
   /// Verifica que el ejercicio es JUGABLE y real, tal como lo consume el juego:
   /// el versículo cambió, las palabras intrusas son NUEVAS (no estaban en el
   /// original) y aparecen EXACTAMENTE [level] veces en el texto alterado.
@@ -796,7 +815,9 @@ class LocalLlmService {
       return '$lead$cased$trail';
     }
 
-    // Género que impone el artículo previo (si lo hay), para elegir el genérico.
+    // Elige un genérico coherente con el ARTÍCULO previo (género) y con el
+    // NÚMERO de la palabra que reemplaza (singular/plural), y de forma
+    // ALEATORIA para no repetir siempre la misma palabra (p.ej. "firmamento").
     String pickGeneric(int idx) {
       final prev = idx > 0 ? _intruderNorm(tokens[idx - 1]) : '';
       final List<String> pool;
@@ -807,7 +828,13 @@ class LocalLlmService {
       } else {
         pool = [..._intruderMascGeneric, ..._intruderFemGeneric];
       }
-      return pool.firstWhere((w) => !usedNew.contains(w), orElse: () => '');
+      final plural = _isPluralWord(_intruderNorm(tokens[idx]));
+      final shuffled = [...pool]..shuffle(rng);
+      for (final w in shuffled) {
+        final cand = plural ? _pluralize(w) : w;
+        if (!usedNew.contains(cand)) return cand;
+      }
+      return '';
     }
 
     // Candidatos: SÓLO palabras de contenido (>= 3 letras y no función),
