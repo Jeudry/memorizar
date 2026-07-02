@@ -807,14 +807,10 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (_listening) ...[
-                              const Text(
-                                'Grabando voz...',
-                                style: TextStyle(
-                                  color: RefColors.cyan,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
+                              // Mientras graba: solo el efecto de ondas (sin la
+                              // palabra "Grabando"), para ocupar menos espacio.
+                              const _ListeningWaveIndicator(
+                                  color: RefColors.cyan),
                             ] else ...[
                               if (_score > 0) ...[
                                 Text(
@@ -844,27 +840,6 @@ class _ReadAloudPracticeCardState extends State<_ReadAloudPracticeCard>
                     ],
                   ),
                   
-                  if (_listening) ...[
-                    const SizedBox(height: 10),
-                    // Panel flotante animado de ondas de voz en tiempo real
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: RefColors.cyan.withValues(alpha: .04),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: RefColors.cyan.withValues(alpha: .15),
-                          width: 1,
-                        ),
-                      ),
-                      child: const Column(
-                        children: [
-                          _ListeningWaveIndicator(color: RefColors.cyan),
-                        ],
-                      ),
-                    ),
-                  ],
-
                   // Caja de texto reconocido — solo al final cuando no esté grabando y tenga texto
                   if (!_listening && _recognized.isNotEmpty) ...[
                     const SizedBox(height: 16),

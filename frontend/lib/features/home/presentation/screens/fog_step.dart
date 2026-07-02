@@ -928,25 +928,9 @@ class _FogStepState extends State<_FogStep>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (_listening) ...[
-                          Row(
-                            children: const [
-                              Text(
-                                'Grabando voz...',
-                                style: TextStyle(
-                                  color: RefColors.cyan,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              SizedBox(width: 12),
-                              // Las ondas van a la derecha del texto, no debajo,
-                              // para no ocupar tanto alto.
-                              Expanded(
-                                child: _ListeningWaveIndicator(
-                                    color: RefColors.cyan),
-                              ),
-                            ],
-                          ),
+                          // Mientras graba: solo el efecto de ondas (sin la
+                          // palabra "Grabando") para ocupar el mínimo espacio.
+                          const _ListeningWaveIndicator(color: RefColors.cyan),
                         ] else ...[
                           if (_score > 0) ...[
                             Text(
