@@ -2055,7 +2055,7 @@ class AppStore extends ChangeNotifier {
     return null;
   }
 
-  String? createBibleDeckFromSelection() {
+  String? createBibleDeckFromSelection({String? groupId}) {
     if (_selectedBibleVerses.isEmpty) return null;
 
     String title;
@@ -2089,6 +2089,7 @@ class AppStore extends ChangeNotifier {
       icon: '✝️',
       isBible: true,
       createdAt: DateTime.now(),
+      groupId: groupId,
       cards: [
         for (final verse in _selectedBibleVerses)
           MemoryCardData(
