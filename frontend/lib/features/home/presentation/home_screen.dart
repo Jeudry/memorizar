@@ -40,31 +40,8 @@ class HomeScreen extends StatelessWidget {
           const _CoopBar(),
           const SizedBox(height: 18),
 
-          // De la comunidad
-          _SectionHeader(
-            title: store.hasDecks ? 'Tus mazos' : 'Tu biblioteca',
-            trailing: TextButton(
-              onPressed: () {
-                // "Ver más" de Tus mazos lleva a la pestaña Mazos (no a
-                // Comunidad). Dentro del shell cambia de tab como la barra
-                // inferior; fuera del shell, navega por ruta.
-                final shell = MainTabShell.of(context);
-                if (shell != null) {
-                  shell.goToRoute(AppRoutes.repasar);
-                } else {
-                  Navigator.pushNamed(context, AppRoutes.repasar);
-                }
-              },
-              child: const Text(
-                'Ver más',
-                style: TextStyle(
-                  color: AppColors.inkMuted,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          ),
-          const _CommunitySlider(),
+          // Tus mazos (con filtro de grupo)
+          const _MyDecksSection(),
           const SizedBox(height: 18),
 
           // Comunidad
@@ -973,8 +950,145 @@ class _MemCard extends StatelessWidget {
   }
 }
 
+/// Sección "Tus mazos": encabezado con un dropdown para filtrar por grupo
+/// ("Todas" o cualquier grupo existente) situado entre el título y "Ver más",
+/// más el carrusel de mazos filtrado.
+class _MyDecksSection extends StatefulWidget {
+  const _MyDecksSection();
+
+  @override
+  State<_MyDecksSection> createState() => _MyDecksSectionState();
+}
+
+class _MyDecksSectionState extends State<_MyDecksSection> {
+  // `null` = "Todas"; en otro caso, el id del grupo elegido.
+  String? _groupFilter;
+
+  void _goToDecks(BuildContext context) {
+    // "Ver más" lleva a la pestaña Mazos (no a Comunidad). Dentro del shell
+    // cambia de tab como la barra inferior; fuera del shell, navega por ruta.
+    final shell = MainTabShell.of(context);
+    if (shell != null) {
+      shell.goToRoute(AppRoutes.repasar);
+    } else {
+      Navigator.pushNamed(context, AppRoutes.repasar);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = AppScope.of(context);
+    final groups = store.groups;
+    // Si el grupo filtrado se elimina, vuelve a "Todas".
+    if (_groupFilter != null && !groups.any((g) => g.id == _groupFilter)) {
+      _groupFilter = null;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Row(
+            children: [
+              Text(
+                store.hasDecks ? 'Tus mazos' : 'Tu biblioteca',
+                style:
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              ),
+              const Spacer(),
+              if (groups.isNotEmpty) ...[
+                _GroupFilterDropdown(
+                  groups: groups,
+                  selectedId: _groupFilter,
+                  onChanged: (id) => setState(() => _groupFilter = id),
+                ),
+                const SizedBox(width: 4),
+              ],
+              TextButton(
+                onPressed: () => _goToDecks(context),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text(
+                  'Ver más',
+                  style: TextStyle(color: AppColors.inkMuted, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+        _CommunitySlider(groupFilter: _groupFilter),
+      ],
+    );
+  }
+}
+
+/// Dropdown compacto (estilo glass) para elegir el grupo por el que filtrar
+/// "Tus mazos": la primera opción es "Todas", seguida de cada grupo existente.
+class _GroupFilterDropdown extends StatelessWidget {
+  final List<MemoryGroupData> groups;
+  final String? selectedId;
+  final ValueChanged<String?> onChanged;
+
+  const _GroupFilterDropdown({
+    required this.groups,
+    required this.selectedId,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.glassBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          value: selectedId,
+          isDense: true,
+          borderRadius: BorderRadius.circular(12),
+          dropdownColor: AppColors.glassStrong,
+          icon: const Padding(
+            padding: EdgeInsets.only(left: 2),
+            child: Icon(Icons.expand_more, size: 16, color: AppColors.inkMuted),
+          ),
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: AppColors.ink,
+          ),
+          items: [
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Text('Todas'),
+            ),
+            for (final g in groups)
+              DropdownMenuItem<String?>(
+                value: g.id,
+                child: Text(
+                  '${g.icon} ${g.name}',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+}
+
 class _CommunitySlider extends StatefulWidget {
-  const _CommunitySlider();
+  /// Filtro de grupo: `null` muestra todos los mazos ("Todas"); un id concreto
+  /// muestra solo los mazos de ese grupo.
+  final String? groupFilter;
+
+  const _CommunitySlider({this.groupFilter});
 
   @override
   State<_CommunitySlider> createState() => _CommunitySliderState();
@@ -1025,13 +1139,24 @@ class _CommunitySliderState extends State<_CommunitySlider> {
 
   @override
   Widget build(BuildContext context) {
-    final decks = AppScope.of(context).decks;
-    if (decks.isEmpty) {
+    final allDecks = AppScope.of(context).decks;
+    if (allDecks.isEmpty) {
       return const _EmptyHomePanel(
         icon: '📚',
         title: 'No hay mazos todavía',
         body:
             'Cuando crees contenido desde Biblia o Especificar, aparecerá aquí.',
+      );
+    }
+    // Aplica el filtro de grupo elegido en el encabezado ("Todas" = sin filtro).
+    final decks = widget.groupFilter == null
+        ? allDecks
+        : allDecks.where((d) => d.groupId == widget.groupFilter).toList();
+    if (decks.isEmpty) {
+      return const _EmptyHomePanel(
+        icon: '🗂️',
+        title: 'Sin mazos en este grupo',
+        body: 'Elige "Todas" o asigna mazos a este grupo para verlos aquí.',
       );
     }
     // Mostramos los mazos como un slide ordenado por los que más tarjetas
