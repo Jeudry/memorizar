@@ -130,6 +130,8 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
   int _soloLecturaVisibleChars = 0;
   Timer? _soloLecturaTimer;
   DateTime? _soloLecturaPauseUntil;
+  // Scroll del texto en "solo lectura": sigue automáticamente la lectura.
+  final ScrollController _soloLecturaScroll = ScrollController();
   String? _blockOrderCardId;
   List<int> _blockOrderIndexes = [];
   int? _selectedBlockPosition;
@@ -347,6 +349,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     _letterTimer?.cancel();
     _openQuestionController.dispose();
     _letterKeyboardFocus.dispose();
+    _soloLecturaScroll.dispose();
     super.dispose();
   }
 
@@ -2637,6 +2640,7 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                     const SizedBox(height: 14),
                     Expanded(
                       child: SingleChildScrollView(
+                        controller: _soloLecturaScroll,
                         child: Container(
                           alignment: Alignment.center,
                           child: _buildSoloLecturaText(
@@ -3917,6 +3921,25 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
         setState(() {
           _soloLecturaVisibleChars = nextVisible;
         });
+        _autoScrollSoloLectura(nextVisible / totalChars);
+      }
+    });
+  }
+
+  /// Desplaza el texto de "solo lectura" para seguir la lectura: el scroll
+  /// avanza proporcional al avance de la revelación (solo hacia adelante).
+  void _autoScrollSoloLectura(double progress) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_soloLecturaScroll.hasClients) return;
+      final max = _soloLecturaScroll.position.maxScrollExtent;
+      if (max <= 0) return; // todo el texto cabe en pantalla
+      final target = (max * progress).clamp(0.0, max);
+      if (target > _soloLecturaScroll.offset + 1) {
+        _soloLecturaScroll.animateTo(
+          target,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
       }
     });
   }

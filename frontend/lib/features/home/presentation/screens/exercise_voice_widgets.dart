@@ -1475,6 +1475,31 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
   int _ttsStartWordOffset = 0;
   int _lastSkipTime = 0;
   bool _isSkipping = false;
+  // El paso "Escuchar" es obligatorio DOS veces: no se completa hasta la 2ª.
+  static const int _requiredPlays = 2;
+  int _playCount = 0;
+
+  /// Se llama cada vez que termina una reproducción completa. Solo marca el
+  /// paso como hecho a partir de la 2ª; en la 1ª deja listo para escuchar otra
+  /// vez sin avanzar.
+  void _onPlaythroughDone() {
+    if (!mounted) return;
+    _playCount++;
+    if (_playCount >= _requiredPlays) {
+      setState(() {
+        _playing = false;
+        _completed = true;
+        _wordIndex = 0;
+      });
+      widget.onCompleted?.call();
+    } else {
+      setState(() {
+        _playing = false;
+        _completed = false;
+        _wordIndex = 0;
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -1490,14 +1515,7 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
       if (now - _lastSkipTime < 600) {
         return;
       }
-      if (mounted) {
-        setState(() {
-          _playing = false;
-          _completed = true;
-          _wordIndex = 0;
-        });
-        widget.onCompleted?.call();
-      }
+      _onPlaythroughDone();
     });
     _tts.setCancelHandler(() {
       if (mounted) setState(() => _playing = false);
@@ -1613,15 +1631,8 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
     await Future.delayed(const Duration(milliseconds: 150));
     
     if (nextIndex >= words.length) {
-      if (mounted) {
-        setState(() {
-          _wordIndex = 0;
-          _playing = false;
-          _completed = true;
-          _isSkipping = false;
-        });
-        widget.onCompleted?.call();
-      }
+      _isSkipping = false;
+      _onPlaythroughDone();
       return;
     }
     
@@ -1837,6 +1848,15 @@ class _ListenAudioCardState extends State<_ListenAudioCard> {
               ),
             ],
           ),
+          if (!_completed && _playCount > 0) ...[
+            const SizedBox(height: 12),
+            StatusChip(
+              'ESCÚCHALO OTRA VEZ · $_playCount/$_requiredPlays',
+              color: const Color(0x33FFB020),
+              borderColor: const Color(0x66FFB020),
+              textColor: RefColors.sun,
+            ),
+          ],
           if (_completed) ...[
             const SizedBox(height: 12),
             const StatusChip(
