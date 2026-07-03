@@ -790,9 +790,22 @@ class LocalLlmService {
     'palabra': 'voz', 'paz': 'calma', 'gloria': 'honra', 'fe': 'esperanza',
     'noche': 'sombra', 'gracia': 'merced', 'fuerza': 'firmeza', 'mujer': 'dama',
     'madre': 'señora', 'nación': 'región', 'muerte': 'ruina',
+    // Puntos cardinales y lugares: sinónimos REALES del mismo tipo, para no
+    // caer al pool genérico y soltar disparates (p.ej. "designio" por "oriente").
+    'oriente': 'levante', 'occidente': 'poniente', 'norte': 'septentrión',
+    'sur': 'mediodía', 'levante': 'oriente', 'poniente': 'occidente',
+    'monte': 'collado', 'valle': 'llano', 'lugar': 'sitio',
+    // Más verbos frecuentes en versículos.
+    'reunió': 'congregó', 'reunido': 'congregado', 'guió': 'condujo',
+    'salvó': 'libró', 'clamaron': 'gritaron',
+    // Más sustantivos frecuentes (conservan género/número).
+    'enemigo': 'adversario', 'siervo': 'criado', 'consuelo': 'alivio',
+    'refugio': 'amparo', 'trabajo': 'labor',
     // Plurales (conservan número).
     'cielos': 'firmamentos', 'tinieblas': 'sombras', 'aguas': 'olas',
-    'palabras': 'voces', 'días': 'tiempos',
+    'palabras': 'voces', 'días': 'tiempos', 'tierras': 'regiones',
+    'naciones': 'pueblos', 'pueblos': 'naciones', 'montes': 'collados',
+    'enemigos': 'adversarios', 'siervos': 'criados', 'manos': 'brazos',
   };
 
   /// Pools genéricos por género (cuando una palabra no tiene sinónimo): se elige

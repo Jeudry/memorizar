@@ -98,6 +98,44 @@ List<String> completionTargets(String text,
   return ordered.map((i) => words[i]).toList();
 }
 
+/// Palabras-función agrupadas por CLASE gramatical. Sirven para dar coherencia
+/// sintáctica al banco de opciones: si el hueco es una palabra-función (p.ej.
+/// un artículo "las"), los distractores deben ser palabras-función de su MISMA
+/// clase (otros artículos), nunca palabras de contenido — antes, al puntuar
+/// solo por la última letra, un hueco "las" recibía "territorios"/"tierras",
+/// un engaño obvio y sin sentido gramatical.
+const Set<String> _articleWords = {
+  'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas',
+};
+const Set<String> _prepWords = {
+  'de', 'del', 'a', 'al', 'en', 'con', 'por', 'para', 'sin', 'sobre', 'tras',
+  'hacia', 'desde', 'entre', 'hasta', 'ante', 'bajo', 'contra', 'según',
+};
+const Set<String> _conjWords = {
+  'y', 'e', 'o', 'u', 'ni', 'que', 'pero', 'mas', 'sino', 'porque', 'pues',
+  'aunque', 'como', 'si',
+};
+const Set<String> _pronounWords = {
+  'su', 'sus', 'mi', 'mis', 'tu', 'tus', 'se', 'le', 'les', 'lo', 'me', 'te',
+  'nos', 'os', 'este', 'esta', 'esto', 'ese', 'esa', 'eso', 'aquel', 'aquella',
+};
+const List<Set<String>> _functionWordClasses = [
+  _articleWords,
+  _prepWords,
+  _conjWords,
+  _pronounWords,
+];
+
+/// La clase gramatical de [w] si es una palabra-función, o `null` si es de
+/// contenido (sustantivo, verbo, adjetivo…).
+Set<String>? _functionWordClass(String w) {
+  final lower = w.toLowerCase();
+  for (final c in _functionWordClasses) {
+    if (c.contains(lower)) return c;
+  }
+  return null;
+}
+
 /// Pool genérico de respaldo para cuando no hay suficientes distractores (todas
 /// las palabras ocultas, o la IA aún cargando). Palabras comunes/bíblicas.
 const List<String> _fallbackDistractorPool = [
@@ -127,14 +165,48 @@ List<String> completionOptions(
     seed == 0 ? DateTime.now().microsecondsSinceEpoch : seed,
   );
 
+  bool notExcluded(String w) =>
+      !sameAnswer(w, cleanTarget) &&
+      !excludeClean.any((e) => sameAnswer(e, w));
+
+  // Hueco de palabra-función (artículo, preposición, conjunción, pronombre):
+  // el banco debe ser de la MISMA clase gramatical, nunca palabras de
+  // contenido. Así un hueco "las" ofrece otros artículos (los, unas, un…) y no
+  // "territorios", que sería un engaño obvio. Se prefiere concordar el número.
+  final targetClass = _functionWordClass(cleanTarget);
+  if (targetClass != null) {
+    final targetPlural = cleanTarget.toLowerCase().endsWith('s');
+    int numberRank(String w) => w.endsWith('s') == targetPlural ? 0 : 1;
+    final same = targetClass.where(notExcluded).toList()..shuffle(rng);
+    same.sort((a, b) => numberRank(a).compareTo(numberRank(b)));
+    final picks = <String>[];
+    for (final w in same) {
+      if (picks.length >= 4) break;
+      picks.add(w);
+    }
+    // Si la clase quedó corta, completa con otras palabras-función.
+    if (picks.length < 4) {
+      final others = [for (final c in _functionWordClasses) ...c]..shuffle(rng);
+      for (final w in others) {
+        if (picks.length >= 4) break;
+        if (notExcluded(w) && !picks.any((p) => sameAnswer(p, w))) picks.add(w);
+      }
+    }
+    final options = <String>[cleanTarget, ...picks];
+    options.shuffle(rng);
+    return options;
+  }
+
   // Candidatos: primero el pool de la IA (más tramposos), luego palabras del
   // versículo como respaldo. Dedup, sin la palabra correcta y sin las palabras
   // que son respuesta de OTROS huecos (no mostrar como distractor lo que el
-  // usuario debe adivinar en otro hueco).
+  // usuario debe adivinar en otro hueco). Tampoco palabras-función: en un hueco
+  // de contenido, ofrecer "las"/"del"/"por" es un engaño obvio y sin sentido.
   final candidates = <String>[];
   void addCandidate(String word) {
     final clean = word.replaceAll(cleanRegex, '');
     if (clean.length > 2 &&
+        _functionWordClass(clean) == null &&
         !sameAnswer(clean, cleanTarget) &&
         !excludeClean.any((e) => sameAnswer(e, clean)) &&
         !candidates.any((c) => sameAnswer(c, clean))) {

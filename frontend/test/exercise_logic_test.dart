@@ -112,6 +112,24 @@ void main() {
       expect(oMatchTotal / distractorTotal, greaterThan(0.6),
           reason: 'los distractores deberían concordar en terminación con "creó"');
     });
+    test('hueco de palabra-función NO ofrece palabras de contenido', () {
+      // Reproduce el bug: para el hueco "las" salía "territorios"/"tierras".
+      const verse = 'Y los ha reunido de las tierras del oriente';
+      final opts = completionOptions(verse, 'las', seed: 4);
+      expect(opts.where((o) => sameAnswer(o, 'las')).length, 1);
+      for (final content in ['tierras', 'oriente', 'reunido']) {
+        expect(opts.any((o) => sameAnswer(o, content)), isFalse,
+            reason: 'un hueco de artículo no debería ofrecer "$content"');
+      }
+    });
+    test('hueco de contenido NO ofrece palabras-función como distractor', () {
+      const verse = 'Y los ha reunido de las tierras del oriente poderoso';
+      final opts = completionOptions(verse, 'tierras', seed: 4);
+      for (final fn in ['los', 'las', 'del', 'de']) {
+        expect(opts.any((o) => sameAnswer(o, fn)), isFalse,
+            reason: 'un hueco de contenido no debería ofrecer "$fn"');
+      }
+    });
   });
 
   group('isMicSlug', () {
