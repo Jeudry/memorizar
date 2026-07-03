@@ -151,7 +151,24 @@ class LocalLlmService {
   // se re-levanta on-demand. Clave para no comer RAM, sobre todo en móvil.
   Timer? _idleTimer;
   int _pendingInferences = 0;
-  static const Duration _idleUnloadTimeout = Duration(seconds: 120);
+  // Apagado por inactividad EN PRIMER PLANO. En móvil recargar el modelo (~2.58
+  // GB a GPU) cuesta cerca de un minuto: si lo descargáramos a los 2 min de no
+  // inferir, CADA regreso a un ejercicio de IA pagaría esa recarga en frío (el
+  // "se queda cargando por siglos" que reportó el usuario). La RAM en móvil ya
+  // se libera al pasar la app a segundo plano (main.dart → didChangeAppLifecycle
+  // → unloadForIdle), así que en primer plano damos un margen amplio para NO
+  // recargar a mitad de sesión. En desktop la recarga es más barata y hay más
+  // RAM, así que ahí mantenemos el apagado corto.
+  Duration get _idleUnloadTimeout => _useMobileBackend
+      ? const Duration(minutes: 10)
+      : const Duration(seconds: 120);
+
+  // Timeout duro de UNA inferencia on-device. El runtime LiteRT puede quedarse
+  // colgado en una generación concreta; como la inferencia está serializada, un
+  // cuelgue SIN timeout congelaría TODOS los ejercicios de IA para siempre. 120s
+  // cubre de sobra una generación legítima (nuestros prompts piden salidas
+  // cortas) sin recortar trabajo válido, y garantiza que un stall termine.
+  static const Duration _mobileInferenceTimeout = Duration(seconds: 120);
 
   // Mientras se captura/transcribe voz (Whisper en CPU), pausamos el prefetch
   // de IA local para no pelear por la CPU: si no, el "Evaluando audio…" se
@@ -1184,12 +1201,29 @@ class LocalLlmService {
     if (_useMobileBackend) {
       // flutter_gemma no aplica grammar JSON como llama.cpp: el prompt ya pide
       // "responde únicamente con el JSON" y _decodeJsonObject lo sanea.
-      return FlutterGemmaBackend.instance.chat(
-        prompt,
-        temperature: temperature,
-        randomSeed: _seedRandom.nextInt(1 << 30),
-        onStatus: (s) => statusNotifier.value = s,
-      );
+      // Timeout duro: si la generación on-device se cuelga, cerramos el motor y
+      // propagamos el error para que el ejercicio use su fallback de código. No
+      // basta con soltar el `await`: lanzar una 2ª inferencia sobre el mismo
+      // modelo mientras la 1ª sigue viva puede crashear el ThreadPool nativo
+      // (SIGSEGV), así que hay que DISPONER el motor antes de dejar pasar la
+      // siguiente (la inferencia está serializada, y esto corre en su turno).
+      try {
+        return await FlutterGemmaBackend.instance
+            .chat(
+              prompt,
+              temperature: temperature,
+              randomSeed: _seedRandom.nextInt(1 << 30),
+              onStatus: (s) => statusNotifier.value = s,
+            )
+            .timeout(_mobileInferenceTimeout);
+      } on TimeoutException {
+        debugPrint(
+            'Inferencia on-device excedió ${_mobileInferenceTimeout.inSeconds}s; '
+            'reiniciando el motor Gemma para no dejarlo colgado.');
+        _initialized = false;
+        await FlutterGemmaBackend.instance.dispose();
+        rethrow;
+      }
     }
 
     final baseUrl = LlamaServerManager.instance.baseUrl;
