@@ -651,10 +651,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
     return _letterComplete();
   }
 
-  bool _hasCompletionInput() => _completionAnswers.any(
-    (answer) => answer != null && answer.trim().isNotEmpty,
-  );
-
   bool _quizCorrect(MemoryCardData card, MemoryDeckData deck) {
     if (_quizCardId != card.id || _quizRounds.isEmpty) return false;
     return _quizPassed;
@@ -2278,7 +2274,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
       // No ofrecer como distractor la respuesta de otro hueco.
       exclude: _completionTargets,
     );
-    final hasInput = _hasCompletionInput();
     final complete = _completionComplete();
     final remainingAttempts = (3 - _completionMistakes).clamp(0, 3);
     return Column(
@@ -2394,18 +2389,6 @@ class _RealExerciseFlowScreenState extends State<_RealExerciseFlowScreen> {
                       ),
                   ],
                 ),
-                if (hasInput && !complete && remainingAttempts > 0) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    'Si fallas, las opciones se barajan de nuevo.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: RefColors.muted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
                 if (remainingAttempts == 0 && !complete) ...[
                   const SizedBox(height: 10),
                   Text(
