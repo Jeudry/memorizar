@@ -27,7 +27,14 @@ class FlutterGemmaBackend {
   static const String _hfToken =
       String.fromEnvironment('HF_TOKEN', defaultValue: '');
 
-  static const int _maxTokens = 1024;
+  // Ventana de contexto TOTAL (entrada + salida) del modelo on-device. En
+  // LiteRT este límite lo compara contra los tokens de ENTRADA: con 1024 el
+  // prompt del quiz (~1040 tokens con toda su instrucción) lo excedía y el
+  // motor lo rechazaba de entrada con "Input token ids are too long"
+  // (1041 >= 1024) → el quiz fallaba SIEMPRE en móvil. 2048 deja caber el
+  // prompt más largo (incluido el multi-versículo) y su salida corta, sin
+  // inflar de más la KV-cache (RAM) en el dispositivo.
+  static const int _maxTokens = 2048;
 
   InferenceModel? _model;
   bool _initialized = false;
