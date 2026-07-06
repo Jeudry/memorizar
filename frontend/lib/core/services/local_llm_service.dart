@@ -392,13 +392,18 @@ class LocalLlmService {
 
     if (_useMobileBackend) {
       // La PRIMERA carga del modelo a GPU en un dispositivo real tarda bastante
-      // más que unos pocos segundos. En iOS de desarrollo (simulador) no hay
-      // modelo GPU, así que un timeout corto deja caer a IA simulada; en un
-      // dispositivo real (Android) hay que ESPERAR la carga real: abortarla a
-      // los 4s era justo lo que hacía fallar la generación en el PRIMER intento
-      // (la carga nativa seguía en background y el segundo intento ya la tomaba
-      // caliente). Por eso el timeout aquí es generoso fuera del simulador iOS.
-      final useSimulatorFallback = !kIsWeb && Platform.isIOS;
+      // más que unos pocos segundos. SOLO el simulador de iOS no tiene modelo
+      // GPU, así que ahí un timeout corto deja caer a IA simulada. En un
+      // dispositivo FÍSICO (Android o iPhone real) hay que ESPERAR la carga
+      // real: abortarla a los 4s era justo lo que hacía fallar la generación en
+      // el PRIMER intento. Antes esto se activaba con `Platform.isIOS`, lo que
+      // también apagaba la IA real en iPhones FÍSICOS (usaban mock); el
+      // simulador se distingue por la variable de entorno SIMULATOR_UDID, que
+      // solo existe en el simulador de Xcode.
+      final isIosSimulator = !kIsWeb &&
+          Platform.isIOS &&
+          Platform.environment.containsKey('SIMULATOR_UDID');
+      final useSimulatorFallback = isIosSimulator;
       final initTimeout = useSimulatorFallback
           ? const Duration(seconds: 4)
           : const Duration(seconds: 120);
