@@ -850,7 +850,7 @@ class _MemorizarGrid extends StatelessWidget {
             Expanded(
               child: _MemCard(
                 title: 'Biblia',
-                subtitle: 'Versículos · capítulos',
+                subtitle: 'Versículos',
                 emoji: '✝️',
                 color: AppColors.accentSun,
                 route: '/biblia',
@@ -860,7 +860,7 @@ class _MemorizarGrid extends StatelessWidget {
             Expanded(
               child: _MemCard(
                 title: 'Especificar',
-                subtitle: 'Pega tu contenido',
+                subtitle: 'Tu contenido',
                 emoji: '✨',
                 color: AppColors.accentViolet,
                 route: '/especificar',
